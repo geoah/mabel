@@ -1,6 +1,6 @@
 # 024: DNS hostname verifier and its cache
 
-- Status: open
+- Status: done
 - Depends on: 023
 
 ## Goal

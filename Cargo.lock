@@ -2055,6 +2055,7 @@ dependencies = [
  "axum",
  "data-encoding",
  "getrandom 0.4.3",
+ "hickory-resolver",
  "iroh",
  "iroh-base",
  "mabel-core",

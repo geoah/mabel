@@ -22,11 +22,13 @@ mod atomic;
 mod config;
 mod endpoint;
 mod error;
+pub mod graph;
 mod home;
 pub mod keys;
 mod ledger;
 mod peers;
 mod time;
+pub mod verification;
 pub mod wallet;
 pub mod witness;
 
