@@ -7,11 +7,12 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
-mabel-core.workspace = true
+mabel-core = { workspace = true, features = ["serde"] }
 mabel-net.workspace = true
 mabel-proto.workspace = true
 anyhow.workspace = true
 axum.workspace = true
+data-encoding.workspace = true
 getrandom.workspace = true
 iroh.workspace = true
 iroh-base.workspace = true

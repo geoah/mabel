@@ -1,6 +1,6 @@
 # 007: node home, storage layout, keys and permissions
 
-- Status: open
+- Status: done
 - Depends on: 002
 
 ## Goal
