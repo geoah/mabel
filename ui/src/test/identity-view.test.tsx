@@ -58,7 +58,7 @@ describe("overview table", () => {
   });
 
   it("holds the address book fields on one line each, with the counts", async () => {
-    renderApp(`/wallet/identities/${ALICE}`);
+    renderApp(`/identities/${ALICE}`);
     await screen.findByTestId("identity-detail");
 
     // Every row is a key and a value on one line: the label column and the
@@ -78,7 +78,7 @@ describe("overview table", () => {
 
 describe("ledger lines", () => {
   it("shows one line per event as its sequence and type, with no payload until it is opened", async () => {
-    const { user } = renderApp(`/wallet/identities/${ALICE}`);
+    const { user } = renderApp(`/identities/${ALICE}`);
     await screen.findByTestId("ledger-events");
 
     expect(screen.getByTestId("event-seq-0")).toHaveTextContent("0");
@@ -98,7 +98,7 @@ describe("ledger lines", () => {
   });
 
   it("opens one event without opening the others", async () => {
-    const { user } = renderApp(`/wallet/identities/${ALICE}`);
+    const { user } = renderApp(`/identities/${ALICE}`);
     await screen.findByTestId("ledger-events");
 
     await user.click(screen.getByTestId("event-expand-2"));
@@ -110,7 +110,7 @@ describe("ledger lines", () => {
 
 describe("state and actions", () => {
   it("lists who this identity trusts, with the revoked attestations folded away", async () => {
-    renderApp(`/wallet/identities/${ALICE}`);
+    renderApp(`/identities/${ALICE}`);
     await screen.findByTestId("trust-panel");
 
     const [revoked, unrevoked] = alice.trust;
@@ -127,19 +127,19 @@ describe("state and actions", () => {
     ).toBeInTheDocument();
   });
 
-  it("links each trusted row to the lookup that answers how this wallet knows them", async () => {
-    renderApp(`/wallet/identities/${ALICE}`);
+  it("links each trusted row at the identity page of its subject", async () => {
+    renderApp(`/identities/${ALICE}`);
     await screen.findByTestId("trust-list");
 
     const unrevoked = alice.trust[1];
     const link = within(screen.getByTestId(`trust-row-${unrevoked.attestation_event}`)).getByTestId(
       `trust-subject-${unrevoked.attestation_event}-link`,
     );
-    expect(link).toHaveAttribute("href", `/wallet/lookup/${unrevoked.subject}`);
+    expect(link).toHaveAttribute("href", `/identities/${unrevoked.subject}`);
   });
 
   it("names every operation with one line saying what it does", async () => {
-    renderApp(`/wallet/identities/${ALICE}`);
+    renderApp(`/identities/${ALICE}`);
     await screen.findByTestId("identity-actions");
 
     const actions = [
@@ -154,7 +154,6 @@ describe("state and actions", () => {
       "action-accept",
       "action-admit",
       "action-remove",
-      "action-verify",
       "action-graph",
     ];
     for (const action of actions) {
@@ -170,7 +169,7 @@ describe("state and actions", () => {
   });
 
   it("draws no principals card for a ledger holding nothing but its root", async () => {
-    renderApp(`/wallet/identities/${ACME}`);
+    renderApp(`/identities/${ACME}`);
     await screen.findByTestId("identity-detail");
 
     expect(screen.queryByTestId("principals-panel")).not.toBeInTheDocument();

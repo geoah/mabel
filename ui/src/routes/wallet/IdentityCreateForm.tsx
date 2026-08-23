@@ -7,7 +7,6 @@ import { ErrorEnvelopeView } from "@/components/ErrorEnvelopeView";
 import { Identifier } from "@/components/Identifier";
 import type { ApiError } from "@/api/client";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
@@ -46,14 +45,11 @@ export function IdentityCreateForm({ onCreated }: { onCreated: () => void }) {
   }
 
   return (
-    <Card data-testid="identity-create">
-      <CardHeader>
-        <CardTitle>Create identity</CardTitle>
-        <CardDescription>
-          A founder selects an identity root, its absence a raw root
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
+    <div className="space-y-3">
+      <p className="text-xs text-muted-foreground">
+        A founder selects an identity root, its absence a raw root
+      </p>
+      <div>
         <form onSubmit={submit} className="space-y-3" data-testid="identity-create-form">
           <div className="space-y-1">
             <Label htmlFor="identity-create-alias">alias</Label>
@@ -110,7 +106,7 @@ export function IdentityCreateForm({ onCreated }: { onCreated: () => void }) {
             </p>
           </div>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }

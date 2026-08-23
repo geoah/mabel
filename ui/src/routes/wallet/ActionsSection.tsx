@@ -1,5 +1,3 @@
-import { Link } from "react-router";
-
 import type { Identity, MembershipView } from "@/api/types";
 import { Action } from "@/components/Action";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -132,37 +130,14 @@ export function ActionsSection({
           <RemoveForm identity={identity} memberships={memberships} onAppended={onAppended} />
         </Action>
         <Action
-          testId="action-verify"
-          title="Verify a claim"
-          description="Asks a witness whether one identity trusts another, or whether a ledger is valid."
-        >
-          <p className="text-sm">
-            Verification reads a source and reports what it holds; it appends nothing.
-          </p>
-          <Link
-            to="/wallet/verify"
-            data-testid="action-verify-link"
-            className="inline-flex min-h-10 items-center text-sm underline"
-          >
-            Open the verify screen
-          </Link>
-        </Action>
-        <Action
           testId="action-graph"
           title="Synchronize the trust graph"
-          description="Crawls out from this node's identities so lookups can answer how you know someone."
+          description="Crawls out from this node's identities so a foreign page can answer how you know someone."
         >
           <p className="text-sm">
             Synchronizing is manual and there is no timer. Sync graph sits in the header, beside
             the menu, with the counts of the crawl this home holds.
           </p>
-          <Link
-            to="/wallet/lookup"
-            data-testid="action-graph-link"
-            className="inline-flex min-h-10 items-center text-sm underline"
-          >
-            Open the lookup and graph screen
-          </Link>
         </Action>
       </CardContent>
     </Card>

@@ -7,6 +7,14 @@ import { server } from "@/mocks/server";
 
 import { renderApp } from "./render";
 
+/** The create form is folded away on the wallet page; every test opens it. */
+async function openCreateForm() {
+  const rendered = renderApp("/wallet");
+  await screen.findByTestId("identity-cards");
+  await rendered.user.click(screen.getByTestId("identity-create-summary"));
+  return rendered;
+}
+
 describe("identity create", () => {
   it("posts alias and declared_kind and lists the new identity", async () => {
     const bodies: unknown[] = [];
@@ -16,8 +24,7 @@ describe("identity create", () => {
       }
     });
 
-    const { user } = renderApp("/wallet");
-    await screen.findByTestId("identity-list");
+    const { user } = await openCreateForm();
 
     await user.type(screen.getByTestId("identity-create-alias"), "carol");
     await user.selectOptions(screen.getByTestId("identity-create-declared-kind"), "organization");
@@ -28,11 +35,11 @@ describe("identity create", () => {
     expect(identityId).toHaveLength(52);
     expect(bodies).toEqual([{ alias: "carol", declared_kind: "organization" }]);
 
-    const row = await screen.findByTestId(`identity-row-${identityId}`);
-    expect(within(row).getByText("carol")).toBeInTheDocument();
-    expect(screen.getByTestId(`identity-declared-kind-${identityId}`)).toHaveTextContent(
-      "organization",
-    );
+    const card = await screen.findByTestId(`identity-card-${identityId}`);
+    expect(within(card).getByText("carol")).toBeInTheDocument();
+    expect(
+      within(card).getByTestId(`identity-card-declared-kind-${identityId}`),
+    ).toHaveTextContent("organization");
   });
 
   it("sends founder only when one is given, for an identity-rooted ledger", async () => {
@@ -43,8 +50,7 @@ describe("identity create", () => {
       }
     });
 
-    const { user } = renderApp("/wallet");
-    await screen.findByTestId("identity-list");
+    const { user } = await openCreateForm();
     const founder = "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq";
 
     await user.type(screen.getByTestId("identity-create-alias"), "acme two");
@@ -59,8 +65,7 @@ describe("identity create", () => {
   });
 
   it("renders the code 2 envelope when the node rejects a missing alias", async () => {
-    const { user } = renderApp("/wallet");
-    await screen.findByTestId("identity-list");
+    const { user } = await openCreateForm();
 
     await user.click(screen.getByTestId("identity-create-submit"));
 
@@ -82,8 +87,7 @@ describe("identity create", () => {
       ),
     );
 
-    const { user } = renderApp("/wallet");
-    await screen.findByTestId("identity-list");
+    const { user } = await openCreateForm();
     await user.type(screen.getByTestId("identity-create-alias"), "robot");
     await user.selectOptions(screen.getByTestId("identity-create-declared-kind"), "agent");
     await user.click(screen.getByTestId("identity-create-submit"));

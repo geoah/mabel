@@ -178,6 +178,8 @@ interface ResolvedIdentityProps {
   testId?: string;
   /** Routes the id, for the ids that address a screen. */
   to?: string;
+  /** Drops the id's expand and copy buttons, for a name drawn inside a link. */
+  plain?: boolean;
   className?: string;
 }
 
@@ -190,6 +192,7 @@ export function ResolvedIdentity({
   stale = false,
   testId,
   to,
+  plain = false,
   className,
 }: ResolvedIdentityProps) {
   const duplicates = useContext(DuplicateNameContext);
@@ -214,6 +217,7 @@ export function ResolvedIdentity({
       <Identifier
         value={identity.identity_id}
         full={shared}
+        plain={plain}
         to={to}
         linkTestId={testId && `${testId}-link`}
         className="text-muted-foreground"

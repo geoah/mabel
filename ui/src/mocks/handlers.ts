@@ -78,6 +78,11 @@ export const handlers = [
     return answer(() => store.setContact(String(params.identityId), body as Body));
   }),
 
+  http.post("/api/identities/:identityId/fetch", async ({ params, request }) => {
+    const body = await request.json();
+    return answer(() => store.fetchIdentity(String(params.identityId), body as Body));
+  }),
+
   http.get("/api/identities/:identityId/memberships", ({ params }) =>
     answer(() => store.memberships(String(params.identityId))),
   ),
@@ -137,37 +142,21 @@ export const handlers = [
     return answer(() => store.syncPush(body as Body));
   }),
 
-  http.post("/api/verify", async ({ request }) => {
-    const body = (await request.json()) as Body;
-    if (body.kind === "ledger") {
-      return answer(() =>
-        store.verifyLedger({
-          kind: "ledger",
-          ledger_id: String(body.ledger_id),
-          from: (body.from as string | null) ?? null,
-        }),
-      );
-    }
-    if (body.kind === "trust") {
-      return answer(() =>
-        store.verifyTrust({
-          kind: "trust",
-          issuer: String(body.issuer),
-          subject: String(body.subject),
-          from: (body.from as string | null) ?? null,
-        }),
-      );
-    }
-    return HttpResponse.json(
-      {
-        ok: false,
-        code: 10,
-        message: "Schema error: kind must be one of trust, ledger",
-        details: { reason: "unknown_enum_value", field: "kind", value: String(body.kind) },
-      },
-      { status: 400 },
+  http.get("/api/witnesses", () => answer(() => store.listWitnesses())),
+
+  http.get("/api/witnesses/:endpointId/ledgers", ({ params, request }) => {
+    const url = new URL(request.url);
+    return answer(() =>
+      store.witnessLedgerList(String(params.endpointId), {
+        offset: number(url, "offset"),
+        limit: number(url, "limit"),
+      }),
     );
   }),
+
+  http.get("/api/resolve/:hostname", ({ params }) =>
+    answer(() => store.resolveHostname(String(params.hostname))),
+  ),
 
   // The witness routes, all of them reads.
 

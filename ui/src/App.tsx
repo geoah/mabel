@@ -1,22 +1,26 @@
 import { useState } from "react";
-import { NavLink, Navigate, Route, Routes, useLocation } from "react-router";
+import { NavLink, Navigate, Route, Routes, useParams } from "react-router";
 
+import { getNode } from "@/api/client";
+import { useResource } from "@/hooks/useResource";
 import { cn } from "@/lib/utils";
 import { useDeveloperMode } from "@/lib/preferences";
+import { IdentityPage } from "@/routes/identity/IdentityPage";
 import { GraphSyncControl } from "@/routes/wallet/GraphSyncControl";
-import { IdentityDetail } from "@/routes/wallet/IdentityDetail";
-import { LookupPage } from "@/routes/wallet/LookupPage";
-import { VerifyPage } from "@/routes/wallet/VerifyPage";
 import { WalletHome } from "@/routes/wallet/WalletHome";
 import { WitnessHome } from "@/routes/witness/WitnessHome";
 import { WitnessLedgerDetail } from "@/routes/witness/WitnessLedgerDetail";
+import { WitnessLedgersPage } from "@/routes/witnesses/WitnessLedgersPage";
+import { WitnessesPage } from "@/routes/witnesses/WitnessesPage";
 
-const LINKS = [
+/** Two entries, and no third: the wallet is a list of identities and a list of witnesses. */
+const WALLET_LINKS = [
   { to: "/wallet", label: "Wallet", testId: "nav-wallet" },
-  { to: "/wallet/lookup", label: "Lookup", testId: "nav-lookup" },
-  { to: "/wallet/verify", label: "Verify", testId: "nav-verify" },
-  { to: "/witness", label: "Witness", testId: "nav-witness" },
+  { to: "/witnesses", label: "Witnesses", testId: "nav-witnesses" },
 ];
+
+/** A witness node serves no wallet, so its nav names the one screen it has. */
+const WITNESS_LINKS = [{ to: "/witness", label: "Ledgers", testId: "nav-witness" }];
 
 /**
  * The header menu holding the developer-mode toggle (decision 014). The panel
@@ -61,13 +65,22 @@ function AppMenu() {
   );
 }
 
+/** The two routes the wallet kept from before proposal 004, pointed at the identity page. */
+function RedirectToIdentity() {
+  const { identityId = "" } = useParams();
+  return <Navigate to={`/identities/${identityId}`} replace />;
+}
+
 export function App() {
-  const wallet = useLocation().pathname.startsWith("/wallet");
+  // A node has one role. The witness binary serves this same bundle, and its
+  // debug route is the only screen there: it holds no identities to list.
+  const node = useResource(getNode, []);
+  const witness = node.data?.role === "witness";
+  const links = witness ? WITNESS_LINKS : WALLET_LINKS;
 
   return (
     // pb-20 keeps the last card clear of the bar the nav becomes on a phone.
-    // The wider cap on xl is what lets the nine-column witness table fit.
-    <div className="mx-auto max-w-6xl px-3 pt-3 pb-20 sm:px-4 sm:pt-4 md:pb-4 xl:max-w-7xl">
+    <div className="mx-auto max-w-6xl px-3 pt-3 pb-20 sm:px-4 sm:pt-4 md:pb-4">
       <header className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 border-b pb-3">
         <span className="text-sm font-semibold" data-testid="app-title">
           mabel
@@ -77,7 +90,7 @@ export function App() {
           bottom bar below it, where a thumb reaches it.
         */}
         <nav className="flex max-md:fixed max-md:inset-x-0 max-md:bottom-0 max-md:z-20 max-md:border-t max-md:bg-background md:gap-3">
-          {LINKS.map((link) => (
+          {links.map((link) => (
             <NavLink
               key={link.to}
               to={link.to}
@@ -96,19 +109,21 @@ export function App() {
         </nav>
         <div className="ml-auto flex items-center gap-2">
           {/* The graph is the wallet's own crawl; a witness never runs one. */}
-          {wallet && <GraphSyncControl />}
+          {!witness && <GraphSyncControl />}
           <AppMenu />
         </div>
       </header>
       <Routes>
-        <Route path="/" element={<Navigate to="/wallet" replace />} />
+        <Route path="/" element={<Navigate to={witness ? "/witness" : "/wallet"} replace />} />
         <Route path="/wallet" element={<WalletHome />} />
-        <Route path="/wallet/verify" element={<VerifyPage />} />
-        <Route path="/wallet/lookup" element={<LookupPage />} />
-        <Route path="/wallet/lookup/:identityId" element={<LookupPage />} />
-        <Route path="/wallet/identities/:identityId" element={<IdentityDetail />} />
+        <Route path="/identities/:identityId" element={<IdentityPage />} />
+        <Route path="/witnesses" element={<WitnessesPage />} />
+        <Route path="/witnesses/:endpointId" element={<WitnessLedgersPage />} />
         <Route path="/witness" element={<WitnessHome />} />
         <Route path="/witness/ledgers/:ledgerId" element={<WitnessLedgerDetail />} />
+        {/* Bookmarks from the four-tab wallet, so no saved link 404s. */}
+        <Route path="/wallet/identities/:identityId" element={<RedirectToIdentity />} />
+        <Route path="/wallet/lookup/:identityId" element={<RedirectToIdentity />} />
         <Route path="*" element={<p data-testid="route-not-found">no such route</p>} />
       </Routes>
     </div>

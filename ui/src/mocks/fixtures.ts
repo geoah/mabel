@@ -16,14 +16,15 @@ import witnessesFixture from "@contracts/http/wallet-post-identity-witnesses.jso
 import trustFixture from "@contracts/http/wallet-post-trust.json";
 import revokeFixture from "@contracts/http/wallet-post-trust-revoke.json";
 import syncPushFixture from "@contracts/http/wallet-post-sync-push.json";
-import verifyFixture from "@contracts/http/wallet-post-verify.json";
+import knownWitnessesFixture from "@contracts/http/wallet-get-witnesses.json";
+import witnessLedgersFixture from "@contracts/http/wallet-get-witness-ledgers.json";
+import resolveFixture from "@contracts/http/wallet-get-resolve.json";
+import fetchFixture from "@contracts/http/wallet-post-identity-fetch.json";
 import witnessNodeFixture from "@contracts/http/witness-get-node.json";
 import ledgerEventsFixture from "@contracts/http/witness-get-ledger-events.json";
 import ledgersFixture from "@contracts/http/witness-get-ledgers.json";
 import ledgerEntryFixture from "@contracts/http/witness-get-ledger.json";
 import forksFixture from "@contracts/http/witness-get-forks.json";
-import verifyTrustCases from "@contracts/cli/verify-trust.json";
-import verifyLedgerCases from "@contracts/cli/verify-ledger.json";
 import cliErrors from "@contracts/cli/errors.json";
 
 import type {
@@ -44,10 +45,9 @@ import type {
   RevokeTrustResponse,
   SyncPushResponse,
   Verification,
-  VerifyLedgerReport,
-  VerifyTrustReport,
   WalletNodeInfo,
   WitnessNodeInfo,
+  WitnessSummary,
 } from "@/api/types";
 
 export const walletNode = walletNodeFixture.response as WalletNodeInfo;
@@ -58,8 +58,37 @@ export const witnessConfigAppend = witnessesFixture.response as AppendResponse;
 export const trustAppend = trustFixture.response as AppendResponse;
 export const trustRevoke = revokeFixture.response as RevokeTrustResponse;
 export const syncPush = syncPushFixture.response as SyncPushResponse;
-export const verifyTrust = verifyFixture.response as VerifyTrustReport;
 export const seedLedgerEvents = ledgerEventsFixture.response as LedgerPageResponse;
+
+/** GET /api/witnesses, the three endpoints the frozen answer names. */
+export const knownWitnesses = knownWitnessesFixture.response.witnesses as WitnessSummary[];
+/**
+ * The endpoint the frozen witness list carries that no ledger of this home
+ * names and node.json does not default to. The mock hands it to acme so both
+ * the "node default" marker and the unreachable drill-in have a case.
+ */
+export const UNREACHABLE_WITNESS = knownWitnesses.find(
+  (witness) => !witness.is_node_default,
+)!.endpoint_id;
+/** The reachable witness the drill-in answers for, a node default. */
+export const REACHABLE_WITNESS = witnessLedgersFixture.response.endpoint_id;
+/** GET /api/witnesses/:endpoint_id/ledgers, unreachable: 502 witness_unreachable. */
+export const witnessUnreachableError = witnessLedgersFixture.errors[2] as {
+  status: number;
+  body: ErrorEnvelope;
+};
+/** GET /api/resolve/:hostname, the hostname alice's profile claims. */
+export const resolvedHostname = resolveFixture.response as {
+  ok: true;
+  hostname: string;
+  identity_id: string;
+  status: string;
+};
+/** POST /api/identities/:identity_id/fetch, refused because no source holds it. */
+export const fetchNotHeldError = fetchFixture.errors[1] as {
+  status: number;
+  body: ErrorEnvelope;
+};
 
 /** POST /api/identities/:identity_id/profile, the whole-document replacement. */
 export const profileReplaced = profileFixture.response as ReplaceProfileResponse;
@@ -138,25 +167,6 @@ export function seedEdges(): { from: string; to: string; attestation_event: stri
     },
   ];
 }
-
-function verifyTrustCase(name: string): VerifyTrustReport {
-  const found = verifyTrustCases.cases.find((entry) => entry.case === name);
-  if (!found) {
-    throw new Error(`no verify trust fixture case named ${name}`);
-  }
-  return found.document as VerifyTrustReport;
-}
-
-/** contracts/cli/verify-trust.json, one unrevoked attestation in 0..=head. */
-export const verifyTrustTrusted = verifyTrustCase("trusted");
-/** contracts/cli/verify-trust.json, every attestation revoked. */
-export const verifyTrustRevoked = verifyTrustCase("not-trusted-because-revoked");
-/** contracts/cli/verify-trust.json, no queried source holds the subject. */
-export const verifyTrustUnresolved = verifyTrustCase("unresolved-subject");
-
-export const verifyLedgerValid = verifyLedgerCases.cases[0].document as VerifyLedgerReport;
-/** Partial validity is a failure: exit 20 with the report fields under details. */
-export const verifyLedgerPartial = verifyLedgerCases.cases[1].document as ErrorEnvelope;
 
 /** Named error bodies the handlers and the tests reuse, one per exit-code class. */
 export const errors = {
@@ -289,8 +299,10 @@ function syntheticEntry(
   headSeq: number,
   forkCount: number,
   forksTruncated: boolean,
+  /** The id to mint the ledger under, when it is not the repeated tag. */
+  namedId?: string,
 ): LedgerSummary {
-  const ledgerId = tag.repeat(26);
+  const ledgerId = namedId ?? tag.repeat(26);
   const firstSeen = 1700000300000;
   return {
     ledger_id: ledgerId,
@@ -314,6 +326,9 @@ export const SYNTHETIC_ENTRIES: LedgerSummary[] = [
   syntheticEntry("gh", "person", 2, 128, true),
   syntheticEntry("mn", "agent", 1, 0, false),
   syntheticEntry("tv", "service", 2, 0, false),
+  // Bob is the foreign identity the fixtures name everywhere and this home
+  // holds no ledger for, so a witness holding him is what a fetch can pull.
+  syntheticEntry("bo", "person", 3, 0, false, BOB),
 ];
 
 /**

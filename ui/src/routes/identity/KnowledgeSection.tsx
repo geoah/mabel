@@ -13,13 +13,15 @@ import { Identifier } from "@/components/Identifier";
 import { KeyValue, KeyValueTable } from "@/components/KeyValue";
 import { ResolvedIdentity, ResolvedIdentityScope } from "@/components/ResolvedIdentity";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useResource } from "@/hooks/useResource";
 import { describeAge, formatTimestamp } from "@/lib/time";
+import { GraphStalenessBanner, useGraphSync } from "@/routes/wallet/GraphSyncControl";
 
 /**
- * How far a lookup expands in place. The screen itself is level 0, so a reader
- * can open a name and open one name inside it, and no further: a lookup that
- * kept expanding would walk the whole crawl (proposal 003 section 4).
+ * How far the section expands in place. The identity page itself is level 0, so
+ * a reader can open a name and open one name inside it, and no further: a walk
+ * that kept expanding would render the whole crawl (proposal 003 section 4).
  */
 export const MAX_LEVEL = 2;
 
@@ -73,7 +75,7 @@ function Hop({ hop, testId }: { hop: LookupHop; testId: string }) {
       <ResolvedIdentity
         identity={hop.to}
         testId={`${testId}-to`}
-        to={`/wallet/lookup/${hop.to.identity_id}`}
+        to={`/identities/${hop.to.identity_id}`}
       />
       <span data-testid={`${testId}-fetched`} className="text-xs text-muted-foreground">
         read {describeAge(hop.fetched_at_ms)}
@@ -90,10 +92,7 @@ function Hop({ hop, testId }: { hop: LookupHop; testId: string }) {
         </span>
       </DeveloperOnly>
       {hop.equivocation && (
-        <EquivocationNotice
-          equivocation={hop.equivocation}
-          testId={`${testId}-equivocation`}
-        />
+        <EquivocationNotice equivocation={hop.equivocation} testId={`${testId}-equivocation`} />
       )}
     </li>
   );
@@ -115,15 +114,12 @@ function EntryRow({
   const expandable = level < MAX_LEVEL;
 
   return (
-    <li
-      data-testid={`lookup-${kind}-row-${identity.identity_id}`}
-      className="space-y-1 py-2"
-    >
+    <li data-testid={`lookup-${kind}-row-${identity.identity_id}`} className="space-y-1 py-2">
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <ResolvedIdentity
           identity={identity}
           testId={`lookup-${kind}-name-${identity.identity_id}`}
-          to={`/wallet/lookup/${identity.identity_id}`}
+          to={`/identities/${identity.identity_id}`}
         />
         {expandable ? (
           <Button
@@ -141,7 +137,7 @@ function EntryRow({
             data-testid={`lookup-${kind}-expand-limit-${identity.identity_id}`}
             className="ml-auto text-xs text-muted-foreground"
           >
-            two levels is the cap; open this name for its own lookup
+            two levels is the cap; open this name for its own page
           </span>
         )}
       </div>
@@ -175,7 +171,7 @@ function Expansion({
       {response.error && (
         <ErrorEnvelopeView error={response.error} testId={`lookup-${kind}-expansion-error`} />
       )}
-      {response.data && <LookupBody response={response.data} level={level} />}
+      {response.data && <KnowledgeBody response={response.data} level={level} />}
     </div>
   );
 }
@@ -202,16 +198,16 @@ function Degrees({ response, level }: { response: LookupResponse; level: number 
 }
 
 /**
- * One lookup answer: how the selected identity reaches this one, who this one
- * trusts, and who this crawl saw attesting to it. The same body renders the
- * screen and every expansion inside it, so no nested list can drop the
- * best-effort label or the staleness of the hop it came from.
+ * One crawl answer: how a local identity reaches this one, who this one trusts,
+ * and who this crawl saw attesting to it. The same body renders the section and
+ * every expansion inside it, so no nested list can drop the best-effort label or
+ * the staleness of the hop it came from.
  *
  * Testids repeat between an expansion and the list that opened it, on purpose:
  * every nested list sits inside its own `lookup-trust-expansion-<id>` or
  * `lookup-reverse-expansion-<id>`, which is what a reader of the DOM scopes by.
  */
-export function LookupBody({
+export function KnowledgeBody({
   response,
   level,
 }: {
@@ -227,29 +223,25 @@ export function LookupBody({
   return (
     <div className="space-y-3">
       <Degrees response={response} level={level} />
-      {level === 0 && (
-        <div className="space-y-2">
-          {response.paths.length > 0 && (
-            <div data-testid="lookup-paths" className="space-y-2">
-              {response.paths.map((path, index) => (
-                <div
-                  key={path.hops.map((hop) => hop.attestation_event).join("-")}
-                  data-testid={`lookup-path-${index}`}
-                  className="rounded-md border px-2"
-                >
-                  <ul className="divide-y">
-                    {path.hops.map((hop, hopIndex) => (
-                      <Hop
-                        key={hop.attestation_event}
-                        hop={hop}
-                        testId={`lookup-hop-${index}-${hopIndex}`}
-                      />
-                    ))}
-                  </ul>
-                </div>
-              ))}
+      {level === 0 && response.paths.length > 0 && (
+        <div data-testid="lookup-paths" className="space-y-2">
+          {response.paths.map((path, index) => (
+            <div
+              key={path.hops.map((hop) => hop.attestation_event).join("-")}
+              data-testid={`lookup-path-${index}`}
+              className="rounded-md border px-2"
+            >
+              <ul className="divide-y">
+                {path.hops.map((hop, hopIndex) => (
+                  <Hop
+                    key={hop.attestation_event}
+                    hop={hop}
+                    testId={`lookup-hop-${index}-${hopIndex}`}
+                  />
+                ))}
+              </ul>
             </div>
-          )}
+          ))}
         </div>
       )}
       <ResolvedIdentityScope identities={listed}>
@@ -297,5 +289,61 @@ export function LookupBody({
         </div>
       </ResolvedIdentityScope>
     </div>
+  );
+}
+
+/**
+ * How you know them: the section a foreign identity's page carries. It answers
+ * from one local root, in named hops with the freshness of each, and it says
+ * what the crawl did not reach rather than implying it does not exist.
+ */
+export function KnowledgeSection({ response }: { response: LookupResponse }) {
+  const sync = useGraphSync();
+  // The paths already carry the equivocation of every node they reach, so the
+  // heading only warns about one no hop is going to show.
+  const onAPath = response.paths.some((path) =>
+    path.hops.some(
+      (hop) => hop.equivocation !== null && hop.to.identity_id === response.identity.identity_id,
+    ),
+  );
+
+  return (
+    <Card data-testid="lookup-result">
+      <CardHeader>
+        <CardTitle>How you know them</CardTitle>
+        <CardDescription>
+          <span className="inline-flex flex-wrap items-baseline gap-2">
+            answered from
+            <ResolvedIdentity identity={response.from} testId="lookup-from" />
+          </span>
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <GraphStalenessBanner
+          stale={response.graph_stale}
+          lastSyncMs={response.last_sync_ms}
+          sync={sync}
+          testId="lookup-graph-stale"
+        />
+        {response.graph_truncated && (
+          <details data-testid="lookup-graph-truncated" className="rounded-md border">
+            <summary className="flex min-h-11 cursor-pointer list-none items-center px-3 py-2 text-sm marker:content-none hover:bg-accent">
+              <span>
+                the crawl behind this answer stopped early, truncated by{" "}
+                <span className="font-mono text-xs">{response.truncated_by}</span>
+              </span>
+            </summary>
+            <p className="border-t px-3 py-2 text-sm">
+              A truncated crawl reached fewer identities than exist. A missing path here means
+              this crawl found none, not that none exists.
+            </p>
+          </details>
+        )}
+        {response.equivocation && !onAPath && (
+          <EquivocationNotice equivocation={response.equivocation} testId="lookup-equivocation" />
+        )}
+        <KnowledgeBody response={response} level={0} />
+      </CardContent>
+    </Card>
   );
 }

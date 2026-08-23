@@ -33,7 +33,7 @@ async function open(route: string) {
 }
 
 async function invite(): Promise<string> {
-  const { user } = await open(`/wallet/identities/${ALICE}`);
+  const { user } = await open(`/identities/${ALICE}`);
   fill("invite-descriptor", DESCRIPTOR);
   await user.click(screen.getByTestId("invite-submit"));
 
@@ -44,7 +44,7 @@ async function invite(): Promise<string> {
 }
 
 async function accept(bundle: string): Promise<string> {
-  const { user } = await open(`/wallet/identities/${ACME}`);
+  const { user } = await open(`/identities/${ACME}`);
   fill("accept-bundle", bundle);
   await user.click(screen.getByTestId("accept-submit"));
 
@@ -71,7 +71,7 @@ describe("membership", () => {
     expect(acceptance.length).toBeGreaterThan(0);
     cleanup();
 
-    const { user } = await open(`/wallet/identities/${ALICE}`);
+    const { user } = await open(`/identities/${ALICE}`);
     fill("admit-acceptance", acceptance);
     await user.click(screen.getByTestId("admit-submit"));
 
@@ -99,7 +99,7 @@ describe("membership", () => {
     const acceptance = await accept(bundle);
     cleanup();
 
-    const { user } = await open(`/wallet/identities/${ALICE}`);
+    const { user } = await open(`/identities/${ALICE}`);
     fill("admit-acceptance", acceptance);
     await user.click(screen.getByTestId("admit-submit"));
     await screen.findByTestId("admit-result");
@@ -119,7 +119,7 @@ describe("membership", () => {
 
     // The bundle invites Acme; reading it in Alice's own wallet is not the
     // invitee, which the node answers before it signs anything.
-    const { user } = await open(`/wallet/identities/${ALICE}`);
+    const { user } = await open(`/identities/${ALICE}`);
     fill("accept-bundle", bundle);
     await user.click(screen.getByTestId("accept-submit"));
 

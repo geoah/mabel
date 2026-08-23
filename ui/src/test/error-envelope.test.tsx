@@ -38,7 +38,7 @@ describe("error envelope", () => {
 
   it("renders the code 30 envelope when a push reaches no witness", async () => {
     // acme carries an empty witness set in the fixtures.
-    const { user } = renderApp(`/wallet/identities/${ACME}`);
+    const { user } = renderApp(`/identities/${ACME}`);
     await screen.findByTestId("identity-detail");
 
     await user.click(screen.getByTestId("sync-push-submit"));
@@ -58,7 +58,7 @@ describe("error envelope", () => {
       ),
     );
 
-    const { user } = renderApp(`/wallet/identities/${ALICE}`);
+    const { user } = renderApp(`/identities/${ALICE}`);
     await screen.findByTestId("identity-detail");
     await user.type(screen.getByTestId("witness-add-endpoint"), "a".repeat(52));
     await user.click(screen.getByTestId("witness-add-submit"));

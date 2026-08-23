@@ -4,23 +4,39 @@ import {
   acceptInvitation,
   admit,
   ApiError,
+  fetchIdentity,
   forceVerification,
   getContact,
   getGraph,
   getIdentity,
   getMemberships,
   invite,
+  listIdentities,
+  listWitnessLedgers,
+  listWitnesses,
   lookup,
   removePrincipal,
   replaceProfile,
+  resolveHostname,
   setContact,
   syncGraph,
 } from "@/api/client";
-import { ACME, ALICE, BOB, CAROL, seedContact, seedGraph, seedIdentities } from "@/mocks/fixtures";
+import {
+  ACME,
+  ALICE,
+  BOB,
+  CAROL,
+  REACHABLE_WITNESS,
+  UNREACHABLE_WITNESS,
+  seedContact,
+  seedGraph,
+  seedIdentities,
+} from "@/mocks/fixtures";
+import { MISMATCHED_HOSTNAME, UNREACHABLE_HOSTNAME } from "@/mocks/store";
 
 /**
- * The seven routes ticket 026 added, driven through the client against the mock
- * store, so dev mode and demo mode answer the same documents the tests assert.
+ * Every wallet route driven through the client against the mock store, so dev
+ * mode and demo mode answer the same documents the component tests assert.
  */
 
 async function rejection(run: () => Promise<unknown>): Promise<ApiError> {
@@ -219,5 +235,103 @@ describe("profile and verification", () => {
 
     expect(error.status).toBe(409);
     expect(error.reason).toBe("no_hostname_claimed");
+  });
+});
+
+describe("witnesses", () => {
+  it("names every endpoint a stored ledger or node.json points at", async () => {
+    const response = await listWitnesses();
+    const named = new Map(
+      response.witnesses.map((witness) => [witness.endpoint_id, witness]),
+    );
+
+    expect(named.get(REACHABLE_WITNESS)?.is_node_default).toBe(true);
+    expect(named.get(REACHABLE_WITNESS)?.named_by).toEqual([ALICE]);
+    expect(named.get(UNREACHABLE_WITNESS)?.is_node_default).toBe(false);
+    expect(named.get(UNREACHABLE_WITNESS)?.named_by).toEqual([ACME]);
+    // Ascending endpoint id, like every other list this node serves.
+    const ids = response.witnesses.map((witness) => witness.endpoint_id);
+    expect(ids).toEqual([...ids].sort());
+  });
+
+  it("proxies the ledger list of a witness it can reach", async () => {
+    const response = await listWitnessLedgers(REACHABLE_WITNESS);
+
+    expect(response.endpoint_id).toBe(REACHABLE_WITNESS);
+    const alice = response.ledgers.find((ledger) => ledger.ledger_id === ALICE);
+    expect(alice?.declared_kind).toBe("person");
+    expect(alice?.fork_count).toBe(1);
+  });
+
+  it("answers 502 witness_unreachable for a witness it cannot dial", async () => {
+    const error = await rejection(() => listWitnessLedgers(UNREACHABLE_WITNESS));
+
+    expect(error.status).toBe(502);
+    expect(error.reason).toBe("witness_unreachable");
+    expect(error.code).toBe(30);
+  });
+
+  it("refuses an endpoint id that is not 52 base32 characters", async () => {
+    const error = await rejection(() => listWitnessLedgers("witness-one"));
+
+    expect(error.status).toBe(400);
+    expect(error.reason).toBe("malformed_endpoint_id");
+  });
+});
+
+describe("resolve", () => {
+  it("names the identity whose profile claims the hostname", async () => {
+    const response = await resolveHostname("alice.example");
+
+    expect(response.status).toBe("resolved");
+    expect(response.identity_id).toBe(ALICE);
+  });
+
+  it.each([
+    ["nobody.example", "no_record"],
+    [MISMATCHED_HOSTNAME, "mismatched_records"],
+    [UNREACHABLE_HOSTNAME, "unreachable"],
+  ])("answers %s with status %s and no identity", async (hostname, status) => {
+    const response = await resolveHostname(hostname);
+
+    expect(response.status).toBe(status);
+    expect(response.identity_id).toBeNull();
+  });
+
+  it("refuses a string that cannot be a hostname", async () => {
+    const error = await rejection(() => resolveHostname("alice_example"));
+
+    expect(error.status).toBe(400);
+    expect(error.reason).toBe("malformed_hostname");
+  });
+});
+
+describe("fetch", () => {
+  it("stores a ledger a witness holds and leaves it uncontrolled", async () => {
+    const response = await fetchIdentity(BOB, { from: null });
+
+    expect(response.ledger_id).toBe(BOB);
+    expect(response.stored).toBe(response.event_count);
+    expect(response.controlled_by).toBeNull();
+
+    const stored = await getIdentity(BOB);
+    expect(stored.identity.head_seq).toBe(response.head_seq);
+    // Stored is not controlled: the wallet's own list does not grow.
+    const listed = (await listIdentities()).identities.map((entry) => entry.identity_id);
+    expect(listed).toEqual([ACME, ALICE]);
+  });
+
+  it("stores nothing the second time and reports that", async () => {
+    await fetchIdentity(BOB, { from: null });
+    const again = await fetchIdentity(BOB, { from: null });
+
+    expect(again.stored).toBe(0);
+  });
+
+  it("answers 502 ledger_not_held when no source holds the ledger", async () => {
+    const error = await rejection(() => fetchIdentity(CAROL, { from: null }));
+
+    expect(error.status).toBe(502);
+    expect(error.reason).toBe("ledger_not_held");
   });
 });

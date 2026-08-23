@@ -1,12 +1,8 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
-import {
-  DEVELOPER_MODE_KEY,
-  GRAPH_CONSENT_KEY,
-  SELECTED_IDENTITY_KEY,
-} from "@/lib/preferences";
-import { ACME, ALICE, seedGraph } from "@/mocks/fixtures";
+import { DEVELOPER_MODE_KEY, GRAPH_CONSENT_KEY } from "@/lib/preferences";
+import { ALICE, seedGraph } from "@/mocks/fixtures";
 
 import { renderApp } from "./render";
 
@@ -15,90 +11,39 @@ async function openDeveloperMode(user: ReturnType<typeof renderApp>["user"]) {
   await user.click(screen.getByTestId("developer-mode-toggle"));
 }
 
-describe("identity selector", () => {
-  it("lists every identity by name with its id beside it", async () => {
+describe("navigation", () => {
+  it("holds two entries and nothing else", async () => {
     renderApp("/wallet");
-    await screen.findByTestId("identity-selector");
+    await screen.findByTestId("identity-cards");
 
-    const acme = screen.getByTestId(`identity-selector-name-${ACME}`);
-    expect(within(acme).getByTestId(`identity-selector-name-${ACME}-name`)).toHaveTextContent(
-      "Acme Corporation",
-    );
-    expect(acme.querySelector("[data-value]")).toHaveAttribute("data-value", ACME);
-    const alice = screen.getByTestId(`identity-selector-name-${ALICE}`);
-    expect(within(alice).getByTestId(`identity-selector-name-${ALICE}-verification`)).toHaveAttribute(
-      "data-verification",
-      "verified",
-    );
+    expect(screen.getByTestId("nav-wallet")).toHaveTextContent("Wallet");
+    expect(screen.getByTestId("nav-witnesses")).toHaveTextContent("Witnesses");
+    expect(screen.getAllByRole("link", { name: /^(Wallet|Witnesses)$/ })).toHaveLength(2);
+    expect(screen.queryByTestId("nav-lookup")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("nav-verify")).not.toBeInTheDocument();
   });
 
-  it("selects the lowest identity id until a choice is made", async () => {
-    renderApp("/wallet");
-    await screen.findByTestId("identity-selector");
-
-    expect(screen.getByTestId("identity-selector-selected")).toHaveAttribute(
-      "data-identity-id",
-      ACME,
-    );
-    expect(globalThis.localStorage.getItem(SELECTED_IDENTITY_KEY)).toBeNull();
-  });
-
-  it("remembers the choice under mabel.selected_identity", async () => {
+  it("walks from the wallet to the witnesses and back", async () => {
     const { user } = renderApp("/wallet");
-    await screen.findByTestId("identity-selector");
+    await screen.findByTestId("identity-cards");
 
-    await user.click(screen.getByTestId(`identity-selector-option-${ALICE}`));
+    await user.click(screen.getByTestId("nav-witnesses"));
+    await screen.findByTestId("witness-cards");
 
-    expect(globalThis.localStorage.getItem(SELECTED_IDENTITY_KEY)).toBe(ALICE);
-    expect(screen.getByTestId("identity-selector-selected")).toHaveAttribute(
-      "data-identity-id",
-      ALICE,
-    );
+    await user.click(screen.getByTestId("nav-wallet"));
+    await screen.findByTestId("identity-cards");
   });
 
-  it("restores the remembered choice on the next load", async () => {
-    globalThis.localStorage.setItem(SELECTED_IDENTITY_KEY, ALICE);
-    renderApp("/wallet");
-    await screen.findByTestId("identity-selector");
+  it("answers 'no such route' for the removed verify screen", async () => {
+    renderApp("/wallet/verify");
 
-    expect(screen.getByTestId("identity-selector-selected")).toHaveAttribute(
-      "data-identity-id",
-      ALICE,
-    );
-    expect(
-      screen.getByTestId(`identity-selector-option-${ALICE}`),
-    ).toBeChecked();
+    expect(await screen.findByTestId("route-not-found")).toBeInTheDocument();
   });
 });
 
 describe("developer mode", () => {
-  it("is off by default and holds the node's endpoint id and binds", async () => {
-    renderApp("/wallet");
-    await screen.findByTestId("node-role");
-
-    expect(screen.queryByTestId("node-endpoint-id")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("node-witnesses")).not.toBeInTheDocument();
-    expect(screen.getByTestId("node-role")).toHaveTextContent("wallet");
-  });
-
-  it("reveals them from the header menu and remembers the toggle", async () => {
-    const { user } = renderApp("/wallet");
-    await screen.findByTestId("node-role");
-
-    await openDeveloperMode(user);
-
-    expect(globalThis.localStorage.getItem(DEVELOPER_MODE_KEY)).toBe("1");
-    expect(screen.getByTestId("node-endpoint-id")).toBeInTheDocument();
-    expect(screen.getByTestId("node-version")).toBeInTheDocument();
-
-    await user.click(screen.getByTestId("developer-mode-toggle"));
-
-    expect(globalThis.localStorage.getItem(DEVELOPER_MODE_KEY)).toBe("0");
-    expect(screen.queryByTestId("node-endpoint-id")).not.toBeInTheDocument();
-  });
-
-  it("holds head event ids, principal keys and the raw document on an identity", async () => {
-    renderApp(`/wallet/identities/${ALICE}`);
+  it("is off by default and holds the head event and the raw document", async () => {
+    renderApp(`/identities/${ALICE}`);
     await screen.findByTestId("identity-detail");
 
     expect(screen.getByTestId("identity-detail-head-seq")).toHaveTextContent("8");
@@ -108,20 +53,27 @@ describe("developer mode", () => {
     expect(screen.queryByTestId("verification-detail")).not.toBeInTheDocument();
   });
 
-  it("shows them once the seeded preference says the mode is on", async () => {
-    globalThis.localStorage.setItem(DEVELOPER_MODE_KEY, "1");
-    renderApp(`/wallet/identities/${ALICE}`);
+  it("reveals them from the header menu and remembers the toggle", async () => {
+    const { user } = renderApp(`/identities/${ALICE}`);
     await screen.findByTestId("identity-detail");
 
+    await openDeveloperMode(user);
+
+    expect(globalThis.localStorage.getItem(DEVELOPER_MODE_KEY)).toBe("1");
     expect(screen.getByTestId("identity-detail-head-event")).toBeInTheDocument();
     expect(screen.getByTestId("identity-detail-created-at-ms")).toBeInTheDocument();
     expect(screen.getByTestId("identity-detail-raw")).toHaveTextContent(ALICE);
     expect(screen.getByTestId("verification-detail")).toHaveTextContent("_mabel.alice.example.");
     expect(await screen.findByTestId("ledger-id")).toBeInTheDocument();
+
+    await user.click(screen.getByTestId("developer-mode-toggle"));
+
+    expect(globalThis.localStorage.getItem(DEVELOPER_MODE_KEY)).toBe("0");
+    expect(screen.queryByTestId("identity-detail-head-event")).not.toBeInTheDocument();
   });
 
   it("keeps every panel reachable while it is off", async () => {
-    renderApp(`/wallet/identities/${ALICE}`);
+    renderApp(`/identities/${ALICE}`);
     await screen.findByTestId("identity-detail");
 
     for (const panel of [
@@ -161,9 +113,7 @@ describe("graph sync", () => {
 
     await user.click(screen.getByTestId("graph-sync-consent-confirm"));
 
-    await waitFor(() =>
-      expect(globalThis.localStorage.getItem(GRAPH_CONSENT_KEY)).toBe("1"),
-    );
+    await waitFor(() => expect(globalThis.localStorage.getItem(GRAPH_CONSENT_KEY)).toBe("1"));
     expect(screen.queryByTestId("graph-sync-consent")).not.toBeInTheDocument();
 
     await user.click(screen.getByTestId("graph-sync-button"));
@@ -180,9 +130,7 @@ describe("graph sync", () => {
 
     await user.click(screen.getByTestId("graph-sync-button"));
 
-    await waitFor(() =>
-      expect(screen.getByTestId("graph-sync-id").textContent).not.toBe(before),
-    );
+    await waitFor(() => expect(screen.getByTestId("graph-sync-id").textContent).not.toBe(before));
     expect(screen.getByTestId("graph-truncated-by")).toHaveTextContent("depth");
     expect(screen.getByTestId("graph-stale")).toHaveTextContent("false");
   });

@@ -90,7 +90,7 @@ describe("Identifier", () => {
     expect(screen.getByRole("button", { name: "copy" })).toHaveAttribute("data-copied", "false");
   });
 
-  it("wraps the whole value with no toggle in full mode, for a verify report", () => {
+  it("wraps the whole value with no toggle in full mode", () => {
     host(<Identifier value={ALICE} full />);
 
     const value = identifier();

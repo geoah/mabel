@@ -1,103 +1,63 @@
-import { Link } from "react-router";
-
 import { listIdentities } from "@/api/client";
-import { DeclaredKindNote, DeclaredKindValue } from "@/components/DeclaredKind";
+import { DeclaredKindNote } from "@/components/DeclaredKind";
 import { ErrorEnvelopeView } from "@/components/ErrorEnvelopeView";
-import { Identifier } from "@/components/Identifier";
+import { type IdentityCardEntry, IdentityCardList } from "@/components/IdentityCardList";
+import { resolvedFrom } from "@/components/ResolvedIdentity";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { useResource } from "@/hooks/useResource";
 
 import { IdentityCreateForm } from "./IdentityCreateForm";
-import { IdentitySelector } from "./IdentitySelector";
-import { NodeInfoPanel } from "./NodeInfoPanel";
+import { WalletSearch } from "./WalletSearch";
 
+/**
+ * The wallet front page (proposal 004): one box to open an identity, the
+ * identities this home holds as cards, and the create form folded away. There
+ * is no selection: an identity is a page, not a mode the wallet is in.
+ */
 export function WalletHome() {
   const identities = useResource(listIdentities, []);
+  const entries: IdentityCardEntry[] = (identities.data?.identities ?? []).map((identity) => ({
+    identity: resolvedFrom(identity),
+    declaredKind: identity.declared_kind,
+    headSeq: identity.head_seq,
+    stale: identity.verification.stale,
+    to: `/identities/${identity.identity_id}`,
+  }));
 
   return (
-    <div className="grid gap-4 lg:grid-cols-2">
-      {identities.data && (
-        <div className="lg:col-span-2">
-          <IdentitySelector identities={identities.data.identities} />
-        </div>
-      )}
-      <NodeInfoPanel />
-      <IdentityCreateForm onCreated={identities.reload} />
-      <Card className="lg:col-span-2" data-testid="identity-list">
+    <div className="space-y-4">
+      <WalletSearch />
+      <Card data-testid="identity-list">
         <CardHeader>
           <CardTitle>Identities</CardTitle>
           <DeclaredKindNote testId="identity-list-declared-kind-note" />
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-3">
           {identities.loading && <p data-testid="identity-list-loading">loading</p>}
           {identities.error && (
             <ErrorEnvelopeView error={identities.error} testId="identity-list-error" />
           )}
-          {identities.data && identities.data.identities.length === 0 && (
-            <p data-testid="identity-list-empty">no identities in this node home</p>
-          )}
-          {identities.data && identities.data.identities.length > 0 && (
-            <Table stack="md">
-              <TableHeader>
-                <TableRow>
-                  <TableHead>alias</TableHead>
-                  <TableHead>declared_kind</TableHead>
-                  <TableHead>identity_id</TableHead>
-                  <TableHead>head_seq</TableHead>
-                  <TableHead>event_count</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {identities.data.identities.map((identity) => (
-                  <TableRow
-                    key={identity.identity_id}
-                    data-testid={`identity-row-${identity.identity_id}`}
-                  >
-                    <TableCell label="alias">
-                      <Link
-                        to={`/wallet/identities/${identity.identity_id}`}
-                        className="text-sm underline"
-                        data-testid={`identity-link-${identity.identity_id}`}
-                      >
-                        {identity.alias}
-                      </Link>
-                    </TableCell>
-                    <TableCell label="declared_kind">
-                      <DeclaredKindValue
-                        kind={identity.declared_kind}
-                        testId={`identity-declared-kind-${identity.identity_id}`}
-                      />
-                    </TableCell>
-                    <TableCell label="identity_id">
-                      <Identifier value={identity.identity_id} />
-                    </TableCell>
-                    <TableCell
-                      label="head_seq"
-                      data-testid={`identity-head-seq-${identity.identity_id}`}
-                    >
-                      {identity.head_seq}
-                    </TableCell>
-                    <TableCell
-                      label="event_count"
-                      data-testid={`identity-event-count-${identity.identity_id}`}
-                    >
-                      {identity.event_count}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+          {identities.data && (
+            <IdentityCardList
+              entries={entries}
+              testId="identity-cards"
+              empty="no identities in this node home"
+              emptyTestId="identity-list-empty"
+            />
           )}
         </CardContent>
       </Card>
+      <details data-testid="identity-create" className="rounded-lg border bg-card">
+        <summary
+          data-testid="identity-create-summary"
+          className="flex min-h-11 cursor-pointer list-none items-center px-3 text-sm font-medium marker:content-none hover:bg-accent sm:px-4"
+        >
+          New identity
+        </summary>
+        <div className="border-t p-3 sm:p-4">
+          <IdentityCreateForm onCreated={identities.reload} />
+        </div>
+      </details>
     </div>
   );
 }

@@ -9,7 +9,7 @@ const alice = seedIdentities.find((identity) => identity.identity_id === ALICE)!
 
 describe("identity detail", () => {
   it("pages the ledger with an inclusive since", async () => {
-    const { user } = renderApp(`/wallet/identities/${ALICE}`);
+    const { user } = renderApp(`/identities/${ALICE}`);
     await screen.findByTestId("ledger-events");
 
     await user.clear(screen.getByTestId("ledger-limit"));
@@ -30,7 +30,7 @@ describe("identity detail", () => {
   });
 
   it("reports one row per witness on a push", async () => {
-    const { user } = renderApp(`/wallet/identities/${ALICE}`);
+    const { user } = renderApp(`/identities/${ALICE}`);
     await screen.findByTestId("identity-detail");
 
     await user.click(screen.getByTestId("sync-push-submit"));
@@ -49,7 +49,7 @@ describe("identity detail", () => {
 
   it("adds a witness endpoint to the set the route replaces", async () => {
     const endpoint = "b".repeat(52);
-    const { user } = renderApp(`/wallet/identities/${ALICE}`);
+    const { user } = renderApp(`/identities/${ALICE}`);
     await screen.findByTestId("witness-list");
 
     await user.type(screen.getByTestId("witness-add-endpoint"), endpoint);

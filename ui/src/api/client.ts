@@ -10,6 +10,8 @@ import type {
   CreateIdentityResponse,
   ErrorDetails,
   ErrorEnvelope,
+  FetchIdentityRequest,
+  FetchIdentityResponse,
   ForkListResponse,
   GraphResponse,
   GraphSyncResponse,
@@ -26,6 +28,7 @@ import type {
   RemovedResponse,
   ReplaceProfileRequest,
   ReplaceProfileResponse,
+  ResolveResponse,
   RevokeTrustRequest,
   RevokeTrustResponse,
   SetContactRequest,
@@ -33,11 +36,9 @@ import type {
   SyncPushRequest,
   SyncPushResponse,
   VerificationResponse,
-  VerifyLedgerReport,
-  VerifyLedgerRequest,
-  VerifyTrustReport,
-  VerifyTrustRequest,
   WalletNodeInfo,
+  WitnessLedgerListResponse,
+  WitnessListResponse,
   WitnessNodeInfo,
 } from "./types";
 
@@ -146,8 +147,9 @@ function query(params: Record<string, string | number | undefined>): string {
 
 // Wallet routes.
 
-export function getWalletNode(): Promise<WalletNodeInfo> {
-  return get<WalletNodeInfo>("/node");
+/** A node has one role, and the same bundle is served by both: the shell asks. */
+export function getNode(): Promise<WalletNodeInfo | WitnessNodeInfo> {
+  return get<WalletNodeInfo | WitnessNodeInfo>("/node");
 }
 
 export function listIdentities(): Promise<IdentityListResponse> {
@@ -192,12 +194,15 @@ export function syncPush(body: SyncPushRequest): Promise<SyncPushResponse> {
   return post<SyncPushResponse>("/sync/push", body);
 }
 
-export function verifyTrust(body: VerifyTrustRequest): Promise<VerifyTrustReport> {
-  return post<VerifyTrustReport>("/verify", body);
-}
-
-export function verifyLedger(body: VerifyLedgerRequest): Promise<VerifyLedgerReport> {
-  return post<VerifyLedgerReport>("/verify", body);
+/**
+ * The CLI `sync fetch` behind a route: pulls a ledger this home does not hold.
+ * A null `from` tries the known witnesses in the crawler's source order.
+ */
+export function fetchIdentity(
+  identityId: string,
+  body: FetchIdentityRequest = { from: null },
+): Promise<FetchIdentityResponse> {
+  return post<FetchIdentityResponse>(`/identities/${identityId}/fetch`, body);
 }
 
 /**
@@ -283,11 +288,34 @@ export function syncGraph(): Promise<GraphSyncResponse> {
   return post<GraphSyncResponse>("/graph/sync", {});
 }
 
-// Witness routes, read-only.
-
-export function getWitnessNode(): Promise<WitnessNodeInfo> {
-  return get<WitnessNodeInfo>("/node");
+/**
+ * Every witness this wallet knows of: the folded witness configs of its stored
+ * ledgers plus the defaults node.json carries.
+ */
+export function listWitnesses(): Promise<WitnessListResponse> {
+  return get<WitnessListResponse>("/witnesses");
 }
+
+/**
+ * What one witness holds, asked live over the sync protocol's List request. A
+ * witness this node cannot reach answers 502 with reason witness_unreachable.
+ */
+export function listWitnessLedgers(
+  endpointId: string,
+  params: { offset?: number; limit?: number } = {},
+): Promise<WitnessLedgerListResponse> {
+  return get<WitnessLedgerListResponse>(`/witnesses/${endpointId}/ledgers${query(params)}`);
+}
+
+/**
+ * One TXT lookup of _mabel.<hostname>., for navigation. It is never cached and
+ * it verifies nothing: a resolved id still renders its own advisory verdict.
+ */
+export function resolveHostname(hostname: string): Promise<ResolveResponse> {
+  return get<ResolveResponse>(`/resolve/${encodeURIComponent(hostname)}`);
+}
+
+// Witness routes, read-only.
 
 export function listLedgers(
   params: { offset?: number; limit?: number } = {},

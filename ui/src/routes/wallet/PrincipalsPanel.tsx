@@ -51,7 +51,7 @@ export function PrincipalsPanel({
               <ResolvedIdentity
                 identity={resolved(principal.identity)}
                 testId={`principal-name-${principal.identity}`}
-                to={`/wallet/lookup/${principal.identity}`}
+                to={`/identities/${principal.identity}`}
               />
               <Badge data-testid={`principal-role-${principal.identity}`}>{principal.role}</Badge>
               {principal.is_root && (
@@ -81,7 +81,7 @@ export function PrincipalsPanel({
                 <ResolvedIdentity
                   identity={resolved(invitation.invitee)}
                   testId={`invitation-name-${invitation.invitee}`}
-                  to={`/wallet/lookup/${invitation.invitee}`}
+                  to={`/identities/${invitation.invitee}`}
                 />
                 <Badge variant="outline" data-testid={`invitation-role-${invitation.invitee}`}>
                   {invitation.role}

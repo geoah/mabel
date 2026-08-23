@@ -123,7 +123,7 @@ function TrustRow({
       <ResolvedIdentity
         identity={resolved}
         testId={`trust-subject-${record.attestation_event}`}
-        to={`/wallet/lookup/${record.subject}`}
+        to={`/identities/${record.subject}`}
       />
       <span
         data-testid={`trust-state-${record.attestation_event}`}

@@ -97,8 +97,14 @@ function CopyButton({ value }: { value: string }) {
 interface IdentifierProps {
   /** null and undefined render as the literal null the API document carries. */
   value: string | null | undefined;
-  /** Renders the whole value, wrapped, with no toggle: the verify reports. */
+  /** Renders the whole value, wrapped, with no toggle. */
   full?: boolean;
+  /**
+   * Renders the truncated value as text with no expand and no copy button. It
+   * is what an identifier inside a link uses: a button inside an anchor is not
+   * valid HTML, and the whole identity card is one anchor.
+   */
+  plain?: boolean;
   /** Routes the value, for the ids that address a screen. */
   to?: string;
   /** The testid a suite reads on the link, when to is given. */
@@ -114,7 +120,14 @@ interface IdentifierProps {
  * while a reader sees the first and last eight characters with an ellipsis drawn
  * by CSS. Clicking the value shows the rest; the title attribute carries it too.
  */
-export function Identifier({ value, full = false, to, linkTestId, className }: IdentifierProps) {
+export function Identifier({
+  value,
+  full = false,
+  plain = false,
+  to,
+  linkTestId,
+  className,
+}: IdentifierProps) {
   const [expanded, setExpanded] = useState(false);
 
   if (value === null || value === undefined) {
@@ -122,7 +135,7 @@ export function Identifier({ value, full = false, to, linkTestId, className }: I
   }
 
   const parts = splitIdentifier(value);
-  const whole = full || expanded || parts.middle === "";
+  const whole = full || (expanded && !plain) || parts.middle === "";
   const body = whole ? (
     value
   ) : (
@@ -149,7 +162,7 @@ export function Identifier({ value, full = false, to, linkTestId, className }: I
         <Link to={to} data-testid={linkTestId} title={value} className="min-w-0 underline">
           {body}
         </Link>
-      ) : full ? (
+      ) : full || plain ? (
         <span className="min-w-0" title={value}>
           {body}
         </span>
@@ -164,7 +177,7 @@ export function Identifier({ value, full = false, to, linkTestId, className }: I
           {body}
         </button>
       )}
-      <CopyButton value={value} />
+      {!plain && <CopyButton value={value} />}
     </span>
   );
 }

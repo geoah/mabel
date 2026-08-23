@@ -279,6 +279,12 @@ export interface Identity {
   contact: Contact | null;
   active_key?: string;
   reserve_commit?: string;
+  /**
+   * The local identity whose key may sign for this ledger, null when this home
+   * holds none. A node that does not serve the field leaves it absent, and the
+   * identity page falls back to whether GET /api/identities lists the ledger.
+   */
+  controlled_by?: string | null;
 }
 
 /** Which source a resolved name came from, in the order section 4 fixes. */
@@ -580,79 +586,87 @@ export interface SyncPushResponse {
   results: PushResult[];
 }
 
-export interface VerifyTrustRequest {
-  kind: "trust";
-  issuer: string;
-  subject: string;
-  /** null queries every configured source, or one endpoint id to pin a source. */
-  from: string | null;
-}
-
-export interface VerifyLedgerRequest {
-  kind: "ledger";
-  ledger_id: string;
-  from: string | null;
-}
-
-export type VerifyRequest = VerifyTrustRequest | VerifyLedgerRequest;
-
-/** Fields every report carries (flag R, proposal 001 section 6). */
-export interface ReportProvenance {
-  source: string;
-  sources_queried: string[];
-  head_seq: number;
-  head_event: string;
-  fetched_at_ms: number;
-  statement: string;
-  verified_means: string;
-}
-
-export interface RevokedAttestation {
-  attestation_event: string;
-  attestation_seq: number;
-  revocation_event: string;
-  revocation_seq: number;
-}
-
-/** POST /api/verify with kind trust, and mabel verify trust --json. */
-export interface VerifyTrustReport extends ReportProvenance {
-  ok: true;
-  kind: "trust";
-  trusted: boolean;
-  issuer: string;
-  subject: string;
-  subject_resolution: "resolved" | "unresolved";
-  subject_note: string | null;
-  attestation_event: string | null;
-  attestation_seq: number | null;
-  revoked_count: number;
-  revoked_attestations: RevokedAttestation[];
-  /** Flag L, verbatim. */
-  subject_control: string;
-  /** The author_key and the principal it matched (proposal 002 section 5). */
-  signing_principal?: SigningPrincipal | null;
-}
-
 /** The principal whose key signed an event (proposal 002 section 5). */
 export interface SigningPrincipal {
   identity: string;
   key: string;
 }
 
-/** POST /api/verify with kind ledger, and mabel verify ledger --json. */
-export interface VerifyLedgerReport extends ReportProvenance {
-  ok: true;
-  kind: "ledger";
-  ledger_id: string;
-  declared_kind: DeclaredKind;
-  valid: boolean;
-  valid_to_seq: number;
-  failed_at_seq: number | null;
-  event_count: number;
-  signing_principal?: SigningPrincipal | null;
+/**
+ * One entry of GET /api/witnesses (proposal 004). named_by lists the identities
+ * whose folded witness config names this endpoint; is_node_default is true for
+ * an endpoint node.json carries.
+ */
+export interface WitnessSummary {
+  endpoint_id: string;
+  named_by: string[];
+  is_node_default: boolean;
 }
 
-export type VerifyReport = VerifyTrustReport | VerifyLedgerReport;
+export interface WitnessListResponse {
+  ok: true;
+  witnesses: WitnessSummary[];
+}
+
+/** One ledger a witness reports over the sync protocol's List request. */
+export interface WitnessLedgerSummary {
+  ledger_id: string;
+  declared_kind: DeclaredKind;
+  head_seq: number;
+  head_event: string;
+  event_count: number;
+  fork_count: number;
+}
+
+/**
+ * GET /api/witnesses/:endpoint_id/ledgers?offset=&limit=. A witness this node
+ * cannot reach answers 502 with reason witness_unreachable.
+ */
+export interface WitnessLedgerListResponse {
+  ok: true;
+  endpoint_id: string;
+  ledgers: WitnessLedgerSummary[];
+  offset: number;
+  limit: number;
+  more: boolean;
+}
+
+/**
+ * What one TXT lookup of _mabel.<hostname>. answered. resolved carries the id;
+ * no_record means the name holds no mabel record; mismatched_records means
+ * records exist and none parses; unreachable means the resolver did not answer.
+ */
+export type ResolveStatus = "resolved" | "no_record" | "mismatched_records" | "unreachable";
+
+/** GET /api/resolve/:hostname. Never cached: this is navigation, not verification. */
+export interface ResolveResponse {
+  ok: true;
+  hostname: string;
+  identity_id: string | null;
+  status: ResolveStatus;
+}
+
+/** POST /api/identities/:identity_id/fetch. null tries the known witnesses in order. */
+export interface FetchIdentityRequest {
+  from: string | null;
+}
+
+/**
+ * The CLI `sync fetch` document behind a route. stored counts the events this
+ * fetch wrote, so 0 means the home was already current; controlled_by names the
+ * local identity that may sign for the ledger, null when this home holds none.
+ */
+export interface FetchIdentityResponse {
+  ok: true;
+  ledger_id: string;
+  source: string;
+  event_count: number;
+  stored: number;
+  head_seq: number;
+  head_event: string;
+  fetched_at_ms: number;
+  controlled_by: string | null;
+}
 
 /** GET /api/ledgers and GET /api/ledgers/:ledger_id on a witness. */
 export interface LedgerSummary {

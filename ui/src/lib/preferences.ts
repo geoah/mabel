@@ -6,8 +6,6 @@ import { useCallback, useSyncExternalStore } from "react";
 
 /** Proposal 003 section 4 names this key; developer mode is off unless it is "1". */
 export const DEVELOPER_MODE_KEY = "mabel.developer_mode";
-/** The identity the selector holds, and the default `from` of a lookup. */
-export const SELECTED_IDENTITY_KEY = "mabel.selected_identity";
 /** Consent, taken once before the first hostname publication. */
 export const HOSTNAME_CONSENT_KEY = "mabel.consent.hostname_publication";
 /** Consent, taken once before the first graph sync. */
@@ -72,11 +70,6 @@ export function useDeveloperMode(): [boolean, (on: boolean) => void] {
   const [value, set] = usePreference(DEVELOPER_MODE_KEY);
   const setOn = useCallback((on: boolean) => set(on ? "1" : "0"), [set]);
   return [value === "1", setOn];
-}
-
-/** The selected identity, or null before anything is chosen. */
-export function useSelectedIdentity(): [string | null, (identityId: string | null) => void] {
-  return usePreference(SELECTED_IDENTITY_KEY);
 }
 
 /**

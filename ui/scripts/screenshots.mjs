@@ -20,8 +20,11 @@ const OUT_DIR = fileURLToPath(new URL("../screenshots", import.meta.url));
 /** The ids the demo fixtures carry; the same ones the component tests use. */
 const ALICE = "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq";
 const BOB = "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq";
-/** The foreign identity the lookup fixture answers for, two hops from Alice. */
+/** The foreign identity the lookup fixture answers for, and no witness holds. */
 const CAROL = "jqtnsb2me7mj5xsze4gavqklohqhdmkshfiz65khjmxtxjruqh2q";
+/** The two witness endpoints the demo knows: one answers, one does not. */
+const WITNESS = "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq";
+const UNREACHABLE_WITNESS = "54rw3lmckcpqf4ofkvyx3i74agumvale2qmzdu76ubpita6sw5va";
 
 const VIEWPORTS = [
   { name: "360x780", width: 360, height: 780 },
@@ -29,22 +32,31 @@ const VIEWPORTS = [
   { name: "1280x800", width: 1280, height: 800 },
 ];
 
-/** Moves the selector to alice, which is the root a lookup answers from. */
-async function lookFromAlice(page) {
-  await page.getByTestId(`identity-selector-option-${ALICE}`).check();
-  await page.getByTestId("lookup-degrees").getByText("2 hops").waitFor();
-}
-
 const SCREENS = [
-  { name: "wallet-home", path: "/wallet", ready: "identity-list" },
+  { name: "wallet-home", path: "/wallet", ready: "identity-cards" },
   {
-    name: "wallet-identity",
-    path: `/wallet/identities/${ALICE}`,
-    ready: "ledger-events",
+    name: "wallet-home-create",
+    path: "/wallet",
+    ready: "identity-create-summary",
+    async act(page) {
+      await page.getByTestId("identity-create-summary").click();
+      await page.getByTestId("identity-create-submit").waitFor();
+    },
   },
   {
-    name: "wallet-identity-push",
-    path: `/wallet/identities/${ALICE}`,
+    name: "wallet-home-resolve",
+    path: "/wallet",
+    ready: "wallet-search-input",
+    async act(page) {
+      await page.getByTestId("wallet-search-input").fill("nobody.example");
+      await page.getByTestId("wallet-search-submit").click();
+      await page.getByTestId("wallet-search-status").waitFor();
+    },
+  },
+  { name: "identity-own", path: `/identities/${ALICE}`, ready: "ledger-events" },
+  {
+    name: "identity-own-push",
+    path: `/identities/${ALICE}`,
     ready: "sync-push-submit",
     async act(page) {
       await page.getByTestId("sync-push-submit").click();
@@ -52,8 +64,8 @@ const SCREENS = [
     },
   },
   {
-    name: "wallet-identity-event",
-    path: `/wallet/identities/${ALICE}`,
+    name: "identity-own-event",
+    path: `/identities/${ALICE}`,
     ready: "ledger-events",
     async act(page) {
       await page.getByTestId("event-expand-2").click();
@@ -61,8 +73,8 @@ const SCREENS = [
     },
   },
   {
-    name: "wallet-identity-invite",
-    path: `/wallet/identities/${ALICE}`,
+    name: "identity-own-invite",
+    path: `/identities/${ALICE}`,
     ready: "action-invite-summary",
     async act(page) {
       await page.getByTestId("action-invite-summary").click();
@@ -70,41 +82,39 @@ const SCREENS = [
     },
   },
   {
-    name: "wallet-lookup",
-    path: `/wallet/lookup/${CAROL}`,
-    ready: "lookup-result",
-    // The crawl reaches carol from alice, so the shot answers from alice: with
-    // the default root, the lowest local id, the honest answer is "no path".
-    act: lookFromAlice,
+    // Not stored here and not held by any witness: the graph knows it, and the
+    // page offers the one action a page like that has.
+    name: "identity-foreign-unstored",
+    path: `/identities/${CAROL}`,
+    ready: "identity-fetch-button",
   },
   {
-    name: "wallet-lookup-expanded",
-    path: `/wallet/lookup/${CAROL}`,
+    name: "identity-foreign-expanded",
+    path: `/identities/${CAROL}`,
     ready: "lookup-result",
     async act(page) {
-      await lookFromAlice(page);
       await page.getByTestId(`lookup-trust-expand-${BOB}`).click();
       await page.getByTestId(`lookup-trust-expansion-${BOB}`).waitFor();
     },
   },
-  { name: "wallet-verify", path: "/wallet/verify", ready: "verify-trust-form" },
   {
-    name: "wallet-verify-report",
-    path: "/wallet/verify",
-    ready: "verify-trust-form",
+    name: "identity-foreign-stored",
+    path: `/identities/${BOB}`,
+    ready: "identity-fetch-button",
     async act(page) {
-      await page.getByTestId("verify-trust-issuer").fill(ALICE);
-      await page.getByTestId("verify-trust-subject").fill(BOB);
-      await page.getByTestId("verify-trust-submit").click();
-      await page.getByTestId("verify-report").waitFor();
+      await page.getByTestId("identity-fetch-button").click();
+      await page.getByTestId("ledger-events").waitFor();
     },
   },
-  { name: "witness-home", path: "/witness", ready: "witness-ledger-table" },
+  { name: "witnesses", path: "/witnesses", ready: "witness-cards" },
+  { name: "witness-ledgers", path: `/witnesses/${WITNESS}`, ready: "identity-cards" },
   {
-    name: "witness-ledger",
-    path: `/witness/ledgers/${ALICE}`,
-    ready: "witness-events-table",
+    name: "witness-unreachable",
+    path: `/witnesses/${UNREACHABLE_WITNESS}`,
+    ready: "witness-unreachable",
   },
+  { name: "witness-node-home", path: "/witness", ready: "identity-cards" },
+  { name: "witness-node-ledger", path: `/witness/ledgers/${ALICE}`, ready: "ledger-events" },
 ];
 
 /**

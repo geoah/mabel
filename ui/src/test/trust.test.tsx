@@ -6,7 +6,7 @@ import { server } from "@/mocks/server";
 
 import { renderApp } from "./render";
 
-const DETAIL = `/wallet/identities/${ALICE}`;
+const DETAIL = `/identities/${ALICE}`;
 
 async function openDetail() {
   const rendered = renderApp(DETAIL);

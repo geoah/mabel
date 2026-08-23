@@ -15,6 +15,8 @@ import type {
   CreateIdentityResponse,
   DeclaredKind,
   ErrorEnvelope,
+  FetchIdentityRequest,
+  FetchIdentityResponse,
   ForkListResponse,
   ForkRecord,
   Graph,
@@ -38,6 +40,7 @@ import type {
   RemoveRequest,
   RemovedResponse,
   ReplaceProfileResponse,
+  ResolveResponse,
   ResolvedIdentity,
   Role,
   RootName,
@@ -48,17 +51,18 @@ import type {
   SyncPushResponse,
   Verification,
   VerificationResponse,
-  VerifyLedgerReport,
-  VerifyLedgerRequest,
-  VerifyTrustReport,
-  VerifyTrustRequest,
   WalletNodeInfo,
+  WitnessLedgerListResponse,
+  WitnessListResponse,
   WitnessNodeInfo,
+  WitnessSummary,
 } from "@/api/types";
 import type { HeldLedger } from "./fixtures";
 import {
+  ACME,
   ALICE,
   BOB,
+  UNREACHABLE_WITNESS,
   createdIdentity,
   errors,
   seedContact,
@@ -69,10 +73,6 @@ import {
   seedLookup,
   seedResolved,
   syncPush as syncPushFixture,
-  verifyLedgerValid,
-  verifyTrustRevoked,
-  verifyTrustTrusted,
-  verifyTrustUnresolved,
   walletNode,
   witnessForks,
   witnessLedgers,
@@ -139,6 +139,12 @@ interface Edge {
 
 interface State {
   identities: Identity[];
+  /**
+   * Ledgers this home stored without controlling them, the result of a fetch.
+   * GET /api/identities/:id answers for them; GET /api/identities does not list
+   * them, because that list is what the wallet can sign for.
+   */
+  fetched: Map<string, Identity>;
   events: Map<string, LedgerEvent[]>;
   /** Every invitation a ledger issued, by ledger id, cancelled ones included. */
   invitations: Map<string, InvitationEntry[]>;
@@ -159,6 +165,7 @@ let state: State = emptyState();
 function emptyState(): State {
   return {
     identities: [],
+    fetched: new Map(),
     events: new Map(),
     invitations: new Map(),
     contacts: new Map(),
@@ -179,7 +186,10 @@ export function resetStore(): void {
   contacts.set(BOB, { ...seedContact });
   const identities = seedIdentities.map((identity) => ({
     ...identity,
-    witnesses: [...identity.witnesses],
+    // Acme names the one endpoint node.json does not default to, so the witness
+    // list has a card that is not a node default and a drill-in that fails.
+    witnesses:
+      identity.identity_id === ACME ? [UNREACHABLE_WITNESS] : [...identity.witnesses],
     trust: identity.trust.map((record) => ({ ...record })),
     profile: identity.profile ? { ...identity.profile } : null,
     verification: { ...identity.verification },
@@ -192,6 +202,7 @@ export function resetStore(): void {
   }
   state = {
     identities,
+    fetched: new Map(),
     events: new Map([[ALICE, seedEvents()]]),
     invitations: new Map(),
     contacts,
@@ -205,6 +216,7 @@ export function resetStore(): void {
 
 resetStore();
 
+/** A ledger this home can sign for. Every mutating route goes through it. */
 function find(identityId: string): Identity {
   const identity = state.identities.find((entry) => entry.identity_id === identityId);
   if (!identity) {
@@ -216,6 +228,15 @@ function find(identityId: string): Identity {
     });
   }
   return identity;
+}
+
+/** A ledger this home stored, controlled or fetched. Every read goes through it. */
+function findStored(identityId: string): Identity {
+  const fetched = state.fetched.get(identityId);
+  if (fetched) {
+    return fetched;
+  }
+  return find(identityId);
 }
 
 function chain(identityId: string): LedgerEvent[] {
@@ -280,7 +301,7 @@ export function listIdentities(): IdentityListResponse {
 }
 
 export function getIdentity(identityId: string): IdentityResponse {
-  return { ok: true, identity: find(identityId) };
+  return { ok: true, identity: findStored(identityId) };
 }
 
 export function createIdentity(body: Partial<CreateIdentityRequest>): CreateIdentityResponse {
@@ -381,7 +402,7 @@ export function getIdentityLedger(
   identityId: string,
   params: { since?: number; limit?: number },
 ): LedgerPageResponse {
-  const identity = find(identityId);
+  const identity = findStored(identityId);
   const since = params.since ?? 0;
   const limit = params.limit ?? 512;
   if (!Number.isInteger(since) || since < 0) {
@@ -598,7 +619,7 @@ function invitationsOf(ledgerId: string): InvitationEntry[] {
 
 export function memberships(identityId: string): MembershipView {
   checkIdentityId(identityId);
-  const identity = find(identityId);
+  const identity = findStored(identityId);
   return {
     ok: true,
     ledger_id: identity.identity_id,
@@ -865,67 +886,230 @@ export function removePrincipal(
 export function syncPush(body: Partial<SyncPushRequest>): SyncPushResponse {
   const identity = find(String(body.identity_id));
   const targets = body.to ? [body.to] : identity.witnesses;
-  if (targets.length === 0) {
+  const template = syncPushFixture.results[1];
+  // The second configured witness stands in for the unreachable case, so the
+  // per-witness table has both outcomes to render, and the endpoint no route
+  // reaches is unreachable wherever it is named.
+  const results = targets.map((endpoint, index) =>
+    index === 1 || endpoint === UNREACHABLE_WITNESS
+      ? { ...template, endpoint, message: `Network error: no route to ${endpoint} after 10s` }
+      : {
+          endpoint,
+          status: "accepted" as const,
+          head_seq: identity.head_seq,
+          stored: identity.event_count,
+          reject_code: null,
+          at_seq: null,
+          message: null,
+        },
+  );
+  if (results.every((result) => result.status !== "accepted")) {
     failWith(errors.allWitnessesFailed.status, errors.allWitnessesFailed.body);
   }
-  const unreachable = syncPushFixture.results[1];
   return {
     ok: true,
     ledger_id: identity.identity_id,
     head_seq: identity.head_seq,
     head_event: identity.head_event,
-    results: targets.map((endpoint, index) =>
-      // The second configured witness stands in for the unreachable case, so the
-      // per-witness table has both outcomes to render.
-      index === 1
-        ? { ...unreachable, endpoint, message: `Network error: no route to ${endpoint} after 10s` }
-        : {
-            endpoint,
-            status: "accepted",
-            head_seq: identity.head_seq,
-            stored: identity.event_count,
-            reject_code: null,
-            at_seq: null,
-            message: null,
-          },
+    results,
+  };
+}
+
+// The three proposal 004 routes. A witness is known from a ledger's folded
+// witness config or from node.json; there is no directory to ask.
+
+function checkEndpointId(endpointId: string): void {
+  if (endpointId.length !== 52) {
+    failWith(400, {
+      ok: false,
+      code: 10,
+      message: "Schema error: endpoint id must be 52 base32 characters",
+      details: { reason: "malformed_endpoint_id", value: endpointId },
+    });
+  }
+}
+
+/** GET /api/witnesses, ordered by ascending endpoint id. */
+export function listWitnesses(): WitnessListResponse {
+  const table = new Map<string, WitnessSummary>();
+  const entry = (endpointId: string): WitnessSummary => {
+    const held = table.get(endpointId);
+    if (held) {
+      return held;
+    }
+    const created: WitnessSummary = { endpoint_id: endpointId, named_by: [], is_node_default: false };
+    table.set(endpointId, created);
+    return created;
+  };
+  for (const endpointId of walletNode.witnesses) {
+    entry(endpointId).is_node_default = true;
+  }
+  for (const identity of state.identities) {
+    for (const endpointId of identity.witnesses) {
+      entry(endpointId).named_by.push(identity.identity_id);
+    }
+  }
+  return {
+    ok: true,
+    witnesses: [...table.values()].sort((left, right) =>
+      left.endpoint_id < right.endpoint_id ? -1 : 1,
     ),
   };
 }
 
-function knownLedger(ledgerId: string): boolean {
-  return ledgerId === BOB || state.identities.some((entry) => entry.identity_id === ledgerId);
-}
-
-export function verifyTrust(body: VerifyTrustRequest): VerifyTrustReport {
-  const identity = find(body.issuer);
-  const records = identity.trust.filter((record) => record.subject === body.subject);
-  const named = { issuer: body.issuer, subject: body.subject };
-  if (!knownLedger(body.subject)) {
-    return { ...verifyTrustUnresolved, ...named };
+/**
+ * GET /api/witnesses/:endpoint_id/ledgers, a live proxy of what that witness
+ * holds. The mock serves its own witness store, and the one endpoint no local
+ * ledger reaches stands in for a witness this node cannot dial.
+ */
+export function witnessLedgerList(
+  endpointId: string,
+  params: { offset?: number; limit?: number },
+): WitnessLedgerListResponse {
+  checkEndpointId(endpointId);
+  if (endpointId === UNREACHABLE_WITNESS) {
+    failWith(502, {
+      ok: false,
+      code: 30,
+      message: `Network error: ${endpointId} did not answer the ledger list`,
+      details: {
+        reason: "witness_unreachable",
+        endpoint_id: endpointId,
+        error: `no route to ${endpointId} after 10s`,
+      },
+    });
   }
-  if (records.some((record) => !record.revoked)) {
-    return { ...verifyTrustTrusted, ...named };
-  }
-  if (records.length > 0) {
-    return { ...verifyTrustRevoked, ...named };
-  }
-  // No attestation was ever issued, so nothing was revoked either.
+  const offset = checkRange("offset", params.offset) ?? 0;
+  const limit = checkRange("limit", params.limit) ?? 256;
+  const ordered = [...state.held].sort((left, right) =>
+    left.entry.ledger_id < right.entry.ledger_id ? -1 : 1,
+  );
   return {
-    ...verifyTrustTrusted,
-    ...named,
-    trusted: false,
-    attestation_event: null,
-    attestation_seq: null,
+    ok: true,
+    endpoint_id: endpointId,
+    offset,
+    limit,
+    more: ordered.length > offset + limit,
+    ledgers: ordered.slice(offset, offset + limit).map(({ entry }) => ({
+      ledger_id: entry.ledger_id,
+      declared_kind: entry.declared_kind,
+      head_seq: entry.head_seq,
+      head_event: entry.head_event,
+      event_count: entry.event_count,
+      fork_count: entry.fork_count,
+    })),
   };
 }
 
-export function verifyLedger(body: VerifyLedgerRequest): VerifyLedgerReport {
-  const identity = find(body.ledger_id);
+/** A hostname the mock answers unreachable for, so every verdict is reachable. */
+export const UNREACHABLE_HOSTNAME = "unreachable.example";
+/** A hostname whose TXT records exist and parse as nothing. */
+export const MISMATCHED_HOSTNAME = "mismatched.example";
+
+/**
+ * GET /api/resolve/:hostname. No DNS is queried: the mock answers resolved for
+ * a hostname a stored profile claims, and carries one hostname per other
+ * verdict so each renders in dev and demo mode.
+ */
+export function resolveHostname(hostname: string): ResolveResponse {
+  if (!/^[a-z0-9][a-z0-9.-]*$/.test(hostname)) {
+    failWith(400, {
+      ok: false,
+      code: 10,
+      message: `Schema error: ${hostname} is not a hostname: it holds a character outside [a-z0-9-]`,
+      details: {
+        reason: "malformed_hostname",
+        value: hostname,
+        detail: "it holds a character outside [a-z0-9-]",
+      },
+    });
+  }
+  const claimed = state.identities.find(
+    (identity) => identity.profile?.hostname === hostname,
+  );
+  if (claimed) {
+    return {
+      ok: true,
+      hostname,
+      identity_id: claimed.identity_id,
+      status: "resolved",
+    };
+  }
+  if (hostname === UNREACHABLE_HOSTNAME) {
+    return { ok: true, hostname, identity_id: null, status: "unreachable" };
+  }
+  if (hostname === MISMATCHED_HOSTNAME) {
+    return { ok: true, hostname, identity_id: null, status: "mismatched_records" };
+  }
+  return { ok: true, hostname, identity_id: null, status: "no_record" };
+}
+
+/**
+ * POST /api/identities/:identity_id/fetch. The mock pulls from its own witness
+ * store, which is what the witness routes serve, and keeps the result as a
+ * stored ledger this home does not control.
+ */
+export function fetchIdentity(
+  identityId: string,
+  body: Partial<FetchIdentityRequest>,
+): FetchIdentityResponse {
+  checkIdentityId(identityId);
+  const source = body.from ?? walletNode.witnesses[0];
+  const controlled = local(identityId);
+  const already = state.fetched.get(identityId);
+  if (controlled || already) {
+    const held = (controlled ?? already)!;
+    return {
+      ok: true,
+      ledger_id: identityId,
+      source,
+      event_count: held.event_count,
+      stored: 0,
+      head_seq: held.head_seq,
+      head_event: held.head_event,
+      fetched_at_ms: Date.now(),
+      controlled_by: controlled ? identityId : null,
+    };
+  }
+  const served = state.held.find((entry) => entry.entry.ledger_id === identityId);
+  if (!served) {
+    failWith(502, {
+      ok: false,
+      code: 30,
+      message: `Network error: ${source} does not hold ${identityId}`,
+      details: { reason: "ledger_not_held", ledger_id: identityId, source },
+    });
+  }
+  const events = served.events.map((event) => ({ ...event }));
+  const stored: Identity = {
+    identity_id: identityId,
+    declared_kind: served.entry.declared_kind,
+    alias: "",
+    created_at_ms: served.entry.first_seen_ms,
+    head_seq: served.entry.head_seq,
+    head_event: served.entry.head_event,
+    event_count: served.entry.event_count,
+    witnesses: [...served.witnesses],
+    trust: [],
+    principals: [],
+    open_invitation_count: 0,
+    profile: null,
+    verification: { ...UNCLAIMED },
+    contact: state.contacts.get(identityId) ?? null,
+    controlled_by: null,
+  };
+  state.fetched.set(identityId, stored);
+  state.events.set(identityId, events);
   return {
-    ...verifyLedgerValid,
-    ledger_id: identity.identity_id,
-    declared_kind: identity.declared_kind,
-    event_count: identity.event_count,
+    ok: true,
+    ledger_id: identityId,
+    source,
+    event_count: events.length,
+    stored: events.length,
+    head_seq: stored.head_seq,
+    head_event: stored.head_event,
+    fetched_at_ms: Date.now(),
+    controlled_by: null,
   };
 }
 
@@ -1151,7 +1335,7 @@ export function setContact(
       });
     }
   }
-  const held = local(identityId);
+  const held = local(identityId) ?? state.fetched.get(identityId);
   if (nickname === null && note === null) {
     state.contacts.delete(identityId);
     if (held) {
@@ -1318,7 +1502,10 @@ export function syncGraph(): GraphSyncResponse {
 // over HTTP (proposal 001 section 10).
 
 export function nodeInfo(): WalletNodeInfo | WitnessNodeInfo {
-  const browsed = globalThis.location?.pathname.startsWith("/witness") ? "witness" : "wallet";
+  // /witness is the witness binary's debug route; /witnesses is the wallet's
+  // own list of endpoints, so the prefix test has to stop at the boundary.
+  const path = globalThis.location?.pathname ?? "";
+  const browsed = path === "/witness" || path.startsWith("/witness/") ? "witness" : "wallet";
   if ((nodeRole ?? browsed) !== "witness") {
     return walletNode;
   }

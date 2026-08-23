@@ -8,7 +8,7 @@ import { renderApp } from "./render";
 
 describe("profile replacement", () => {
   it("shows the before-and-after diff and waits for a confirmation", async () => {
-    const { user } = renderApp(`/wallet/identities/${ALICE}`);
+    const { user } = renderApp(`/identities/${ALICE}`);
     await screen.findByTestId("profile-panel");
 
     await user.clear(screen.getByTestId("profile-display-name"));
@@ -35,7 +35,7 @@ describe("profile replacement", () => {
   });
 
   it("drops the diff and changes nothing when the confirmation is cancelled", async () => {
-    const { user } = renderApp(`/wallet/identities/${ALICE}`);
+    const { user } = renderApp(`/identities/${ALICE}`);
     await screen.findByTestId("profile-panel");
 
     await user.clear(screen.getByTestId("profile-display-name"));
@@ -50,7 +50,7 @@ describe("profile replacement", () => {
   });
 
   it("refuses a replacement that would change nothing", async () => {
-    const { user } = renderApp(`/wallet/identities/${ALICE}`);
+    const { user } = renderApp(`/identities/${ALICE}`);
     await screen.findByTestId("profile-panel");
 
     await user.click(screen.getByTestId("profile-replace-submit"));
@@ -62,7 +62,7 @@ describe("profile replacement", () => {
   });
 
   it("states what a hostname publishes, once, before the first one", async () => {
-    const { user } = renderApp(`/wallet/identities/${ACME}`);
+    const { user } = renderApp(`/identities/${ACME}`);
     await screen.findByTestId("profile-panel");
 
     await user.type(screen.getByTestId("profile-hostname"), "acme.example");
@@ -90,7 +90,7 @@ describe("profile replacement", () => {
 
   it("asks for the consent only once per node home", async () => {
     globalThis.localStorage.setItem(HOSTNAME_CONSENT_KEY, "1");
-    const { user } = renderApp(`/wallet/identities/${ACME}`);
+    const { user } = renderApp(`/identities/${ACME}`);
     await screen.findByTestId("profile-panel");
 
     await user.type(screen.getByTestId("profile-hostname"), "acme.example");
@@ -103,7 +103,7 @@ describe("profile replacement", () => {
 
 describe("verification", () => {
   it("forces a check and reports the fresh verdict", async () => {
-    const { user } = renderApp(`/wallet/identities/${ALICE}`);
+    const { user } = renderApp(`/identities/${ALICE}`);
     await screen.findByTestId("verification-panel");
 
     expect(screen.getByTestId("verification-mark")).toHaveAttribute(
@@ -120,7 +120,7 @@ describe("verification", () => {
   });
 
   it("refuses a check on an identity that claims no hostname", async () => {
-    const { user } = renderApp(`/wallet/identities/${ACME}`);
+    const { user } = renderApp(`/identities/${ACME}`);
     await screen.findByTestId("verification-panel");
 
     expect(screen.getByTestId("verification-status")).toHaveTextContent("unclaimed");
@@ -134,7 +134,7 @@ describe("verification", () => {
 
 describe("contact", () => {
   it("round-trips the private note through the contact route", async () => {
-    const { user } = renderApp(`/wallet/identities/${ALICE}`);
+    const { user } = renderApp(`/identities/${ALICE}`);
     await screen.findByTestId("contact-panel");
 
     expect(screen.getByTestId("identity-detail-contact")).toHaveTextContent("none");
@@ -152,7 +152,7 @@ describe("contact", () => {
   });
 
   it("reports a nickname past its byte cap", async () => {
-    const { user } = renderApp(`/wallet/identities/${ALICE}`);
+    const { user } = renderApp(`/identities/${ALICE}`);
     await screen.findByTestId("contact-panel");
 
     await user.type(screen.getByTestId("contact-nickname"), "n".repeat(65));
