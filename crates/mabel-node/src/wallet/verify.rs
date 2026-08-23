@@ -460,10 +460,19 @@ pub fn trust_report(
         })
         .collect();
 
+    // A standing attestation has no revocation, so its statement keeps the
+    // plain clause; the revoked history stays in `revoked_attestations`.
+    // Naming an old revocation beside `trusted: true` would read as if it
+    // applied to the standing claim (flag R: say what was verified).
+    let clause = if standing.is_some() {
+        format!("; no revocation up to seq {}", loaded.head_seq)
+    } else {
+        revocation_clause(loaded.head_seq, &revoked)
+    };
     let statement = format!(
         "{}{}",
         as_of(loaded.head_seq, &issuer_id, &source, verified.fetched_at_ms),
-        revocation_clause(loaded.head_seq, &revoked)
+        clause
     );
     let unresolved = resolution == SubjectResolution::Unresolved;
     TrustReport {

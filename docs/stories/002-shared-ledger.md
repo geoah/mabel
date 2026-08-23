@@ -109,8 +109,9 @@ render.
     `sync-push-submit`.
 14. Verify who signed, from alice's home and from her UI:
     ```sh
-    dc exec -T alice mabel verify trust --issuer mabel-demo-co \
-      --subject "$bob_id" --from "$witness_id"
+    dc exec -T alice sh -c 'mabel verify trust --issuer mabel-demo-co \
+      --subject '"$bob_id"' --from '"$witness_id"' \
+      --peer "$(cat /shared/witness.ticket)"'
     ```
     In the UI, open `nav-verify`, put `org_id` in `verify-trust-issuer`,
     `bob_id` in `verify-trust-subject`, `witness_id` in `verify-trust-from`,

@@ -209,14 +209,11 @@ test("steps 8 and 9: attested again, and revocation stays history", async () => 
   expect(document.attestation_event).toBe(secondAttestation);
   expect(document.attestation_seq).toBe(4);
   expect(document.revoked_count).toBe(1);
-  // The story expects `; no revocation up to seq 4` here. The node prints a
-  // revocation clause for every entry in revoked_attestations, standing or
-  // not (`revocation_clause` in crates/mabel-node/src/wallet/verify.rs), so
-  // after the re-attestation the statement still names the seq-3 revocation.
-  // The spec asserts what the node says; the story line is reported as wrong.
+  // A standing attestation keeps the plain clause; the seq-3 revocation
+  // stays in revoked_attestations (revoked_count above).
   expect(document.statement).toMatch(
     new RegExp(
-      `^valid as of seq 4 of ${aliceId}, fetched from ${witnessId} at ${RFC3339_UTC}; attestation ${aliceAttestation} revoked at seq 3$`,
+      `^valid as of seq 4 of ${aliceId}, fetched from ${witnessId} at ${RFC3339_UTC}; no revocation up to seq 4$`,
     ),
   );
 
