@@ -12,3 +12,7 @@ never move.
   organization ledger types with one ledger whose folded state is a principal
   set, rooted in either a raw key or one founding identity. Accepted;
   supersedes parts of 001 sections 3.1 to 3.6, 9 and 10.
+- [003-wallet-ux-dns-and-trust-graph.md](003-wallet-ux-dns-and-trust-graph.md):
+  on-ledger profiles (payload tag 17), DNS hostname verification, the local
+  trust graph, and the wallet information architecture. Proposed; implements
+  decisions 014, 015 and 016.
