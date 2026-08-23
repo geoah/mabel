@@ -96,7 +96,7 @@ milestone 10 and are deliberately not ticketed here.
   staleness and truncation surfaces. Depends on 026, 027.
 - [030-witness-crawl-provenance.md](030-witness-crawl-provenance.md): witness
   pulls referenced ledgers and records `pull_reason`, off by default. Deferred
-  second priority, may slip. Depends on 025.
+  out of the proof of concept. Depends on 025.
 - [031-admitted-controller-acts-from-own-home.md](031-admitted-controller-acts-from-own-home.md):
   a fetched ledger whose controller set names a local identity becomes
   actionable from that home. Depends on none.

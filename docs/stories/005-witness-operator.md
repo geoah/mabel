@@ -16,9 +16,10 @@ recorded, and issues nothing but reads.
   witness holds.
 
 `dc` stands for `docker compose -f docker/compose.yaml`, run from the
-repository root. This story starts from story 004, so it inherits the
-hand-started second witness and second machine that ticket 032's compose
-overlay replaces, and step 11 tears them down.
+repository root. This story starts from story 004, so it inherits story 004's
+hand-started second witness and second machine (an operator would use ticket
+032's `compose.two-witnesses.yaml` overlay instead; the spec hand-starts them
+for the reason story 004 states), and step 11 tears them down.
 
 ## Story
 

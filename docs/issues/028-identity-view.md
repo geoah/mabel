@@ -1,6 +1,6 @@
 # 028: identity view, overview table, ledger lines, state and actions
 
-- Status: open
+- Status: done
 - Depends on: 026, 027, 021
 
 ## Goal

@@ -21,10 +21,11 @@ here forges a signature: both events are valid.
   `http://127.0.0.1:9083`. It meets one branch.
 
 `dc` stands for `docker compose -f docker/compose.yaml`, run from the
-repository root. `compose.yaml` defines one witness, so step 2 starts the
-second one by hand on the same bridge network; ticket 032 replaces that with a
-`docker/compose.two-witnesses.yaml` overlay, and this story switches to the
-overlay when it lands.
+repository root. `compose.yaml` defines one witness. An operator brings the
+second one up with the `docker/compose.two-witnesses.yaml` overlay (ticket
+032); the Playwright spec instead starts it by hand with `docker run` in step
+2, because the e2e harness owns the base compose lifecycle and a per-spec
+overlay would recreate the shared network under the other specs.
 
 ## Story
 

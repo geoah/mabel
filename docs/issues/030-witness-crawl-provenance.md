@@ -1,6 +1,8 @@
 # 030: witness-side crawl and pull provenance
 
-- Status: open (second priority, may slip)
+- Status: deferred (out of the proof of concept; proposal 003 section 3
+  marks the witness-side pull a second priority, and no shipped surface
+  depends on it)
 - Depends on: 025
 
 ## Goal

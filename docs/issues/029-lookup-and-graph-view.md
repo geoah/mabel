@@ -1,6 +1,6 @@
 # 029: lookup view for a foreign identity and the graph surfaces
 
-- Status: open
+- Status: done
 - Depends on: 026, 027
 
 ## Goal
