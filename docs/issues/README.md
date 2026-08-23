@@ -1,7 +1,8 @@
 # Issues
 
 Implementation tickets for [proposals/001-architecture.md](../proposals/001-architecture.md)
-as amended by [proposals/002-unified-ledger.md](../proposals/002-unified-ledger.md),
+as amended by [proposals/002-unified-ledger.md](../proposals/002-unified-ledger.md)
+and [proposals/003-wallet-ux-dns-and-trust-graph.md](../proposals/003-wallet-ux-dns-and-trust-graph.md),
 numbered in rough execution order. Template:
 [../templates/ticket.md](../templates/ticket.md). Ticket numbers never move;
 `Depends on` is the real order, so anything with satisfied dependencies can run
@@ -12,7 +13,7 @@ milestone 10 and are deliberately not ticketed here.
 
 - [001-workspace-and-proto-schemas.md](001-workspace-and-proto-schemas.md):
   unified protos of proposal 002 section 7, regenerated vectors, workspace fmt,
-  clippy and test checks. Depends on none.
+  clippy and test checks. Depends on none. Done.
 - [002-canonical-encoding-and-digests.md](002-canonical-encoding-and-digests.md):
   canonical encoding, digests, base32 ids, signing path, golden vectors.
   Depends on 001. Done.
@@ -23,20 +24,21 @@ milestone 10 and are deliberately not ticketed here.
   boundary, stateful rows, partial validity. Depends on 003. Done.
 - [005-membership-fold.md](005-membership-fold.md): invitation lifecycle,
   admission bindings, duplicate keys, promotion, last-controller rule,
-  `signing_principal`. Depends on 001.
+  `signing_principal`. Depends on 001. Done.
 - [006-file-artifacts-and-fork-records.md](006-file-artifacts-and-fork-records.md):
   the three file artifacts, caps, fork-record validation. Depends on 005.
+  Done.
 - [007-node-home-and-storage.md](007-node-home-and-storage.md): node home
   layout, typed `node.json`, atomic writes, keys, permissions. Depends on 002.
   Done.
 - [008-cli-local-commands.md](008-cli-local-commands.md): CLI skeleton, output
   and exit-code framework, `identity create --kind --founder`, trust, verify,
-  `node id`. Depends on 001, 007.
+  `node id`. Depends on 001, 007. Done.
 - [009-mabel-net-sync-protocol.md](009-mabel-net-sync-protocol.md): ALPN,
   client, `ProtocolHandler`, caps, loopback tests. Depends on 003. Done.
 - [010-witness-runtime.md](010-witness-runtime.md): admission, push semantics,
   fork records, `witness run`, the witness service trait. Depends on 006, 007,
-  009.
+  009. Done.
 - [011-wallet-sync-and-multi-source-verify.md](011-wallet-sync-and-multi-source-verify.md):
   push and fetch, append discipline, equivocation, `signing_principal`, the
   sync and verify service traits. Depends on 007, 008, 009. Done.
@@ -45,9 +47,9 @@ milestone 10 and are deliberately not ticketed here.
   middleware, UI serving. Depends on 020.
 - [013-ui-shell-and-wallet-route.md](013-ui-shell-and-wallet-route.md): Vite
   app shell, fixture-typed API client, identity and trust screens. Depends on
-  020.
+  020. Done.
 - [014-witness-ui-route.md](014-witness-ui-route.md): witness debug route with
-  ledgers and forks. Depends on 013.
+  ledgers and forks. Depends on 013. Done.
 - [015-docker-image-and-compose.md](015-docker-image-and-compose.md):
   multi-stage image and the compose topology with seeded tickets. Depends on
   013.
@@ -58,15 +60,46 @@ milestone 10 and are deliberately not ticketed here.
   topology. Depends on 015.
 - [018-cli-membership-commands-and-artifacts.md](018-cli-membership-commands-and-artifacts.md):
   `mabel membership invite|accept|admit|remove`, `identity export`, the three
-  file artifacts. Depends on 006, 008.
+  file artifacts. Depends on 006, 008. Done.
 - [019-wallet-principals-and-verify-screens.md](019-wallet-principals-and-verify-screens.md):
-  Principals panel, membership, sync and verify screens. Depends on 013, plus
-  021's contract freeze for the membership screens.
+  Principals panel, membership, sync and verify screens. Superseded by
+  proposal 003's ticket cut and folded into 028.
 - [020-api-contract-fixtures.md](020-api-contract-fixtures.md): the frozen
   `contracts/` HTTP and `--json` fixtures. Depends on none. Done.
 - [021-membership-http-routes.md](021-membership-http-routes.md): membership
   route fixtures, the node routes, and the wallet wiring. Depends on 012, 018,
-  019.
+  019. Done.
 - [022-mobile-friendly-ui.md](022-mobile-friendly-ui.md): responsive wallet
   and witness UI, identifier truncation, screenshot verification at three
-  widths. Depends on 013, 014.
+  widths. Depends on 013, 014. Done.
+- [023-profile-payload.md](023-profile-payload.md): `ProfileUpdate` at payload
+  tag 17, the codepoint policy on `FieldKind::String`, latest-wins fold, the
+  `no_op_profile_update` guard, golden and rejection vectors. Depends on none.
+- [024-dns-hostname-verifier.md](024-dns-hostname-verifier.md): the `Resolver`
+  trait over `hickory-resolver`, the `_mabel.<hostname>` TXT rules, the five
+  advisory statuses and the verification cache. Depends on 023.
+- [025-trust-graph-crawler-and-store.md](025-trust-graph-crawler-and-store.md):
+  the `LedgerFetcher` trait and source order, capped breadth-first crawl,
+  generations behind `graph/current.json`, reverse edges. Depends on 023, 011.
+- [026-profile-contact-and-graph-routes.md](026-profile-contact-and-graph-routes.md):
+  fixtures first, then the shared identity document, `ResolvedIdentity`, the
+  contact store, and the profile, verification, lookup and graph routes with
+  their CLI commands. Depends on 023, 024, 025.
+- [027-wallet-shell-and-name-resolution.md](027-wallet-shell-and-name-resolution.md):
+  identity selector, the `ResolvedIdentity` component and the `Identifier` name
+  slot, developer mode, consent panels. Depends on 026.
+- [028-identity-view.md](028-identity-view.md): overview table, ledger lines,
+  state and actions, absorbing ticket 019's membership, sync and verify
+  screens. Depends on 026, 027, 021.
+- [029-lookup-and-graph-view.md](029-lookup-and-graph-view.md): foreign-identity
+  drill-down, path rendering from the selected root, two-level expansion,
+  staleness and truncation surfaces. Depends on 026, 027.
+- [030-witness-crawl-provenance.md](030-witness-crawl-provenance.md): witness
+  pulls referenced ledgers and records `pull_reason`, off by default. Deferred
+  second priority, may slip. Depends on 025.
+- [031-admitted-controller-acts-from-own-home.md](031-admitted-controller-acts-from-own-home.md):
+  a fetched ledger whose controller set names a local identity becomes
+  actionable from that home. Depends on none.
+- [032-topology-tooling-gaps.md](032-topology-tooling-gaps.md): `mabel node
+  ticket`, settable node-wide witnesses, a second witness in compose,
+  `peers.json` hints on push. Depends on none.

@@ -12,7 +12,7 @@ retires `contracts/http/PENDING-membership.md`.
 ## Scope
 
 - Freeze first, before the rest of this ticket and before ticket 019 starts:
-  add `contracts/http/wallet-post-memberships-invitations.json`,
+  add `contracts/http/wallet-post-membership-invitations.json`,
   `-acceptances.json` and `-removals.json` for `POST
   /api/identities/:identity_id/memberships/invitations`, `/acceptances` and
   `/removals`, using the field names ticket 018 settles for the CLI. Add the
