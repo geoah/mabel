@@ -35,17 +35,17 @@ IO (section 7).
 
 ## Acceptance criteria
 
-- [ ] The fold reads no local state and touches no disk; `mabel-core` has no
+- [x] The fold reads no local state and touches no disk; `mabel-core` has no
       filesystem or tokio dependency (sections 3.6 and 7, pitfall 5).
-- [ ] The signature is `(State, Option<Violation>)` and a violation reports the
+- [x] The signature is `(State, Option<Violation>)` and a violation reports the
       failing sequence and reason (section 3.6).
-- [ ] Nothing is checked against the verifier's clock (section 3.2).
-- [ ] tests: one negative test each for broken prev link, duplicate sequence,
+- [x] Nothing is checked against the verifier's clock (section 3.2).
+- [x] tests: one negative test each for broken prev link, duplicate sequence,
       gap, wrong ledger id, backwards timestamp, timestamp past the year-2100
       bound, unauthorized signer and payload wrong for the ledger kind
       (section 11, chain bullet).
-- [ ] tests: attestation duplicating an unrevoked subject, revocation of an
+- [x] tests: attestation duplicating an unrevoked subject, revocation of an
       unknown attestation and revocation of an already revoked attestation are
       each rejected (section 11, policy bullet).
-- [ ] tests: a ledger valid to seq N with a bad event at M folds to the state
+- [x] tests: a ledger valid to seq N with a bad event at M folds to the state
       at N and reports the violation at M.

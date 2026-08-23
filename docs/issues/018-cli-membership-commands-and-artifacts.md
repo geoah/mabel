@@ -39,16 +39,16 @@ Out of scope: pushing any of this to a witness (ticket 011).
 
 ## Acceptance criteria
 
-- [ ] Every command is spelled `membership`, with `org` and `member` accepted
+- [x] Every command is spelled `membership`, with `org` and `member` accepted
       but undocumented.
-- [ ] `membership invite` takes the invitee's `IdentityDescriptor` file, never a
+- [x] `membership invite` takes the invitee's `IdentityDescriptor` file, never a
       raw id and key, and the invitation embeds the invitee's inception.
-- [ ] `membership accept` prints the summary and the raw-root warning before
+- [x] `membership accept` prints the summary and the raw-root warning before
       signing, and refuses a bundle whose prefix fails to fold.
-- [ ] This ticket owns exit code 10: an over-cap or malformed artifact file
+- [x] This ticket owns exit code 10: an over-cap or malformed artifact file
       exits 10 with the `Schema error:` prefix and the JSON error envelope.
-- [ ] tests: `assert_cmd` over a temp home runs export, invite, accept, admit,
+- [x] tests: `assert_cmd` over a temp home runs export, invite, accept, admit,
       promotion and removal against both a raw-rooted and an identity-rooted
       ledger, and asserts exit 50 with `reason: acceptance_already_used` for a
       replayed acceptance and exit 10 for each over-cap artifact.
-- [ ] tests: `--json` shape stability for every command in this ticket.
+- [x] tests: `--json` shape stability for every command in this ticket.

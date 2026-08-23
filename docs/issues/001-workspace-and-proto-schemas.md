@@ -44,16 +44,16 @@ covers the membership fold.
 
 ## Acceptance criteria
 
-- [ ] `ledger.proto` matches proposal 002 section 7 field for field, including
+- [x] `ledger.proto` matches proposal 002 section 7 field for field, including
       the payload tags and `reserved 20 to 29`.
-- [ ] `grep -ri` over `proto/`, `crates/` and `test-vectors/` finds no `Org`
+- [x] `grep -ri` over `proto/`, `crates/` and `test-vectors/` finds no `Org`
       message name, no `sig` field and no `person_inception` payload name.
-- [ ] `files.proto` names `InvitationBundle.ledger_prefix` and
+- [x] `files.proto` names `InvitationBundle.ledger_prefix` and
       `AcceptanceFile.signature`; `sync.proto` names `declared_kind`.
-- [ ] The vector set carries the names above and regenerating twice produces
+- [x] The vector set carries the names above and regenerating twice produces
       byte-identical files.
-- [ ] `mabel-proto` contains only `build.rs` and re-exports, and `cargo tree -p
+- [x] `mabel-proto` contains only `build.rs` and re-exports, and `cargo tree -p
       mabel-core` lists neither `tokio` nor `iroh` proper.
 - [ ] Root `README.md` contains both sentences verbatim.
-- [ ] tests: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`
+- [x] tests: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`
       and `cargo test --workspace` all pass.

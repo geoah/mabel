@@ -38,22 +38,22 @@ section 5, records forks and serves reads.
 
 ## Acceptance criteria
 
-- [ ] tests, each a named case: a push of an unheld ledger naming this witness
+- [x] tests, each a named case: a push of an unheld ledger naming this witness
       is admitted; a third party may relay to an already stored ledger; a push
       for an unknown ledger not naming the witness answers `NOT_ADMITTED`.
-- [ ] tests: first ingest verifies the full chain and a following push verifies
+- [x] tests: first ingest verifies the full chain and a following push verifies
       only the spliced suffix; a restart rebuilds folded state from disk.
-- [ ] tests: a gapped push answers `MALFORMED`; an overlapping re-push is
+- [x] tests: a gapped push answers `MALFORMED`; an overlapping re-push is
       idempotent; a partially invalid push stores the valid prefix atomically
       and answers `INVALID` with the right `at_seq`.
-- [ ] tests: a fork push produces a `ForkRecord` carrying both events while the
+- [x] tests: a fork push produces a `ForkRecord` carrying both events while the
       first event survives; an invalid conflicting event is rejected and not
       stored; the ninth fork on one ledger is not recorded and
       `forks_truncated` is set.
-- [ ] tests: pushes crossing the 4096-event, 4 MiB, 10000-ledger and
+- [x] tests: pushes crossing the 4096-event, 4 MiB, 10000-ledger and
       `storage_cap` limits are rejected.
-- [ ] tests: `List` paging is stable in ascending ledger id order across pages.
-- [ ] tests: the witness service trait, backed by this store, returns documents
+- [x] tests: `List` paging is stable in ascending ledger id order across pages.
+- [x] tests: the witness service trait, backed by this store, returns documents
       matching every `contracts/http/witness-*.json` fixture, so ticket 012's
       route tests pass against the real implementation.
-- [ ] The stored event bytes are the received bytes (section 3.1).
+- [x] The stored event bytes are the received bytes (section 3.1).

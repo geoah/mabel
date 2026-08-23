@@ -35,17 +35,17 @@ deliberately not ticketed here.
 
 ## Acceptance criteria
 
-- [ ] The fresh verifier fetches and verifies both the issuer's and the
+- [x] The fresh verifier fetches and verifies both the issuer's and the
       subject's ledger from bytes, from the witness alone, and reports the
       `verify trust` document of `contracts/cli/verify-trust.json`, including
       `signing_principal`.
-- [ ] Verification in the suite goes through the full-chain-from-nothing path,
+- [x] Verification in the suite goes through the full-chain-from-nothing path,
       not the witness suffix path (section 5).
-- [ ] tests: the suite runs under `cargo test` with no network access beyond
+- [x] tests: the suite runs under `cargo test` with no network access beyond
       loopback and asserts exit codes 0, 20, 30 and 50 with their JSON bodies
       and text prefixes.
 
-- [ ] Wire the append discipline (WalletSync::ensure_fresh) into the CLI
+- [x] Wire the append discipline (WalletSync::ensure_fresh) into the CLI
       appending commands (trust add/revoke, witness add, membership) for
       ledgers that name witnesses, with a test (ticket 011 deviation 2).
 

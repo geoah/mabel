@@ -29,9 +29,9 @@ hide the information a reader needs.
 ## Acceptance criteria
 
 - [ ] No horizontal page scroll on any route at 360px width.
-- [ ] Ids are readable (head+tail) everywhere, with copy and full-value
+- [x] Ids are readable (head+tail) everywhere, with copy and full-value
       affordances; verify reports show full ids without layout breakage.
-- [ ] Component tests still pass; new tests cover the identifier component.
+- [x] Component tests still pass; new tests cover the identifier component.
 - [ ] tests: npm test, npm run build, npm run lint green; screenshot script
       runs against the demo build and screenshots reviewed at all three
       widths.

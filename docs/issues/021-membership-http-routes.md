@@ -35,14 +35,14 @@ retires `contracts/http/PENDING-membership.md`.
 
 ## Acceptance criteria
 
-- [ ] `contracts/http/PENDING-membership.md` is gone and every item it listed is
+- [x] `contracts/http/PENDING-membership.md` is gone and every item it listed is
       answered in `contracts/README.md`.
-- [ ] The three routes return the frozen documents; the identity document
+- [x] The three routes return the frozen documents; the identity document
       carries `principals` on every ledger, raw-rooted or identity-rooted.
-- [ ] The route paths spell `memberships`, and no `/orgs` route exists.
-- [ ] Admitting an already-used acceptance answers 409 with `code: 50` and
+- [x] The route paths spell `memberships`, and no `/orgs` route exists.
+- [x] Admitting an already-used acceptance answers 409 with `code: 50` and
       `reason: acceptance_already_used`, matching `contracts/cli/errors.json`.
-- [ ] tests: one happy-path and one error test per route against an in-process
+- [x] tests: one happy-path and one error test per route against an in-process
       server, asserting the fixture bodies.
 - [ ] tests: the ticket 019 membership screens drive the three routes against a
       mocked API, and `npm run build`, typecheck and lint pass.

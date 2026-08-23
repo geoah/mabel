@@ -40,21 +40,21 @@ comparison rules of proposal 001 section 3.7.
 
 ## Acceptance criteria
 
-- [ ] Dialling uses `EndpointId` alone, with tickets only as address hints.
-- [ ] Every verification result names its source, head sequence, head event and
+- [x] Dialling uses `EndpointId` alone, with tickets only as address hints.
+- [x] Every verification result names its source, head sequence, head event and
       fetch time (section 6, flag R).
-- [ ] `verify trust` output names the signing principal in both text and
+- [x] `verify trust` output names the signing principal in both text and
       `--json`, matching `contracts/cli/verify-trust.json`.
-- [ ] This ticket owns exit codes 30 and 50: a dial or request failure exits 30
+- [x] This ticket owns exit codes 30 and 50: a dial or request failure exits 30
       with the `Network error:` prefix, and an append against an advanced remote
       head exits 50 with `reason: stale_head`; each has a test asserting the
       code, the JSON body and the text prefix.
-- [ ] tests run against in-process doubles, a stub witness implementing the
+- [x] tests run against in-process doubles, a stub witness implementing the
       ticket 009 store trait; the real two-witness versions of the exit-50 and
       exit-20 cases belong to ticket 016.
-- [ ] tests: after an exit-50 append no stale event remains in the home, and a
+- [x] tests: after an exit-50 append no stale event remains in the home, and a
       retry re-signs the same intent on the new head and succeeds.
-- [ ] tests: two stub sources on divergent branches report both endpoints and
+- [x] tests: two stub sources on divergent branches report both endpoints and
       both event ids and exit 20; a source holding a strict prefix of another
       loses without an equivocation report; `verify trust` for a subject no
       source holds reports `unresolved` and still succeeds.

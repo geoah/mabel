@@ -33,12 +33,12 @@ routes, with no change here.
 
 ## Acceptance criteria
 
-- [ ] Every `LedgerSummary` and `ForkRecord` field named in section 5 appears
+- [x] Every `LedgerSummary` and `ForkRecord` field named in section 5 appears
       in the route.
-- [ ] The fork view shows the kept and the conflicting event side by side so a
+- [x] The fork view shows the kept and the conflicting event side by side so a
       reader checks the conflict without a second request (section 5).
-- [ ] The route is read-only and issues no mutating request (section 10).
-- [ ] tests: vitest plus testing-library component tests with a mocked API
+- [x] The route is read-only and issues no mutating request (section 10).
+- [x] tests: vitest plus testing-library component tests with a mocked API
       cover ledger paging, fork rendering with both events, the
       `forks_truncated` indicator, and the absence of any mutating control.
-- [ ] tests: `npm run build`, typecheck and lint pass.
+- [x] tests: `npm run build`, typecheck and lint pass.

@@ -40,14 +40,14 @@ against the fixtures, and the ticket 012 stub server serves them unchanged.
 
 ## Acceptance criteria
 
-- [ ] The app holds no keys and performs no crypto; every operation is an API
+- [x] The app holds no keys and performs no crypto; every operation is an API
       call (section 10).
 - [ ] The API client types are derived from `contracts/http/` and a fixture
       document parses into them with no missing or extra key.
 - [ ] One build produces one bundle covering both routes, and the pinned
       dependency versions match section 12.
-- [ ] Interactive elements carry `data-testid` attributes.
-- [ ] tests: vitest plus testing-library component tests with the fixtures as
+- [x] Interactive elements carry `data-testid` attributes.
+- [x] tests: vitest plus testing-library component tests with the fixtures as
       the mocked API cover the identity and trust forms, their validation and
       the rendering of an error envelope.
 - [ ] tests: `npm run build` succeeds, typecheck and lint pass, and the built

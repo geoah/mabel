@@ -25,8 +25,8 @@ already seeded, needing no internet.
 
 ## Acceptance criteria
 
-- [ ] One image, selected role by command, for all three services (section 11).
-- [ ] The UI bundle is embedded in the image, so no host `ui/` mount is needed
+- [x] One image, selected role by command, for all three services (section 11).
+- [x] The UI bundle is embedded in the image, so no host `ui/` mount is needed
       (section 10).
 - [ ] Each wallet's `peers.json` contains the witness's real ticket before its
       first command runs (section 11).

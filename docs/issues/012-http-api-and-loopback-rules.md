@@ -45,16 +45,16 @@ implemented concurrently with tickets 010, 011 and 013.
 
 ## Acceptance criteria
 
-- [ ] Every `contracts/http/*.json` route exists, and its success and error
+- [x] Every `contracts/http/*.json` route exists, and its success and error
       bodies match the fixture key for key.
-- [ ] No handler reads storage or signs; the traits are the only path to node
+- [x] No handler reads storage or signs; the traits are the only path to node
       state (section 10).
 - [ ] The membership routes answer 501 with `code: 70`.
 - [ ] Both roles default to `127.0.0.1` and warn when bound elsewhere;
       `--ui-dir` serves the bundle from disk, otherwise the embed serves it.
-- [ ] tests: the middleware rejects `Host: evil.example`, the right host on the
+- [x] tests: the middleware rejects `Host: evil.example`, the right host on the
       wrong port, `localhost.example`, an absent and a mismatched `Origin` on a
       mutating route, and a non-JSON content type; a table test asserts every
       mutating route is covered.
-- [ ] tests: one test per fixture asserts the stub response equals the fixture,
+- [x] tests: one test per fixture asserts the stub response equals the fixture,
       including `?since=` at the head sequence.

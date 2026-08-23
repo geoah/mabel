@@ -29,7 +29,7 @@ deliberately not ticketed here.
 - [ ] The script runs end to end against `docker compose up` and exits 0.
 - [ ] It uses only the CLI surface of section 9 and the seeded tickets from
       ticket 015, contacting no external network.
-- [ ] The stranger step runs against a wiped home with no keys and prints a
+- [x] The stranger step runs against a wiped home with no keys and prints a
       result naming its source and head sequence (sections 3.7 and 6).
 - [ ] tests: a CI-callable invocation of the script returns 0 and its output
       contains the revocation and the witness ledger list.

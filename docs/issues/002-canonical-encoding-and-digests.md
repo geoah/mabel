@@ -34,16 +34,16 @@ the repository has a golden vector harness that pins those bytes.
 
 ## Acceptance criteria
 
-- [ ] The encoder reproduces the canonical form of section 3.1 for every
+- [x] The encoder reproduces the canonical form of section 3.1 for every
       message type in sections 3.2, 3.4 and 3.5.
-- [ ] The four digest and input formulas match section 3.1 byte for byte,
+- [x] The four digest and input formulas match section 3.1 byte for byte,
       including the trailing newline in each domain separator.
-- [ ] Ids render as 52 lowercase base32 characters and round-trip to 32 bytes.
-- [ ] `test-vectors/` covers every payload variant in sections 3.2, 3.4 and
+- [x] Ids render as 52 lowercase base32 characters and round-trip to 32 bytes.
+- [x] `test-vectors/` covers every payload variant in sections 3.2, 3.4 and
       3.5, and no test writes to it.
-- [ ] tests: the golden test compares the encoder's output against the
+- [x] tests: the golden test compares the encoder's output against the
       checked-in bytes, `event_id` and signature; mutating any single byte of a
       vector body makes signature verification fail.
-- [ ] tests: appending with a clock behind `prev.timestamp_ms` produces
+- [x] tests: appending with a clock behind `prev.timestamp_ms` produces
       `prev`'s timestamp and a valid event, not a rejection (section 3.2).
-- [ ] tests: the base32 round trip and each digest formula have a unit test.
+- [x] tests: the base32 round trip and each digest formula have a unit test.

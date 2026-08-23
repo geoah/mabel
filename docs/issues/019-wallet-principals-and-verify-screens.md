@@ -1,6 +1,6 @@
 # 019: wallet Principals panel, membership, sync and verify screens
 
-- Status: open
+- Status: superseded by proposal 003 ticket cut
 - Depends on: 013; the Principals panel and the membership screens also need
   ticket 021's contract freeze
 

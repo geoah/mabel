@@ -31,18 +31,18 @@ section 5 requires of the witness and of any reader.
 
 ## Acceptance criteria
 
-- [ ] Each artifact's cap is checked before allocation and an oversize input is
+- [x] Each artifact's cap is checked before allocation and an oversize input is
       rejected without reading the remainder (section 3.8).
-- [ ] Artifacts go through the same validator and field table as network input
+- [x] Artifacts go through the same validator and field table as network input
       (section 3.8).
-- [ ] The bundle summary names the root variant and warns on a `CONTROLLER`
+- [x] The bundle summary names the root variant and warns on a `CONTROLLER`
       offer against a raw-rooted ledger (proposal 002 section 4).
-- [ ] `validate_fork_record` takes the shared prefix plus both `SignedEvent`s
+- [x] `validate_fork_record` takes the shared prefix plus both `SignedEvent`s
       and is the single implementation the witness and readers call (section
       5).
-- [ ] tests: fork-record validation accepts a real conflict at a sequence,
+- [x] tests: fork-record validation accepts a real conflict at a sequence,
       rejects a malformed conflicting event and rejects one signed by a key not
       authorized at that position (section 11, policy bullet).
-- [ ] tests: an over-cap `InvitationBundle`, `AcceptanceFile` and
+- [x] tests: an over-cap `InvitationBundle`, `AcceptanceFile` and
       `IdentityDescriptor` are each rejected; a bundle whose prefix fails to
       fold reports the violation rather than the invitation summary.

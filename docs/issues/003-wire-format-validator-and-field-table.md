@@ -35,16 +35,16 @@ Out of scope, because they need folded state: `author_key` authorization, the
 
 ## Acceptance criteria
 
-- [ ] The validator's entry points take `&[u8]` and return before any prost
+- [x] The validator's entry points take `&[u8]` and return before any prost
       decode, so no code path decodes first (section 3.1).
-- [ ] `encoded_len() == len` appears only as a debug assertion, if at all, and
+- [x] `encoded_len() == len` appears only as a debug assertion, if at all, and
       is not the gate (section 3.1).
-- [ ] Every stateless row of the section 3.4 table is enforced with the exact
+- [x] Every stateless row of the section 3.4 table is enforced with the exact
       byte lengths that table states.
-- [ ] `verify_inception_standalone` enforces all four conditions section 3.4
+- [x] `verify_inception_standalone` enforces all four conditions section 3.4
       lists and rejects an inception whose digest does not equal the recorded
       id and one whose `active_key` differs from the recorded key.
-- [ ] tests: one negative unit test per validator class and per stateless
+- [x] tests: one negative unit test per validator class and per stateless
       field-table row (section 11, core unit tests bullet); every rejection
       vector in `test-vectors/` is rejected with the expected reason; a valid
       golden vector from ticket 002 passes.

@@ -44,15 +44,15 @@ export` (ticket 018); all network commands (tickets 011 and 012). The
 
 ## Acceptance criteria
 
-- [ ] Every command and flag this ticket owns is spelled as in proposal 001
+- [x] Every command and flag this ticket owns is spelled as in proposal 001
       section 9 and proposal 002 section 6.
-- [ ] `identity create` with no `--founder` produces a raw root, and with
+- [x] `identity create` with no `--founder` produces a raw root, and with
       `--founder` an identity root whose founding principal is that identity.
-- [ ] Aliases resolve locally and are never signed; ids are authoritative.
-- [ ] This ticket owns exit codes 0, 2, 20, 60 and 70: a successful `identity
+- [x] Aliases resolve locally and are never signed; ids are authoritative.
+- [x] This ticket owns exit codes 0, 2, 20, 60 and 70: a successful `identity
       list`, an unknown flag, `verify ledger` on a tampered ledger, a 0644
       `active.key`, and `identity rotate`. Each has a test asserting the code,
       the JSON body and the text prefix.
-- [ ] tests: `assert_cmd` over a temp home covers each command and asserts each
+- [x] tests: `assert_cmd` over a temp home covers each command and asserts each
       `--json` document against the matching `contracts/cli/` fixture, key for
       key, including the `verify trust` trusted and revoked cases.

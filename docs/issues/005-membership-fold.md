@@ -40,21 +40,21 @@ it against.
 
 ## Acceptance criteria
 
-- [ ] Membership verification performs no cross-ledger lookup and yields no
+- [x] Membership verification performs no cross-ledger lookup and yields no
       "unresolved" verdict.
-- [ ] Events signed by a controller before its removal stay valid.
+- [x] Events signed by a controller before its removal stay valid.
 - [ ] tests: on a raw-rooted ledger, invite, accept and promote a second
       `CONTROLLER`, then have it sign an event that folds without violation.
-- [ ] tests: an invitation is rejected for an invitee holding an open
+- [x] tests: an invitation is rejected for an invitee holding an open
       invitation, and for `invitee` equal to the ledger id.
-- [ ] tests: an acceptance is rejected for a duplicate principal key, and a
+- [x] tests: an acceptance is rejected for a duplicate principal key, and a
       promotion carrying a stale key for that principal is rejected.
 - [ ] tests: four acceptance transplants are rejected, one each for another
       ledger, another invitation, another identity and another key, plus reuse
       on the same branch and an outer event signed by a non-controller.
-- [ ] tests: removal of the raw root is rejected, removal leaving no
+- [x] tests: removal of the raw root is rejected, removal leaving no
       `CONTROLLER` is rejected, self-removal succeeds while another controller
       remains, and removal cancels an open invitation.
-- [ ] tests: a `MEMBER` signing an event is rejected.
-- [ ] tests: `Attestation.signing_principal` names the delegate that signed,
+- [x] tests: a `MEMBER` signing an event is rejected.
+- [x] tests: `Attestation.signing_principal` names the delegate that signed,
       not the ledger subject.

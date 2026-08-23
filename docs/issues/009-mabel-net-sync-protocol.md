@@ -38,16 +38,16 @@ Out of scope: admission, push storage semantics and fork recording (ticket 010).
 
 ## Acceptance criteria
 
-- [ ] Transport identity is never used for authorization; `remote_id()` is
+- [x] Transport identity is never used for authorization; `remote_id()` is
       passed to the store as provenance only (section 4).
-- [ ] Every `RejectCode` of section 5 round-trips through encode and decode.
-- [ ] `mabel-net` itself returns `MALFORMED`, `TOO_LARGE`, `UNSUPPORTED` and
+- [x] Every `RejectCode` of section 5 round-trips through encode and decode.
+- [x] `mabel-net` itself returns `MALFORMED`, `TOO_LARGE`, `UNSUPPORTED` and
       `BUSY`, with an unrecognised `Request` variant answering `UNSUPPORTED`;
       `INVALID`, `FORK` and `NOT_ADMITTED` come from the store and are tested
       in ticket 010.
-- [ ] tests: two in-process endpoints with `presets::Minimal` and
+- [x] tests: two in-process endpoints with `presets::Minimal` and
       `RelayMode::Disabled` dialling the loopback `EndpointAddr` exercise every
       request type, oversize, truncated and garbage input (section 11).
-- [ ] tests: boundary cases for the frame cap, the single-event cap, the push
+- [x] tests: boundary cases for the frame cap, the single-event cap, the push
       count and byte caps, limit clamping for `Get`, `List` and `Forks`, the
       byte budget setting `more`, and `Get` at `since = head_seq`.

@@ -37,17 +37,17 @@ generation and a rebuildable head cache.
 
 ## Acceptance criteria
 
-- [ ] Files land at the exact paths section 8 names, with sequence-ordered
+- [x] Files land at the exact paths section 8 names, with sequence-ordered
       event file names so directory order is chain order.
-- [ ] A crash between event writes and the `head.json` rename leaves a shorter
+- [x] A crash between event writes and the `head.json` rename leaves a shorter
       but valid ledger (section 8).
-- [ ] Deleting `head.json` and reopening rebuilds it from the event files.
-- [ ] Reading an event returns the stored bytes with no decode-then-encode
+- [x] Deleting `head.json` and reopening rebuilds it from the event files.
+- [x] Reading an event returns the stored bytes with no decode-then-encode
       round trip (section 3.1, byte authority).
-- [ ] No database and no index beyond the sorted listing (section 8).
-- [ ] tests: `node.json` round-trips with defaults applied, and `relay:
+- [x] No database and no index beyond the sorted listing (section 8).
+- [x] tests: `node.json` round-trips with defaults applied, and `relay:
       "sometimes"` is rejected with a load error.
-- [ ] tests: unit tests over a `tempfile` home cover atomic append and crash
+- [x] tests: unit tests over a `tempfile` home cover atomic append and crash
       truncation, head rebuild, fork file naming by conflicting event id, 0700
       and 0600 enforcement on create, the exit-60 condition for a 0644 key file
       and the `--allow-insecure-permissions` bypass (section 11).
