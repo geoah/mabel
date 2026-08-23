@@ -15,8 +15,10 @@ use super::documents::{DeclaredKind, ID_LENGTH, Id, RoleName, VerifyKind};
 use super::error::ServiceError;
 use super::service::{
     AcceptInvitation, AddTrust, AdmitAcceptance, CreateIdentity, EventPageRequest, ForkQuery,
-    Invite, PageRequest, PushRequest, RemoveMembership, VerifyRequest,
+    Invite, LookupRequest, PageRequest, PushRequest, RemoveMembership, ReplaceProfile, SetContact,
+    VerifyRequest,
 };
+use crate::contacts::{ContactTextError, MAX_NICKNAME_BYTES, MAX_NOTE_BYTES, normalize};
 
 /// The query string, one value per name.
 pub(super) type Query = HashMap<String, String>;
@@ -282,6 +284,112 @@ pub(super) fn witnesses(bytes: &[u8]) -> Result<Vec<Id>, ServiceError> {
         witnesses.push(endpoint);
     }
     Ok(witnesses)
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ProfileBody {
+    /// Present and `null` clears the name; absent is refused. The outer
+    /// `Option` is "was the key sent", the inner one is its value.
+    #[serde(default, deserialize_with = "sent")]
+    display_name: Option<Option<String>>,
+    #[serde(default, deserialize_with = "sent")]
+    hostname: Option<Option<String>>,
+}
+
+/// Reads a key that may be `null`, keeping "sent as null" apart from "not
+/// sent".
+///
+/// `Option<Option<T>>` alone cannot tell them apart: serde folds an explicit
+/// `null` into the outer `None`, and this route has to refuse the key that
+/// was never sent while accepting the one that was sent empty.
+fn sent<'de, D, T>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Option::deserialize(deserializer).map(Some)
+}
+
+/// `POST /api/identities/{identity_id}/profile`.
+///
+/// Both keys are required and either may be `null`: the operation is
+/// replacement, and a body that names one field would silently clear the
+/// other (proposal 003 section 1).
+pub(super) fn replace_profile(
+    identity_id: Id,
+    bytes: &[u8],
+) -> Result<ReplaceProfile, ServiceError> {
+    let parsed: ProfileBody = body(bytes)?;
+    let name = |field: &str, value: Option<Option<String>>| match value {
+        None => Err(missing_field(field)),
+        Some(value) => Ok(value
+            .map(|value| value.trim().to_owned())
+            .filter(|value| !value.is_empty())),
+    };
+    Ok(ReplaceProfile {
+        display_name: name("display_name", parsed.display_name)?,
+        hostname: name("hostname", parsed.hostname)?,
+        identity_id,
+    })
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ContactBody {
+    #[serde(default)]
+    nickname: Option<String>,
+    #[serde(default)]
+    note: Option<String>,
+}
+
+/// `PUT /api/identities/{identity_id}/contact`.
+///
+/// The note is replaced whole: an absent or `null` field clears it, and both
+/// absent removes the file.
+pub(super) fn set_contact(identity_id: Id, bytes: &[u8]) -> Result<SetContact, ServiceError> {
+    let parsed: ContactBody = body(bytes)?;
+    Ok(SetContact {
+        nickname: contact_field("nickname", parsed.nickname.as_deref(), MAX_NICKNAME_BYTES)?,
+        note: contact_field("note", parsed.note.as_deref(), MAX_NOTE_BYTES)?,
+        identity_id,
+    })
+}
+
+/// One contact field against the caps and the codepoint policy of proposal
+/// 003 section 1.
+fn contact_field(
+    field: &'static str,
+    value: Option<&str>,
+    cap: usize,
+) -> Result<Option<String>, ServiceError> {
+    normalize(field, value, cap).map_err(|error| match error {
+        ContactTextError::TooLong { len, cap, .. } => {
+            ServiceError::schema("contact_field_too_long", error.to_string())
+                .with_detail("field", field)
+                .with_detail("len", len)
+                .with_detail("cap", cap)
+        }
+        ContactTextError::Invalid { detail, .. } => {
+            ServiceError::schema("invalid_contact_text", error.to_string())
+                .with_detail("field", field)
+                .with_detail("detail", detail)
+        }
+    })
+}
+
+/// `?from=` on `GET /api/lookup/{identity_id}`.
+pub(super) fn lookup(identity_id: Id, query: &Query) -> Result<LookupRequest, ServiceError> {
+    only(query, &["from"])?;
+    let from = match present(query, "from") {
+        None => None,
+        Some(raw) => Some(id(IdKind::Identity, raw).map_err(|error| {
+            error
+                .with_detail("parameter", "from")
+                .with_detail("field", "from")
+        })?),
+    };
+    Ok(LookupRequest { identity_id, from })
 }
 
 /// Reads a `*_base64` artifact field (`contracts/README.md`, "Artifacts over

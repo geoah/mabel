@@ -1,0 +1,66 @@
+{
+  "route": "/api/graph",
+  "method": "GET",
+  "request": null,
+  "response": {
+    "ok": true,
+    "graph": {
+      "sync_id": "1700000900000-k4t2q",
+      "last_sync_ms": 1700000900000,
+      "depth": 2,
+      "roots": [
+        {
+          "identity_id": "2okqwhextnpkpmydrgrkk563vbehcklffwfzidxlh5dslawjmn6a",
+          "display_name": "Acme Corporation",
+          "alias": "acme",
+          "hostname": null,
+          "verification_status": "unclaimed",
+          "provenance": "profile"
+        },
+        {
+          "identity_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+          "display_name": "Alice Ashworth",
+          "alias": "alice",
+          "hostname": "alice.example",
+          "verification_status": "verified",
+          "provenance": "profile"
+        }
+      ],
+      "node_count": 4,
+      "edge_count": 3,
+      "fetch_count": 4,
+      "truncated": true,
+      "truncated_by": "depth",
+      "equivocations": [
+        "jqtnsb2me7mj5xsze4gavqklohqhdmkshfiz65khjmxtxjruqh2q"
+      ],
+      "stale": false
+    }
+  },
+  "errors": [
+    {
+      "status": 403,
+      "body": {
+        "ok": false,
+        "code": 2,
+        "message": "request rejected: Host header must be 127.0.0.1:9080 or localhost:9080",
+        "details": {
+          "reason": "host_not_loopback",
+          "host": "localhost.example"
+        }
+      }
+    },
+    {
+      "status": 500,
+      "body": {
+        "ok": false,
+        "code": 10,
+        "message": "Schema error: graph/current.json is malformed",
+        "details": {
+          "reason": "malformed_file",
+          "path": "graph/current.json"
+        }
+      }
+    }
+  ]
+}

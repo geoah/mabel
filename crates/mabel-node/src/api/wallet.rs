@@ -28,7 +28,19 @@ pub(super) fn router(service: Service) -> Router {
         .route("/identities", get(identities).post(create_identity))
         .route("/identities/{identity_id}", get(identity))
         .route("/identities/{identity_id}/ledger", get(identity_ledger))
+        .route("/identities/{identity_id}/profile", post(replace_profile))
+        .route(
+            "/identities/{identity_id}/verification",
+            post(check_verification),
+        )
+        .route(
+            "/identities/{identity_id}/contact",
+            get(contact).put(set_contact),
+        )
         .route("/identities/{identity_id}/witnesses", post(set_witnesses))
+        .route("/lookup/{identity_id}", get(lookup))
+        .route("/graph", get(graph))
+        .route("/graph/sync", post(sync_graph))
         .route("/identities/{identity_id}/memberships", get(memberships))
         .route(
             "/identities/{identity_id}/memberships/invitations",
@@ -87,6 +99,60 @@ async fn identity_ledger(
     let identity_id = parse::id(IdKind::Identity, &identity_id)?;
     let page = parse::event_page(&query(parameters)?)?;
     Ok(success(service.identity_ledger(identity_id, page).await?))
+}
+
+async fn replace_profile(
+    State(service): State<Service>,
+    Path(identity_id): Path<String>,
+    body: Bytes,
+) -> Result<Response, ServiceError> {
+    let identity_id = parse::id(IdKind::Identity, &identity_id)?;
+    let request = parse::replace_profile(identity_id, &body)?;
+    Ok(success(service.replace_profile(request).await?))
+}
+
+async fn check_verification(
+    State(service): State<Service>,
+    Path(identity_id): Path<String>,
+) -> Result<Response, ServiceError> {
+    let identity_id = parse::id(IdKind::Identity, &identity_id)?;
+    Ok(success(service.check_verification(identity_id).await?))
+}
+
+async fn contact(
+    State(service): State<Service>,
+    Path(identity_id): Path<String>,
+) -> Result<Response, ServiceError> {
+    let identity_id = parse::id(IdKind::Identity, &identity_id)?;
+    Ok(success(service.contact(identity_id).await?))
+}
+
+async fn set_contact(
+    State(service): State<Service>,
+    Path(identity_id): Path<String>,
+    body: Bytes,
+) -> Result<Response, ServiceError> {
+    let identity_id = parse::id(IdKind::Identity, &identity_id)?;
+    let request = parse::set_contact(identity_id, &body)?;
+    Ok(success(service.set_contact(request).await?))
+}
+
+async fn lookup(
+    State(service): State<Service>,
+    Path(identity_id): Path<String>,
+    parameters: Result<AxumQuery<Query>, QueryRejection>,
+) -> Result<Response, ServiceError> {
+    let identity_id = parse::id(IdKind::Identity, &identity_id)?;
+    let request = parse::lookup(identity_id, &query(parameters)?)?;
+    Ok(success(service.lookup(request).await?))
+}
+
+async fn graph(State(service): State<Service>) -> Result<Response, ServiceError> {
+    Ok(success(service.graph().await?))
+}
+
+async fn sync_graph(State(service): State<Service>) -> Result<Response, ServiceError> {
+    Ok(success(service.sync_graph().await?))
 }
 
 async fn set_witnesses(

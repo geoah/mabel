@@ -27,6 +27,17 @@
         }
       ],
       "open_invitation_count": 0,
+      "profile": null,
+      "verification": {
+        "hostname": null,
+        "status": "unclaimed",
+        "checked_at_ms": null,
+        "last_verified_at_ms": null,
+        "stale": false,
+        "detail": null,
+        "unreachable": null
+      },
+      "contact": null,
       "active_key": "2bflemtufo2kwoqtnc6umfpe43icesvxdiawxl4fecrtfslxq43q",
       "reserve_commit": "4hvnmdhctangrg6jmqkyzf6ropi5do6lqdcw37eqoryzhoqg2maq"
     },

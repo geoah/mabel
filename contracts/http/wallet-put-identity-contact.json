@@ -1,0 +1,70 @@
+{
+  "route": "/api/identities/:identity_id/contact",
+  "method": "PUT",
+  "request": {
+    "nickname": "bob at the print shop",
+    "note": "met at the 2023 zine fair; verifies his own hostname"
+  },
+  "response": {
+    "ok": true,
+    "identity_id": "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq",
+    "contact": {
+      "nickname": "bob at the print shop",
+      "note": "met at the 2023 zine fair; verifies his own hostname",
+      "updated_at_ms": 1700000820000
+    }
+  },
+  "errors": [
+    {
+      "status": 400,
+      "body": {
+        "ok": false,
+        "code": 10,
+        "message": "Schema error: nickname is at most 64 bytes of UTF-8, and this is 91",
+        "details": {
+          "reason": "contact_field_too_long",
+          "field": "nickname",
+          "len": 91,
+          "cap": 64
+        }
+      }
+    },
+    {
+      "status": 400,
+      "body": {
+        "ok": false,
+        "code": 10,
+        "message": "Schema error: note is not valid text: it holds a C0 control character",
+        "details": {
+          "reason": "invalid_contact_text",
+          "field": "note",
+          "detail": "it holds a C0 control character"
+        }
+      }
+    },
+    {
+      "status": 403,
+      "body": {
+        "ok": false,
+        "code": 2,
+        "message": "request rejected: Origin must be http://127.0.0.1:9080 or http://localhost:9080 on a mutating route",
+        "details": {
+          "reason": "origin_mismatch",
+          "origin": "https://attacker.example"
+        }
+      }
+    },
+    {
+      "status": 415,
+      "body": {
+        "ok": false,
+        "code": 2,
+        "message": "request rejected: mutating routes require content-type: application/json",
+        "details": {
+          "reason": "content_type_not_json",
+          "content_type": "application/x-www-form-urlencoded"
+        }
+      }
+    }
+  ]
+}

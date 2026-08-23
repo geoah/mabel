@@ -1,0 +1,77 @@
+{
+  "route": "/api/graph/sync",
+  "method": "POST",
+  "request": null,
+  "response": {
+    "ok": true,
+    "graph": {
+      "sync_id": "1700000900000-k4t2q",
+      "last_sync_ms": 1700000900000,
+      "depth": 2,
+      "roots": [
+        {
+          "identity_id": "2okqwhextnpkpmydrgrkk563vbehcklffwfzidxlh5dslawjmn6a",
+          "display_name": "Acme Corporation",
+          "alias": "acme",
+          "hostname": null,
+          "verification_status": "unclaimed",
+          "provenance": "profile"
+        },
+        {
+          "identity_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+          "display_name": "Alice Ashworth",
+          "alias": "alice",
+          "hostname": "alice.example",
+          "verification_status": "verified",
+          "provenance": "profile"
+        }
+      ],
+      "node_count": 4,
+      "edge_count": 3,
+      "fetch_count": 4,
+      "truncated": true,
+      "truncated_by": "depth",
+      "equivocations": [
+        "jqtnsb2me7mj5xsze4gavqklohqhdmkshfiz65khjmxtxjruqh2q"
+      ],
+      "stale": false
+    }
+  },
+  "errors": [
+    {
+      "status": 400,
+      "body": {
+        "ok": false,
+        "code": 2,
+        "message": "this home holds no identity to crawl from",
+        "details": {
+          "reason": "no_local_identity"
+        }
+      }
+    },
+    {
+      "status": 403,
+      "body": {
+        "ok": false,
+        "code": 2,
+        "message": "request rejected: Origin must be http://127.0.0.1:9080 or http://localhost:9080 on a mutating route",
+        "details": {
+          "reason": "origin_mismatch",
+          "origin": "https://attacker.example"
+        }
+      }
+    },
+    {
+      "status": 415,
+      "body": {
+        "ok": false,
+        "code": 2,
+        "message": "request rejected: mutating routes require content-type: application/json",
+        "details": {
+          "reason": "content_type_not_json",
+          "content_type": "application/x-www-form-urlencoded"
+        }
+      }
+    }
+  ]
+}

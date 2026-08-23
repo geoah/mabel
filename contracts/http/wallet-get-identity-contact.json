@@ -1,0 +1,40 @@
+{
+  "route": "/api/identities/:identity_id/contact",
+  "method": "GET",
+  "request": null,
+  "response": {
+    "ok": true,
+    "identity_id": "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq",
+    "contact": {
+      "nickname": "bob at the print shop",
+      "note": "met at the 2023 zine fair; verifies his own hostname",
+      "updated_at_ms": 1700000820000
+    }
+  },
+  "errors": [
+    {
+      "status": 400,
+      "body": {
+        "ok": false,
+        "code": 10,
+        "message": "Schema error: identity id must be 52 base32 characters",
+        "details": {
+          "reason": "malformed_identity_id",
+          "value": "alice"
+        }
+      }
+    },
+    {
+      "status": 403,
+      "body": {
+        "ok": false,
+        "code": 2,
+        "message": "request rejected: Host header must be 127.0.0.1:9080 or localhost:9080",
+        "details": {
+          "reason": "host_not_loopback",
+          "host": "localhost.example"
+        }
+      }
+    }
+  ]
+}

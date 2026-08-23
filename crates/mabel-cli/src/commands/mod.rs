@@ -1,8 +1,11 @@
 //! One module per command group, and the dispatch that reaches them.
 
+pub mod contact;
+pub mod graph;
 pub mod identity;
 pub mod membership;
 pub mod node;
+pub mod profile;
 pub mod sync;
 pub mod trust;
 pub mod verify;
@@ -11,8 +14,8 @@ pub mod witness;
 pub mod witness_run;
 
 use crate::cli::{
-    Cli, Command, IdentityCommand, MembershipCommand, NodeCommand, SyncCommand, TrustCommand,
-    VerifyCommand, WalletCommand, WitnessCommand,
+    Cli, Command, ContactCommand, GraphCommand, IdentityCommand, MembershipCommand, NodeCommand,
+    ProfileCommand, SyncCommand, TrustCommand, VerifyCommand, WalletCommand, WitnessCommand,
 };
 use crate::context::Context;
 use crate::error::Result;
@@ -71,6 +74,36 @@ fn dispatch(ctx: &Context, cli: &Cli) -> Result<Outcome> {
             } => membership::remove(ctx, ledger, by, member, append),
             MembershipCommand::List { ledger } => membership::list(ctx, ledger),
         },
+        Command::Profile { command } => match command {
+            ProfileCommand::Replace {
+                identity,
+                display_name,
+                hostname,
+                yes,
+                append,
+            } => profile::replace(
+                ctx,
+                identity,
+                display_name.as_deref(),
+                hostname.as_deref(),
+                *yes,
+                cli.json,
+                append,
+            ),
+        },
+        Command::Contact { command } => match command {
+            ContactCommand::Set {
+                identity,
+                nickname,
+                note,
+            } => contact::set(ctx, identity, nickname.as_deref(), note.as_deref()),
+            ContactCommand::Show { identity } => contact::show(ctx, identity),
+        },
+        Command::Graph { command } => match command {
+            GraphCommand::Sync { depth, peer } => graph::sync(ctx, *depth, peer),
+            GraphCommand::Status => graph::status(ctx),
+        },
+        Command::Lookup { identity, from } => graph::lookup(ctx, identity, from.as_deref()),
         Command::Trust { command } => match command {
             TrustCommand::Add {
                 issuer,

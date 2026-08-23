@@ -1,6 +1,6 @@
 # 026: profile, contact, verification, lookup and graph routes
 
-- Status: open
+- Status: done
 - Depends on: 023, 024, 025
 
 ## Goal

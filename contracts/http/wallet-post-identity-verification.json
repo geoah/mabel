@@ -1,0 +1,68 @@
+{
+  "route": "/api/identities/:identity_id/verification",
+  "method": "POST",
+  "request": null,
+  "response": {
+    "ok": true,
+    "identity_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+    "verification": {
+      "hostname": "alice.example",
+      "status": "verified",
+      "checked_at_ms": 1700000790000,
+      "last_verified_at_ms": 1700000790000,
+      "stale": false,
+      "detail": "_mabel.alice.example. answers mabel=sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+      "unreachable": null
+    }
+  },
+  "errors": [
+    {
+      "status": 409,
+      "body": {
+        "ok": false,
+        "code": 20,
+        "message": "Policy error: sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq claims no hostname, so there is nothing to check",
+        "details": {
+          "reason": "no_hostname_claimed",
+          "identity_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq"
+        }
+      }
+    },
+    {
+      "status": 404,
+      "body": {
+        "ok": false,
+        "code": 2,
+        "message": "this home holds no ledger jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq",
+        "details": {
+          "reason": "unknown_ledger",
+          "ledger_id": "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq"
+        }
+      }
+    },
+    {
+      "status": 403,
+      "body": {
+        "ok": false,
+        "code": 2,
+        "message": "request rejected: Origin must be http://127.0.0.1:9080 or http://localhost:9080 on a mutating route",
+        "details": {
+          "reason": "origin_mismatch",
+          "origin": "https://attacker.example"
+        }
+      }
+    },
+    {
+      "status": 415,
+      "body": {
+        "ok": false,
+        "code": 2,
+        "message": "request rejected: mutating routes require content-type: application/json",
+        "details": {
+          "reason": "content_type_not_json",
+          "content_type": "application/x-www-form-urlencoded"
+        }
+      }
+    }
+  ]
+}

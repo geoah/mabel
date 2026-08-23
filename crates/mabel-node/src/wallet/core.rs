@@ -29,7 +29,8 @@ use mabel_core::fold::{InvitationStatus, LedgerState};
 use mabel_core::sign::{
     BuildError, BuiltEvent, Position, Root, build_acceptance, build_inception,
     build_membership_acceptance, build_membership_invitation, build_membership_removal,
-    build_trust_attestation, build_trust_revocation, build_witness_config, ledger_timestamp_ms,
+    build_profile_update, build_trust_attestation, build_trust_revocation, build_witness_config,
+    ledger_timestamp_ms,
 };
 use mabel_core::{EventId, IdentityId, LedgerId, NONCE_BYTES};
 use mabel_proto::prost::Message;
@@ -37,15 +38,18 @@ use mabel_proto::v0 as pb;
 use mabel_proto::v0::event_body::Payload;
 
 use crate::api::documents::{
-    Accepted, Admitted, Appended, CreatedIdentity, DeclaredKind as DocumentKind, Identity, Invited,
-    LedgerPage, MembershipView, PrincipalEntry, Removed, Revoked, RoleName, RootName,
+    Accepted, Admitted, Appended, Contact, CreatedIdentity, DeclaredKind as DocumentKind,
+    FailedCheck, Identity, Invited, LedgerPage, MembershipView, PreviousProfile, PrincipalEntry,
+    Profile, ProfileReplaced, Removed, Revoked, RoleName, RootName, Verification,
 };
 use crate::api::error::ServiceError;
 use crate::api::service::EventPageRequest;
 use crate::config::NodeConfig;
+use crate::contacts::{ContactEntry, ContactStore};
 use crate::home::{DeclaredKind, IdentityMeta, NodeHome};
 use crate::ledger::{LedgerMeta, LedgerStore, NewEvent};
 use crate::now_ms;
+use crate::verification::{VerificationEntry, VerificationStore};
 use crate::wallet::error::{artifact_error, build_error, fold_error, storage_error};
 use crate::wallet::ids;
 use crate::wallet::ledger::LoadedLedger;
@@ -194,6 +198,9 @@ impl WalletCore {
 
     /// Every identity this home holds a ledger for, by ascending id.
     ///
+    /// Cache-only: no route that lists identities may fan out into one DNS
+    /// query per row (proposal 003 section 2).
+    ///
     /// # Errors
     ///
     /// Returns the storage errors of listing `identities/`.
@@ -205,18 +212,142 @@ impl WalletCore {
             if !self.holds(identity)? {
                 continue;
             }
-            identities.push(self.load(identity)?.identity_document(self.alias(identity)));
+            identities.push(self.identity(identity)?);
         }
         Ok(identities)
     }
 
-    /// One identity document.
+    /// One identity document, with the two caches in the home folded in.
     ///
     /// # Errors
     ///
     /// As [`WalletCore::load`].
     pub fn identity(&self, identity: IdentityId) -> Result<Identity, ServiceError> {
-        Ok(self.load(identity)?.identity_document(self.alias(identity)))
+        let mut document = self.load(identity)?.identity_document(self.alias(identity));
+        document.verification = self.cached_verification(identity, document.profile.as_ref())?;
+        document.contact = self.contact(identity)?;
+        Ok(document)
+    }
+
+    /// The verification cache directory of this home.
+    #[must_use]
+    pub fn verification_store(&self) -> VerificationStore {
+        VerificationStore::new(&self.home)
+    }
+
+    /// The contact store of this home.
+    #[must_use]
+    pub fn contact_store(&self) -> ContactStore {
+        ContactStore::new(&self.home)
+    }
+
+    /// The cached verdict for one identity, bound to the hostname its profile
+    /// currently claims (proposal 003 section 2).
+    ///
+    /// An entry about another hostname is treated as absent, so a renamed
+    /// claim never inherits the old verdict.
+    ///
+    /// # Errors
+    ///
+    /// Returns the storage errors of reading the cache file.
+    pub fn cached_verification(
+        &self,
+        identity: IdentityId,
+        profile: Option<&Profile>,
+    ) -> Result<Verification, ServiceError> {
+        let Some(hostname) = profile.and_then(|profile| profile.hostname.as_deref()) else {
+            return Ok(Verification::unclaimed());
+        };
+        let entry = self
+            .verification_store()
+            .read_bound(identity, hostname)
+            .map_err(storage_error)?;
+        Ok(match entry {
+            Some(entry) => verification_document(&entry, now_ms()),
+            None => Verification::unchecked(hostname),
+        })
+    }
+
+    /// The private note on one identity, local or foreign.
+    ///
+    /// # Errors
+    ///
+    /// Returns the storage errors of reading `contacts/<identity_id>.json`.
+    pub fn contact(&self, identity: IdentityId) -> Result<Option<Contact>, ServiceError> {
+        Ok(self
+            .contact_store()
+            .read(identity)
+            .map_err(storage_error)?
+            .map(|entry| contact_document(&entry)))
+    }
+
+    /// Replaces the private note on one identity, local or foreign.
+    ///
+    /// Both fields unset removes the file: an empty note is no note.
+    ///
+    /// # Errors
+    ///
+    /// Returns the storage errors of writing `contacts/<identity_id>.json`.
+    pub fn set_contact(
+        &self,
+        identity: IdentityId,
+        nickname: Option<String>,
+        note: Option<String>,
+    ) -> Result<Option<Contact>, ServiceError> {
+        Ok(self
+            .contact_store()
+            .replace(identity, nickname, note)
+            .map_err(storage_error)?
+            .as_ref()
+            .map(contact_document))
+    }
+
+    /// Appends a `ProfileUpdate` replacing the whole profile (proposal 003
+    /// section 1).
+    ///
+    /// An omitted name clears that field, which is why the caller passes both.
+    /// A replacement whose effect equals the current folded profile is refused
+    /// here, before anything is signed: the fold must accept whatever a valid
+    /// chain contains, so this guard belongs to the node.
+    ///
+    /// # Errors
+    ///
+    /// Returns code 20 with reason `no_op_profile_update` when nothing would
+    /// change, and the errors of [`WalletCore::append`].
+    pub fn replace_profile(
+        &self,
+        lock: &AppendLock,
+        identity: IdentityId,
+        display_name: Option<&str>,
+        hostname: Option<&str>,
+    ) -> Result<ProfileReplaced, ServiceError> {
+        let mut loaded = self.load(identity)?;
+        let previous = loaded.profile();
+        refuse_no_op_profile(identity, previous.as_ref(), display_name, hostname)?;
+        let appended = self.append(lock, identity, &mut loaded, |signer, at, timestamp_ms| {
+            build_profile_update(signer, at, display_name, hostname, timestamp_ms)
+        })?;
+        let profile = loaded.profile().ok_or_else(|| {
+            // The fold records a profile for every `ProfileUpdate` it accepts,
+            // so this is unreachable.
+            ServiceError::ledger(
+                "profile_not_folded",
+                format!("the profile update at seq {} did not fold", appended.seq),
+            )
+        })?;
+        Ok(ProfileReplaced {
+            ledger_id: ids::identity(identity),
+            profile,
+            previous: PreviousProfile {
+                display_name: previous
+                    .as_ref()
+                    .and_then(|profile| profile.display_name.clone()),
+                hostname: previous.and_then(|profile| profile.hostname),
+            },
+            head_seq: appended.seq,
+            head_event: ids::event(appended.event_id),
+            event: event_document(&appended.bytes)?,
+        })
     }
 
     /// One page of an identity's ledger.
@@ -1108,6 +1239,70 @@ impl WalletCore {
         }
         Ok(())
     }
+}
+
+/// The identity document's verification object, from one cache entry.
+///
+/// A failed re-check kept beside a decisive result is reported beside it,
+/// never in place of it (proposal 003 section 2).
+#[must_use]
+pub fn verification_document(entry: &VerificationEntry, now_ms: u64) -> Verification {
+    Verification {
+        hostname: Some(entry.hostname.clone()),
+        status: entry.status,
+        checked_at_ms: Some(entry.checked_at_ms),
+        last_verified_at_ms: entry.last_verified_at_ms,
+        stale: entry.is_stale(now_ms),
+        detail: Some(entry.detail.clone()),
+        unreachable: entry.unreachable.as_ref().map(|failed| FailedCheck {
+            checked_at_ms: failed.checked_at_ms,
+            detail: failed.detail.clone(),
+        }),
+    }
+}
+
+/// The identity document's contact object, from one stored note.
+#[must_use]
+pub fn contact_document(entry: &ContactEntry) -> Contact {
+    Contact {
+        nickname: entry.nickname.clone(),
+        note: entry.note.clone(),
+        updated_at_ms: entry.updated_at_ms,
+    }
+}
+
+/// Refuses a replacement that would leave the profile exactly as it is
+/// (proposal 003 section 1).
+///
+/// The fold accepts a no-op update, because the fold must accept whatever a
+/// valid chain contains. The node refuses to sign one, because an event that
+/// says nothing is still an event every replica keeps forever.
+fn refuse_no_op_profile(
+    identity: IdentityId,
+    previous: Option<&Profile>,
+    display_name: Option<&str>,
+    hostname: Option<&str>,
+) -> Result<(), ServiceError> {
+    let current = (
+        previous.and_then(|profile| profile.display_name.as_deref()),
+        previous.and_then(|profile| profile.hostname.as_deref()),
+    );
+    if current != (display_name, hostname) {
+        return Ok(());
+    }
+    let mut error = ServiceError::policy(
+        "no_op_profile_update",
+        format!("this profile is already the profile of {identity}: nothing would change"),
+    )
+    .with_detail("ledger_id", identity.to_string())
+    .with_detail("display_name", display_name)
+    .with_detail("hostname", hostname);
+    if let Some(profile) = previous {
+        error = error
+            .with_detail("profile_event", profile.event.to_string())
+            .with_detail("profile_seq", profile.seq);
+    }
+    Err(error)
 }
 
 /// Refuses a lock taken for another ledger, which would leave this one

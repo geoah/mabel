@@ -9,7 +9,12 @@ use std::path::{Path, PathBuf};
 
 use iroh_base::{EndpointId, SecretKey};
 use mabel_core::{IdentityId, LedgerId};
-use mabel_node::{HomeOptions, LedgerStore, NodeConfig, NodeHome, resolve_home};
+use mabel_node::api::documents::{Identity, Verification};
+use mabel_node::verification::VerificationStore;
+use mabel_node::wallet::{contact_document, verification_document};
+use mabel_node::{
+    ContactStore, HomeOptions, LedgerStore, NodeConfig, NodeHome, now_ms, resolve_home,
+};
 
 use crate::error::{CliError, Result};
 use crate::ids;
@@ -130,6 +135,47 @@ impl Context {
     /// Returns the errors of [`Loaded::open`].
     pub fn load(&self, ledger: LedgerId) -> Result<Loaded> {
         Loaded::open(&self.store(ledger))
+    }
+
+    /// The private contact notes of this home.
+    #[must_use]
+    pub fn contacts(&self) -> ContactStore {
+        ContactStore::new(&self.home)
+    }
+
+    /// The advisory hostname cache of this home.
+    #[must_use]
+    pub fn verifications(&self) -> VerificationStore {
+        VerificationStore::new(&self.home)
+    }
+
+    /// The identity document with the two caches in the home folded in.
+    ///
+    /// Cache-only, on every command: `mabel identity list` never dials a
+    /// resolver, which is the same rule `GET /api/identities` follows
+    /// (proposal 003 section 2).
+    ///
+    /// # Errors
+    ///
+    /// Returns the errors of reading `contacts/` and `verification/`.
+    pub fn identity_document(&self, identity: IdentityId) -> Result<Identity> {
+        let mut document = self.load(identity)?.identity_document(self.alias(identity));
+        if let Some(hostname) = document
+            .profile
+            .as_ref()
+            .and_then(|profile| profile.hostname.clone())
+        {
+            document.verification = match self.verifications().read_bound(identity, &hostname)? {
+                Some(entry) => verification_document(&entry, now_ms()),
+                None => Verification::unchecked(&hostname),
+            };
+        }
+        document.contact = self
+            .contacts()
+            .read(identity)?
+            .as_ref()
+            .map(contact_document);
+        Ok(document)
     }
 
     /// The key that signs for an identity, following the `controlled_by` link

@@ -20,6 +20,7 @@
 pub mod api;
 mod atomic;
 mod config;
+pub mod contacts;
 mod endpoint;
 mod error;
 pub mod graph;
@@ -36,6 +37,7 @@ pub use atomic::{DATA_MODE, DIR_MODE, KEY_MODE};
 pub use config::{
     DEFAULT_HTTP_BIND, DEFAULT_HTTP_PORT, DEFAULT_STORAGE_CAPACITY, NodeConfig, NodeRole, RelayMode,
 };
+pub use contacts::{CONTACTS_DIR, ContactEntry, ContactStore};
 pub use endpoint::bind_endpoint;
 pub use error::{Result, StorageError};
 pub use home::{

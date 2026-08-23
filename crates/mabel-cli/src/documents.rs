@@ -124,6 +124,41 @@ pub struct AddedWitness {
     pub head_event: Id,
 }
 
+/// The profile a replacement overwrote, both names as the fold reported them.
+#[derive(Debug, Serialize)]
+pub struct PreviousProfile {
+    /// The name that was published before, `null` when there was none.
+    pub display_name: Option<String>,
+    /// The hostname that was claimed before, `null` when there was none.
+    pub hostname: Option<String>,
+}
+
+/// `mabel profile replace --json` (`contracts/cli/profile-replace.json`).
+///
+/// Both names are here whether they were set or cleared, because the
+/// operation is replacement: `null` is a field the update cleared.
+#[derive(Debug, Serialize)]
+pub struct ReplacedProfile {
+    /// The ledger whose profile was replaced.
+    pub identity_id: Id,
+    /// The name it now publishes, `null` when the update cleared it.
+    pub display_name: Option<String>,
+    /// The hostname it now claims, `null` when the update cleared it.
+    pub hostname: Option<String>,
+    /// What the update replaced, which is what the diff printed.
+    pub previous: PreviousProfile,
+    /// The `ProfileUpdate` event.
+    pub profile_event: Id,
+    /// Its position.
+    pub profile_seq: u64,
+    /// The `timestamp_ms` it carries.
+    pub timestamp_ms: u64,
+    /// The new head sequence number.
+    pub head_seq: u64,
+    /// The new head event.
+    pub head_event: Id,
+}
+
 /// `mabel identity list --json`.
 #[derive(Debug, Serialize)]
 pub struct IdentityList {

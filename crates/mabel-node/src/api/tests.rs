@@ -16,7 +16,10 @@ use tower::ServiceExt;
 
 use super::documents::{DeclaredKind, RoleName};
 use super::error::{ErrorLayer, ServiceError};
-use super::service::{EventPageRequest, ForkQuery, PageRequest, PushRequest, VerifyRequest};
+use super::service::{
+    EventPageRequest, ForkQuery, LookupRequest, PageRequest, PushRequest, ReplaceProfile,
+    SetContact, VerifyRequest,
+};
 use super::stub::{
     FIXTURES, Fixture, StubWalletService, StubWitnessService, WalletCall, WitnessCall,
 };
@@ -276,6 +279,212 @@ async fn wallet_get_identity_ledger_matches_the_fixture_and_passes_since_through
     // `?since=` is inclusive: the fixture asks for 2 and gets seq 2 first.
     assert_eq!(body["since"], json!(2));
     assert_eq!(body["events"][0]["seq"], json!(2));
+}
+
+#[tokio::test]
+async fn wallet_post_identity_profile_matches_the_fixture_and_requires_both_keys() {
+    let name = "wallet-post-identity-profile.json";
+    let stub = Arc::new(StubWalletService::new());
+    let (status, body) = run_wallet(name, &stub).await;
+    expect_response(name, status, &body);
+    assert_eq!(
+        stub.call(),
+        WalletCall::ReplaceProfile(ReplaceProfile {
+            identity_id: id(ALICE),
+            display_name: Some("Alice Ashworth".to_owned()),
+            hostname: Some("alice.example".to_owned()),
+        })
+    );
+
+    // The operation is replacement, so a body naming one key would clear the
+    // other by accident (proposal 003 section 1).
+    let (expected_status, expected) = fixture_error(name, "missing_field");
+    let stub = Arc::new(StubWalletService::new());
+    let request = request(
+        "POST",
+        &format!("/api/identities/{ALICE}/profile"),
+        &json!({"display_name": "Alice Ashworth"}),
+    );
+    let (status, body) = send(wallet(&stub), request).await;
+    assert_eq!(status, expected_status);
+    assert_eq!(body, expected);
+    assert!(stub.calls().is_empty());
+}
+
+#[tokio::test]
+async fn a_profile_body_may_null_either_key() {
+    for (request_body, display_name, hostname) in [
+        (
+            json!({"display_name": null, "hostname": "alice.example"}),
+            None,
+            Some("alice.example"),
+        ),
+        (
+            json!({"display_name": "Alice Ashworth", "hostname": null}),
+            Some("Alice Ashworth"),
+            None,
+        ),
+        (json!({"display_name": null, "hostname": null}), None, None),
+    ] {
+        let stub = Arc::new(StubWalletService::new());
+        let request = request(
+            "POST",
+            &format!("/api/identities/{ALICE}/profile"),
+            &request_body,
+        );
+        let (status, _) = send(wallet(&stub), request).await;
+        assert_eq!(status, StatusCode::OK, "{request_body}");
+        assert_eq!(
+            stub.call(),
+            WalletCall::ReplaceProfile(ReplaceProfile {
+                identity_id: id(ALICE),
+                display_name: display_name.map(ToOwned::to_owned),
+                hostname: hostname.map(ToOwned::to_owned),
+            }),
+            "{request_body}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn wallet_post_identity_verification_matches_the_fixture() {
+    let name = "wallet-post-identity-verification.json";
+    let stub = Arc::new(StubWalletService::new());
+    let (status, body) = run_wallet(name, &stub).await;
+    expect_response(name, status, &body);
+    assert_eq!(stub.call(), WalletCall::CheckVerification(id(ALICE)));
+    assert_eq!(body["verification"]["status"], json!("verified"));
+    assert_eq!(body["verification"]["stale"], json!(false));
+}
+
+/// The contact fixtures are about Bob, so their requests name Bob rather than
+/// the `ALICE` [`concrete_route`] fills in for every other path parameter: a
+/// private note is most itself on a foreign identity.
+#[tokio::test]
+async fn wallet_get_identity_contact_matches_the_fixture_for_a_foreign_identity() {
+    let name = "wallet-get-identity-contact.json";
+    let stub = Arc::new(StubWalletService::new());
+    let (status, body) = send(
+        wallet(&stub),
+        request(
+            "GET",
+            &format!("/api/identities/{BOB}/contact"),
+            &Value::Null,
+        ),
+    )
+    .await;
+    expect_response(name, status, &body);
+    assert_eq!(body["identity_id"], json!(BOB));
+    assert_eq!(stub.call(), WalletCall::Contact(id(BOB)));
+}
+
+#[tokio::test]
+async fn wallet_put_identity_contact_matches_the_fixture_and_caps_a_nickname() {
+    let name = "wallet-put-identity-contact.json";
+    let stub = Arc::new(StubWalletService::new());
+    let (status, body) = send(
+        wallet(&stub),
+        request(
+            "PUT",
+            &format!("/api/identities/{BOB}/contact"),
+            &Fixture::named(name).request(),
+        ),
+    )
+    .await;
+    expect_response(name, status, &body);
+    assert_eq!(
+        stub.call(),
+        WalletCall::SetContact(SetContact {
+            identity_id: id(BOB),
+            nickname: Some("bob at the print shop".to_owned()),
+            note: Some("met at the 2023 zine fair; verifies his own hostname".to_owned()),
+        })
+    );
+
+    let (expected_status, expected) = fixture_error(name, "contact_field_too_long");
+    let cap = expected["details"]["cap"].as_u64().expect("a cap") as usize;
+    let len = expected["details"]["len"].as_u64().expect("a length") as usize;
+    let stub = Arc::new(StubWalletService::new());
+    let request = request(
+        "PUT",
+        &format!("/api/identities/{BOB}/contact"),
+        &json!({"nickname": "n".repeat(len), "note": null}),
+    );
+    let (status, body) = send(wallet(&stub), request).await;
+    assert_eq!(status, expected_status);
+    assert_eq!(body, expected, "a nickname over {cap} bytes is refused");
+    assert!(stub.calls().is_empty());
+}
+
+#[tokio::test]
+async fn wallet_get_lookup_matches_the_fixture_and_reads_from() {
+    let name = "wallet-get-lookup.json";
+    // The fixture looks Carol up from Alice, so the target is Carol rather
+    // than the `ALICE` `concrete_route` fills in elsewhere.
+    let carol = Fixture::named(name).response()["identity"]["identity_id"]
+        .as_str()
+        .expect("the fixture names a target")
+        .to_owned();
+    let stub = Arc::new(StubWalletService::new());
+    let (status, body) = send(
+        wallet(&stub),
+        request(
+            "GET",
+            &format!("/api/lookup/{carol}?from={ALICE}"),
+            &Value::Null,
+        ),
+    )
+    .await;
+    expect_response(name, status, &body);
+    assert_eq!(
+        stub.call(),
+        WalletCall::Lookup(LookupRequest {
+            identity_id: id(&carol),
+            from: Some(id(ALICE)),
+        })
+    );
+    // Who trusts an identity is who this crawl read, and says so every time.
+    assert_eq!(body["reverse"]["best_effort"], json!(true));
+    assert_eq!(body["paths"][0]["hops"][0]["stale"], json!(false));
+}
+
+#[tokio::test]
+async fn a_lookup_without_from_leaves_the_default_to_the_service() {
+    let stub = Arc::new(StubWalletService::new());
+    let request = request("GET", &format!("/api/lookup/{BOB}"), &Value::Null);
+    let (status, _) = send(wallet(&stub), request).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        stub.call(),
+        WalletCall::Lookup(LookupRequest {
+            identity_id: id(BOB),
+            from: None,
+        })
+    );
+}
+
+#[tokio::test]
+async fn wallet_get_graph_matches_the_fixture() {
+    let name = "wallet-get-graph.json";
+    let stub = Arc::new(StubWalletService::new());
+    let (status, body) = run_wallet(name, &stub).await;
+    expect_response(name, status, &body);
+    assert_eq!(stub.call(), WalletCall::Graph);
+    assert_eq!(body["graph"]["truncated_by"], json!("depth"));
+}
+
+#[tokio::test]
+async fn wallet_post_graph_sync_matches_the_fixture() {
+    let name = "wallet-post-graph-sync.json";
+    let stub = Arc::new(StubWalletService::new());
+    let (status, body) = run_wallet(name, &stub).await;
+    expect_response(name, status, &body);
+    assert_eq!(stub.call(), WalletCall::SyncGraph);
+    assert_eq!(
+        body["graph"]["sync_id"],
+        Fixture::named("wallet-get-graph.json").response()["graph"]["sync_id"],
+        "both graph routes return one object"
+    );
 }
 
 #[tokio::test]
@@ -558,6 +767,54 @@ fn every_file_under_contracts_http_has_a_fixture_and_a_test() {
 }
 
 #[test]
+fn both_identity_routes_return_one_document_with_explicit_nulls() {
+    // Proposal 003 section 5: the list rows and the show document are one
+    // shape, so the UI has one type and one renderer.
+    let show = Fixture::named("wallet-get-identity.json").response()["identity"].clone();
+    let list = Fixture::named("wallet-get-identities.json").response()["identities"].clone();
+    let created = Fixture::named("wallet-post-identities.json").response()["identity"].clone();
+    let rows = list.as_array().expect("an array");
+
+    let keys = |value: &Value| {
+        let mut keys: Vec<String> = value
+            .as_object()
+            .expect("an identity document")
+            .keys()
+            .cloned()
+            .collect();
+        keys.sort();
+        keys
+    };
+    // `active_key` and `reserve_commit` are the documented exception: a ledger
+    // holding no key of its own omits them rather than nulling them.
+    let raw_rooted = |value: &Value| {
+        keys(value)
+            .into_iter()
+            .filter(|key| key != "active_key" && key != "reserve_commit")
+            .collect::<Vec<String>>()
+    };
+    for row in rows {
+        assert_eq!(raw_rooted(row), raw_rooted(&show), "{row}");
+    }
+    assert_eq!(raw_rooted(&created), raw_rooted(&show));
+
+    for document in rows.iter().chain([&show, &created]) {
+        let object = document.as_object().expect("an identity document");
+        for key in ["profile", "verification", "contact"] {
+            assert!(object.contains_key(key), "{key} is absent from {document}");
+        }
+        let verification = object["verification"]
+            .as_object()
+            .expect("verification is always an object");
+        assert_eq!(
+            keys(&object["verification"]).len(),
+            7,
+            "{verification:?} must carry every key with an explicit null"
+        );
+    }
+}
+
+#[test]
 fn the_envelope_reproduces_every_case_of_the_cli_error_fixture() {
     // One table covers both surfaces, so the layer, the prefix and the exit
     // code this module uses must reproduce `contracts/cli/errors.json`
@@ -583,7 +840,7 @@ fn every_fixture_carries_the_route_and_method_its_test_uses() {
         let route = fixture.route();
         assert!(route.starts_with("/api/"), "{}: {route}", fixture.name);
         assert!(
-            matches!(fixture.method().as_str(), "GET" | "POST"),
+            matches!(fixture.method().as_str(), "GET" | "POST" | "PUT"),
             "{}: {}",
             fixture.name,
             fixture.method()
@@ -706,6 +963,10 @@ async fn a_content_type_that_is_not_json_answers_the_fixture_rejection() {
 async fn every_mutating_route_enforces_the_origin_and_content_type_rules() {
     let routes = [
         "/api/identities",
+        &format!("/api/identities/{ALICE}/profile"),
+        &format!("/api/identities/{ALICE}/verification"),
+        &format!("/api/identities/{ALICE}/contact"),
+        "/api/graph/sync",
         &format!("/api/identities/{ALICE}/witnesses"),
         &format!("/api/identities/{ALICE}/memberships/invitations"),
         &format!("/api/identities/{ALICE}/memberships/acceptances"),
@@ -718,9 +979,9 @@ async fn every_mutating_route_enforces_the_origin_and_content_type_rules() {
     ]
     .map(ToOwned::to_owned);
 
-    // Every POST route the fixtures freeze is in the table.
+    // Every mutating route the fixtures freeze is in the table.
     for fixture in FIXTURES {
-        if fixture.method() == "POST" {
+        if fixture.method() != "GET" {
             let route = concrete_route(&fixture.route());
             assert!(routes.contains(&route), "{route} is not in the table");
         }
@@ -791,17 +1052,13 @@ async fn every_mutating_route_enforces_the_origin_and_content_type_rules() {
             "{route}"
         );
 
-        // The same route with the right headers is not turned away by the
-        // loopback layer.
+        // The same route with the right headers reaches the handler. Whether
+        // the empty body then validates is each route's own business.
         let allowed = request("POST", route, &json!({}));
         let (status, _) = send(wallet(&stub), allowed).await;
         assert!(
             status != StatusCode::FORBIDDEN && status != StatusCode::UNSUPPORTED_MEDIA_TYPE,
             "{route} answered {status} to a well-formed request"
-        );
-        assert!(
-            stub.calls().is_empty(),
-            "{route}: no service call is needed"
         );
     }
 }

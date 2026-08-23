@@ -1,0 +1,59 @@
+{
+  "command": "mabel contact set jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq --nickname 'bob at the print shop' --note 'met at the 2023 zine fair; verifies his own hostname' --json",
+  "cases": [
+    {
+      "case": "set",
+      "command": "mabel contact set jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq --nickname 'bob at the print shop' --note 'met at the 2023 zine fair; verifies his own hostname' --json",
+      "exit_code": 0,
+      "document": {
+        "ok": true,
+        "identity_id": "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq",
+        "contact": {
+          "nickname": "bob at the print shop",
+          "note": "met at the 2023 zine fair; verifies his own hostname",
+          "updated_at_ms": 1700000820000
+        }
+      }
+    },
+    {
+      "case": "shown",
+      "command": "mabel contact show jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq --json",
+      "exit_code": 0,
+      "document": {
+        "ok": true,
+        "identity_id": "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq",
+        "contact": {
+          "nickname": "bob at the print shop",
+          "note": "met at the 2023 zine fair; verifies his own hostname",
+          "updated_at_ms": 1700000820000
+        }
+      }
+    },
+    {
+      "case": "no-contact-recorded",
+      "command": "mabel contact show jqtnsb2me7mj5xsze4gavqklohqhdmkshfiz65khjmxtxjruqh2q --json",
+      "exit_code": 0,
+      "document": {
+        "ok": true,
+        "identity_id": "jqtnsb2me7mj5xsze4gavqklohqhdmkshfiz65khjmxtxjruqh2q",
+        "contact": null
+      }
+    },
+    {
+      "case": "nickname-too-long",
+      "command": "mabel contact set jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq --nickname '<91 bytes>' --json",
+      "exit_code": 10,
+      "document": {
+        "ok": false,
+        "code": 10,
+        "message": "Schema error: nickname is at most 64 bytes of UTF-8, and this is 91",
+        "details": {
+          "reason": "contact_field_too_long",
+          "field": "nickname",
+          "len": 91,
+          "cap": 64
+        }
+      }
+    }
+  ]
+}

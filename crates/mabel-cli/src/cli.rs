@@ -55,6 +55,30 @@ pub enum Command {
         #[command(subcommand)]
         command: MembershipCommand,
     },
+    /// Replace the profile a ledger publishes: its display name and hostname.
+    Profile {
+        #[command(subcommand)]
+        command: ProfileCommand,
+    },
+    /// Read and write the private note this node keeps on an identity.
+    Contact {
+        #[command(subcommand)]
+        command: ContactCommand,
+    },
+    /// Crawl outward from this node's identities, and report the last crawl.
+    Graph {
+        #[command(subcommand)]
+        command: GraphCommand,
+    },
+    /// Answer "how do I know this identity" from the last crawl.
+    Lookup {
+        /// The identity to look up, by id or by a local alias.
+        identity: String,
+        /// The local identity the answer is relative to, by alias or id.
+        /// Defaults to the lowest identity id in this home.
+        #[arg(long, value_name = "ALIAS_OR_ID")]
+        from: Option<String>,
+    },
     /// Attest to an identity, revoke an attestation, list what one issued.
     Trust {
         #[command(subcommand)]
@@ -239,6 +263,76 @@ impl RoleArg {
             Self::Controller => ProtoRole::Controller,
         }
     }
+}
+
+/// `mabel profile ...` (proposal 003 section 1).
+///
+/// The operation is replacement, not patch: an omitted flag **clears** that
+/// field. A patch verb is not offered, because a partial update over a
+/// whole-document payload is the shape that silently drops a hostname.
+#[derive(Debug, Subcommand)]
+pub enum ProfileCommand {
+    /// Replace the whole profile. An omitted flag clears that field.
+    Replace {
+        /// The ledger whose profile is replaced, by alias or id.
+        #[arg(long, value_name = "ALIAS_OR_ID")]
+        identity: String,
+        /// The name to publish. Omitted clears it.
+        #[arg(long, value_name = "NAME")]
+        display_name: Option<String>,
+        /// The hostname to claim, which becomes public. Omitted clears it.
+        #[arg(long, value_name = "HOSTNAME")]
+        hostname: Option<String>,
+        /// Replace without the interactive confirmation.
+        #[arg(long)]
+        yes: bool,
+        #[command(flatten)]
+        append: AppendOptions,
+    },
+}
+
+/// `mabel contact ...` (proposal 003 section 1).
+///
+/// The note lives in `contacts/<identity_id>.json`, is never signed and never
+/// leaves this node. It is valid for a foreign identity too.
+#[derive(Debug, Subcommand)]
+pub enum ContactCommand {
+    /// Replace the private note on an identity. An omitted flag clears that
+    /// field, and clearing both removes the file.
+    Set {
+        /// The identity the note is about, by id or by a local alias.
+        identity: String,
+        /// A private name, at most 64 bytes.
+        #[arg(long, value_name = "NICKNAME")]
+        nickname: Option<String>,
+        /// A private note, at most 512 bytes.
+        #[arg(long, value_name = "NOTE")]
+        note: Option<String>,
+    },
+    /// Show the private note on an identity.
+    Show {
+        /// The identity, by id or by a local alias.
+        identity: String,
+    },
+}
+
+/// `mabel graph ...` (proposal 003 section 3).
+///
+/// Synchronizing is manual: nothing here runs on a timer, and a sync tells
+/// each contacted witness which identities this wallet cares about.
+#[derive(Debug, Subcommand)]
+pub enum GraphCommand {
+    /// Crawl outward from every identity in this home and store the result.
+    Sync {
+        /// Levels to walk, held inside 1 through 4. Defaults to 2.
+        #[arg(long, value_name = "DEPTH")]
+        depth: Option<u32>,
+        /// Endpoint ticket to seed into address lookup. Repeatable.
+        #[arg(long, value_name = "TICKET")]
+        peer: Vec<String>,
+    },
+    /// Report the last crawl: counts, caps hit and how old it is.
+    Status,
 }
 
 /// `mabel trust ...`.

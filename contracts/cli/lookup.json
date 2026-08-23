@@ -1,0 +1,194 @@
+{
+  "command": "mabel lookup jqtnsb2me7mj5xsze4gavqklohqhdmkshfiz65khjmxtxjruqh2q --from alice --json",
+  "cases": [
+    {
+      "case": "two-degrees",
+      "command": "mabel lookup jqtnsb2me7mj5xsze4gavqklohqhdmkshfiz65khjmxtxjruqh2q --from alice --json",
+      "exit_code": 0,
+      "document": {
+        "ok": true,
+        "identity": {
+          "identity_id": "jqtnsb2me7mj5xsze4gavqklohqhdmkshfiz65khjmxtxjruqh2q",
+          "display_name": null,
+          "alias": "carol at the co-op",
+          "hostname": null,
+          "verification_status": "unclaimed",
+          "provenance": "alias"
+        },
+        "from": {
+          "identity_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+          "display_name": "Alice Ashworth",
+          "alias": "alice",
+          "hostname": "alice.example",
+          "verification_status": "verified",
+          "provenance": "profile"
+        },
+        "degrees": 2,
+        "paths": [
+          {
+            "hops": [
+              {
+                "from": {
+                  "identity_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+                  "display_name": "Alice Ashworth",
+                  "alias": "alice",
+                  "hostname": "alice.example",
+                  "verification_status": "verified",
+                  "provenance": "profile"
+                },
+                "to": {
+                  "identity_id": "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq",
+                  "display_name": "Bob Baxter",
+                  "alias": null,
+                  "hostname": "bob.example",
+                  "verification_status": "unverified",
+                  "provenance": "profile"
+                },
+                "attestation_event": "kzzez6rzx7an64mreymhzj5cntka5uoanam74eqlwgtbp2f5yzia",
+                "fetched_at_ms": 1700000900000,
+                "stale": false,
+                "equivocation": null
+              },
+              {
+                "from": {
+                  "identity_id": "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq",
+                  "display_name": "Bob Baxter",
+                  "alias": null,
+                  "hostname": "bob.example",
+                  "verification_status": "unverified",
+                  "provenance": "profile"
+                },
+                "to": {
+                  "identity_id": "jqtnsb2me7mj5xsze4gavqklohqhdmkshfiz65khjmxtxjruqh2q",
+                  "display_name": null,
+                  "alias": "carol at the co-op",
+                  "hostname": null,
+                  "verification_status": "unclaimed",
+                  "provenance": "alias"
+                },
+                "attestation_event": "y3q3luhgdkm4hoodmg73jgn5bixdtvq5yp3a5au7fngioy4uvsha",
+                "fetched_at_ms": 1700000900000,
+                "stale": false,
+                "equivocation": {
+                  "at_seq": 3,
+                  "branches": [
+                    {
+                      "source": {
+                        "kind": "peer_hint",
+                        "endpoint": "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq"
+                      },
+                      "event": "4flczxysmumqlsyuce44ba7oge6xxsuoqkmwgabnj4dahkqmwfla"
+                    },
+                    {
+                      "source": {
+                        "kind": "node_witness",
+                        "endpoint": "5yy7qpeiu4jbtjx47g7obwu3yitcaweplik2mfcvknie36letzoa"
+                      },
+                      "event": "cw6iyjks6lcphp4b7cq43mnmirpdgdlmqwyigcefkroekjphkwwa"
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ],
+        "trust": [
+          {
+            "subject": {
+              "identity_id": "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq",
+              "display_name": "Bob Baxter",
+              "alias": null,
+              "hostname": "bob.example",
+              "verification_status": "unverified",
+              "provenance": "profile"
+            },
+            "attestation_event": "4flczxysmumqlsyuce44ba7oge6xxsuoqkmwgabnj4dahkqmwfla",
+            "seq": 3
+          }
+        ],
+        "reverse": {
+          "best_effort": true,
+          "entries": [
+            {
+              "identity": {
+                "identity_id": "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq",
+                "display_name": "Bob Baxter",
+                "alias": null,
+                "hostname": "bob.example",
+                "verification_status": "unverified",
+                "provenance": "profile"
+              },
+              "attestation_event": "y3q3luhgdkm4hoodmg73jgn5bixdtvq5yp3a5au7fngioy4uvsha",
+              "seq": 2
+            }
+          ]
+        },
+        "equivocation": {
+          "at_seq": 3,
+          "branches": [
+            {
+              "source": {
+                "kind": "peer_hint",
+                "endpoint": "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq"
+              },
+              "event": "4flczxysmumqlsyuce44ba7oge6xxsuoqkmwgabnj4dahkqmwfla"
+            },
+            {
+              "source": {
+                "kind": "node_witness",
+                "endpoint": "5yy7qpeiu4jbtjx47g7obwu3yitcaweplik2mfcvknie36letzoa"
+              },
+              "event": "cw6iyjks6lcphp4b7cq43mnmirpdgdlmqwyigcefkroekjphkwwa"
+            }
+          ]
+        },
+        "fetched_at_ms": 1700000900000,
+        "stale": false,
+        "sync_id": "1700000900000-k4t2q",
+        "last_sync_ms": 1700000900000,
+        "graph_stale": false,
+        "graph_truncated": true,
+        "truncated_by": "depth"
+      }
+    },
+    {
+      "case": "not-in-this-crawl",
+      "command": "mabel lookup jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq --from alice --json",
+      "exit_code": 0,
+      "document": {
+        "ok": true,
+        "identity": {
+          "identity_id": "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq",
+          "display_name": null,
+          "alias": null,
+          "hostname": null,
+          "verification_status": "unclaimed",
+          "provenance": "none"
+        },
+        "from": {
+          "identity_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+          "display_name": "Alice Ashworth",
+          "alias": "alice",
+          "hostname": "alice.example",
+          "verification_status": "verified",
+          "provenance": "profile"
+        },
+        "degrees": null,
+        "paths": [],
+        "trust": [],
+        "reverse": {
+          "best_effort": true,
+          "entries": []
+        },
+        "equivocation": null,
+        "fetched_at_ms": null,
+        "stale": true,
+        "sync_id": "1700000900000-k4t2q",
+        "last_sync_ms": 1700000900000,
+        "graph_stale": false,
+        "graph_truncated": true,
+        "truncated_by": "depth"
+      }
+    }
+  ]
+}

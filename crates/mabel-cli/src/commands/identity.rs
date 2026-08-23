@@ -134,7 +134,7 @@ pub fn list(ctx: &Context) -> Result<Outcome> {
         if ctx.store(identity).head()?.is_none() {
             continue;
         }
-        identities.push(ctx.load(identity)?.identity_document(ctx.alias(identity)));
+        identities.push(ctx.identity_document(identity)?);
     }
     let text = if identities.is_empty() {
         "no identities in this home".to_owned()
@@ -151,8 +151,7 @@ pub fn list(ctx: &Context) -> Result<Outcome> {
 /// `mabel identity show <alias|id>`.
 pub fn show(ctx: &Context, name: &str) -> Result<Outcome> {
     let identity = ctx.resolve(name)?;
-    let loaded = ctx.load(identity)?;
-    let document = loaded.identity_document(ctx.alias(identity));
+    let document = ctx.identity_document(identity)?;
     let mut text = format!(
         "{}\nalias {}, declared kind {}\nhead seq {}, {} events",
         document.identity_id,

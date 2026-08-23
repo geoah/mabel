@@ -18,6 +18,9 @@ use serde::de::{Error as _, Unexpected};
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 
+pub use crate::graph::{Equivocation, TruncatedBy};
+pub use crate::verification::VerificationStatus;
+
 /// Characters of a rendered 32-byte value: lowercase RFC 4648 base32, no
 /// padding (`contracts/README.md`).
 pub const ID_LENGTH: usize = 52;
@@ -360,10 +363,162 @@ pub struct InvitationEntry {
     pub status: StatusName,
 }
 
+/// The folded profile of a ledger (proposal 003 section 1).
+///
+/// Each `ProfileUpdate` replaces the whole document, so a `null` name is one
+/// the last update cleared rather than one it left alone.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Profile {
+    /// The name the ledger publishes, `null` when the last update omitted it.
+    pub display_name: Option<String>,
+    /// The hostname the ledger claims, `null` when the last update omitted
+    /// it. Unverified here: the DNS check is [`Verification`].
+    pub hostname: Option<String>,
+    /// Who signed the update, which is not always the ledger's own identity.
+    pub signing_principal: SigningPrincipal,
+    /// The `ProfileUpdate` event.
+    pub event: Id,
+    /// Its position in the ledger.
+    pub seq: u64,
+}
+
+/// A re-check that did not answer, kept beside the decisive result it could
+/// not refresh (proposal 003 section 2).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FailedCheck {
+    /// When the failed re-check ran.
+    pub checked_at_ms: u64,
+    /// Why it did not answer.
+    pub detail: String,
+}
+
+/// The advisory hostname verdict (proposal 003 section 2).
+///
+/// Always present on an identity document. It never gates ledger validity
+/// (decision 015), and `status` is `unclaimed` with every other key `null`
+/// when the profile names no hostname.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Verification {
+    /// The hostname the verdict is about, `null` when none is claimed.
+    pub hostname: Option<String>,
+    /// The verdict.
+    pub status: VerificationStatus,
+    /// When the lookup behind `status` ran, `null` when none has.
+    pub checked_at_ms: Option<u64>,
+    /// When this hostname last verified, kept across later verdicts.
+    pub last_verified_at_ms: Option<u64>,
+    /// Whether the result is over 24 hours old, or was never taken.
+    pub stale: bool,
+    /// One sentence naming what was queried and what came back.
+    pub detail: Option<String>,
+    /// The last failed re-check, `null` when the result stands on its own.
+    pub unreachable: Option<FailedCheck>,
+}
+
+impl Verification {
+    /// The verdict for a profile that names no hostname.
+    #[must_use]
+    pub const fn unclaimed() -> Self {
+        Self {
+            hostname: None,
+            status: VerificationStatus::Unclaimed,
+            checked_at_ms: None,
+            last_verified_at_ms: None,
+            stale: false,
+            detail: None,
+            unreachable: None,
+        }
+    }
+
+    /// The verdict for a hostname this node has never checked.
+    #[must_use]
+    pub fn unchecked(hostname: &str) -> Self {
+        Self {
+            hostname: Some(hostname.to_owned()),
+            status: VerificationStatus::Unverified,
+            checked_at_ms: None,
+            last_verified_at_ms: None,
+            stale: true,
+            detail: Some(format!("{hostname} has not been checked on this node")),
+            unreachable: None,
+        }
+    }
+}
+
+/// The local private note on one identity (proposal 003 section 1).
+///
+/// Never signed, never synced, and valid for a foreign identity as well as
+/// this node's own.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Contact {
+    /// A private name for this identity, at most 64 bytes.
+    pub nickname: Option<String>,
+    /// A private note, at most 512 bytes.
+    pub note: Option<String>,
+    /// When this node last wrote the file.
+    pub updated_at_ms: u64,
+}
+
+/// Where a rendered name came from (proposal 003 section 4).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Provenance {
+    /// The ledger's own profile display name.
+    Profile,
+    /// A local alias or contact nickname, which never left this node.
+    Alias,
+    /// Nothing but the id.
+    None,
+}
+
+/// One foreign identity, as every surface renders it (proposal 003 section
+/// 4).
+///
+/// The id is always beside the name, because a name is a claim: the UI never
+/// sorts, matches or deduplicates on one.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ResolvedIdentity {
+    /// The identity this row is about.
+    pub identity_id: Id,
+    /// The name its profile publishes, `null` when it carries none.
+    pub display_name: Option<String>,
+    /// The local alias or contact nickname, `null` when this node records
+    /// neither.
+    pub alias: Option<String>,
+    /// The hostname its profile claims, `null` when it claims none.
+    pub hostname: Option<String>,
+    /// The advisory verdict on that hostname.
+    pub verification_status: VerificationStatus,
+    /// Which of the three sources the label came from.
+    pub provenance: Provenance,
+}
+
+impl ResolvedIdentity {
+    /// The row for an identity nothing is known about beyond its id.
+    #[must_use]
+    pub fn bare(identity_id: Id) -> Self {
+        Self {
+            identity_id,
+            display_name: None,
+            alias: None,
+            hostname: None,
+            verification_status: VerificationStatus::Unclaimed,
+            provenance: Provenance::None,
+        }
+    }
+}
+
 /// The identity document (`contracts/README.md`, "Shared documents").
 ///
 /// `active_key` and `reserve_commit` are absent, not null, on an identity that
 /// holds no key of its own: the fixtures show an organization without them.
+/// Every other key is present with an explicit `null`, so `GET /api/identities`
+/// and `GET /api/identities/:identity_id` parse into one type.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Identity {
@@ -390,6 +545,13 @@ pub struct Identity {
     pub principals: Vec<PrincipalEntry>,
     /// Invitations this ledger issued that are still `open`.
     pub open_invitation_count: u64,
+    /// The fold of the latest `ProfileUpdate`, `null` on a ledger that
+    /// carries none.
+    pub profile: Option<Profile>,
+    /// The advisory verdict on the hostname the profile claims.
+    pub verification: Verification,
+    /// The local private note, `null` when this node records none.
+    pub contact: Option<Contact>,
     /// The signing key, on a raw root only.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub active_key: Option<Id>,
@@ -922,6 +1084,201 @@ pub struct ForkRecord {
     pub conflicting: Event,
     /// The rendered sentence for a human.
     pub statement: String,
+}
+
+/// The profile a replacement overwrote, both names as the fold reported them.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PreviousProfile {
+    /// The name that was published before, `null` when there was none.
+    pub display_name: Option<String>,
+    /// The hostname that was claimed before, `null` when there was none.
+    pub hostname: Option<String>,
+}
+
+/// `POST /api/identities/{identity_id}/profile`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ProfileReplaced {
+    /// The ledger the update landed in.
+    pub ledger_id: Id,
+    /// The profile the ledger now folds to.
+    pub profile: Profile,
+    /// What it replaced, which is what the CLI diff prints.
+    pub previous: PreviousProfile,
+    /// The new head sequence number.
+    pub head_seq: u64,
+    /// The new head event id.
+    pub head_event: Id,
+    /// The `ProfileUpdate` that was appended.
+    pub event: Event,
+}
+
+/// `POST /api/identities/{identity_id}/verification`, which forces a check
+/// and waits for it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct VerificationChecked {
+    /// The identity that was checked.
+    pub identity_id: Id,
+    /// The verdict the check produced, after the cache merged it.
+    pub verification: Verification,
+}
+
+/// `GET` and `PUT /api/identities/{identity_id}/contact`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ContactView {
+    /// The identity the note is about, local or foreign.
+    pub identity_id: Id,
+    /// The note, `null` when this node records none.
+    pub contact: Option<Contact>,
+}
+
+/// One step of a lookup path: who attested, to whom, and how fresh the node
+/// it reaches is.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LookupHop {
+    /// The ledger that signed the attestation.
+    pub from: ResolvedIdentity,
+    /// The identity it names.
+    pub to: ResolvedIdentity,
+    /// The attestation event.
+    pub attestation_event: Id,
+    /// When the crawl read `to`, `null` when no source served it.
+    pub fetched_at_ms: Option<u64>,
+    /// Whether `to` was read over 24 hours ago, or not at all.
+    pub stale: bool,
+    /// Two sources that disagreed about `to`, `null` when they agreed.
+    pub equivocation: Option<Equivocation>,
+}
+
+/// One path from the root to the target, shortest in this crawl.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LookupPath {
+    /// The hops in order, from the root outward.
+    pub hops: Vec<LookupHop>,
+}
+
+/// One attestation the target currently makes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LookupTrust {
+    /// The identity the attestation names.
+    pub subject: ResolvedIdentity,
+    /// The attestation event.
+    pub attestation_event: Id,
+    /// Its position in the target's ledger.
+    pub seq: u64,
+}
+
+/// One identity in this crawl that attests to the target.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LookupReverseEdge {
+    /// The ledger that signed the attestation.
+    pub identity: ResolvedIdentity,
+    /// The attestation event.
+    pub attestation_event: Id,
+    /// Its position in that ledger.
+    pub seq: u64,
+}
+
+/// Who, in this crawl, attests to the target.
+///
+/// Always labelled: this is who the node happened to read, never who trusts
+/// the target in the world (proposal 003 section 3).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LookupReverse {
+    /// Always `true`.
+    pub best_effort: bool,
+    /// The attesting identities, ascending by id.
+    pub entries: Vec<LookupReverseEdge>,
+}
+
+/// `GET /api/lookup/{identity_id}?from=`.
+///
+/// `degrees: null` means no path was found **within the caps of this crawl**,
+/// which is not the same statement as "no relationship" and must never be
+/// rendered as one.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Lookup {
+    /// The identity that was looked up.
+    pub identity: ResolvedIdentity,
+    /// The local root the answer is relative to.
+    pub from: ResolvedIdentity,
+    /// Edges on the shortest path, `null` when this crawl found none.
+    pub degrees: Option<u64>,
+    /// Up to three shortest paths, empty when there are none.
+    pub paths: Vec<LookupPath>,
+    /// The target's own outgoing attestations.
+    pub trust: Vec<LookupTrust>,
+    /// Who in this crawl attests to the target.
+    pub reverse: LookupReverse,
+    /// Two sources that disagreed about the target, `null` when they agreed.
+    pub equivocation: Option<Equivocation>,
+    /// When the crawl read the target, `null` when it did not.
+    pub fetched_at_ms: Option<u64>,
+    /// Whether the target was read over 24 hours ago, or not at all.
+    pub stale: bool,
+    /// The generation this answer came from, `null` when no crawl has run.
+    pub sync_id: Option<String>,
+    /// When that crawl started, `null` when no crawl has run.
+    pub last_sync_ms: Option<u64>,
+    /// Whether the crawl ran over 24 hours ago, or has never run.
+    pub graph_stale: bool,
+    /// Whether a cap stopped the crawl short.
+    pub graph_truncated: bool,
+    /// Which cap, `null` when nothing was cut.
+    pub truncated_by: Option<TruncatedBy>,
+}
+
+/// One crawl, as `GET /api/graph` and `POST /api/graph/sync` report it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GraphStatus {
+    /// The generation the pointer names.
+    pub sync_id: String,
+    /// When the crawl started, which is what staleness counts from.
+    pub last_sync_ms: u64,
+    /// The depth the run used, after the 1 to 4 bound.
+    pub depth: u32,
+    /// The local identities the crawl started from, ascending by id.
+    pub roots: Vec<ResolvedIdentity>,
+    /// Nodes in the generation.
+    pub node_count: u64,
+    /// Edges over all nodes.
+    pub edge_count: u64,
+    /// Ledgers the run asked a fetcher for.
+    pub fetch_count: u64,
+    /// Whether a cap stopped the walk.
+    pub truncated: bool,
+    /// Which cap, `null` when nothing was cut.
+    pub truncated_by: Option<TruncatedBy>,
+    /// Every identity whose sources disagreed, ascending.
+    pub equivocations: Vec<Id>,
+    /// Whether the crawl ran over 24 hours ago.
+    pub stale: bool,
+}
+
+/// `GET /api/graph`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GraphView {
+    /// The live generation, `null` when no crawl has run in this home.
+    pub graph: Option<GraphStatus>,
+}
+
+/// `POST /api/graph/sync`, which always leaves a generation behind.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GraphSynced {
+    /// The generation this sync wrote.
+    pub graph: GraphStatus,
 }
 
 /// `GET /api/forks`.

@@ -39,6 +39,22 @@
 //! - `limit` above a route's maximum is clamped, not refused; the response
 //!   echoes the effective limit. Only an unparseable or zero `limit` is an
 //!   error, which is what the fixture pins.
+//! - The contact routes are `GET` and `PUT
+//!   /api/identities/{identity_id}/contact`, the fixture names proposal 003
+//!   section 5 lists. `PUT` is the only non-`POST` mutating verb here; the
+//!   loopback rules treat it exactly as they treat `POST`.
+//! - `ResolvedIdentity` spells its verdict `verification_status` and carries
+//!   the status string alone. Proposal 003 section 4 writes the key as
+//!   `verification`, which would put six timestamps in every path hop.
+//! - The identity document's `verification` carries `unreachable`, the failed
+//!   re-check proposal 003 section 2 requires the document to report beside a
+//!   decisive result. Section 5 does not list the key.
+//! - `no_op_profile_update` is code 20 with the `Policy error:` prefix at 409:
+//!   a semantic rule the node enforces before signing, which is the row code
+//!   20 already names.
+//! - `GET /api/lookup/{identity_id}` defaults `from` to the lowest local
+//!   identity id. Proposal 003 section 3 defaults it to the identity selected
+//!   in the wallet, which is a browser fact the node does not hold.
 
 pub mod bind;
 pub mod documents;

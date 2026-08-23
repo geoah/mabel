@@ -38,7 +38,9 @@ describe("identity detail", () => {
     await screen.findByTestId("sync-push-results");
     const [first, second] = alice.witnesses;
     expect(screen.getByTestId(`push-status-${first}`)).toHaveTextContent("accepted");
-    expect(screen.getByTestId(`push-stored-${first}`)).toHaveTextContent("4");
+    expect(screen.getByTestId(`push-stored-${first}`)).toHaveTextContent(
+      String(alice.event_count),
+    );
     expect(screen.getByTestId(`push-reject-code-${first}`)).toHaveTextContent("null");
     expect(screen.getByTestId(`push-status-${second}`)).toHaveTextContent("unreachable");
     expect(screen.getByTestId(`push-head-seq-${second}`)).toHaveTextContent("null");
@@ -54,6 +56,8 @@ describe("identity detail", () => {
     await user.click(screen.getByTestId("witness-add-submit"));
 
     expect(await screen.findByTestId(`witness-row-${endpoint}`)).toBeInTheDocument();
-    expect(screen.getByTestId("witness-add-head-seq")).toHaveTextContent("head_seq 4");
+    expect(screen.getByTestId("witness-add-head-seq")).toHaveTextContent(
+      `head_seq ${alice.head_seq + 1}`,
+    );
   });
 });

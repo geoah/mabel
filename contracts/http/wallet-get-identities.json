@@ -10,9 +10,9 @@
         "declared_kind": "organization",
         "alias": "acme",
         "created_at_ms": 1700000240000,
-        "head_seq": 3,
-        "head_event": "zouk2anjwjry3k7lwi47yc3uauzsva25xmobabgx65xbd2mg63va",
-        "event_count": 4,
+        "head_seq": 4,
+        "head_event": "th2a3dvusqj6x5dwkpsg7sltxdu74ajyyvn4n3ypsll4yl2iq5la",
+        "event_count": 5,
         "witnesses": [],
         "trust": [],
         "principals": [
@@ -23,16 +23,40 @@
             "is_root": true
           }
         ],
-        "open_invitation_count": 0
+        "open_invitation_count": 0,
+        "profile": {
+          "display_name": "Acme Corporation",
+          "hostname": null,
+          "signing_principal": {
+            "identity": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+            "key": "2bflemtufo2kwoqtnc6umfpe43icesvxdiawxl4fecrtfslxq43q"
+          },
+          "event": "th2a3dvusqj6x5dwkpsg7sltxdu74ajyyvn4n3ypsll4yl2iq5la",
+          "seq": 4
+        },
+        "verification": {
+          "hostname": null,
+          "status": "unclaimed",
+          "checked_at_ms": null,
+          "last_verified_at_ms": null,
+          "stale": false,
+          "detail": null,
+          "unreachable": null
+        },
+        "contact": {
+          "nickname": "acme ops",
+          "note": "invoices go to the ops mailbox",
+          "updated_at_ms": 1700000500000
+        }
       },
       {
         "identity_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
         "declared_kind": "person",
         "alias": "alice",
         "created_at_ms": 1700000000000,
-        "head_seq": 3,
-        "head_event": "ewckxhi7cixugkyrql6eqnncbgxqtnrho3rpsp6plhhh7yr6rosq",
-        "event_count": 4,
+        "head_seq": 8,
+        "head_event": "kzzez6rzx7an64mreymhzj5cntka5uoanam74eqlwgtbp2f5yzia",
+        "event_count": 9,
         "witnesses": [
           "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq",
           "5yy7qpeiu4jbtjx47g7obwu3yitcaweplik2mfcvknie36letzoa"
@@ -45,6 +69,14 @@
             "revoked": true,
             "revocation_event": "ewckxhi7cixugkyrql6eqnncbgxqtnrho3rpsp6plhhh7yr6rosq",
             "revocation_seq": 3
+          },
+          {
+            "attestation_event": "kzzez6rzx7an64mreymhzj5cntka5uoanam74eqlwgtbp2f5yzia",
+            "attestation_seq": 8,
+            "subject": "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq",
+            "revoked": false,
+            "revocation_event": null,
+            "revocation_seq": null
           }
         ],
         "principals": [
@@ -56,6 +88,26 @@
           }
         ],
         "open_invitation_count": 0,
+        "profile": {
+          "display_name": "Alice Ashworth",
+          "hostname": "alice.example",
+          "signing_principal": {
+            "identity": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+            "key": "2bflemtufo2kwoqtnc6umfpe43icesvxdiawxl4fecrtfslxq43q"
+          },
+          "event": "3ax4d4wvitut6gyvrrxdazjgo5i3455pddcmnumm4mbvfdz5op4a",
+          "seq": 7
+        },
+        "verification": {
+          "hostname": "alice.example",
+          "status": "verified",
+          "checked_at_ms": 1700000790000,
+          "last_verified_at_ms": 1700000790000,
+          "stale": false,
+          "detail": "_mabel.alice.example. answers mabel=sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+          "unreachable": null
+        },
+        "contact": null,
         "active_key": "2bflemtufo2kwoqtnc6umfpe43icesvxdiawxl4fecrtfslxq43q",
         "reserve_commit": "4hvnmdhctangrg6jmqkyzf6ropi5do6lqdcw37eqoryzhoqg2maq"
       }

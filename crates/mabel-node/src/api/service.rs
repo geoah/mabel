@@ -15,8 +15,9 @@ use std::future::Future;
 use std::pin::Pin;
 
 use super::documents::{
-    Accepted, Admitted, Appended, CreatedIdentity, DeclaredKind, ForkList, Id, Identity, Invited,
-    LedgerList, LedgerPage, LedgerView, MembershipView, Pushed, Removed, Revoked, RoleName,
+    Accepted, Admitted, Appended, ContactView, CreatedIdentity, DeclaredKind, ForkList,
+    GraphSynced, GraphView, Id, Identity, Invited, LedgerList, LedgerPage, LedgerView, Lookup,
+    MembershipView, ProfileReplaced, Pushed, Removed, Revoked, RoleName, VerificationChecked,
     VerificationReport, WalletNode, WitnessNode,
 };
 use super::error::ServiceError;
@@ -85,6 +86,41 @@ pub struct RemoveMembership {
     pub by: Id,
     /// The identity to remove, whose principal and open invitation both go.
     pub target: Id,
+}
+
+/// `POST /api/identities/{identity_id}/profile`, after validation.
+///
+/// Both names are here because the operation is replacement: `None` clears
+/// that field, and the body must carry both keys so no client can
+/// half-specify one (proposal 003 section 1).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReplaceProfile {
+    /// The ledger the update is appended to, from the path.
+    pub identity_id: Id,
+    /// The name to publish, or `None` to clear it.
+    pub display_name: Option<String>,
+    /// The hostname to claim, or `None` to clear it.
+    pub hostname: Option<String>,
+}
+
+/// `PUT /api/identities/{identity_id}/contact`, after validation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SetContact {
+    /// The identity the note is about, local or foreign.
+    pub identity_id: Id,
+    /// The private name, or `None` to clear it.
+    pub nickname: Option<String>,
+    /// The private note, or `None` to clear it.
+    pub note: Option<String>,
+}
+
+/// `GET /api/lookup/{identity_id}`, after validation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LookupRequest {
+    /// The identity to look up, which need not be in this home.
+    pub identity_id: Id,
+    /// The local root the answer is relative to, or `None` for the default.
+    pub from: Option<Id>,
 }
 
 /// One page of events, from `?since=` and `?limit=`.
@@ -180,6 +216,28 @@ pub trait WalletService: Send + Sync + 'static {
 
     /// `POST /api/identities/{identity_id}/witnesses`.
     fn set_witnesses(&self, identity_id: Id, witnesses: Vec<Id>) -> ServiceFuture<'_, Appended>;
+
+    /// `POST /api/identities/{identity_id}/profile`.
+    fn replace_profile(&self, request: ReplaceProfile) -> ServiceFuture<'_, ProfileReplaced>;
+
+    /// `POST /api/identities/{identity_id}/verification`, which forces a DNS
+    /// check and waits for it (proposal 003 section 2).
+    fn check_verification(&self, identity_id: Id) -> ServiceFuture<'_, VerificationChecked>;
+
+    /// `GET /api/identities/{identity_id}/contact`.
+    fn contact(&self, identity_id: Id) -> ServiceFuture<'_, ContactView>;
+
+    /// `PUT /api/identities/{identity_id}/contact`.
+    fn set_contact(&self, request: SetContact) -> ServiceFuture<'_, ContactView>;
+
+    /// `GET /api/lookup/{identity_id}?from=`.
+    fn lookup(&self, request: LookupRequest) -> ServiceFuture<'_, Lookup>;
+
+    /// `GET /api/graph`.
+    fn graph(&self) -> ServiceFuture<'_, GraphView>;
+
+    /// `POST /api/graph/sync`, which runs one crawl and swaps the pointer.
+    fn sync_graph(&self) -> ServiceFuture<'_, GraphSynced>;
 
     /// `GET /api/identities/{identity_id}/memberships`.
     fn memberships(&self, identity_id: Id) -> ServiceFuture<'_, MembershipView>;

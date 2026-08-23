@@ -15,7 +15,8 @@ use mabel_core::fold::{LedgerRoot, LedgerState, Reason, Violation};
 use mabel_core::{EventId, LedgerId, event_id};
 use mabel_node::LedgerStore;
 use mabel_node::api::documents::{
-    DeclaredKind, Id, Identity, PrincipalEntry, RoleName, TrustEntry,
+    DeclaredKind, Id, Identity, PrincipalEntry, Profile, RoleName, SigningPrincipal, TrustEntry,
+    Verification,
 };
 use mabel_proto::prost::Message;
 use mabel_proto::v0::{EventBody, SignedEvent};
@@ -226,6 +227,14 @@ impl Loaded {
             ),
             _ => (None, None),
         };
+        let profile = self.profile();
+        let verification = match profile
+            .as_ref()
+            .and_then(|profile| profile.hostname.as_deref())
+        {
+            Some(hostname) => Verification::unchecked(hostname),
+            None => Verification::unclaimed(),
+        };
         Identity {
             identity_id: ids::identity(self.ledger),
             declared_kind: self.declared_kind(),
@@ -236,11 +245,31 @@ impl Loaded {
             event_count: self.event_count,
             witnesses: self.witnesses(),
             trust: self.trust(),
+            profile,
+            verification,
+            contact: None,
             active_key,
             reserve_commit,
             principals: self.principal_entries(),
             open_invitation_count: self.open_invitation_count(),
         }
+    }
+
+    /// The profile the latest `ProfileUpdate` left, `None` on a ledger that
+    /// carries none (proposal 003 section 1).
+    #[must_use]
+    pub fn profile(&self) -> Option<Profile> {
+        let profile = self.state.profile()?;
+        Some(Profile {
+            display_name: profile.display_name.clone(),
+            hostname: profile.hostname.clone(),
+            signing_principal: SigningPrincipal {
+                identity: ids::identity(profile.signing_principal.identity),
+                key: ids::key(&profile.signing_principal.key),
+            },
+            event: ids::event(profile.event),
+            seq: profile.seq,
+        })
     }
 
     /// The `principals` array of the identity document, root first by the

@@ -17,8 +17,8 @@ use mabel_proto::prost::Message;
 use mabel_proto::v0::{EventBody, Role, SignedEvent};
 
 use crate::api::documents::{
-    DeclaredKind, Id, Identity, InvitationEntry, MembershipView, PrincipalEntry, RoleName,
-    RootName, StatusName, TrustEntry,
+    DeclaredKind, Id, Identity, InvitationEntry, MembershipView, PrincipalEntry, Profile, RoleName,
+    RootName, SigningPrincipal, StatusName, TrustEntry, Verification,
 };
 use crate::api::error::ServiceError;
 use crate::ledger::LedgerStore;
@@ -276,8 +276,30 @@ impl LoadedLedger {
         }
     }
 
+    /// The profile the latest `ProfileUpdate` left, `None` on a ledger that
+    /// carries none (proposal 003 section 1).
+    #[must_use]
+    pub fn profile(&self) -> Option<Profile> {
+        let profile = self.state.profile()?;
+        Some(Profile {
+            display_name: profile.display_name.clone(),
+            hostname: profile.hostname.clone(),
+            signing_principal: SigningPrincipal {
+                identity: ids::identity(profile.signing_principal.identity),
+                key: ids::key(&profile.signing_principal.key),
+            },
+            event: ids::event(profile.event),
+            seq: profile.seq,
+        })
+    }
+
     /// The identity document `contracts/README.md` shares between the HTTP
     /// routes and `mabel identity list`.
+    ///
+    /// `verification` and `contact` are what the fold alone knows, which is
+    /// nothing: the verdict reads `unclaimed` or `unchecked` and the note is
+    /// absent. [`crate::wallet::WalletCore`] reads the two caches in the home
+    /// and fills them in.
     #[must_use]
     pub fn identity_document(&self, alias: String) -> Identity {
         let (active_key, reserve_commit) = match self.state.root() {
@@ -289,6 +311,14 @@ impl LoadedLedger {
                 Some(ids::bytes(&reserve_commit)),
             ),
             _ => (None, None),
+        };
+        let profile = self.profile();
+        let verification = match profile
+            .as_ref()
+            .and_then(|profile| profile.hostname.as_deref())
+        {
+            Some(hostname) => Verification::unchecked(hostname),
+            None => Verification::unclaimed(),
         };
         Identity {
             identity_id: ids::identity(self.ledger),
@@ -302,6 +332,9 @@ impl LoadedLedger {
             trust: self.trust(),
             principals: self.principals(),
             open_invitation_count: self.open_invitation_count(),
+            profile,
+            verification,
+            contact: None,
             active_key,
             reserve_commit,
         }

@@ -11,6 +11,9 @@
 //! ledgers/<id>/meta.json                 provenance: source endpoint, first seen
 //! forks/<id>/<seq>-<event_id>.fork       encoded ForkRecord, both events
 //! peers.json                             ledger id to EndpointId hints, plus tickets
+//! contacts/<id>.json                     private nickname and note, any identity
+//! verification/<id>.json                 cache: hostname verdict and when it was taken
+//! graph/                                 cache: one directory per crawl, plus a pointer
 //! ```
 
 use std::env;
@@ -52,6 +55,12 @@ pub const RESERVE_KEY_FILE: &str = "reserve.key";
 
 /// Name of the identity metadata file.
 pub const IDENTITY_META_FILE: &str = "meta.json";
+
+/// Directory of the private contact store (proposal 003 section 1).
+pub const CONTACTS_DIR: &str = crate::contacts::CONTACTS_DIR;
+
+/// Directory of the DNS verification cache (proposal 003 section 2).
+pub const VERIFICATION_DIR: &str = crate::verification::VERIFICATION_DIR;
 
 /// What an identity says it is (proposal 002 section 3).
 ///
@@ -271,6 +280,18 @@ impl NodeHome {
     #[must_use]
     pub fn ledgers_dir(&self) -> PathBuf {
         self.root.join("ledgers")
+    }
+
+    /// `contacts/`, the private notes. Never signed, never synced.
+    #[must_use]
+    pub fn contacts_dir(&self) -> PathBuf {
+        self.root.join(CONTACTS_DIR)
+    }
+
+    /// `verification/`, the advisory hostname cache. Rebuildable.
+    #[must_use]
+    pub fn verification_dir(&self) -> PathBuf {
+        self.root.join(VERIFICATION_DIR)
     }
 
     /// `forks/`.

@@ -5,24 +5,33 @@
 //! `contracts/http/` freeze. Blocking file work runs under `spawn_blocking`;
 //! the network work is already async.
 
+use std::collections::HashSet;
 use std::net::SocketAddr;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex as StdMutex};
 
 use axum::http::StatusCode;
 use iroh_base::EndpointId;
+use mabel_core::IdentityId;
 
 use crate::api::documents::{
-    Accepted, Admitted, Appended, CreatedIdentity, Id, Identity, Invited, LedgerPage,
-    MembershipView, Pushed, Relay, Removed, Revoked, Role, VerificationReport, WalletNode,
+    Accepted, Admitted, Appended, ContactView, CreatedIdentity, GraphSynced, GraphView, Id,
+    Identity, Invited, LedgerPage, Lookup, MembershipView, ProfileReplaced, Pushed, Relay, Removed,
+    Revoked, Role, VerificationChecked, VerificationReport, WalletNode,
 };
 use crate::api::error::ServiceError;
 use crate::api::service::{
     AcceptInvitation, AddTrust, AdmitAcceptance, CreateIdentity, EventPageRequest, Invite,
-    PushRequest, RemoveMembership, ServiceFuture, VerifyRequest, WalletService,
+    LookupRequest, PushRequest, RemoveMembership, ReplaceProfile, ServiceFuture, SetContact,
+    VerifyRequest, WalletService,
 };
 use crate::config::RelayMode;
-use crate::wallet::core::{AppendLock, WalletCore};
+use crate::graph::{CrawlOptions, GraphStore, LedgerFetcher, NetLedgerFetcher, crawl};
+use crate::now_ms;
+use crate::verification::{HickoryResolver, ResolveFuture, Resolver, TxtRecord, verify_hostname};
+use crate::wallet::core::{AppendLock, WalletCore, verification_document};
+use crate::wallet::error::storage_error;
 use crate::wallet::ids;
+use crate::wallet::lookup::{Names, default_root, graph_status, lookup_document};
 use crate::wallet::sync::WalletSync;
 use crate::wallet::verify::Verifier;
 
@@ -30,16 +39,39 @@ use crate::wallet::verify::Verifier;
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// The wallet API over one home and one Iroh endpoint.
-#[derive(Debug)]
 pub struct WalletApiService {
     core: Arc<WalletCore>,
     sync: WalletSync,
     http_bind: SocketAddr,
     relay: Relay,
+    /// The DNS resolver the hostname check queries. Injectable, so no test
+    /// reaches the public internet (proposal 003 section 2).
+    resolver: Arc<dyn Resolver>,
+    /// The crawl's reader, built over `core` and `sync` unless a test
+    /// installed one.
+    fetcher: Option<Arc<dyn LedgerFetcher>>,
+    /// Identities with a background re-check already running, so the
+    /// single-identity GET starts at most one per identity.
+    refreshing: Arc<StdMutex<HashSet<IdentityId>>>,
+}
+
+impl std::fmt::Debug for WalletApiService {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("WalletApiService")
+            .field("http_bind", &self.http_bind)
+            .field("relay", &self.relay)
+            .finish_non_exhaustive()
+    }
 }
 
 impl WalletApiService {
     /// A service over `core`, dialling peers through `sync`.
+    ///
+    /// The resolver is built from the system configuration; a machine with
+    /// none gets one that answers every query `unavailable`, which the
+    /// verifier reads as `unreachable`. A hostname check is advisory and must
+    /// never stop a wallet from starting.
     #[must_use]
     pub fn new(
         core: Arc<WalletCore>,
@@ -47,6 +79,13 @@ impl WalletApiService {
         http_bind: SocketAddr,
         relay: RelayMode,
     ) -> Self {
+        let resolver: Arc<dyn Resolver> = match HickoryResolver::system() {
+            Ok(resolver) => Arc::new(resolver),
+            Err(error) => {
+                tracing::warn!(%error, "no system DNS resolver: hostname checks will not answer");
+                Arc::new(UnavailableResolver)
+            }
+        };
         Self {
             core,
             sync,
@@ -55,7 +94,24 @@ impl WalletApiService {
                 RelayMode::N0 => Relay::N0,
                 RelayMode::Disabled => Relay::Disabled,
             },
+            resolver,
+            fetcher: None,
+            refreshing: Arc::new(StdMutex::new(HashSet::new())),
         }
+    }
+
+    /// The same service, answering hostname checks from `resolver`.
+    #[must_use]
+    pub fn with_resolver(mut self, resolver: Arc<dyn Resolver>) -> Self {
+        self.resolver = resolver;
+        self
+    }
+
+    /// The same service, crawling through `fetcher` instead of the network.
+    #[must_use]
+    pub fn with_fetcher(mut self, fetcher: Arc<dyn LedgerFetcher>) -> Self {
+        self.fetcher = Some(fetcher);
+        self
     }
 
     /// Runs blocking core work off the reactor.
@@ -113,8 +169,180 @@ impl WalletService for WalletApiService {
         })
     }
 
+    /// Answers from the cache immediately and starts at most one background
+    /// re-check when the entry is stale (proposal 003 section 2).
+    ///
+    /// Resolver trouble never fails this route: the document already carries
+    /// what the cache knows, and the refresh is a side effect.
     fn identity(&self, identity_id: Id) -> ServiceFuture<'_, Identity> {
-        self.blocking(move |core| core.identity(ids::parse_identity(&identity_id)?))
+        Box::pin(async move {
+            let identity = ids::parse_identity(&identity_id)?;
+            let core = self.core.clone();
+            let document = spawn(move || core.identity(identity)).await?;
+            if document.verification.stale
+                && let Some(hostname) = document.verification.hostname.clone()
+            {
+                self.refresh_in_background(identity, hostname);
+            }
+            Ok(document)
+        })
+    }
+
+    fn replace_profile(&self, request: ReplaceProfile) -> ServiceFuture<'_, ProfileReplaced> {
+        Box::pin(async move {
+            let identity = ids::parse_identity(&request.identity_id)?;
+            let lock = self.core.append_lock(identity).await;
+            self.fresh(identity, &lock).await?;
+            let core = self.core.clone();
+            spawn(move || {
+                core.replace_profile(
+                    &lock,
+                    identity,
+                    request.display_name.as_deref(),
+                    request.hostname.as_deref(),
+                )
+            })
+            .await
+        })
+    }
+
+    fn check_verification(&self, identity_id: Id) -> ServiceFuture<'_, VerificationChecked> {
+        Box::pin(async move {
+            let identity = ids::parse_identity(&identity_id)?;
+            let core = self.core.clone();
+            let hostname = spawn(move || {
+                let profile = core.load(identity)?.profile();
+                profile.and_then(|profile| profile.hostname).ok_or_else(|| {
+                    ServiceError::policy(
+                        "no_hostname_claimed",
+                        format!("{identity} claims no hostname, so there is nothing to check"),
+                    )
+                    .with_detail("identity_id", identity.to_string())
+                })
+            })
+            .await?;
+
+            let outcome = verify_hostname(self.resolver.as_ref(), &hostname, identity).await;
+            let core = self.core.clone();
+            let verification = spawn(move || {
+                let entry = core
+                    .verification_store()
+                    .record(identity, &outcome, now_ms())
+                    .map_err(storage_error)?;
+                Ok(verification_document(&entry, now_ms()))
+            })
+            .await?;
+            Ok(VerificationChecked {
+                identity_id,
+                verification,
+            })
+        })
+    }
+
+    fn contact(&self, identity_id: Id) -> ServiceFuture<'_, ContactView> {
+        self.blocking(move |core| {
+            let identity = ids::parse_identity(&identity_id)?;
+            Ok(ContactView {
+                contact: core.contact(identity)?,
+                identity_id,
+            })
+        })
+    }
+
+    fn set_contact(&self, request: SetContact) -> ServiceFuture<'_, ContactView> {
+        self.blocking(move |core| {
+            let identity = ids::parse_identity(&request.identity_id)?;
+            Ok(ContactView {
+                contact: core.set_contact(identity, request.nickname, request.note)?,
+                identity_id: request.identity_id,
+            })
+        })
+    }
+
+    fn lookup(&self, request: LookupRequest) -> ServiceFuture<'_, Lookup> {
+        self.blocking(move |core| {
+            let target = ids::parse_identity(&request.identity_id)?;
+            let from = match &request.from {
+                Some(from) => {
+                    let from = ids::parse_identity(from)?;
+                    if !core.home().identity_dir(from).is_dir() {
+                        return Err(ServiceError::usage(
+                            "unknown_from_identity",
+                            format!("no identity here is named {from}"),
+                        )
+                        .with_detail("parameter", "from")
+                        .with_detail("value", from.to_string()));
+                    }
+                    from
+                }
+                None => default_root(core)?,
+            };
+            let generation = GraphStore::in_home(core.home())
+                .current_generation()
+                .map_err(storage_error)?;
+            lookup_document(core, generation.as_ref(), from, target, now_ms())
+        })
+    }
+
+    fn graph(&self) -> ServiceFuture<'_, GraphView> {
+        self.blocking(move |core| {
+            let generation = GraphStore::in_home(core.home())
+                .current_generation()
+                .map_err(storage_error)?;
+            Ok(GraphView {
+                graph: generation.as_ref().map(|generation| {
+                    graph_status(
+                        &Names::new(core, Some(generation)),
+                        &generation.summary,
+                        now_ms(),
+                    )
+                }),
+            })
+        })
+    }
+
+    /// Runs one crawl from every local identity and swaps the pointer.
+    ///
+    /// Manual only: nothing here runs on a timer, and the caps of proposal
+    /// 003 section 3 bound the run whether or not the caller waits.
+    fn sync_graph(&self) -> ServiceFuture<'_, GraphSynced> {
+        Box::pin(async move {
+            let core = self.core.clone();
+            let roots = spawn(move || {
+                let roots = core.home().identities().map_err(storage_error)?;
+                if roots.is_empty() {
+                    return Err(ServiceError::usage(
+                        "no_local_identity",
+                        "this home holds no identity to crawl from",
+                    ));
+                }
+                Ok(roots)
+            })
+            .await?;
+
+            let fetcher = self.fetcher.clone().unwrap_or_else(|| {
+                Arc::new(NetLedgerFetcher::new(
+                    (*self.core).clone(),
+                    self.sync.clone(),
+                ))
+            });
+            let generation = crawl(&roots, &CrawlOptions::new(), fetcher.as_ref()).await;
+
+            let core = self.core.clone();
+            spawn(move || {
+                GraphStore::in_home(core.home())
+                    .publish(&generation)
+                    .map_err(storage_error)?;
+                Ok(GraphSynced {
+                    graph: graph_status(
+                        &Names::new(&core, Some(&generation)),
+                        &generation.summary,
+                        now_ms(),
+                    ),
+                })
+            })
+            .await
+        })
     }
 
     fn identity_ledger(
@@ -265,6 +493,47 @@ impl WalletService for WalletApiService {
 }
 
 impl WalletApiService {
+    /// Starts one background hostname re-check, unless one is already running
+    /// for this identity (proposal 003 section 2).
+    ///
+    /// The GET has already answered from the cache by the time this runs, so
+    /// a resolver that never comes back costs nothing but a task.
+    fn refresh_in_background(&self, identity: IdentityId, hostname: String) {
+        {
+            let mut refreshing = self
+                .refreshing
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if !refreshing.insert(identity) {
+                return;
+            }
+        }
+        let core = self.core.clone();
+        let resolver = self.resolver.clone();
+        let refreshing = self.refreshing.clone();
+        tokio::spawn(async move {
+            let outcome = verify_hostname(resolver.as_ref(), &hostname, identity).await;
+            let recorded = tokio::task::spawn_blocking(move || {
+                core.verification_store()
+                    .record(identity, &outcome, now_ms())
+            })
+            .await;
+            match recorded {
+                Ok(Ok(_)) => {}
+                Ok(Err(error)) => {
+                    tracing::warn!(%identity, %error, "the hostname re-check could not be cached");
+                }
+                Err(error) => {
+                    tracing::warn!(%identity, %error, "the hostname re-check task did not finish");
+                }
+            }
+            refreshing
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .remove(&identity);
+        });
+    }
+
     /// The witnesses one ledger is pushed to.
     async fn witnesses(
         &self,
@@ -303,6 +572,27 @@ impl WalletApiService {
             .ensure_fresh_locked(&self.core, identity, &witnesses, lock)
             .await?;
         Ok(())
+    }
+}
+
+/// The resolver a machine with no system DNS configuration gets.
+///
+/// Every query answers [`ResolveError::Unavailable`], which the verifier
+/// records as `unreachable`: a hostname check is advisory, so a wallet with no
+/// resolver still starts, still serves and still says it could not look.
+///
+/// [`ResolveError::Unavailable`]: crate::verification::ResolveError::Unavailable
+#[derive(Debug)]
+struct UnavailableResolver;
+
+impl Resolver for UnavailableResolver {
+    fn lookup_txt<'a>(&'a self, name: &'a str) -> ResolveFuture<'a, Vec<TxtRecord>> {
+        Box::pin(async move {
+            Err(crate::verification::ResolveError::Failed {
+                name: name.to_owned(),
+                message: "this node has no system DNS resolver".to_owned(),
+            })
+        })
     }
 }
 

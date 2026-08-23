@@ -16,15 +16,16 @@ use serde::de::DeserializeOwned;
 use serde_json::Value;
 
 use super::documents::{
-    Accepted, Admitted, Appended, CreatedIdentity, ForkList, Id, Identity, IdentityList,
-    IdentityView, Invited, LedgerList, LedgerPage, LedgerView, MembershipView, Pushed, Removed,
-    Revoked, VerificationReport, WalletNode, WitnessNode,
+    Accepted, Admitted, Appended, ContactView, CreatedIdentity, ForkList, GraphSynced, GraphView,
+    Id, Identity, IdentityList, IdentityView, Invited, LedgerList, LedgerPage, LedgerView, Lookup,
+    MembershipView, ProfileReplaced, Pushed, Removed, Revoked, VerificationChecked,
+    VerificationReport, WalletNode, WitnessNode,
 };
 use super::error::ServiceError;
 use super::service::{
     AcceptInvitation, AddTrust, AdmitAcceptance, CreateIdentity, EventPageRequest, ForkQuery,
-    Invite, PageRequest, PushRequest, RemoveMembership, ServiceFuture, VerifyRequest,
-    WalletService, WitnessService,
+    Invite, LookupRequest, PageRequest, PushRequest, RemoveMembership, ReplaceProfile,
+    ServiceFuture, SetContact, VerifyRequest, WalletService, WitnessService,
 };
 
 /// One file under `contracts/http/`.
@@ -46,12 +47,19 @@ macro_rules! fixture {
 }
 
 /// Every frozen HTTP fixture, in the order `contracts/README.md` indexes them.
-pub const FIXTURES: [Fixture; 20] = [
+pub const FIXTURES: [Fixture; 27] = [
     fixture!("wallet-get-node"),
     fixture!("wallet-get-identities"),
     fixture!("wallet-post-identities"),
     fixture!("wallet-get-identity"),
     fixture!("wallet-get-identity-ledger"),
+    fixture!("wallet-post-identity-profile"),
+    fixture!("wallet-post-identity-verification"),
+    fixture!("wallet-get-identity-contact"),
+    fixture!("wallet-put-identity-contact"),
+    fixture!("wallet-get-lookup"),
+    fixture!("wallet-get-graph"),
+    fixture!("wallet-post-graph-sync"),
     fixture!("wallet-post-identity-witnesses"),
     fixture!("wallet-get-identity-memberships"),
     fixture!("wallet-post-membership-invitations"),
@@ -208,6 +216,20 @@ pub enum WalletCall {
     IdentityLedger(Id, EventPageRequest),
     /// `POST /api/identities/{identity_id}/witnesses`.
     SetWitnesses(Id, Vec<Id>),
+    /// `POST /api/identities/{identity_id}/profile`.
+    ReplaceProfile(ReplaceProfile),
+    /// `POST /api/identities/{identity_id}/verification`.
+    CheckVerification(Id),
+    /// `GET /api/identities/{identity_id}/contact`.
+    Contact(Id),
+    /// `PUT /api/identities/{identity_id}/contact`.
+    SetContact(SetContact),
+    /// `GET /api/lookup/{identity_id}`.
+    Lookup(LookupRequest),
+    /// `GET /api/graph`.
+    Graph,
+    /// `POST /api/graph/sync`.
+    SyncGraph,
     /// `GET /api/identities/{identity_id}/memberships`.
     Memberships(Id),
     /// `POST /api/identities/{identity_id}/memberships/invitations`.
@@ -246,6 +268,20 @@ pub struct StubWalletService {
     pub identity_ledger: LedgerPage,
     /// `POST /api/identities/{identity_id}/witnesses`.
     pub witnesses_appended: Appended,
+    /// `POST /api/identities/{identity_id}/profile`.
+    pub profile_replaced: ProfileReplaced,
+    /// `POST /api/identities/{identity_id}/verification`.
+    pub verification_checked: VerificationChecked,
+    /// `GET /api/identities/{identity_id}/contact`.
+    pub contact: ContactView,
+    /// `PUT /api/identities/{identity_id}/contact`.
+    pub contact_set: ContactView,
+    /// `GET /api/lookup/{identity_id}`.
+    pub lookup: Lookup,
+    /// `GET /api/graph`.
+    pub graph: GraphView,
+    /// `POST /api/graph/sync`.
+    pub graph_synced: GraphSynced,
     /// `GET /api/identities/{identity_id}/memberships`.
     pub memberships: MembershipView,
     /// `POST /api/identities/{identity_id}/memberships/invitations`.
@@ -294,6 +330,14 @@ impl StubWalletService {
             identity_ledger: Fixture::named("wallet-get-identity-ledger.json").parse_response(),
             witnesses_appended: Fixture::named("wallet-post-identity-witnesses.json")
                 .parse_response(),
+            profile_replaced: Fixture::named("wallet-post-identity-profile.json").parse_response(),
+            verification_checked: Fixture::named("wallet-post-identity-verification.json")
+                .parse_response(),
+            contact: Fixture::named("wallet-get-identity-contact.json").parse_response(),
+            contact_set: Fixture::named("wallet-put-identity-contact.json").parse_response(),
+            lookup: Fixture::named("wallet-get-lookup.json").parse_response(),
+            graph: Fixture::named("wallet-get-graph.json").parse_response(),
+            graph_synced: Fixture::named("wallet-post-graph-sync.json").parse_response(),
             memberships: Fixture::named("wallet-get-identity-memberships.json").parse_response(),
             invited: Fixture::named("wallet-post-membership-invitations.json").parse_response(),
             accepted: Fixture::named("wallet-post-membership-acceptances.json").parse_response(),
@@ -377,6 +421,40 @@ impl WalletService for StubWalletService {
             WalletCall::SetWitnesses(identity_id, witnesses),
             self.witnesses_appended.clone(),
         )
+    }
+
+    fn replace_profile(&self, request: ReplaceProfile) -> ServiceFuture<'_, ProfileReplaced> {
+        self.answer(
+            WalletCall::ReplaceProfile(request),
+            self.profile_replaced.clone(),
+        )
+    }
+
+    fn check_verification(&self, identity_id: Id) -> ServiceFuture<'_, VerificationChecked> {
+        self.answer(
+            WalletCall::CheckVerification(identity_id),
+            self.verification_checked.clone(),
+        )
+    }
+
+    fn contact(&self, identity_id: Id) -> ServiceFuture<'_, ContactView> {
+        self.answer(WalletCall::Contact(identity_id), self.contact.clone())
+    }
+
+    fn set_contact(&self, request: SetContact) -> ServiceFuture<'_, ContactView> {
+        self.answer(WalletCall::SetContact(request), self.contact_set.clone())
+    }
+
+    fn lookup(&self, request: LookupRequest) -> ServiceFuture<'_, Lookup> {
+        self.answer(WalletCall::Lookup(request), self.lookup.clone())
+    }
+
+    fn graph(&self) -> ServiceFuture<'_, GraphView> {
+        self.answer(WalletCall::Graph, self.graph.clone())
+    }
+
+    fn sync_graph(&self) -> ServiceFuture<'_, GraphSynced> {
+        self.answer(WalletCall::SyncGraph, self.graph_synced.clone())
     }
 
     fn memberships(&self, identity_id: Id) -> ServiceFuture<'_, MembershipView> {

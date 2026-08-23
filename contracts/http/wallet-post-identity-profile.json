@@ -1,0 +1,108 @@
+{
+  "route": "/api/identities/:identity_id/profile",
+  "method": "POST",
+  "request": {
+    "display_name": "Alice Ashworth",
+    "hostname": "alice.example"
+  },
+  "response": {
+    "ok": true,
+    "ledger_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+    "profile": {
+      "display_name": "Alice Ashworth",
+      "hostname": "alice.example",
+      "signing_principal": {
+        "identity": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+        "key": "2bflemtufo2kwoqtnc6umfpe43icesvxdiawxl4fecrtfslxq43q"
+      },
+      "event": "3ax4d4wvitut6gyvrrxdazjgo5i3455pddcmnumm4mbvfdz5op4a",
+      "seq": 7
+    },
+    "previous": {
+      "display_name": null,
+      "hostname": null
+    },
+    "head_seq": 7,
+    "head_event": "3ax4d4wvitut6gyvrrxdazjgo5i3455pddcmnumm4mbvfdz5op4a",
+    "event": {
+      "event_id": "3ax4d4wvitut6gyvrrxdazjgo5i3455pddcmnumm4mbvfdz5op4a",
+      "seq": 7,
+      "ledger_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+      "prev": "jyegrzet5r2davu3yv46tnrdivpvrznzo2srmm4qyam6jzm5u5ba",
+      "timestamp_ms": 1700000780000,
+      "author_key": "2bflemtufo2kwoqtnc6umfpe43icesvxdiawxl4fecrtfslxq43q",
+      "payload_kind": "profile_update",
+      "payload": {
+        "display_name": "Alice Ashworth",
+        "hostname": "alice.example"
+      }
+    }
+  },
+  "errors": [
+    {
+      "status": 400,
+      "body": {
+        "ok": false,
+        "code": 2,
+        "message": "hostname is required",
+        "details": {
+          "reason": "missing_field",
+          "field": "hostname"
+        }
+      }
+    },
+    {
+      "status": 409,
+      "body": {
+        "ok": false,
+        "code": 20,
+        "message": "Policy error: this profile is already the profile of sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq: nothing would change",
+        "details": {
+          "reason": "no_op_profile_update",
+          "ledger_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+          "display_name": "Alice Ashworth",
+          "hostname": "alice.example",
+          "profile_event": "3ax4d4wvitut6gyvrrxdazjgo5i3455pddcmnumm4mbvfdz5op4a",
+          "profile_seq": 7
+        }
+      }
+    },
+    {
+      "status": 400,
+      "body": {
+        "ok": false,
+        "code": 10,
+        "message": "Schema error: ProfileUpdate.display_name is not a valid name: it parses as an identity id",
+        "details": {
+          "reason": "invalid_display_name",
+          "field": "display_name",
+          "value": "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq"
+        }
+      }
+    },
+    {
+      "status": 403,
+      "body": {
+        "ok": false,
+        "code": 2,
+        "message": "request rejected: Origin must be http://127.0.0.1:9080 or http://localhost:9080 on a mutating route",
+        "details": {
+          "reason": "origin_mismatch",
+          "origin": "https://attacker.example"
+        }
+      }
+    },
+    {
+      "status": 415,
+      "body": {
+        "ok": false,
+        "code": 2,
+        "message": "request rejected: mutating routes require content-type: application/json",
+        "details": {
+          "reason": "content_type_not_json",
+          "content_type": "application/x-www-form-urlencoded"
+        }
+      }
+    }
+  ]
+}
