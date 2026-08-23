@@ -14,3 +14,9 @@
 - Event types for the POC: inception, witness config (list of witness
   peers), trust attestation, trust revocation, org membership events
   (create org, invite, acceptance, removal).
+
+Amendment (2026-08-23, arbitrated during proposal 001 review, pending owner
+ratification): the two-key rule applies to person identities only.
+Organizations have no keys of their own; org events are signed by a current
+controller's personal key per decision 004, and the change-of-authority path
+for an org is its membership events, not a reserve key.
