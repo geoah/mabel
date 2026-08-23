@@ -134,3 +134,22 @@ for the reason story 004 states), and step 11 tears them down.
   the same `head_seq`, `head_event`, `event_count` and `fork_count` per ledger.
   `GET /api/forks` still answers one record with the same `kept.event_id` and
   `conflicting.event_id`.
+
+## Deviations
+
+Where `tests/e2e/specs/005-witness-operator.spec.ts` departs from or exceeds
+the story text above.
+
+- Step 1 runs story 004 steps 1 to 7 only when the state they leave is
+  missing. The suite runs story 004 first, so the usual path inherits its
+  containers; running this spec on its own rebuilds them.
+- Step 8 asserts the two summary rows by value, which the story states in
+  words. `witness-detail-witnesses` holds exactly `witness_id` and
+  `witness_two_id`, and `witness-detail-source-endpoint` holds alice's node
+  endpoint id: the second machine's push of the conflicting branch was
+  rejected, so the endpoint that stored this ledger is alice's own.
+- Step 10 records the store through `GET /api/ledgers?offset=0&limit=256`
+  rather than through `/tmp/before.json` and `/tmp/after.json`. The three
+  refused requests are the story's `curl` commands.
+- The spec also waits on the table containers the story does not name:
+  `witness-ledger-table`, `witness-ledger-detail` and `witness-events-table`.

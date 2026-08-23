@@ -41,6 +41,7 @@ Out of scope: membership commands, the three file artifacts and `identity
 export` (ticket 018); all network commands (tickets 011 and 012). The
 `principals` view of an identity is not frozen
 (`contracts/http/PENDING-membership.md`), so no command in this ticket emits it.
+[Ticket 021 froze the membership fixtures and deleted that file.]
 
 ## Acceptance criteria
 

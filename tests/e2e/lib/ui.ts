@@ -54,13 +54,29 @@ export async function addWitness(
   await expect(page.getByTestId(`witness-row-${witnessEndpointId}`)).toBeVisible();
 }
 
+/**
+ * Clicks one submit button and waits for the request it fires to answer.
+ *
+ * `click` resolves once the event is dispatched, before the browser has
+ * rendered anything, so a helper called twice on one page can assert against
+ * the result the previous call left on the screen. Waiting for the response
+ * puts the assertions after the render that replaces it.
+ */
+async function submitAndAwait(page: Page, testId: string, route: string): Promise<void> {
+  const answered = page.waitForResponse(
+    (response) => response.url().endsWith(route) && response.request().method() === "POST",
+  );
+  await page.getByTestId(testId).click();
+  await answered;
+}
+
 /** Story 001 step 7: push to every configured witness and read the report. */
 export async function push(
   page: Page,
   witnessEndpointId: string,
   expected: { stored: number; headSeq?: number },
 ): Promise<void> {
-  await page.getByTestId("sync-push-submit").click();
+  await submitAndAwait(page, "sync-push-submit", "/api/sync/push");
   await expect(page.getByTestId("sync-push-report")).toBeVisible();
   await expect(page.getByTestId(`push-status-${witnessEndpointId}`)).toHaveText("accepted");
   await expect(page.getByTestId(`push-stored-${witnessEndpointId}`)).toHaveText(
@@ -74,7 +90,7 @@ export async function push(
 /** Story 001 step 8: attest trust in a subject and record the event id. */
 export async function addTrust(page: Page, subject: string): Promise<string> {
   await page.getByTestId("trust-add-subject").fill(subject);
-  await page.getByTestId("trust-add-submit").click();
+  await submitAndAwait(page, "trust-add-submit", "/api/trust");
   await expect(page.getByTestId("trust-appended-event")).toBeVisible();
   return identifier(page, "trust-appended-event");
 }
@@ -90,6 +106,6 @@ export async function verifyTrustInUi(
   await page.getByTestId("verify-trust-issuer").fill(fields.issuer);
   await page.getByTestId("verify-trust-subject").fill(fields.subject);
   await page.getByTestId("verify-trust-from").fill(fields.from);
-  await page.getByTestId("verify-trust-submit").click();
+  await submitAndAwait(page, "verify-trust-submit", "/api/verify");
   await expect(page.getByTestId("verify-report")).toBeVisible();
 }

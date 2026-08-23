@@ -413,13 +413,19 @@ under "Decisions taken here", where the fixture that pins it lives.
   `{checked_at_ms, detail}` or null, which section 5 does not list. Section 2
   requires the document to report a failed re-check beside the decisive result
   it could not refresh, and this is where that report goes. The five statuses
-  stay five: `unreachable` is a re-check outcome, not a verdict.
+  stay five, `unreachable` among them: it is the `status` when this node holds
+  no decisive result for the hostname, and once a decisive result exists a
+  failed re-check is reported in the `unreachable` key beside it, leaving
+  `status`, `checked_at_ms` and `last_verified_at_ms` as the earlier verdict
+  left them.
 - A claimed hostname this node has never checked reads `status: "unverified"`
   with `checked_at_ms: null`. None of the five statuses means "not checked
   yet", and the null timestamp is what says so.
 - `GET /api/lookup/:identity_id` defaults `from` to the lowest local identity
-  id. Section 3 defaults it to the identity selected in the wallet, which is a
-  browser fact the node does not hold; a client that cares sends the parameter.
+  id. Section 3 defaults it to the identity selected in the wallet and section
+  4 repeats that in the identity selector bullet, which is a browser fact the
+  node does not hold; the wallet sends the parameter, and so does any other
+  client that cares.
 
 ## Consequences
 

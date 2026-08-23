@@ -119,3 +119,16 @@ repository root.
   `true`, `verify-report-attestation-seq` `4`, and still lists
   `verify-report-revoked-<alice_attestation>`: revocation is history, not
   deletion.
+
+## Deviations
+
+Where `tests/e2e/specs/003-revocation.spec.ts` departs from or exceeds the
+story text above.
+
+- The spec asserts container testids the story never names, because the shared
+  UI helpers wait on them: `identity-detail` and `verify-report`.
+- Step 9's UI report is read further than the story states: the spec also
+  reads `verify-report-attestation-event` and asserts it carries
+  `second_attestation`.
+- Step 9 repeats step 6 in its `--json` form only. Step 6 already pins the
+  text form line by line, and the document is what step 9 adds.

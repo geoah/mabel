@@ -38,7 +38,8 @@ deliberately not ticketed here. The sync and verify screens need only ticket
 013, because their routes are frozen; the membership request and response
 shapes are pending until ticket 021 fixtures them
 (`contracts/http/PENDING-membership.md`), and ticket 021 wires these forms to
-the live routes.
+the live routes. [Ticket 021 froze the five membership fixtures and deleted
+that file; ticket 028 shipped the forms.]
 
 ## Acceptance criteria
 

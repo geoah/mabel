@@ -153,9 +153,13 @@ export function composeUp(): void {
  * overlay up leaves no resolver container, no `resolver-zones` volume and no
  * network behind for the next story to trip over. The overlay declares the
  * network's subnet, so a leftover network would also be the wrong one.
+ *
+ * A teardown that fails must fail the run: a half-removed topology is what
+ * poisons the next story, and a story that starts on one is debugged from the
+ * wrong end.
  */
 export function composeDown(): void {
-  run(
+  mustRun(
     "docker",
     [
       "compose",
@@ -183,10 +187,8 @@ export function composeDown(): void {
  * overlay's `MABEL_WITNESSES`, the entrypoint runs `mabel witness set-default`
  * with it, and the crawler's third source has somewhere to ask.
  *
- * No `--build`: the mabel image is the one global-setup built from committed
- * HEAD, and `up --build` would rebuild it from the working tree. Compose still
- * builds `mabel-resolver:dev` on its own the first time, because that image
- * does not exist yet.
+ * No `--build`: both images are the ones global-setup built from committed
+ * HEAD, and `up --build` would rebuild them from the working tree.
  */
 export function composeUpWithResolver(): string {
   const files = ["-f", COMPOSE_FILE, "-f", DNS_COMPOSE_FILE];

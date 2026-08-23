@@ -30,6 +30,7 @@ let bobId = "";
 let aliceKey = "";
 let orgId = "";
 let secondMachineEvent = "";
+let losingEvent = "";
 
 test.beforeAll(async ({ browser }) => {
   const context = await browser.newContext();
@@ -63,7 +64,9 @@ test("steps 2 and 3: the ledger names the witness, and a second machine", async 
 
 test("steps 4 and 5: alice appends, the second machine wins the race", async () => {
   await openIdentity(alicePage, ALICE_URL, orgId);
-  await addTrust(alicePage, bobId);
+  // The event alice signs here is the one the race discards, so step 7 can
+  // check it is gone rather than take the head's word for it.
+  losingEvent = await addTrust(alicePage, bobId);
   await expect(alicePage.getByTestId("identity-detail-head-seq")).toHaveText("4");
 
   expectExit(
@@ -141,6 +144,12 @@ test("step 7: alice's home holds the second machine's event at seq 4", async () 
   await expect(alicePage.getByTestId("event-payload-4")).toHaveText(
     `{"subject":"${aliceId}"}`,
   );
+
+  // The event alice signed in step 4 appears nowhere in the ledger her home
+  // now holds: the losing branch was truncated, not kept beside the winner.
+  const held = await apiGet(ALICE_URL, `/api/identities/${orgId}/ledger?since=0&limit=16`);
+  expect(held.body.events.map((event: any) => event.event_id)).not.toContain(losingEvent);
+  expect(held.body.events).toHaveLength(5);
 
   const trust = json(
     expectExit(mabel("alice", ["trust", "list", "--issuer", "mabel-demo-co", "--json"]), 0),

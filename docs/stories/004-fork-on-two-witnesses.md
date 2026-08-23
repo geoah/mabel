@@ -133,10 +133,17 @@ overlay would recreate the shared network under the other specs.
 
 - Step 5: `kept_event != conflicting_event`, both documents read
   `attestation_seq: 3`, and the two ledger routes report the same
-  `events[0].prev`, which is alice's seq-2 event id. Both branches verify:
-  `dc exec -T alice mabel verify ledger alice --json` exits 0 on the first
-  machine and `docker exec mabel-alice-two mabel verify ledger alice --json`
-  exits 0 on the second. Nothing here forges a signature.
+  `events[0].prev`, which is alice's seq-2 event id. Both branches verify,
+  each where it landed:
+  ```sh
+  dc exec -T alice sh -c 'mabel verify ledger alice --from '"$witness_id"' \
+    --peer "$(cat /shared/witness.ticket)" --json'
+  docker exec mabel-alice-two sh -c 'mabel verify ledger alice \
+    --from '"$witness_two_id"' --peer "$(cat /shared/witness-two.ticket)" --json'
+  ```
+  The first exits 0 with `valid: true` and `head_event == kept_event`, the
+  second exits 0 with `valid: true` and `head_event == conflicting_event`.
+  Nothing here forges a signature.
 - Step 7 exits 30. Its document has `ok: false`, `code: 30`, `message` starting
   `Network error: `, `details.reason == "all_witnesses_failed"`,
   `details.results[0].status == "rejected"`, `details.results[0].reject_code ==
@@ -171,3 +178,20 @@ overlay would recreate the shared network under the other specs.
   `details.candidates` entries: one `{source: <witness_id>, event_id:
   <kept_event>}` and one `{source: <witness_two_id>, event_id:
   <conflicting_event>}`. The verifier picks no winner.
+
+## Deviations
+
+Where `tests/e2e/specs/004-fork-on-two-witnesses.spec.ts` departs from or
+exceeds the story text above.
+
+- Step 5's `verify ledger` commands were rewritten to the forms the spec runs.
+  `mabel verify ledger` reads its copy from a source over the network, and a
+  CLI process in either container holds no address for one, so each command
+  names the witness that holds that branch and passes its ticket.
+- The spec does not run step 10. Story 005 opens on what this story leaves
+  running and tears it down in its own step 11; the suite's global teardown
+  clears it either way.
+- Step 5's two `prev` readings go through `GET
+  /api/identities/<alice_id>/ledger?since=3` on both wallets rather than
+  through `curl` and `jq`, and step 8 also waits on `witness-ledger-detail`,
+  the container the story does not name.

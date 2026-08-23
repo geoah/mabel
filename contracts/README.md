@@ -85,9 +85,10 @@ document when the process stops, so their one case is the shutdown document.
 
 Each `http/*.json` holds `route`, `method`, `request` (an example body, or
 `null` for GET), `response` (an example 200 body) and `errors` (examples of
-`{status, body}`). Each `cli/*.json` holds `command` and `cases`, one case
-per outcome worth pinning, each with `case`, `command`, `exit_code` and
-`document`.
+`{status, body}`). Each `cli/*.json` holds `cases`, one case per outcome worth
+pinning, each with `case`, `command`, `exit_code` and `document`. Every file
+but one names its subject in `command`; `cli/errors.json` covers no single
+command, so it carries `envelope` instead.
 
 ## Conventions
 
@@ -348,11 +349,17 @@ and a golden vector name the same event: Alice is
 active key, the one conflicting fork event and the membership events are
 fabricated but consistent across files.
 
-Each fixture is one moment, not one snapshot of a single node: `wallet-post-
-trust.json` answers at seq 2 of Alice's ledger and the identity documents read
-it at seq 3. The five membership fixtures run one story past that head, Alice
-delegating to Bob on her own raw-rooted ledger: the invitation lands at seq 4,
-the acceptance at seq 5 and the removal at seq 6. The acceptance fixture is
+Each fixture is one moment, not one snapshot of a single node.
+`wallet-post-trust.json` answers at seq 2 of Alice's ledger;
+`wallet-get-identity-ledger.json` reads it at head 3, the revocation of that
+attestation; `wallet-get-identity.json` reads it at head 8, with the profile
+at seq 7 and a second attestation at seq 8, and Alice's entry in
+`wallet-get-identities.json` carries that same head. The five membership
+fixtures sit
+between those two heads, Alice delegating to Bob on her own raw-rooted ledger:
+the invitation lands at seq 4, the acceptance at seq 5 and the removal at seq
+6, and `wallet-get-identity-memberships.json` reads that ledger at head 4,
+with the invitation still open. The acceptance fixture is
 the mirror image, Alice's wallet accepting an invitation to Bob's ledger,
 because a wallet only signs an acceptance for an identity whose key it holds.
 
@@ -427,9 +434,10 @@ reviewer can overrule them cheaply, before consumers are written.
   rather than 201.
 - Public keys and endpoint ids render as base32 like ids, not as
   `iroh_base`'s hex. `node.json` keeps hex, so the HTTP layer converts.
-- `GET /api/node` calls the storage limit `storage_capacity`;
-  `NodeConfig` in `crates/mabel-node/src/config.rs` spells it `storage_cap`.
-  Either the API maps the name or the config field is renamed.
+- `GET /api/node` calls the storage limit `storage_capacity`, and so does
+  `NodeConfig` in `crates/mabel-node/src/config.rs`: the config field was
+  renamed rather than mapped, and a `node.json` spelling it `storage_cap` is
+  refused as an unknown field.
 - The witness JSON renames `LedgerSummary.ledger` to `ledger_id` and
   `LedgerSummary.kind` to `declared_kind`, and adds `source_endpoint` from
   `ledgers/<id>/meta.json`. Every other field keeps its `sync.proto` name.
@@ -472,7 +480,8 @@ reviewer can overrule them cheaply, before consumers are written.
 - `ResolvedIdentity` spells its verdict `verification_status` and carries the
   status string alone, not the whole verification object. Proposal 003
   section 4 writes the key as `verification`; a foreign identity in a path hop
-  needs the glyph, not six timestamps, and the full object is one route away.
+  needs the glyph, not the seven fields of that object, and the full object is
+  one route away.
 - The identity document's `verification` carries `unreachable`, which
   proposal 003 section 5 does not list. Section 2 requires the document to
   report a failed re-check beside the decisive result it could not refresh,
@@ -485,7 +494,11 @@ reviewer can overrule them cheaply, before consumers are written.
   id. Proposal 003 section 3 defaults it to the identity selected in the
   wallet, which is a browser fact the node does not hold; a client that cares
   sends the parameter.
-- A route asked for an identity this home does not hold answers 404 with
-  reason `unknown_ledger`, detail key `ledger_id` and the message `this home
-  holds no ledger <id>`. One spelling covers both the identity routes and the
-  ledger routes, because an identity in this home is the ledger it roots.
+- A wallet route asked for an identity this home does not hold answers 404
+  with reason `unknown_ledger`, detail key `ledger_id` and the message `this
+  home holds no ledger <id>`. One spelling covers every wallet route, the
+  identity ones and the ledger ones, because an identity in this home is the
+  ledger it roots. The witness routes keep `ledger_not_held`
+  (`witness-get-ledger.json`, `witness-get-ledger-events.json`): a witness
+  holds copies and says so, and "this home holds no ledger" would claim
+  something about a ledger it never rooted.

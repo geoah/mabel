@@ -31,7 +31,8 @@ raw-rooted or identity-rooted.
   (section 3.8, pitfall 7).
 - `--json` documents for each command, using the ticket 008 envelope. These
   shapes are not frozen: `contracts/http/PENDING-membership.md` lists the
-  membership surface as pending, and ticket 021 fixtures the HTTP counterpart
+  membership surface as pending [ticket 021 froze the five membership fixtures
+  and deleted that file], and ticket 021 fixtures the HTTP counterpart
   (`POST /api/identities/:identity_id/memberships/invitations`, `/acceptances`,
   `/removals`) with the field names this ticket settles.
 

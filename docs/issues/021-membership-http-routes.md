@@ -7,12 +7,14 @@
 
 The three membership routes exist on the wallet API with frozen fixtures, and
 the ticket 019 membership screens call them instead of showing a code 70. This
-retires `contracts/http/PENDING-membership.md`.
+retires `contracts/http/PENDING-membership.md`. [Ticket 019 was superseded;
+ticket 028 shipped those screens as `MembershipForms`.]
 
 ## Scope
 
-- Freeze first, before the rest of this ticket and before ticket 019 starts:
-  add `contracts/http/wallet-post-membership-invitations.json`,
+- Freeze first, before the rest of this ticket and before ticket 019 starts
+  [the screens landed in ticket 028 instead]: add
+  `contracts/http/wallet-post-membership-invitations.json`,
   `-acceptances.json` and `-removals.json` for `POST
   /api/identities/:identity_id/memberships/invitations`, `/acceptances` and
   `/removals`, using the field names ticket 018 settles for the CLI. Add the

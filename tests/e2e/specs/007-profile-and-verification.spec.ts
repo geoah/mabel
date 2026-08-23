@@ -55,10 +55,12 @@ let witnessId = "";
 let aliceId = "";
 let bobId = "";
 let carolId = "";
+let aliceAttestation = "";
 let carolAttestation = "";
 let aliceCheckedAtMs = 0;
 let bobCheckedAtMs = 0;
 let firstSyncId = "";
+let beforeDns: Record<string, unknown> = {};
 
 test.beforeAll(async ({ browser }) => {
   const context = await browser.newContext();
@@ -164,6 +166,46 @@ async function forceCheckUntil(
   return last;
 }
 
+/** The pinned trust verification of story 001 step 12, from an empty home. */
+function verifyTrustFromFreshHome(): any {
+  return json(
+    expectExit(
+      verifier([
+        "verify",
+        "trust",
+        "--issuer",
+        aliceId,
+        "--subject",
+        bobId,
+        "--from",
+        witnessId,
+        "--json",
+      ]),
+      0,
+    ),
+  );
+}
+
+/**
+ * The fields of a trust report that a second run of the same command must
+ * repeat. `fetched_at_ms` and the RFC 3339 time inside the statement are the
+ * two values a re-read is expected to move, so the time is masked and the
+ * timestamp is left out.
+ */
+function pinned(report: any): Record<string, unknown> {
+  return {
+    trusted: report.trusted,
+    statement: String(report.statement).replace(/\d{4}-\d{2}-\d{2}T[\d:]+Z/, "<time>"),
+    attestation_event: report.attestation_event,
+    attestation_seq: report.attestation_seq,
+    head_seq: report.head_seq,
+    head_event: report.head_event,
+    revoked_count: report.revoked_count,
+    signing_principal: report.signing_principal,
+    source: report.source,
+  };
+}
+
 /** The hostname row of one identity's overview, as the UI renders it. */
 async function openHostnameRow(page: Page, base: string, identityId: string) {
   await openIdentity(page, base, identityId);
@@ -171,6 +213,9 @@ async function openHostnameRow(page: Page, base: string, identityId: string) {
 }
 
 test("step 1: story 001 steps 1 to 12, and carol in bob's home", async () => {
+  // This step resets the topology with the resolver overlay and then runs the
+  // whole of story 001, which is more than the 120 s default budget.
+  test.setTimeout(300_000);
   const state = await story001Steps1to7(alicePage, bobPage, resetTopologyWithResolver);
   witnessId = state.witnessId;
   aliceId = state.aliceId;
@@ -178,7 +223,7 @@ test("step 1: story 001 steps 1 to 12, and carol in bob's home", async () => {
 
   await test.step("001 steps 8 to 10: one attestation each way, both pushed", async () => {
     await openIdentity(alicePage, ALICE_URL, aliceId);
-    await addTrust(alicePage, bobId);
+    aliceAttestation = await addTrust(alicePage, bobId);
     await openIdentity(bobPage, BOB_URL, bobId);
     await addTrust(bobPage, aliceId);
     await push(alicePage, witnessId, { stored: 1 });
@@ -186,23 +231,10 @@ test("step 1: story 001 steps 1 to 12, and carol in bob's home", async () => {
   });
 
   await test.step("001 steps 11 and 12: a fresh home answers trusted", async () => {
-    const document = json(
-      expectExit(
-        verifier([
-          "verify",
-          "trust",
-          "--issuer",
-          aliceId,
-          "--subject",
-          bobId,
-          "--from",
-          witnessId,
-          "--json",
-        ]),
-        0,
-      ),
-    );
-    expect(document.trusted).toBe(true);
+    // Kept for the re-run after the DNS sequence: a hostname verdict changes
+    // nothing a trust report says.
+    beforeDns = pinned(verifyTrustFromFreshHome());
+    expect(beforeDns.trusted).toBe(true);
   });
 
   await test.step("carol is created, witnessed, pushed and attested", async () => {
@@ -551,6 +583,14 @@ test("the resolver comes back and alice verifies again", async () => {
   aliceCheckedAtMs = checked.checked_at_ms;
 });
 
+test("verification gates nothing: the pinned trust report is unchanged", async () => {
+  // Alice's ledger has been verified, mismatched on bob's side, gone
+  // unreachable and verified again since the first run. The same command from
+  // the same empty home answers the same thing, because a hostname verdict is
+  // advisory (decision 015): it gates no authorization and no ledger validity.
+  expect(pinned(verifyTrustFromFreshHome())).toEqual(beforeDns);
+});
+
 test("a replacement that omits the hostname clears it", async () => {
   const cleared = json(
     expectExit(
@@ -698,6 +738,16 @@ test("step 10: the graph is synchronized from the UI, and carol is two hops away
     "3 identities, 3 attestations",
   );
 
+  // The consent is remembered per node home, so the second sync from the same
+  // wallet runs without asking again.
+  const synced = alicePage.waitForResponse(
+    (response) =>
+      response.url().endsWith("/api/graph/sync") && response.request().method() === "POST",
+  );
+  await alicePage.getByTestId("graph-sync-button").click();
+  await synced;
+  await expect(alicePage.getByTestId("graph-sync-consent")).toHaveCount(0);
+
   const graph = await apiGet(ALICE_URL, "/api/graph");
   expect(graph.body.graph.node_count).toBe(3);
   expect(graph.body.graph.edge_count).toBe(3);
@@ -748,6 +798,10 @@ test("step 10: the graph is synchronized from the UI, and carol is two hops away
 
   await alicePage.goto(`${ALICE_URL}/wallet/lookup/${carolId}`);
   await expect(alicePage.getByTestId("lookup-degrees")).toHaveText("2 hops");
+  // The number is only an answer next to the question the row asks.
+  await expect(alicePage.getByTestId("lookup-degrees-row").locator("dt")).toHaveText(
+    "shortest path found in this crawl",
+  );
   await expect(alicePage.getByTestId("lookup-hop-0-0-to-name")).toHaveText("Bob Example");
   await expect(alicePage.getByTestId("lookup-hop-0-1-fetched")).toContainText("read ");
   await expect(alicePage.getByTestId("lookup-reverse-label")).toHaveText(REVERSE_LABEL);
@@ -822,4 +876,41 @@ test("the crawl writes no stranger's ledger", async () => {
   expect(ledgers).toEqual([aliceId]);
   expect(ledgers).not.toContain(carolId);
   expect(ledgers).not.toContain(bobId);
+});
+
+test("bob taking alice's name changes what is shown, never which id is shown", async () => {
+  // Anybody may publish any display name, so bob publishes alice's. The
+  // screens that render him must still say which identity he is.
+  expectExit(
+    mabel("bob", [
+      "profile",
+      "replace",
+      "--identity",
+      "bob",
+      "--display-name",
+      "Alice Example",
+      "--yes",
+    ]),
+    0,
+  );
+  expectExit(dcSh("bob", 'mabel sync push --identity bob --peer "$(cat /shared/witness.ticket)"'), 0);
+
+  await alicePage.goto(`${ALICE_URL}/wallet`);
+  const synced = alicePage.waitForResponse(
+    (response) =>
+      response.url().endsWith("/api/graph/sync") && response.request().method() === "POST",
+  );
+  await alicePage.getByTestId("graph-sync-button").click();
+  await synced;
+
+  // Alice's trust row for bob now reads alice's own name, and carries bob's
+  // id: the name is what the crawl read, the id is who it is about.
+  await openIdentity(alicePage, ALICE_URL, aliceId);
+  const row = `trust-subject-${aliceAttestation}`;
+  await expect(alicePage.getByTestId(`${row}-name`)).toHaveText("Alice Example");
+  expect(await identifier(alicePage, row)).toBe(bobId);
+
+  // The overview of alice's own identity carries the same name and her id.
+  await expect(alicePage.getByTestId("identity-detail-resolved-name")).toHaveText("Alice Example");
+  expect(await identifier(alicePage, "identity-detail-identity-id")).toBe(aliceId);
 });

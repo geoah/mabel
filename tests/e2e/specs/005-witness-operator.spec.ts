@@ -4,6 +4,7 @@ import {
   apiGet,
   composeDown,
   containerRunning,
+  dcExec,
   dcSh,
   docker,
   json,
@@ -27,6 +28,8 @@ const DECLARED_KIND_NOTE =
 let page: Page;
 
 let witnessId = "";
+let witnessTwoId = "";
+let aliceNodeId = "";
 let aliceId = "";
 let orgId = "";
 let firstPageIds: string[] = [];
@@ -59,6 +62,12 @@ test("step 1: story 004 steps 1 to 7, one ledger and one fork record", async () 
   }
 
   witnessId = readWitnessId();
+  // Both witnesses publish to the shared volume, so the second one's id is
+  // readable whether this suite ran story 004 just now or inherited its state.
+  witnessTwoId = expectExit(dcExec("alice", ["cat", "/shared/witness-two.id"]), 0).stdout.trim();
+  // The endpoint that pushed alice's ledger to this witness: the second
+  // machine's push of the conflicting branch was rejected, so it is alice's.
+  aliceNodeId = expectExit(mabel("alice", ["node", "id"]), 0).stdout.trim();
   const identities = json(expectExit(mabel("alice", ["identity", "list", "--json"]), 0)).identities;
   aliceId = identities.find((identity: any) => identity.alias === "alice").identity_id;
 
@@ -181,10 +190,14 @@ test("step 8: one ledger's summary and one page of its events", async () => {
   await expect(page.getByTestId("witness-detail-event-count")).toHaveText("4");
   await expect(page.getByTestId("witness-detail-fork-count")).toHaveText("1");
   await expect(page.getByTestId("witness-detail-forks-truncated")).toHaveText("false");
-  await expect(
-    page.getByTestId("witness-detail-witnesses").locator("[data-value]"),
-  ).toHaveCount(2);
-  expect(await identifier(page, "witness-detail-source-endpoint")).toMatch(/^[a-z2-7]{52}$/);
+  // The two endpoints alice's chain names, by value: witness one and witness
+  // two, in whichever order the rendered list holds them.
+  const witnesses = await page
+    .getByTestId("witness-detail-witnesses")
+    .locator("[data-value]")
+    .evaluateAll((elements) => elements.map((element) => element.getAttribute("data-value") ?? ""));
+  expect([...witnesses].sort(compareIds)).toEqual([witnessId, witnessTwoId].sort(compareIds));
+  expect(await identifier(page, "witness-detail-source-endpoint")).toBe(aliceNodeId);
 
   await page.getByTestId("witness-events-since").fill("2");
   await page.getByTestId("witness-events-limit").fill("1");

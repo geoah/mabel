@@ -92,9 +92,11 @@ docker/compose.dns.yaml`, run from the repository root.
    which has no record.
 8. Open alice's identity view in the wallet UI. The overview is one compact
    key-value table (`identity-detail`): name, copyable id, declared kind,
-   created, hostname with its verification mark, contact, and the counts. Read
-   `identity-detail-hostname` for each of the three cases above and for carol,
-   who claims no hostname.
+   alias, created, hostname with its verification mark, contact, and the
+   counts. Read the `identity-detail-hostname` row for each of the three cases
+   above and for carol, who claims no hostname. The mark sits inside that row
+   as `identity-detail-hostname-verification`, and carol's row carries no
+   mark at all.
 9. Set a private contact note on bob, which is local and never signed:
    ```sh
    dc exec -T alice mabel contact set "$bob_id" --nickname "Bob from the pub" \
@@ -203,3 +205,30 @@ docker/compose.dns.yaml`, run from the repository root.
   only what the home already holds. The CLI process has no seeded peer
   address, unlike the running wallet, which starts with the witness's ticket.
   The story runs the first sync through the UI and passes `--peer` to the CLI.
+- A day cannot pass in a suite that runs in three minutes, so the stale case
+  is set up by writing `/data/verification/<alice_id>.json` in alice's
+  container with `checked_at_ms` 25 hours back. The cache is a rebuildable
+  file, which is what makes that legitimate.
+- Bob's ledger is pushed to the witness once more immediately before step 10.
+  His profile events matter to the crawl, and alice can only read them from
+  the witness.
+- The spec asserts two things the story's outcomes do not name:
+  `graph-sync-counts` reads `3 identities, 3 attestations` after the first
+  sync, and `/data/graph/generations` holds at most two entries, because
+  generations are caches collected down to the last two.
+- "A lookup running during a sync reads the previous generation whole" is only
+  smoke-checked here: the spec fires one lookup beside one sync and asserts it
+  answers from one of the two generations. The outcome itself is pinned by the
+  generation-swap unit tests in `crates/mabel-node/src/graph/tests.rs`.
+- Payload tag 17 is asserted through its document spelling: the ledger route
+  reports `payload_kind: "profile_update"`, which is the tag as every JSON
+  surface renders it.
+- "Two entries resolving to one name both show their full ids" is checked
+  across two screens rather than inside one list: bob publishes alice's
+  display name, and the spec reads alice's trust row for bob and alice's own
+  overview. The full-id rendering of duplicates within one list is covered by
+  `ui/src/test/resolved-identity.test.tsx`.
+- "Verification gates nothing" is checked by rerunning the pinned trust
+  verification of story 001 step 12 after the whole DNS sequence. Two of its
+  fields are expected to move, so the comparison drops `fetched_at_ms` and
+  masks the RFC 3339 time inside `statement`.

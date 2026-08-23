@@ -68,7 +68,7 @@ milestone 10 and are deliberately not ticketed here.
   `contracts/` HTTP and `--json` fixtures. Depends on none. Done.
 - [021-membership-http-routes.md](021-membership-http-routes.md): membership
   route fixtures, the node routes, and the wallet wiring. Depends on 012, 018,
-  019. Done.
+  019 (019 superseded by 028). Done.
 - [022-mobile-friendly-ui.md](022-mobile-friendly-ui.md): responsive wallet
   and witness UI, identifier truncation, screenshot verification at three
   widths. Depends on 013, 014. Done.

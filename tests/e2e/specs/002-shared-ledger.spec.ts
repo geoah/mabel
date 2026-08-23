@@ -4,6 +4,7 @@ import {
   ALICE_URL,
   apiGet,
   carry,
+  dcExec,
   dcSh,
   json,
   mabel,
@@ -94,6 +95,9 @@ test("step 10: a controller role on a raw root warns before it signs", async () 
     2,
   );
   expect(json(refused).details.reason).toBe("confirmation_required");
+  // "having signed nothing": the --out file the command would have written
+  // does not exist.
+  expect(dcExec("bob", ["test", "!", "-f", "/tmp/raw.acceptance"]).status).toBe(0);
 
   const accepted = json(
     expectExit(
@@ -214,9 +218,6 @@ test("step 14: a verifier is told which principal signed", async () => {
     `^valid as of seq 4 of ${orgId}, fetched from ${witnessId} at ${RFC3339_UTC}; no revocation up to seq 4$`,
   );
 
-  // The story runs this without --peer; a CLI process in alice's container
-  // holds no address for the witness, so the ticket the container already
-  // mounts is passed in. Everything else is the story's command.
   const text = expectExit(
     dcSh(
       "alice",

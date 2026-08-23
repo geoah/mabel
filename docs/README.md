@@ -8,7 +8,7 @@
   Iroh research).
 - [templates/](templates/README.md): one template per artifact type.
 - [issues/](issues/README.md): implementation tickets for the accepted
-  architecture proposals, 001 as amended by 002.
+  proposals, 001 as amended by 002, and 003.
 - [stories/](stories/README.md): end-to-end user stories over the compose
   topology, the scenarios the Playwright suite implements.
 - [../contracts/](../contracts/README.md): the frozen HTTP and `--json`

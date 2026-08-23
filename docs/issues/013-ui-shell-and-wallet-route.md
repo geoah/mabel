@@ -32,7 +32,8 @@ tickets 010 to 012.
 - Build wiring: the production build lands where `rust-embed` picks it up, and
   `--ui-dir` serves the dev build (section 10).
 - Witness route placeholder only (ticket 014). The Principals panel, membership,
-  sync and verify screens are ticket 019.
+  sync and verify screens are ticket 019. [Ticket 019 was superseded; ticket
+  028 shipped those screens.]
 
 Out of scope: Playwright specs, which belong to milestone 10 and are
 deliberately not ticketed here. Nothing here waits on ticket 012: tests run

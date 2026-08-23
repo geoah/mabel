@@ -22,8 +22,9 @@ subject control was not proven to this verifier; the issuer is responsible for o
 
 ## Quickstart
 
-Build the UI first, because `cargo build` embeds `ui/dist` into the binary,
-then build the workspace and run every check:
+Build the UI first, because `cargo build --release` embeds `ui/dist` into the
+binary and a debug build reads it from that path at runtime, then build the
+workspace and run every check:
 
 ```sh
 (cd ui && npm ci && npm run build)        # writes ui/dist
@@ -78,16 +79,18 @@ docker compose -f docker/compose.yaml down -v
 membership, trust, revocation and a stranger verifying from an empty home. It
 needs docker, curl and jq, and reaches nothing outside the bridge network.
 
-The Playwright suite runs the six stories in [docs/stories/](docs/stories/README.md)
-against the same topology, driving the CLI through `docker compose exec` and
-both UIs in a browser:
+The Playwright suite runs the seven stories in [docs/stories/](docs/stories/README.md),
+driving the CLI through `docker compose exec` and both UIs in a browser. Six
+run against the compose topology above; story 007 brings it up again with the
+test resolver overlay:
 
 ```sh
 (cd tests/e2e && npm ci && npx playwright install --with-deps chromium && npm test)
 ```
 
-It builds the `mabel:dev` image from committed `HEAD` through `git archive`, so
-an edited working tree cannot change what the topology serves mid-run. Set
+It builds the `mabel:dev` and `mabel-resolver:dev` images from committed `HEAD`
+through `git archive`, so an edited working tree cannot change what the
+topology serves mid-run. Set
 `MABEL_E2E_COMMIT` to build a different commit, `MABEL_E2E_REBUILD=1` to force
 the build, and `KEEP_TOPOLOGY=1` to leave the containers up afterwards.
 

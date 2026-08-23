@@ -1,15 +1,18 @@
 # Stories
 
-End-to-end user stories, one scenario each, written to be executed by hand and
-then implemented as Playwright specs under `tests/e2e/` (milestone 10 of
-[../proposals/001-architecture.md](../proposals/001-architecture.md)).
-Template: [../templates/story.md](../templates/story.md).
+End-to-end user stories, one scenario each, executable by hand and implemented
+as Playwright specs under `tests/e2e/` (milestone 10 of
+[../proposals/001-architecture.md](../proposals/001-architecture.md)). All
+seven are implemented; each story names its spec, and a "Deviations" section
+lists where that spec departs from the story text. Template:
+[../templates/story.md](../templates/story.md).
 
-Every story runs against the compose topology of
+Every story starts from the compose topology of
 [../../docker/compose.yaml](../../docker/compose.yaml): one witness on
 `http://127.0.0.1:9080` and two wallets on `http://127.0.0.1:9081` and
-`http://127.0.0.1:9082`. Story 007 adds the test resolver overlay on top of
-it, and is the only one that does. Each node serves its own UI and its own API from that
+`http://127.0.0.1:9082`. Three stories add to it: 004 and 005 hand-start a
+second witness and a second machine for alice, and 007 brings the topology up
+again with the test resolver overlay. Each node serves its own UI and its own API from that
 origin, and the host port equals the container port because the API refuses any
 `Host` that is not `127.0.0.1` or `localhost` on the port it bound. Assertion
 strings come from [../../contracts/](../../contracts/README.md) and the

@@ -135,3 +135,23 @@ machines; two admitted controllers acting from their own homes is ticket 031.
   the report is about the witness's chain, not this container's own.
 - The witness agrees: `GET http://127.0.0.1:9080/api/ledgers/<org_id>` answers
   `entry.head_seq: 5` and `entry.event_count: 6`.
+
+## Deviations
+
+Where `tests/e2e/specs/006-stale-append.spec.ts` departs from or exceeds the
+story text above.
+
+- The CLI form of the exit-50 failure is not run at step 6. A losing append
+  repairs the chain it lost on before returning 50, so one race produces one
+  `stale_head`. The spec sets the race up a second time after step 10, with
+  two subjects nothing has attested yet, and runs the CLI form there.
+- Step 7's "set `ledger-since` to 0, `ledger-limit` to 8, Load" is a no-op on a
+  panel that opens at those values and refetches only when one of them
+  changes. The spec moves the limit to 16, loads, moves it back to 8 and loads
+  again, which is the same read.
+- "The event id alice signed in step 4 appears nowhere in the ledger" is
+  checked against `GET /api/identities/<org_id>/ledger?since=0&limit=16` in
+  alice's home: the five events it returns do not include that id.
+- Step 11 tears the second machine down through the same helper the other
+  stories use, which also removes `mabel-witness-two`. Nothing started it
+  here, so that removal is a no-op.

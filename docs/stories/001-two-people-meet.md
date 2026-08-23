@@ -145,3 +145,15 @@ repository root.
 - `GET http://127.0.0.1:9080/api/ledgers/<carol_id>` answers 404 with
   `details.reason == "ledger_not_held"`: the witness holds no copy of the
   subject, which is exactly what step 14 reported.
+
+## Deviations
+
+Where `tests/e2e/specs/001-two-people-meet.spec.ts` departs from or exceeds the
+story text above.
+
+- The spec asserts two testids the story never names. `identity-detail` is how
+  the shared `openIdentity` helper knows an identity page opened, and
+  `identity-detail-identity-id` is read in a last test that checks the whole
+  52-character value is what `data-value` holds.
+- Step 13 creates carol with `--json` added, so the spec can read `carol_id`
+  from the document instead of parsing the text form.

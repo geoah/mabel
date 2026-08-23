@@ -19,11 +19,11 @@ signed.
   `http://127.0.0.1:9080`.
 
 `dc` stands for `docker compose -f docker/compose.yaml`, run from the
-repository root. Bob's wallet UI has no membership screen yet (ticket 019 is
-superseded by ticket 028), so step 6 drives the shipped
-`/memberships/acceptances` route directly and step 10 drives the CLI
-equivalent; the accept surface they assert is the document that screen will
-render.
+repository root. Bob's wallet UI has a membership screen, shipped by ticket
+028 as `MembershipForms`. This story drives the route and the CLI instead:
+step 6 posts to `/memberships/acceptances` and step 10 runs the CLI
+equivalent. The accept surface they assert is the document that screen
+renders.
 
 ## Story
 
@@ -178,3 +178,21 @@ render.
   -T bob sh -c 'mabel sync push --identity '"$org_id"' --peer "$(cat
   /shared/witness.ticket)"'` is accepted; a fresh verifier of that
   attestation names bob as the signing principal.
+
+## Deviations
+
+Where `tests/e2e/specs/002-shared-ledger.spec.ts` departs from or exceeds the
+story text above.
+
+- Step 5 carries the bundle without a host copy: the spec runs `docker exec
+  mabel-alice base64 -w0 /tmp/invitation.bundle` and posts that string. Step 7
+  still decodes on the host and `docker cp`s the file in, as written.
+- Step 10 runs `membership remove` only in its `--json` form. Removal is
+  one-shot, so a second run would have nothing to cancel and the text form
+  cannot be exercised in the same story.
+- The spec asserts container testids the story never names, because the shared
+  UI helpers wait on them: `identity-detail`, `sync-push-report`,
+  `trust-appended-event` and `verify-report`.
+- The refusal in step 10 is checked further than the story states: after the
+  accept without `--yes` exits 2, `test ! -f /tmp/raw.acceptance` confirms
+  nothing was written.
