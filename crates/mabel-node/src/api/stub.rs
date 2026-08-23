@@ -1,10 +1,10 @@
 //! Services that answer from the frozen fixtures.
 //!
-//! The stub exists so the UI (ticket 013) and the contract tests can run
-//! against a real router before the witness and wallet runtimes (tickets 010
-//! and 011) exist. It answers every route with the `response` document of the
-//! matching file under `contracts/http/`, records the calls it received, and
-//! can be told to fail with any [`ServiceError`].
+//! The stub answers every route with the `response` document of the matching
+//! file under `contracts/http/`, records the calls it received, and can be
+//! told to fail with any [`ServiceError`]. The contract tests use it to check
+//! both routers against the fixtures without a node home; the wallet and
+//! witness runtimes answer the same routes in production.
 //!
 //! Because the fixtures are compiled in with `include_str!`, a fixture whose
 //! shape drifts from [`super::documents`] fails the test suite instead of

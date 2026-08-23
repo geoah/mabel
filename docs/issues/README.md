@@ -44,7 +44,7 @@ milestone 10 and are deliberately not ticketed here.
   sync and verify service traits. Depends on 007, 008, 009. Done.
 - [012-http-api-and-loopback-rules.md](012-http-api-and-loopback-rules.md):
   axum routes over the fixtures, service traits, stub answers, loopback
-  middleware, UI serving. Depends on 020.
+  middleware, UI serving. Depends on 020. Done.
 - [013-ui-shell-and-wallet-route.md](013-ui-shell-and-wallet-route.md): Vite
   app shell, fixture-typed API client, identity and trust screens. Depends on
   020. Done.
@@ -52,12 +52,12 @@ milestone 10 and are deliberately not ticketed here.
   ledgers and forks. Depends on 013. Done.
 - [015-docker-image-and-compose.md](015-docker-image-and-compose.md):
   multi-stage image and the compose topology with seeded tickets. Depends on
-  013.
+  013. Done.
 - [016-cli-integration-and-fresh-verifier.md](016-cli-integration-and-fresh-verifier.md):
   cross-node CLI suite and the fresh-verifier test. Depends on 010, 011, 018.
   Done.
 - [017-demo-script.md](017-demo-script.md): CLI demo over the compose
-  topology. Depends on 015.
+  topology. Depends on 015. Done.
 - [018-cli-membership-commands-and-artifacts.md](018-cli-membership-commands-and-artifacts.md):
   `mabel membership invite|accept|admit|remove`, `identity export`, the three
   file artifacts. Depends on 006, 008. Done.
@@ -75,31 +75,33 @@ milestone 10 and are deliberately not ticketed here.
 - [023-profile-payload.md](023-profile-payload.md): `ProfileUpdate` at payload
   tag 17, the codepoint policy on `FieldKind::String`, latest-wins fold, the
   `no_op_profile_update` guard, golden and rejection vectors. Depends on none.
+  Done.
 - [024-dns-hostname-verifier.md](024-dns-hostname-verifier.md): the `Resolver`
   trait over `hickory-resolver`, the `_mabel.<hostname>` TXT rules, the five
-  advisory statuses and the verification cache. Depends on 023.
+  advisory statuses and the verification cache. Depends on 023. Done.
 - [025-trust-graph-crawler-and-store.md](025-trust-graph-crawler-and-store.md):
   the `LedgerFetcher` trait and source order, capped breadth-first crawl,
   generations behind `graph/current.json`, reverse edges. Depends on 023, 011.
+  Done.
 - [026-profile-contact-and-graph-routes.md](026-profile-contact-and-graph-routes.md):
   fixtures first, then the shared identity document, `ResolvedIdentity`, the
   contact store, and the profile, verification, lookup and graph routes with
-  their CLI commands. Depends on 023, 024, 025.
+  their CLI commands. Depends on 023, 024, 025. Done.
 - [027-wallet-shell-and-name-resolution.md](027-wallet-shell-and-name-resolution.md):
   identity selector, the `ResolvedIdentity` component and the `Identifier` name
-  slot, developer mode, consent panels. Depends on 026.
+  slot, developer mode, consent panels. Depends on 026. Done.
 - [028-identity-view.md](028-identity-view.md): overview table, ledger lines,
   state and actions, absorbing ticket 019's membership, sync and verify
-  screens. Depends on 026, 027, 021.
+  screens. Depends on 026, 027, 021. Done.
 - [029-lookup-and-graph-view.md](029-lookup-and-graph-view.md): foreign-identity
   drill-down, path rendering from the selected root, two-level expansion,
-  staleness and truncation surfaces. Depends on 026, 027.
+  staleness and truncation surfaces. Depends on 026, 027. Done.
 - [030-witness-crawl-provenance.md](030-witness-crawl-provenance.md): witness
   pulls referenced ledgers and records `pull_reason`, off by default. Deferred
   out of the proof of concept. Depends on 025.
 - [031-admitted-controller-acts-from-own-home.md](031-admitted-controller-acts-from-own-home.md):
   a fetched ledger whose controller set names a local identity becomes
-  actionable from that home. Depends on none.
+  actionable from that home. Depends on none. Done.
 - [032-topology-tooling-gaps.md](032-topology-tooling-gaps.md): `mabel node
   ticket`, settable node-wide witnesses, a second witness in compose,
-  `peers.json` hints on push. Depends on none.
+  `peers.json` hints on push. Depends on none. Done.

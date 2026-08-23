@@ -486,6 +486,6 @@ reviewer can overrule them cheaply, before consumers are written.
   wallet, which is a browser fact the node does not hold; a client that cares
   sends the parameter.
 - A route asked for an identity this home does not hold answers 404 with
-  reason `unknown_ledger`, which is what the node produces.
-  `wallet-get-identity.json` still pins `identity_not_found` for the same
-  condition; no code emits that reason, and the two spellings should be one.
+  reason `unknown_ledger`, detail key `ledger_id` and the message `this home
+  holds no ledger <id>`. One spelling covers both the identity routes and the
+  ledger routes, because an identity in this home is the ledger it roots.

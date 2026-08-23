@@ -1,7 +1,9 @@
 //! `peers.json`: where to look for a ledger (proposal 001 section 8).
 //!
-//! Address hints and tickets, never authorization: a peer that hands over a
-//! ledger is still checked against the chain (proposal 001 section 4).
+//! Address hints, never authorization: a peer that hands over a ledger is
+//! still checked against the chain (proposal 001 section 4). An
+//! `EndpointTicket` reaches a node on the command line as `--peer`, so it is
+//! never stored here.
 
 use std::collections::BTreeMap;
 
@@ -16,10 +18,6 @@ pub struct Peers {
     /// Endpoints known to hold a given ledger.
     #[serde(default)]
     pub ledgers: BTreeMap<LedgerId, Vec<EndpointId>>,
-    /// `EndpointTicket` strings seeded by `--peer` or by the compose
-    /// topology, which carry addresses for endpoints the relays cannot find.
-    #[serde(default)]
-    pub tickets: Vec<String>,
 }
 
 impl Peers {
@@ -63,7 +61,6 @@ mod tests {
             ledger,
             iroh_base::SecretKey::from_bytes(&[6u8; 32]).public(),
         );
-        peers.tickets.push("endpointticket-placeholder".to_string());
 
         let json = serde_json::to_string(&peers).unwrap();
         assert!(json.contains(&ledger.to_string()), "{json}");

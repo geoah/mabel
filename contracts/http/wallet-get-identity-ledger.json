@@ -58,10 +58,10 @@
       "body": {
         "ok": false,
         "code": 2,
-        "message": "no identity jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq in this node home",
+        "message": "this home holds no ledger jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq",
         "details": {
-          "reason": "identity_not_found",
-          "identity_id": "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq"
+          "reason": "unknown_ledger",
+          "ledger_id": "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq"
         }
       }
     }

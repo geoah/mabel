@@ -786,6 +786,17 @@ part of the accepted proposal.
   typescript-eslint supports 7, and `playwright` is pinned exact (1.57.0),
   not to a caret range.
 
+Added 2026-08-25 during implementation:
+
+- `peers.json` holds ledger-id-to-`EndpointId` hints only. The `tickets` field
+  the section 8 layout names was never read by any runtime: an `EndpointTicket`
+  reaches a node as `--peer` on the command line, and ticket 032 retired the
+  field. An accepted `sync push` writes the endpoint that took the ledger into
+  the hints.
+- The section 12 pin on `tower-http` 0.7.0 is dropped. The three loopback rules
+  of section 10 are one hand-written axum middleware
+  (`crates/mabel-node/src/api/loopback.rs`), and nothing else needed the crate.
+
 ## Consequences
 
 Easier: one fold function serves the CLI, the wallet, the witness and the

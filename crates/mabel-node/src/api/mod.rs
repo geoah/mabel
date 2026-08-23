@@ -24,7 +24,10 @@
 //! # }
 //! ```
 //!
-//! # Deviations from the fixtures
+//! # Where the routes depart from the proposals
+//!
+//! The fixtures are normative and the handlers match them. Each ruling below
+//! is also recorded in `contracts/README.md`, "Decisions taken here".
 //!
 //! - Admitting an acceptance is `POST
 //!   /api/identities/{identity_id}/memberships/admissions`. Proposal 002

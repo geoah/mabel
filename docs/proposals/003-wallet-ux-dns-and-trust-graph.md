@@ -396,6 +396,31 @@ tests are pure and the networked paths keep short explicit timeouts.
   stacked label-over-value lists outright, and each new panel makes the eventual
   redesign larger.
 
+## Clarifications
+
+Added 2026-08-25 while tickets 026 to 029 were built; these rulings are part of
+the accepted proposal, and each one is also recorded in `contracts/README.md`
+under "Decisions taken here", where the fixture that pins it lives.
+
+- `ResolvedIdentity` spells its verdict `verification_status` and carries the
+  status string alone. Section 4 writes the key as `verification`, which in the
+  identity document is a nested object of seven fields; every path hop,
+  selector row and reverse edge would carry all seven to render one glyph, and
+  the full object is one `GET /api/identities/:identity_id` away. The identity
+  document keeps `verification` as that nested object, so the two keys are two
+  shapes with two names rather than one name with two shapes.
+- The identity document's `verification` carries an `unreachable` key,
+  `{checked_at_ms, detail}` or null, which section 5 does not list. Section 2
+  requires the document to report a failed re-check beside the decisive result
+  it could not refresh, and this is where that report goes. The five statuses
+  stay five: `unreachable` is a re-check outcome, not a verdict.
+- A claimed hostname this node has never checked reads `status: "unverified"`
+  with `checked_at_ms: null`. None of the five statuses means "not checked
+  yet", and the null timestamp is what says so.
+- `GET /api/lookup/:identity_id` defaults `from` to the lowest local identity
+  id. Section 3 defaults it to the identity selected in the wallet, which is a
+  browser fact the node does not hold; a client that cares sends the parameter.
+
 ## Consequences
 
 Easier: identities have names that travel with them, so the address book reads

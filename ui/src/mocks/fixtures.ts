@@ -171,8 +171,8 @@ export const errors = {
   },
   /** code 20, Policy error. */
   duplicateAttestation: trustFixture.errors[1] as { status: number; body: ErrorEnvelope },
-  /** code 2, identity not in this node home. */
-  identityNotFound: trustFixture.errors[2] as { status: number; body: ErrorEnvelope },
+  /** code 2, an identity this node home holds no ledger for. */
+  unknownLedger: trustFixture.errors[2] as { status: number; body: ErrorEnvelope },
   /** code 30, Network error. */
   allWitnessesFailed: syncPushFixture.errors[0] as { status: number; body: ErrorEnvelope },
   /** code 50, State error. */

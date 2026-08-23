@@ -56,10 +56,10 @@
       "body": {
         "ok": false,
         "code": 2,
-        "message": "no identity 2okqwhextnpkpmydrgrkk563vbehcklffwfzidxlh5dslawjmn6a in this node home",
+        "message": "this home holds no ledger 2okqwhextnpkpmydrgrkk563vbehcklffwfzidxlh5dslawjmn6a",
         "details": {
-          "reason": "identity_not_found",
-          "identity_id": "2okqwhextnpkpmydrgrkk563vbehcklffwfzidxlh5dslawjmn6a"
+          "reason": "unknown_ledger",
+          "ledger_id": "2okqwhextnpkpmydrgrkk563vbehcklffwfzidxlh5dslawjmn6a"
         }
       }
     }

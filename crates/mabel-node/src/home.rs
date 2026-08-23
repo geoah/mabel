@@ -10,7 +10,7 @@
 //! ledgers/<id>/head.json                 cache: seq, event id, updated_ms
 //! ledgers/<id>/meta.json                 provenance: source endpoint, first seen
 //! forks/<id>/<seq>-<event_id>.fork       encoded ForkRecord, both events
-//! peers.json                             ledger id to EndpointId hints, plus tickets
+//! peers.json                             ledger id to EndpointId hints
 //! contacts/<id>.json                     private nickname and note, any identity
 //! verification/<id>.json                 cache: hostname verdict and when it was taken
 //! graph/                                 cache: one directory per crawl, plus a pointer

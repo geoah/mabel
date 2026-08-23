@@ -211,8 +211,8 @@ function find(identityId: string): Identity {
     failWith(404, {
       ok: false,
       code: 2,
-      message: `no identity ${identityId} in this node home`,
-      details: { reason: "identity_not_found", identity_id: identityId },
+      message: `this home holds no ledger ${identityId}`,
+      details: { reason: "unknown_ledger", ledger_id: identityId },
     });
   }
   return identity;
