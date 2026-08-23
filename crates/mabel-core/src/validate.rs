@@ -219,6 +219,14 @@ pub enum WireError {
         /// The cap the field exceeded.
         cap: usize,
     },
+    /// A `string` field held bytes that are not UTF-8.
+    #[error("{message}.{field} is not valid UTF-8")]
+    InvalidUtf8 {
+        /// The message type.
+        message: &'static str,
+        /// The field name.
+        field: &'static str,
+    },
     /// A numeric field fell outside the range the field table states.
     #[error("{message}.{field} holds {value}, outside {min}..={max}")]
     ValueOutOfRange {
@@ -351,6 +359,7 @@ impl WireError {
             Self::EnumValue { .. } => "enum_value",
             Self::WrongLength { .. } => "wrong_length",
             Self::FieldTooLong { .. } => "field_too_long",
+            Self::InvalidUtf8 { .. } => "invalid_utf8",
             Self::ValueOutOfRange { .. } => "value_out_of_range",
             Self::RepeatedCount { .. } => "repeated_count",
             Self::RepeatedDuplicate { .. } => "repeated_duplicate",
@@ -442,6 +451,15 @@ pub enum FieldKind {
         /// The cap on the length.
         max: usize,
     },
+    /// A `string` field: at most `max` bytes of well-formed UTF-8.
+    ///
+    /// Length and encoding are all this checks. A codepoint policy
+    /// (normalisation, confusables, control characters) is proposal 003's and
+    /// is not decided here.
+    String {
+        /// The cap on the encoded length in bytes.
+        max: usize,
+    },
     /// A `bytes` field carrying another message's encoded bytes verbatim,
     /// validated with `descriptor`.
     Nested {
@@ -484,6 +502,7 @@ impl FieldDescriptor {
         match self.kind {
             FieldKind::Varint { .. } | FieldKind::Enum { .. } => WireKind::Varint,
             FieldKind::Bytes { .. }
+            | FieldKind::String { .. }
             | FieldKind::Nested { .. }
             | FieldKind::Message { .. }
             | FieldKind::Detached { .. } => WireKind::Len,
@@ -1139,6 +1158,23 @@ fn scan<'a>(
             });
         }
 
+        // The repeated cap is enforced here, on the occurrence that passes it,
+        // rather than after the scan: the entry that breaks the cap is refused
+        // before it is read and before the scan recurses into it, so a frame
+        // claiming thousands of events costs one entry's work (pitfall 7).
+        if let Cardinality::Repeated { min, max, .. } = field.cardinality {
+            let seen = entries.iter().filter(|(found, _)| *found == number).count();
+            if seen >= max {
+                return Err(WireError::RepeatedCount {
+                    message: name,
+                    field: field.name,
+                    count: seen + 1,
+                    min,
+                    max,
+                });
+            }
+        }
+
         let value = match expected {
             WireKind::Varint => {
                 let value = read_varint(bytes, &mut pos, name)?;
@@ -1284,6 +1320,29 @@ fn check_bytes(
                     field: field.name,
                     len: slice.len(),
                     cap: max,
+                });
+            }
+            Ok(())
+        }
+        FieldKind::String { max } => {
+            if slice.is_empty() {
+                return Err(WireError::DefaultValueEncoded {
+                    message,
+                    field: field.name,
+                });
+            }
+            if slice.len() > max {
+                return Err(WireError::FieldTooLong {
+                    message,
+                    field: field.name,
+                    len: slice.len(),
+                    cap: max,
+                });
+            }
+            if std::str::from_utf8(slice).is_err() {
+                return Err(WireError::InvalidUtf8 {
+                    message,
+                    field: field.name,
                 });
             }
             Ok(())

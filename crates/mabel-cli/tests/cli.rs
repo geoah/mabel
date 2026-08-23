@@ -772,10 +772,19 @@ fn witness_run_refuses_a_peer_that_is_not_a_ticket() {
 }
 
 #[test]
-fn witness_run_takes_an_http_address_an_iroh_port_and_peer_tickets() {
+fn witness_run_takes_an_http_address_an_iroh_port_peer_tickets_and_a_ui_dir() {
     let (code, stdout, _) = output(binary().args(["witness", "run", "--help"]));
     assert_eq!(code, 0);
-    for flag in ["--http", "--iroh-port", "--peer"] {
+    for flag in ["--http", "--iroh-port", "--peer", "--ui-dir"] {
+        assert!(stdout.contains(flag), "{flag} is not in the help: {stdout}");
+    }
+}
+
+#[test]
+fn wallet_serve_takes_an_http_address_an_iroh_port_peer_tickets_and_a_ui_dir() {
+    let (code, stdout, _) = output(binary().args(["wallet", "serve", "--help"]));
+    assert_eq!(code, 0);
+    for flag in ["--http", "--iroh-port", "--peer", "--ui-dir"] {
         assert!(stdout.contains(flag), "{flag} is not in the help: {stdout}");
     }
 }

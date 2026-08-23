@@ -384,8 +384,9 @@ async fn a_fork_push_records_both_events_while_the_first_survives() {
             .forks(None, 0, 0)
             .await
             .expect("the read succeeds");
-        assert_eq!(forks.items.len(), 1);
-        let record = &forks.items[0];
+        assert_eq!(forks.rejected, 0, "a real fork verifies against the ledger");
+        assert_eq!(forks.verified.len(), 1);
+        let record = &forks.verified[0];
         assert_eq!(record.ledger, chain.ledger);
         assert_eq!(record.seq, 2);
         assert_eq!(record.kept, kept.signed_event);
@@ -406,7 +407,7 @@ async fn a_fork_push_records_both_events_while_the_first_survives() {
             .forks(Some(chain.ledger), 0, 0)
             .await
             .expect("the read succeeds");
-        assert_eq!(filtered.items.len(), 1);
+        assert_eq!(filtered.verified.len(), 1);
         served.stop().await;
     });
 }
@@ -441,7 +442,7 @@ async fn an_invalid_conflicting_event_is_rejected_and_not_stored() {
                 .forks(None, 0, 0)
                 .await
                 .expect("the read succeeds")
-                .items
+                .verified
                 .is_empty()
         );
         assert!(

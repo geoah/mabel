@@ -387,10 +387,16 @@ fn event_id(bytes: Option<&[u8]>) -> Option<EventId> {
     EventId::from_slice(bytes?).ok()
 }
 
-fn text(bytes: Option<&[u8]>) -> String {
-    bytes
-        .map(|b| String::from_utf8_lossy(b).into_owned())
-        .unwrap_or_default()
+/// A `string` field, or `None` if the bytes are not UTF-8.
+///
+/// An absent field reads as the empty string. Nothing is decoded lossily: a
+/// peer that sends bytes where a string belongs is refused, and the field
+/// table refuses it first (`RejectedResp.msg`).
+fn text(bytes: Option<&[u8]>) -> Option<String> {
+    match bytes {
+        None => Some(String::new()),
+        Some(bytes) => std::str::from_utf8(bytes).ok().map(str::to_owned),
+    }
 }
 
 /// What a client asked for.
@@ -631,7 +637,8 @@ pub fn parse_response(frame: &[u8]) -> Result<Response, Error> {
             code: RejectCode::try_from(uint(&inner, 1) as i32)
                 .map_err(|_| broken("RejectedResp.code is not a known code"))?,
             at_seq: uint(&inner, 2),
-            msg: text(bytes(&inner, 3)),
+            msg: text(bytes(&inner, 3))
+                .ok_or_else(|| broken("RejectedResp.msg is not valid UTF-8"))?,
         })),
         // The field table already refused every other number.
         _ => Err(broken("unrecognised Response.kind variant")),
@@ -688,6 +695,7 @@ pub fn signed_event_seq(event: &[u8]) -> Option<u64> {
 mod tests {
     use super::*;
     use crate::testing::sample_events;
+    use crate::{MAX_EVENT_BYTES, MAX_PUSH_EVENTS};
     use mabel_core::IdentityId;
 
     fn ledger() -> LedgerId {
@@ -714,6 +722,32 @@ mod tests {
                 assert_eq!(pushed, events, "pushed events keep their bytes");
             }
         }
+    }
+
+    /// The scanner enforces the repeated cap on the entry that passes it, so
+    /// the 513th event is refused for the count and is never validated: an
+    /// entry that would fail the per-event cap on its own still comes back as
+    /// `repeated_count`.
+    #[test]
+    fn a_push_over_the_event_cap_is_refused_before_the_extra_event_is_read() {
+        let valid = sample_events(1).remove(0);
+        let mut events = vec![valid; MAX_PUSH_EVENTS];
+        events.push(vec![0u8; MAX_EVENT_BYTES + 1]);
+        let frame = push_request(ledger(), &events);
+
+        let rejection = parse_request(&frame).expect_err("513 events pass the cap");
+        assert_eq!(rejection.code, RejectCode::TooLarge);
+        assert!(
+            rejection.msg.contains("PushReq.events holds 513 entries"),
+            "the count is what fired, not the oversize entry: {}",
+            rejection.msg
+        );
+
+        // The same body through the validator, where the class is visible.
+        let outer = fields(&frame).expect("the frame is readable");
+        let (_, body) = variant(&outer).expect("the frame carries a PushReq");
+        let error = validate::message(&descriptors::PUSH_REQ, body).expect_err("513 events");
+        assert_eq!(error.code(), "repeated_count");
     }
 
     #[test]
@@ -815,6 +849,25 @@ mod tests {
         let frame = rejected_response(&Rejection::new(RejectCode::Unspecified, "oops"));
         let error = parse_response(&frame).expect_err("REJECT_CODE_UNSPECIFIED is not a code");
         assert!(matches!(error, Error::Malformed(_)), "{error}");
+    }
+
+    /// `RejectedResp.msg` is a proto `string`, so a peer cannot smuggle
+    /// arbitrary bytes into a message a client logs or prints.
+    #[test]
+    fn a_reject_reason_that_is_not_utf8_is_refused() {
+        let mut body = Vec::new();
+        put_uint(&mut body, 1, u64::from(RejectCode::Busy as u32));
+        put_uint(&mut body, 2, 3);
+        // A lone continuation byte is not UTF-8 under any decoding.
+        put_bytes(&mut body, 3, &[0x61, 0xff, 0x9f, 0x62]);
+        let frame = envelope(resp::REJECTED, &body);
+
+        let error = parse_response(&frame).expect_err("msg is not UTF-8");
+        let Error::Malformed(wire) = &error else {
+            panic!("expected a field-table rejection, got {error}");
+        };
+        assert_eq!(wire.code(), "invalid_utf8");
+        assert!(error.to_string().contains("RejectedResp.msg"), "{error}");
     }
 
     #[test]

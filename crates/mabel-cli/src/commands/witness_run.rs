@@ -7,8 +7,10 @@
 //! else; `contracts/` freezes no shape for this command.
 
 use std::net::SocketAddr;
+use std::path::PathBuf;
 
 use iroh_base::EndpointAddr;
+use mabel_node::api::UiSource;
 use mabel_node::api::documents::Id;
 use mabel_node::witness::{WitnessOptions, WitnessRuntime};
 use serde::Serialize;
@@ -33,7 +35,11 @@ pub struct ServedWitness {
     pub fork_count: u64,
 }
 
-/// `mabel witness run [--http <addr>] [--iroh-port <n>] [--peer <ticket>]`.
+/// `mabel witness run [--http <addr>] [--iroh-port <n>] [--peer <ticket>]
+/// [--ui-dir <dir>]`.
+///
+/// `--ui-dir` serves the UI from a directory instead of the bundle compiled
+/// into the binary, which is what a person editing the UI wants.
 ///
 /// # Errors
 ///
@@ -44,6 +50,7 @@ pub fn run(
     http: Option<SocketAddr>,
     iroh_port: Option<u16>,
     tickets: &[String],
+    ui_dir: Option<PathBuf>,
 ) -> Result<Outcome> {
     let peers = parse_peers(tickets)?;
     let runtime = tokio::runtime::Builder::new_multi_thread()
@@ -58,6 +65,7 @@ pub fn run(
                 http_bind: http,
                 iroh_port,
                 peers,
+                ui: UiSource::from_option(ui_dir),
                 ..WitnessOptions::default()
             },
         )

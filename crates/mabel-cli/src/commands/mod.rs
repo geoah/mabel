@@ -94,7 +94,8 @@ fn dispatch(ctx: &Context, cli: &Cli) -> Result<Outcome> {
                 http,
                 iroh_port,
                 peer,
-            } => witness_run::run(ctx, *http, *iroh_port, peer),
+                ui_dir,
+            } => witness_run::run(ctx, *http, *iroh_port, peer, ui_dir.clone()),
         },
         Command::Sync { command } => match command {
             SyncCommand::Push { identity, to, peer } => {
@@ -124,7 +125,8 @@ fn dispatch(ctx: &Context, cli: &Cli) -> Result<Outcome> {
                 http,
                 iroh_port,
                 peer,
-            } => wallet_serve::serve(ctx, *http, *iroh_port, peer),
+                ui_dir,
+            } => wallet_serve::serve(ctx, *http, *iroh_port, peer, ui_dir.clone()),
         },
         Command::Node { command } => match command {
             NodeCommand::Id => node::id(ctx),

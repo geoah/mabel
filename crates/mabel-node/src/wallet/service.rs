@@ -21,7 +21,7 @@ use crate::api::service::{
     PushRequest, RemoveMembership, ServiceFuture, VerifyRequest, WalletService,
 };
 use crate::config::RelayMode;
-use crate::wallet::core::WalletCore;
+use crate::wallet::core::{AppendLock, WalletCore};
 use crate::wallet::ids;
 use crate::wallet::sync::WalletSync;
 use crate::wallet::verify::Verifier;
@@ -132,9 +132,10 @@ impl WalletService for WalletApiService {
             for witness in &witnesses {
                 endpoints.push(ids::parse_endpoint(witness)?);
             }
-            self.fresh(identity).await?;
+            let lock = self.core.append_lock(identity).await;
+            self.fresh(identity, &lock).await?;
             let core = self.core.clone();
-            spawn(move || core.set_witnesses(identity, &endpoints)).await
+            spawn(move || core.set_witnesses(&lock, identity, &endpoints)).await
         })
     }
 
@@ -146,9 +147,11 @@ impl WalletService for WalletApiService {
         Box::pin(async move {
             let ledger = ids::parse_ledger(&request.ledger_id)?;
             let by = ids::parse_identity(&request.by)?;
-            self.fresh(ledger).await?;
+            let lock = self.core.append_lock(ledger).await;
+            self.fresh(ledger, &lock).await?;
             let core = self.core.clone();
-            spawn(move || core.invite(ledger, by, request.role, &request.invitee_descriptor)).await
+            spawn(move || core.invite(&lock, ledger, by, request.role, &request.invitee_descriptor))
+                .await
         })
     }
 
@@ -167,9 +170,10 @@ impl WalletService for WalletApiService {
         Box::pin(async move {
             let ledger = ids::parse_ledger(&request.ledger_id)?;
             let by = ids::parse_identity(&request.by)?;
-            self.fresh(ledger).await?;
+            let lock = self.core.append_lock(ledger).await;
+            self.fresh(ledger, &lock).await?;
             let core = self.core.clone();
-            spawn(move || core.admit_acceptance(ledger, by, &request.acceptance)).await
+            spawn(move || core.admit_acceptance(&lock, ledger, by, &request.acceptance)).await
         })
     }
 
@@ -178,9 +182,10 @@ impl WalletService for WalletApiService {
             let ledger = ids::parse_ledger(&request.ledger_id)?;
             let by = ids::parse_identity(&request.by)?;
             let target = ids::parse_identity(&request.target)?;
-            self.fresh(ledger).await?;
+            let lock = self.core.append_lock(ledger).await;
+            self.fresh(ledger, &lock).await?;
             let core = self.core.clone();
-            spawn(move || core.remove_membership(ledger, by, target)).await
+            spawn(move || core.remove_membership(&lock, ledger, by, target)).await
         })
     }
 
@@ -188,9 +193,10 @@ impl WalletService for WalletApiService {
         Box::pin(async move {
             let issuer = ids::parse_identity(&request.issuer)?;
             let subject = ids::parse_identity(&request.subject)?;
-            self.fresh(issuer).await?;
+            let lock = self.core.append_lock(issuer).await;
+            self.fresh(issuer, &lock).await?;
             let core = self.core.clone();
-            spawn(move || core.add_trust(issuer, subject)).await
+            spawn(move || core.add_trust(&lock, issuer, subject)).await
         })
     }
 
@@ -198,9 +204,10 @@ impl WalletService for WalletApiService {
         Box::pin(async move {
             let issuer = ids::parse_identity(&issuer)?;
             let attestation = ids::parse_event(&event_id)?;
-            self.fresh(issuer).await?;
+            let lock = self.core.append_lock(issuer).await;
+            self.fresh(issuer, &lock).await?;
             let core = self.core.clone();
-            spawn(move || core.revoke_trust(issuer, attestation)).await
+            spawn(move || core.revoke_trust(&lock, issuer, attestation)).await
         })
     }
 
@@ -270,7 +277,15 @@ impl WalletApiService {
     /// The append discipline: a ledger this wallet does not solely control is
     /// checked against its witnesses before anything is signed (proposal 001
     /// section 5).
-    async fn fresh(&self, identity: mabel_core::IdentityId) -> Result<(), ServiceError> {
+    ///
+    /// The caller holds `identity`'s append lock and keeps holding it through
+    /// the append, so the head this leaves behind is the head that is signed
+    /// on.
+    async fn fresh(
+        &self,
+        identity: mabel_core::IdentityId,
+        lock: &AppendLock,
+    ) -> Result<(), ServiceError> {
         let core = self.core.clone();
         let shared = spawn(move || {
             let loaded = core.load(identity)?;
@@ -285,7 +300,7 @@ impl WalletApiService {
             return Ok(());
         }
         self.sync
-            .ensure_fresh(&self.core, identity, &witnesses)
+            .ensure_fresh_locked(&self.core, identity, &witnesses, lock)
             .await?;
         Ok(())
     }

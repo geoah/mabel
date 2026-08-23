@@ -1966,6 +1966,53 @@ fn rejections() -> Vec<Rejection> {
         },
     );
 
+    // The founder invites itself back as a MEMBER on the ledger it founded,
+    // which would leave nobody who may append.
+    let demotion = build_membership_invitation(
+        &s.alice,
+        &Position {
+            ledger: s.organization_id,
+            seq: 1,
+            prev: s.organization.event_id,
+            prev_timestamp_ms: T0 + 4 * STEP_MS,
+        },
+        s.alice_id,
+        &s.alice.public(),
+        Role::Member,
+        &s.alice_inception.signed_event,
+        T0 + 5 * STEP_MS,
+    )
+    .expect("builds");
+    let self_accepted =
+        build_acceptance(&s.alice, s.organization_id, demotion.event_id, s.alice_id);
+    let demotion_acceptance = build_membership_acceptance(
+        &s.alice,
+        &Position {
+            ledger: s.organization_id,
+            seq: 2,
+            prev: demotion.event_id,
+            prev_timestamp_ms: T0 + 5 * STEP_MS,
+        },
+        &self_accepted,
+        T0 + 6 * STEP_MS,
+    )
+    .expect("builds");
+    push(
+        "acceptance-demoting-the-last-controller",
+        "fold",
+        "002 clarifications a demotion leaves at least one controller",
+        "An identity-rooted ledger admitting its only controller as a MEMBER.",
+        Expected::Fold {
+            events: vec![
+                s.organization.signed_event.clone(),
+                demotion.signed_event,
+                demotion_acceptance.signed_event,
+            ],
+            at_seq: 2,
+            reason: Reason::DemotesLastController(s.alice_id),
+        },
+    );
+
     cases
 }
 

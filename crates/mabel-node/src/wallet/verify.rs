@@ -233,7 +233,7 @@ impl<'a> Verifier<'a> {
     /// Best effort: a subject nobody holds is reported, not failed (proposal
     /// 001 section 3.7).
     pub async fn resolve(&self, subject: IdentityId, verified: &Verified) -> SubjectResolution {
-        if self.core.holds(subject).unwrap_or(false) {
+        if self.resolves_locally(subject) {
             return SubjectResolution::Resolved;
         }
         let Some(sync) = self.sync else {
@@ -245,6 +245,20 @@ impl<'a> Verifier<'a> {
             }
         }
         SubjectResolution::Unresolved
+    }
+
+    /// Whether this home's own copy of the subject's ledger resolves it.
+    ///
+    /// A directory of events is not resolution: the chain must fold with no
+    /// violation and be the ledger that was asked for, the same bar a served
+    /// candidate passes in [`WalletSync::candidate`]. A local copy that a
+    /// tampered event broke falls through to the network instead of
+    /// answering `resolved` (proposal 001 section 3.7).
+    fn resolves_locally(&self, subject: IdentityId) -> bool {
+        let Ok(loaded) = self.core.load(subject) else {
+            return false;
+        };
+        loaded.violation.is_none() && loaded.state.ledger() == Some(subject)
     }
 
     fn require_sync(&self) -> Result<&'a WalletSync, ServiceError> {

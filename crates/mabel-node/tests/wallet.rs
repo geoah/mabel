@@ -18,7 +18,7 @@ use mabel_core::sign::{Position, build_trust_attestation};
 use mabel_core::{EventId, IdentityId};
 use mabel_net::store::Provenance;
 use mabel_net::{Client, EndpointConfig, RelayChoice, bind_endpoint};
-use mabel_node::api::documents::{DeclaredKind, PushStatus, SubjectResolution};
+use mabel_node::api::documents::{Appended, DeclaredKind, PushStatus, Pushed, SubjectResolution};
 use mabel_node::wallet::{Freshness, Sources, Verifier, WalletCore, WalletSync};
 use mabel_node::witness::WitnessCaps;
 use mabel_node::{HomeOptions, NodeConfig, NodeHome, NodeRole, RelayMode};
@@ -62,20 +62,39 @@ impl Wallet {
     }
 
     /// Records `witnesses` on `identity`'s ledger, which is what admits a push.
-    fn witnesses(&self, identity: IdentityId, witnesses: &[EndpointId]) {
+    async fn witnesses(&self, identity: IdentityId, witnesses: &[EndpointId]) {
+        let lock = self.core.append_lock(identity).await;
         self.core
-            .set_witnesses(identity, witnesses)
+            .set_witnesses(&lock, identity, witnesses)
             .expect("the witness config is appended");
+    }
+
+    /// Appends one attestation, holding the ledger's append lock over it.
+    async fn add_trust(&self, issuer: IdentityId, subject: IdentityId) -> Appended {
+        let lock = self.core.append_lock(issuer).await;
+        self.core
+            .add_trust(&lock, issuer, subject)
+            .expect("the attestation lands")
     }
 
     /// A sync client on its own endpoint, with every address in `peers`
     /// seeded into the lookup.
+    ///
+    /// Three seconds is the deadline for a peer that is expected to be
+    /// unreachable; a test whose answer depends on every peer replying passes
+    /// a longer one to [`Wallet::sync_with`], so a slow loopback dial fails
+    /// the test instead of quietly dropping a source.
     async fn sync(&self, peers: &[iroh::EndpointAddr]) -> WalletSync {
+        self.sync_with(peers, Duration::from_secs(3)).await
+    }
+
+    /// A sync client whose per-request deadline is `timeout`.
+    async fn sync_with(&self, peers: &[iroh::EndpointAddr], timeout: Duration) -> WalletSync {
         let secret = self.core.home().node_key().expect("the node key reads");
         let endpoint = mabel_node::bind_endpoint(RelayMode::Disabled, secret, None, peers)
             .await
             .expect("the endpoint binds");
-        WalletSync::new(endpoint).with_timeout(Duration::from_secs(3))
+        WalletSync::new(endpoint).with_timeout(timeout)
     }
 
     /// Signs one attestation at the ledger's next position without storing it.
@@ -107,6 +126,31 @@ impl Wallet {
     }
 }
 
+/// Asserts every witness in a push report took the events.
+///
+/// `push` reports an unreachable or refusing witness as a row rather than an
+/// error, so a test that goes on to read those events back says so here.
+fn accepted(pushed: Pushed) {
+    for result in &pushed.results {
+        assert_eq!(
+            result.status,
+            PushStatus::Accepted,
+            "{} did not take the push: {result:?}",
+            result.endpoint
+        );
+    }
+}
+
+/// Where one witness says a ledger ends, failing the test if it does not
+/// answer or does not hold it.
+async fn head_seq(sync: &WalletSync, witness: EndpointId, ledger: IdentityId) -> u64 {
+    sync.head(witness, ledger)
+        .await
+        .expect("the witness answers")
+        .expect("the witness holds the ledger")
+        .head_seq
+}
+
 /// An endpoint id nothing in the test binds, so dialling it always fails.
 fn nowhere() -> EndpointId {
     secret(199).public()
@@ -136,7 +180,9 @@ async fn a_push_lands_on_every_configured_witness() {
         let second = Served::new().await;
         let wallet = Wallet::new();
         let alice = wallet.identity("alice");
-        wallet.witnesses(alice, &[first.endpoint_id, second.endpoint_id]);
+        wallet
+            .witnesses(alice, &[first.endpoint_id, second.endpoint_id])
+            .await;
         let sync = wallet
             .sync(&[first.addr.clone(), second.addr.clone()])
             .await;
@@ -182,7 +228,9 @@ async fn a_witness_that_cannot_be_reached_is_one_row_of_the_push_report() {
         let witness = Served::new().await;
         let wallet = Wallet::new();
         let alice = wallet.identity("alice");
-        wallet.witnesses(alice, &[witness.endpoint_id, nowhere()]);
+        wallet
+            .witnesses(alice, &[witness.endpoint_id, nowhere()])
+            .await;
         let sync = wallet.sync(std::slice::from_ref(&witness.addr)).await;
 
         let pushed = sync
@@ -226,7 +274,7 @@ async fn a_fetch_verifies_from_nothing_before_it_stores() {
         let witness = Served::new().await;
         let publisher = Wallet::new();
         let alice = publisher.identity("alice");
-        publisher.witnesses(alice, &[witness.endpoint_id]);
+        publisher.witnesses(alice, &[witness.endpoint_id]).await;
         publisher
             .sync(std::slice::from_ref(&witness.addr))
             .await
@@ -280,7 +328,7 @@ async fn a_witness_ahead_on_an_extending_chain_is_fast_forwarded() {
         let witness = Served::new().await;
         let wallet = Wallet::new();
         let alice = wallet.identity("alice");
-        wallet.witnesses(alice, &[witness.endpoint_id]);
+        wallet.witnesses(alice, &[witness.endpoint_id]).await;
         let sync = wallet.sync(std::slice::from_ref(&witness.addr)).await;
         sync.push(&wallet.core, alice, &[witness.endpoint_id])
             .await
@@ -323,7 +371,7 @@ async fn a_local_event_that_lost_a_race_exits_50_and_leaves_no_stale_event() {
         let witness = Served::new().await;
         let wallet = Wallet::new();
         let alice = wallet.identity("alice");
-        wallet.witnesses(alice, &[witness.endpoint_id]);
+        wallet.witnesses(alice, &[witness.endpoint_id]).await;
         let sync = wallet.sync(std::slice::from_ref(&witness.addr)).await;
         sync.push(&wallet.core, alice, &[witness.endpoint_id])
             .await
@@ -337,10 +385,7 @@ async fn a_local_event_that_lost_a_race_exits_50_and_leaves_no_stale_event() {
 
         // This home appends its own seq 2, unpushed, naming a different
         // subject: the intent it wants to land.
-        let mine = wallet
-            .core
-            .add_trust(alice, subject(8))
-            .expect("the local append lands");
+        let mine = wallet.add_trust(alice, subject(8)).await;
         assert_eq!(mine.head_seq, 2);
         let stale = mine.head_event.clone();
 
@@ -376,10 +421,7 @@ async fn a_local_event_that_lost_a_race_exits_50_and_leaves_no_stale_event() {
                 .expect("fresh now"),
             Freshness::UpToDate
         );
-        let retried = wallet
-            .core
-            .add_trust(alice, subject(8))
-            .expect("the same intent lands on the new head");
+        let retried = wallet.add_trust(alice, subject(8)).await;
         assert_eq!(retried.head_seq, 3);
 
         witness.stop().await;
@@ -393,7 +435,9 @@ async fn two_witnesses_on_divergent_branches_report_equivocation() {
         let second = Served::new().await;
         let wallet = Wallet::new();
         let alice = wallet.identity("alice");
-        wallet.witnesses(alice, &[first.endpoint_id, second.endpoint_id]);
+        wallet
+            .witnesses(alice, &[first.endpoint_id, second.endpoint_id])
+            .await;
         let sync = wallet
             .sync(&[first.addr.clone(), second.addr.clone()])
             .await;
@@ -469,23 +513,38 @@ async fn a_source_holding_a_strict_prefix_loses_without_an_equivocation_report()
         let behind = Served::new().await;
         let wallet = Wallet::new();
         let alice = wallet.identity("alice");
-        wallet.witnesses(alice, &[ahead.endpoint_id, behind.endpoint_id]);
-        let sync = wallet
-            .sync(&[ahead.addr.clone(), behind.addr.clone()])
+        wallet
+            .witnesses(alice, &[ahead.endpoint_id, behind.endpoint_id])
             .await;
-        sync.push(
-            &wallet.core,
-            alice,
-            &[ahead.endpoint_id, behind.endpoint_id],
-        )
-        .await
-        .expect("both hold the prefix");
+        // Both witnesses must answer for the comparison to mean anything, so
+        // the deadline is long enough that a slow loopback dial fails this
+        // test rather than dropping a source and leaving the answer to
+        // whichever one replied.
+        let sync = wallet
+            .sync_with(&[ahead.addr.clone(), behind.addr.clone()], TIMEOUT / 2)
+            .await;
+        accepted(
+            sync.push(
+                &wallet.core,
+                alice,
+                &[ahead.endpoint_id, behind.endpoint_id],
+            )
+            .await
+            .expect("both hold the prefix"),
+        );
 
         // Only the first witness gets the third event.
-        wallet.core.add_trust(alice, subject(9)).expect("appended");
-        sync.push(&wallet.core, alice, &[ahead.endpoint_id])
-            .await
-            .expect("the longer chain lands on one witness");
+        wallet.add_trust(alice, subject(9)).await;
+        accepted(
+            sync.push(&wallet.core, alice, &[ahead.endpoint_id])
+                .await
+                .expect("the longer chain lands on one witness"),
+        );
+
+        // The premise, read back from the witnesses themselves: one holds
+        // three events and the other two.
+        assert_eq!(head_seq(&sync, ahead.endpoint_id, alice).await, 2);
+        assert_eq!(head_seq(&sync, behind.endpoint_id, alice).await, 1);
 
         let report = Verifier::new(&wallet.core, Some(&sync))
             .ledger_report(alice, None)
@@ -514,7 +573,9 @@ async fn a_pinned_source_is_the_only_one_asked() {
         let other = Served::new().await;
         let wallet = Wallet::new();
         let alice = wallet.identity("alice");
-        wallet.witnesses(alice, &[pinned.endpoint_id, other.endpoint_id]);
+        wallet
+            .witnesses(alice, &[pinned.endpoint_id, other.endpoint_id])
+            .await;
         let sync = wallet
             .sync(&[pinned.addr.clone(), other.addr.clone()])
             .await;
@@ -549,12 +610,9 @@ async fn a_subject_no_source_holds_is_unresolved_and_still_succeeds() {
         let witness = Served::new().await;
         let wallet = Wallet::new();
         let alice = wallet.identity("alice");
-        wallet.witnesses(alice, &[witness.endpoint_id]);
+        wallet.witnesses(alice, &[witness.endpoint_id]).await;
         let stranger = subject(42);
-        wallet
-            .core
-            .add_trust(alice, stranger)
-            .expect("the attestation lands");
+        wallet.add_trust(alice, stranger).await;
         let sync = wallet.sync(std::slice::from_ref(&witness.addr)).await;
         sync.push(&wallet.core, alice, &[witness.endpoint_id])
             .await
@@ -586,6 +644,64 @@ async fn a_subject_no_source_holds_is_unresolved_and_still_succeeds() {
             .expect("the key reads")
             .public();
         assert_eq!(principal.key.as_str(), rendered(&expected_key));
+
+        witness.stop().await;
+    });
+}
+
+/// Holding a directory for the subject is not resolving it: the subject's own
+/// ledger must fold to the ledger that was asked for.
+#[tokio::test]
+async fn a_corrupted_local_subject_ledger_is_unresolved() {
+    bounded!({
+        let witness = Served::new().await;
+        let wallet = Wallet::new();
+        let alice = wallet.identity("alice");
+        let bob = wallet.identity("bob");
+        wallet.witnesses(alice, &[witness.endpoint_id]).await;
+        wallet.add_trust(alice, bob).await;
+        let sync = wallet.sync(std::slice::from_ref(&witness.addr)).await;
+        sync.push(&wallet.core, alice, &[witness.endpoint_id])
+            .await
+            .expect("the push lands");
+        let verifier = Verifier::new(&wallet.core, Some(&sync));
+
+        let report = verifier
+            .trust_report(alice, bob, None)
+            .await
+            .expect("the issuer verifies");
+        assert!(report.trusted);
+        assert_eq!(
+            report.subject_resolution,
+            SubjectResolution::Resolved,
+            "bob's own ledger is here and folds"
+        );
+
+        // One byte of bob's inception signature, flipped: the home still holds
+        // a directory for bob and the fold refuses what is in it. No witness
+        // holds bob either, so nothing can resolve him now.
+        let path = wallet.core.store(bob).event_path(0);
+        let mut bytes = std::fs::read(&path).expect("the inception reads");
+        let last = bytes.len() - 1;
+        bytes[last] ^= 0x01;
+        std::fs::write(&path, &bytes).expect("the inception is rewritten");
+        assert!(
+            wallet
+                .core
+                .load(bob)
+                .expect("the events are still there")
+                .violation
+                .is_some(),
+            "the local copy no longer folds"
+        );
+
+        let report = verifier
+            .trust_report(alice, bob, None)
+            .await
+            .expect("an unresolved subject is not a failure");
+        assert!(report.trusted, "the attestation itself still stands");
+        assert_eq!(report.subject_resolution, SubjectResolution::Unresolved);
+        assert!(report.subject_note.is_some());
 
         witness.stop().await;
     });

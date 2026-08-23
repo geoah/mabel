@@ -18,7 +18,7 @@ use mabel_net::{Client, Error as NetError};
 
 use crate::api::documents::{PushResult, PushStatus, Pushed};
 use crate::api::error::ServiceError;
-use crate::wallet::core::WalletCore;
+use crate::wallet::core::{AppendLock, WalletCore};
 use crate::wallet::error::{peer_message, stale_head, unreachable};
 use crate::wallet::ids;
 use crate::wallet::ledger::LoadedLedger;
@@ -275,7 +275,10 @@ impl WalletSync {
             .with_detail("source", ids::key(&source).as_str()));
         };
         let fetched_at_ms = crate::now_ms();
-        let stored = core.store_events(ledger, &candidate.events, Some(source))?;
+        // The splice is one writer's: nothing else may move this ledger
+        // between the divergence check inside `store_events` and its write.
+        let lock = core.append_lock(ledger).await;
+        let stored = core.store_events(&lock, ledger, &candidate.events, Some(source))?;
         Ok(Fetched {
             ledger,
             source,
@@ -307,6 +310,29 @@ impl WalletSync {
         ledger: LedgerId,
         witnesses: &[EndpointId],
     ) -> Result<Freshness, ServiceError> {
+        let lock = core.append_lock(ledger).await;
+        self.ensure_fresh_locked(core, ledger, witnesses, &lock)
+            .await
+    }
+
+    /// [`WalletSync::ensure_fresh`] for a caller that already holds the
+    /// ledger's append lock and will sign on the head this leaves behind.
+    ///
+    /// The lock spans the query and the append together: a wallet that
+    /// released it in between would sign on a head this call had just
+    /// replaced.
+    ///
+    /// # Errors
+    ///
+    /// As [`WalletSync::ensure_fresh`], plus code 50 for a lock naming another
+    /// ledger.
+    pub async fn ensure_fresh_locked(
+        &self,
+        core: &WalletCore,
+        ledger: LedgerId,
+        witnesses: &[EndpointId],
+        lock: &AppendLock,
+    ) -> Result<Freshness, ServiceError> {
         let mut freshness = Freshness::UpToDate;
         for witness in witnesses {
             let local = core.load(ledger)?;
@@ -331,7 +357,7 @@ impl WalletSync {
             let shared = shared_prefix(&local.events, &candidate.events);
             if shared == local.events.len() {
                 // The local copy is a prefix of the witness's: fast-forward.
-                let stored = core.store_events(ledger, &candidate.events, Some(*witness))?;
+                let stored = core.store_events(lock, ledger, &candidate.events, Some(*witness))?;
                 if stored > 0 {
                     freshness = Freshness::FastForwarded {
                         head_seq: candidate.head_seq,
@@ -343,8 +369,8 @@ impl WalletSync {
             // there. The witness's copy is what other parties see, so the
             // local one is discarded and the intent is re-signed on the new
             // head.
-            core.truncate(ledger, shared.saturating_sub(1) as u64)?;
-            core.store_events(ledger, &candidate.events, Some(*witness))?;
+            core.truncate(lock, ledger, shared.saturating_sub(1) as u64)?;
+            core.store_events(lock, ledger, &candidate.events, Some(*witness))?;
             return Err(stale_head(ledger, local.head_seq, &head, *witness));
         }
         Ok(freshness)

@@ -91,6 +91,22 @@ pub enum StorageError {
         got: u64,
     },
 
+    /// An append would overwrite a stored event file with different bytes.
+    ///
+    /// The stored event may be one a crash left past the head cache, or one
+    /// another writer landed a moment ago; either way it is an event somebody
+    /// built and overwriting it loses it. Recovery is to drop the events past
+    /// the head and rebuild the cache.
+    #[error("ledger {ledger} holds a different event at seq {seq}, so {offered} cannot land there")]
+    ConflictingEvent {
+        /// The ledger.
+        ledger: LedgerId,
+        /// The sequence both events claim.
+        seq: u64,
+        /// The id of the event the caller offered.
+        offered: EventId,
+    },
+
     /// A caller's event id does not match the bytes it handed over.
     #[error("event bytes for seq {seq} hash to {actual}, not the given {claimed}")]
     EventIdMismatch {
@@ -139,7 +155,7 @@ impl StorageError {
             | Self::MissingEvent { .. }
             | Self::EventIdMismatch { .. }
             | Self::UnknownIdentity { .. } => 10,
-            Self::OutOfOrderAppend { .. } => 50,
+            Self::OutOfOrderAppend { .. } | Self::ConflictingEvent { .. } => 50,
             Self::InsecurePermissions { .. } => 60,
             Self::Io { .. } | Self::Random(_) => 1,
         }

@@ -666,6 +666,17 @@ impl LedgerState {
                 held_by: *held_by,
             });
         }
+        // An acceptance that lowers a CONTROLLER to MEMBER takes a controller
+        // away exactly as a removal does, so it answers to the same two rules
+        // (proposal 002, clarifications of 2026-08-25).
+        if self
+            .principals
+            .get(&invitation.invitee)
+            .is_some_and(|held| held.role == Role::Controller)
+            && invitation.role != Role::Controller
+        {
+            self.check_demotion(invitation.invitee)?;
+        }
         Ok(Effect::Admit {
             invitation: event,
             invitee: invitation.invitee,
@@ -681,7 +692,7 @@ impl LedgerState {
     fn check_removal(&self, target: IdentityId) -> Result<Effect, Reason> {
         // The raw root is never removable: a controller able to remove it
         // could take the ledger from the identity it names.
-        if self.root.is_some_and(|root| root.is_raw()) && Some(target) == self.root_identity() {
+        if self.is_raw_root(target) {
             return Err(Reason::RootNotRemovable(target));
         }
         let invitation = self.open_invitation_of(target).map(|(event, _)| event);
@@ -692,25 +703,55 @@ impl LedgerState {
         // A removal must leave at least one controller, counted over distinct
         // keys. On a raw-rooted ledger the root counts toward that minimum, so
         // this can only bite an identity-rooted ledger.
-        if principal.is_some_and(|principal| principal.role == Role::Controller) {
-            let mut remaining: Vec<PublicKey> = Vec::new();
-            for (id, principal) in &self.principals {
-                if *id != target
-                    && principal.role == Role::Controller
-                    && !remaining.contains(&principal.active_key)
-                {
-                    remaining.push(principal.active_key);
-                }
-            }
-            if remaining.is_empty() {
-                return Err(Reason::LastController(target));
-            }
+        if principal.is_some_and(|principal| principal.role == Role::Controller)
+            && self.controller_keys_without(target).is_empty()
+        {
+            return Err(Reason::LastController(target));
         }
         Ok(Effect::Remove {
             target,
             invitation,
             was_principal: principal.is_some(),
         })
+    }
+
+    /// The rules a demotion shares with a removal (proposal 002,
+    /// clarifications of 2026-08-25).
+    ///
+    /// Lowering a `CONTROLLER` to `MEMBER` withdraws the same signing
+    /// authority a removal withdraws, so the raw root is never demoted and a
+    /// demotion must leave at least one controller behind. Without this an
+    /// identity-rooted ledger's sole founder could self-invite as `MEMBER` and
+    /// leave the ledger with nobody who may append.
+    fn check_demotion(&self, target: IdentityId) -> Result<(), Reason> {
+        if self.is_raw_root(target) {
+            return Err(Reason::RootNotDemotable(target));
+        }
+        if self.controller_keys_without(target).is_empty() {
+            return Err(Reason::DemotesLastController(target));
+        }
+        Ok(())
+    }
+
+    /// Whether `target` is the root principal of a raw-rooted ledger, which is
+    /// the ledger's own identity.
+    fn is_raw_root(&self, target: IdentityId) -> bool {
+        self.root.is_some_and(|root| root.is_raw()) && Some(target) == self.root_identity()
+    }
+
+    /// Every distinct controller key the ledger would still hold if `target`
+    /// stopped being a controller.
+    fn controller_keys_without(&self, target: IdentityId) -> Vec<PublicKey> {
+        let mut remaining: Vec<PublicKey> = Vec::new();
+        for (id, principal) in &self.principals {
+            if *id != target
+                && principal.role == Role::Controller
+                && !remaining.contains(&principal.active_key)
+            {
+                remaining.push(principal.active_key);
+            }
+        }
+        remaining
     }
 
     /// The open invitation naming `invitee`, if the ledger holds one.
@@ -1007,6 +1048,14 @@ pub enum Reason {
     /// A removal would leave the ledger with no controller.
     #[error("removing {0} would leave this ledger with no controller")]
     LastController(IdentityId),
+    /// An acceptance named the raw root at a role below `CONTROLLER`, which no
+    /// controller may do.
+    #[error("{0} is this ledger's raw root and is not demotable")]
+    RootNotDemotable(IdentityId),
+    /// An acceptance lowering this controller to `MEMBER` would leave the
+    /// ledger with no controller.
+    #[error("demoting {0} would leave this ledger with no controller")]
+    DemotesLastController(IdentityId),
 }
 
 impl Reason {
@@ -1039,6 +1088,8 @@ impl Reason {
             Self::RootNotRemovable(_) => "root_not_removable",
             Self::UnknownRemovalTarget(_) => "unknown_removal_target",
             Self::LastController(_) => "last_controller",
+            Self::RootNotDemotable(_) => "root_not_demotable",
+            Self::DemotesLastController(_) => "demotes_last_controller",
         }
     }
 }
@@ -1913,6 +1964,101 @@ mod tests {
         assert_eq!(state.invitations().len(), 2);
     }
 
+    /// Promotion is what gives a key authority, so the promoted key must be
+    /// able to sign the next event.
+    #[test]
+    fn a_promoted_member_signs_the_next_event() {
+        let root = alice();
+        let member = bob();
+        let member_id: IdentityId = member.event_id.into();
+        let mut chain = Chain::start(&root);
+        let joined = chain.push(invite(
+            &chain,
+            &secret(1),
+            &member,
+            &secret(7),
+            Role::Member,
+        ));
+        chain.push(admit(&chain, &secret(1), &secret(7), member_id, joined));
+
+        // As a MEMBER, bob's key may not append.
+        let mut refused = Chain {
+            events: chain.events.clone(),
+            ..chain
+        };
+        refused.push(attest(&refused, &secret(7), subject(9)));
+        assert_eq!(
+            refused.violation(),
+            Violation {
+                seq: 3,
+                reason: Reason::UnauthorizedSigner {
+                    key: secret(7).public(),
+                },
+            }
+        );
+
+        let promoted = chain.push(invite(
+            &chain,
+            &secret(1),
+            &member,
+            &secret(7),
+            Role::Controller,
+        ));
+        chain.push(admit(&chain, &secret(1), &secret(7), member_id, promoted));
+        let signed = chain.push(attest(&chain, &secret(7), subject(9)));
+
+        let state = chain.state();
+        assert_eq!(state.head().expect("a head").event_id, signed);
+        assert_eq!(
+            state
+                .attestation(&signed)
+                .expect("the attestation is folded")
+                .signing_principal,
+            SigningPrincipal {
+                identity: member_id,
+                key: secret(7).public(),
+            },
+            "the event is attributed to the promoted principal, not to the ledger"
+        );
+        assert!(state.authorized_signer(&secret(7).public()));
+    }
+
+    /// The acceptance blob is the invitee's; the event carrying it is an
+    /// ordinary append, so a controller of this ledger must sign it.
+    #[test]
+    fn an_acceptance_signed_by_a_non_controller_is_rejected() {
+        let root = alice();
+        let invitee = bob();
+        let invitee_id: IdentityId = invitee.event_id.into();
+        let mut chain = Chain::start(&root);
+        let invitation = chain.push(invite(
+            &chain,
+            &secret(1),
+            &invitee,
+            &secret(7),
+            Role::Controller,
+        ));
+        // Bob signs both the blob and the event that carries it, and bob holds
+        // no principal on this ledger until the acceptance lands.
+        chain.push(admit(
+            &chain,
+            &secret(7),
+            &secret(7),
+            invitee_id,
+            invitation,
+        ));
+
+        assert_eq!(
+            chain.violation(),
+            Violation {
+                seq: 2,
+                reason: Reason::UnauthorizedSigner {
+                    key: secret(7).public(),
+                },
+            }
+        );
+    }
+
     /// A key other than the principal's is a rotation, which is out of scope.
     #[test]
     fn an_invitation_naming_a_principal_with_another_key_is_rejected() {
@@ -2328,6 +2474,122 @@ mod tests {
         assert!(!state.authorized_signer(&secret(1).public()));
     }
 
+    /// The founder of an identity-rooted ledger invites itself back as a
+    /// `MEMBER`. Admitting that would leave nobody who may append, so the fold
+    /// refuses it (proposal 002, clarifications of 2026-08-25).
+    #[test]
+    fn an_acceptance_demoting_the_last_controller_is_rejected() {
+        let founder = alice();
+        let founder_id: IdentityId = founder.event_id.into();
+        let organization = founded_by(&secret(1), &founder);
+        let mut chain = Chain::start(&organization);
+
+        let invitation = chain.push(invite(
+            &chain,
+            &secret(1),
+            &founder,
+            &secret(1),
+            Role::Member,
+        ));
+        chain.push(admit(
+            &chain,
+            &secret(1),
+            &secret(1),
+            founder_id,
+            invitation,
+        ));
+
+        assert_eq!(
+            chain.violation(),
+            Violation {
+                seq: 2,
+                reason: Reason::DemotesLastController(founder_id),
+            }
+        );
+    }
+
+    /// The same demotion is legal once someone else can sign.
+    #[test]
+    fn a_controller_may_be_demoted_once_another_controller_exists() {
+        let founder = alice();
+        let founder_id: IdentityId = founder.event_id.into();
+        let successor = bob();
+        let successor_id: IdentityId = successor.event_id.into();
+        let organization = founded_by(&secret(1), &founder);
+        let mut chain = Chain::start(&organization);
+
+        let promotion = chain.push(invite(
+            &chain,
+            &secret(1),
+            &successor,
+            &secret(7),
+            Role::Controller,
+        ));
+        chain.push(admit(
+            &chain,
+            &secret(1),
+            &secret(7),
+            successor_id,
+            promotion,
+        ));
+        let demotion = chain.push(invite(
+            &chain,
+            &secret(1),
+            &founder,
+            &secret(1),
+            Role::Member,
+        ));
+        chain.push(admit(&chain, &secret(1), &secret(1), founder_id, demotion));
+
+        let state = chain.state();
+        assert_eq!(
+            state
+                .principal(&founder_id)
+                .expect("still a principal")
+                .role,
+            Role::Member
+        );
+        assert_eq!(state.controller_keys(), [secret(7).public()]);
+        assert!(!state.authorized_signer(&secret(1).public()));
+    }
+
+    /// The raw root is not demotable, whatever else the principal set holds.
+    ///
+    /// No invitation can reach this rule: the field table refuses an
+    /// invitation whose invitee is the ledger id, which is what a raw root's
+    /// identity is. The check is here for the same reason the removal check
+    /// is, and is tested where it lives.
+    #[test]
+    fn the_raw_root_is_never_demoted() {
+        let root = alice();
+        let root_id: IdentityId = root.event_id.into();
+        let delegate = bob();
+        let delegate_id: IdentityId = delegate.event_id.into();
+        let mut chain = Chain::start(&root);
+        let invitation = chain.push(invite(
+            &chain,
+            &secret(1),
+            &delegate,
+            &secret(7),
+            Role::Controller,
+        ));
+        chain.push(admit(
+            &chain,
+            &secret(1),
+            &secret(7),
+            delegate_id,
+            invitation,
+        ));
+
+        let state = chain.state();
+        assert_eq!(
+            state.check_demotion(root_id),
+            Err(Reason::RootNotDemotable(root_id))
+        );
+        // The second controller may be demoted: it is not the root.
+        assert_eq!(state.check_demotion(delegate_id), Ok(()));
+    }
+
     /// A `MEMBER` carries no authority, so removing one never threatens the
     /// controller minimum.
     #[test]
@@ -2493,6 +2755,11 @@ mod tests {
                 "unknown_removal_target",
             ),
             (Reason::LastController(subject(1)), "last_controller"),
+            (Reason::RootNotDemotable(subject(1)), "root_not_demotable"),
+            (
+                Reason::DemotesLastController(subject(1)),
+                "demotes_last_controller",
+            ),
         ];
         for (reason, code) in cases {
             assert_eq!(reason.code(), code);

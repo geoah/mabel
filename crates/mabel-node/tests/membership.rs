@@ -16,7 +16,8 @@ use data_encoding::BASE64;
 use mabel_core::artifacts::IdentityDescriptor;
 use mabel_node::api::documents::{DeclaredKind, Id, RoleName, RootName, StatusName};
 use mabel_node::api::service::{
-    AcceptInvitation, AdmitAcceptance, CreateIdentity, Invite, RemoveMembership, WalletService,
+    AcceptInvitation, AddTrust, AdmitAcceptance, CreateIdentity, Invite, RemoveMembership,
+    WalletService,
 };
 use mabel_node::api::{DEFAULT_HTTP_BIND, ServiceError};
 use mabel_node::wallet::{WalletApiService, WalletCore, WalletSync};
@@ -415,4 +416,43 @@ async fn refused(wallet: &Wallet, ledger: &Id, target: &Id) -> ServiceError {
         })
         .await
         .expect_err("the fold refuses this removal")
+}
+
+/// Two requests that append to one ledger at the same time both land.
+///
+/// Each one folds the stored chain, signs on the head it read and writes. Run
+/// them in parallel without the ledger's append lock and both build on the
+/// same head, so the second write takes the sequence the first just took and
+/// one intent is lost. They must come back as seq 1 and seq 2, in some order,
+/// with three events stored.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn two_concurrent_appends_on_one_ledger_take_the_next_two_sequences() {
+    let wallet = Wallet::new().await;
+    let alice = wallet.identity("alice").await;
+    let bob = wallet.identity("bob").await;
+    let carol = wallet.identity("carol").await;
+
+    let (first, second) = tokio::join!(
+        wallet.service.add_trust(AddTrust {
+            issuer: alice.clone(),
+            subject: bob,
+        }),
+        wallet.service.add_trust(AddTrust {
+            issuer: alice.clone(),
+            subject: carol,
+        }),
+    );
+    let first = first.expect("the first attestation lands");
+    let second = second.expect("the second attestation lands");
+
+    let mut seqs = [first.head_seq, second.head_seq];
+    seqs.sort_unstable();
+    assert_eq!(seqs, [1, 2], "neither append overwrote the other");
+    assert_ne!(first.head_event, second.head_event);
+
+    let ledger = alice.as_str().parse().expect("a rendered id parses");
+    let loaded = wallet.core.load(ledger).expect("the ledger loads");
+    assert!(loaded.violation.is_none(), "the chain still verifies");
+    assert_eq!(loaded.head_seq, 2);
+    assert_eq!(loaded.event_count(), 3);
 }

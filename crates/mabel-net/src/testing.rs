@@ -71,6 +71,64 @@ pub fn sample_chain(seed: u8, count: usize) -> (LedgerId, Vec<Vec<u8>>) {
     (ledger, events)
 }
 
+/// A ledger that really forked: two valid events at one sequence.
+#[derive(Debug, Clone)]
+pub struct SampleFork {
+    /// The ledger both events claim.
+    pub ledger: LedgerId,
+    /// The events below [`SampleFork::seq`], which both branches share.
+    pub prefix: Vec<Vec<u8>>,
+    /// The sequence the two events collide at.
+    pub seq: u64,
+    /// The event a store saw first and kept, encoded.
+    pub kept: Vec<u8>,
+    /// The other event at that sequence, encoded.
+    pub conflicting: Vec<u8>,
+}
+
+impl SampleFork {
+    /// The chain a store holds: the shared prefix plus the kept event.
+    pub fn stored(&self) -> Vec<Vec<u8>> {
+        let mut events = self.prefix.clone();
+        events.push(self.kept.clone());
+        events
+    }
+}
+
+/// Builds a ledger whose seq 1 holds two valid events, signed by the one key
+/// that may append to it.
+///
+/// Both events pass the whole fold at seq 1, so this is a real fork and not a
+/// forgery: a verifier must accept a record carrying these two.
+pub fn sample_fork(seed: u8) -> SampleFork {
+    let signer = secret(seed);
+    let (ledger, prefix) = sample_chain(seed, 1);
+    let inception = signed_event_id(&prefix[0]).expect("the inception is readable");
+    let at = Position {
+        ledger,
+        seq: 1,
+        prev: inception,
+        prev_timestamp_ms: FIXTURE_MS,
+    };
+    let branch = |subject: u8| {
+        build_trust_attestation(
+            &signer,
+            &at,
+            IdentityId::from_bytes([subject; 32]),
+            FIXTURE_MS + 1,
+        )
+        .expect("the attestation builds")
+        .signed_event
+    };
+    SampleFork {
+        ledger,
+        prefix,
+        seq: 1,
+        kept: branch(0xaa),
+        conflicting: branch(0xbb),
+    }
+}
+
 /// One call a [`MemoryStore`] served, so a test can assert what the server
 /// clamped before it reached the store.
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -299,6 +299,9 @@ pub enum WitnessCommand {
         /// Endpoint ticket to seed into address lookup. Repeatable.
         #[arg(long, value_name = "TICKET")]
         peer: Vec<String>,
+        /// Serve the UI from this directory instead of the embedded bundle.
+        #[arg(long, value_name = "DIR")]
+        ui_dir: Option<PathBuf>,
     },
 }
 
@@ -379,6 +382,9 @@ pub enum WalletCommand {
         /// Endpoint ticket to seed into address lookup. Repeatable.
         #[arg(long, value_name = "TICKET")]
         peer: Vec<String>,
+        /// Serve the UI from this directory instead of the embedded bundle.
+        #[arg(long, value_name = "DIR")]
+        ui_dir: Option<PathBuf>,
     },
 }
 

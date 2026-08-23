@@ -19,6 +19,11 @@ Close the small infrastructure gaps the story work surfaced (stories 004,
   (proposal 003 section 3 step 3).
 - `docker/compose.two-witnesses.yaml` overlay adding a second witness
   publishing its ticket to the shared volume (stories 004 and 005).
+- A DNS resolver container for story 007's e2e verification: compose
+  overlay with a configured test resolver (image, zone with the
+  `_mabel.<hostname>` TXT record, stable address, healthcheck), wallets
+  started with their resolver pointed at it (ticket 024's Resolver seam
+  covers unit tests only).
 - `sync push` writes successful sources into `peers.json` hints (proposal
   003 section 3), retiring the dead `Peers.tickets` note from ticket 015.
 

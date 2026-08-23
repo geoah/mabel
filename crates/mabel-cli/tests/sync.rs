@@ -584,6 +584,50 @@ fn wallet_serve_answers_the_node_route_and_stops_on_sigint() {
     assert_eq!(daemon.interrupt(), 0, "the wallet stops cleanly");
 }
 
+/// `--ui-dir` serves the files in that directory instead of the bundle
+/// compiled into the binary (ticket 012).
+#[test]
+fn wallet_serve_ui_dir_serves_the_files_in_that_directory() {
+    let home = Home::new("wallet");
+    home.create("alice");
+    let ui = home.path().join("ui-dist");
+    std::fs::create_dir_all(&ui).expect("the ui directory is created");
+    let page = "<!doctype html><title>ui-dir</title><p>served from disk";
+    std::fs::write(ui.join("index.html"), page).expect("index.html is written");
+    std::fs::write(ui.join("app.js"), "export const from_disk = true;\n").expect("app.js");
+
+    let ui_dir = ui.to_str().expect("a utf-8 path");
+    let daemon = Daemon::start(
+        &home,
+        "wallet",
+        &[
+            "wallet",
+            "serve",
+            "--http",
+            "127.0.0.1:0",
+            "--ui-dir",
+            ui_dir,
+        ],
+    );
+    let address: SocketAddr = daemon
+        .wait_for("http ")
+        .parse()
+        .expect("the http line carries an address");
+
+    let (status, body) = request(address, "GET / HTTP/1.1", None);
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(body, page, "the index comes from the directory");
+
+    let (status, body) = request(address, "GET /app.js HTTP/1.1", None);
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(body, "export const from_disk = true;\n");
+
+    // The JSON API is unchanged by the flag.
+    assert_eq!(get(address, "/api/node")["role"], Value::from("wallet"));
+
+    assert_eq!(daemon.interrupt(), 0, "the wallet stops cleanly");
+}
+
 /// One `GET` against the loopback API, parsed.
 fn get(address: SocketAddr, path: &str) -> Value {
     let (status, body) = request(address, &format!("GET {path} HTTP/1.1"), None);

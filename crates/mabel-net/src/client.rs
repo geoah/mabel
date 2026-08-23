@@ -12,6 +12,8 @@
 use iroh::endpoint::Connection;
 use iroh::{Endpoint, EndpointAddr, EndpointId};
 use mabel_core::LedgerId;
+use mabel_core::fold::fold;
+use mabel_core::fork::validate_fork_record;
 
 use crate::error::{Error, Rejection};
 use crate::store::{EventPage, ForkRecord, Head, LedgerSummary, Page, PushOutcome};
@@ -227,12 +229,55 @@ impl Client {
         }
     }
 
-    /// One page of fork records, for one ledger or for every ledger.
+    /// One page of fork records, each checked against the ledger it names.
+    ///
+    /// A record is evidence only if both events it carries would have been
+    /// accepted at that position, so every record is verified before it is
+    /// handed back: the ledger's events below `seq` are fetched from this same
+    /// peer, folded from nothing, and both events are applied to that prefix
+    /// with [`validate_fork_record`]. A record that fails is dropped and
+    /// counted in [`ForksPage::rejected`]; a peer that fabricates records gets
+    /// a page with nothing in it (proposal 001 section 3.7).
+    ///
+    /// [`Client::forks_unverified`] is the raw page, for a caller that wants
+    /// to inspect what a peer claims.
+    ///
+    /// # Errors
+    ///
+    /// As [`Client::head`], plus the errors of fetching each named ledger.
+    pub async fn forks(
+        &self,
+        ledger: Option<LedgerId>,
+        offset: u32,
+        limit: u32,
+    ) -> Result<ForksPage, Error> {
+        let page = self.forks_unverified(ledger, offset, limit).await?;
+        let mut verified = Vec::new();
+        let mut rejected = 0usize;
+        for record in page.items {
+            if self.fork_verifies(&record).await? {
+                verified.push(record);
+            } else {
+                rejected += 1;
+            }
+        }
+        Ok(ForksPage {
+            verified,
+            rejected,
+            more: page.more,
+        })
+    }
+
+    /// One page of fork records exactly as the peer served them, verified
+    /// against nothing.
+    ///
+    /// This is a diagnostic: a record from here proves only that the peer sent
+    /// it. Use [`Client::forks`] to act on one.
     ///
     /// # Errors
     ///
     /// As [`Client::head`].
-    pub async fn forks(
+    pub async fn forks_unverified(
         &self,
         ledger: Option<LedgerId>,
         offset: u32,
@@ -246,6 +291,40 @@ impl Client {
             other => Err(unexpected("Forks", &other)),
         }
     }
+
+    /// Whether one fork record is what it claims, checked against the events
+    /// this same peer serves for the ledger it names.
+    async fn fork_verifies(&self, record: &ForkRecord) -> Result<bool, Error> {
+        // Seq 0 cannot fork: the ledger id is the id of the seq-0 event.
+        let Ok(prefix_len) = usize::try_from(record.seq) else {
+            return Ok(false);
+        };
+        if prefix_len == 0 {
+            return Ok(false);
+        }
+        let Some(events) = self.get_all(record.ledger, 0).await? else {
+            return Ok(false);
+        };
+        if events.len() < prefix_len {
+            return Ok(false);
+        }
+        let (prefix, violation) = fold(&events[..prefix_len]);
+        if violation.is_some() || prefix.ledger() != Some(record.ledger) {
+            return Ok(false);
+        }
+        Ok(validate_fork_record(&prefix, &record.kept, &record.conflicting).is_ok())
+    }
+}
+
+/// One page of fork records that were verified, and how many were not.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ForksPage {
+    /// The records that verified against the ledgers they name.
+    pub verified: Vec<ForkRecord>,
+    /// How many records the peer served that did not verify and were dropped.
+    pub rejected: usize,
+    /// Whether records past this page exist, as the peer reported it.
+    pub more: bool,
 }
 
 fn unexpected(sent: &'static str, got: &Response) -> Error {

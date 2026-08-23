@@ -29,7 +29,7 @@ pub mod store;
 pub mod testing;
 pub mod wire;
 
-pub use client::Client;
+pub use client::{Client, ForksPage};
 pub use endpoint::{BoundEndpoint, EndpointConfig, RelayChoice, bind_endpoint, parse_peer_ticket};
 pub use error::{Error, Rejection};
 pub use server::{LedgerProtocol, ServerConfig};

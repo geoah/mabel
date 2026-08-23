@@ -7,7 +7,9 @@
 //! else; `contracts/` freezes no shape for this command.
 
 use std::net::SocketAddr;
+use std::path::PathBuf;
 
+use mabel_node::api::UiSource;
 use mabel_node::api::documents::Id;
 use mabel_node::wallet::{WalletOptions, WalletRuntime};
 use serde::Serialize;
@@ -31,7 +33,11 @@ pub struct ServedWallet {
     pub identity_count: u64,
 }
 
-/// `mabel wallet serve [--http <addr>] [--iroh-port <n>] [--peer <ticket>]`.
+/// `mabel wallet serve [--http <addr>] [--iroh-port <n>] [--peer <ticket>]
+/// [--ui-dir <dir>]`.
+///
+/// `--ui-dir` serves the UI from a directory instead of the bundle compiled
+/// into the binary, which is what a person editing the UI wants.
 ///
 /// # Errors
 ///
@@ -42,6 +48,7 @@ pub fn serve(
     http: Option<SocketAddr>,
     iroh_port: Option<u16>,
     tickets: &[String],
+    ui_dir: Option<PathBuf>,
 ) -> Result<Outcome> {
     let peers = parse_peers(tickets)?;
     let runtime = tokio::runtime::Builder::new_multi_thread()
@@ -56,7 +63,7 @@ pub fn serve(
                 http_bind: http,
                 iroh_port,
                 peers,
-                ..WalletOptions::default()
+                ui: UiSource::from_option(ui_dir),
             },
         )
         .await

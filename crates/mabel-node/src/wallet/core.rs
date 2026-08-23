@@ -9,8 +9,18 @@
 //! Nothing here touches the network. The sync and verification paths
 //! ([`crate::wallet::sync`], [`crate::wallet::verify`]) call into this type,
 //! and so does the HTTP service, so one body of rules covers both surfaces.
+//!
+//! **One writer per ledger.** Load, check, sign, apply and write is a
+//! transaction: two of them interleaved on one ledger both read the same head,
+//! and the second overwrites the first's event, losing it. Every path that
+//! writes a ledger takes that ledger's [`AppendLock`] first, from
+//! [`WalletCore::append_lock`], and holds it until the write has landed. The
+//! lock is in-process; [`crate::LedgerStore`] refuses a conflicting overwrite
+//! whatever the writer, which is what covers a second process.
 
+use std::collections::HashMap;
 use std::fs;
+use std::sync::{Arc, Mutex as StdMutex};
 
 use data_encoding::BASE64;
 use iroh_base::{EndpointId, SecretKey};
@@ -54,17 +64,60 @@ pub struct AppendedEvent {
     pub bytes: Vec<u8>,
 }
 
+/// The right to write one ledger, held for a whole append transaction.
+///
+/// Taken from [`WalletCore::append_lock`] and dropped when the transaction
+/// ends. Holding it across the freshness query and the append is what stops
+/// two HTTP requests from signing on the same head.
+#[derive(Debug)]
+pub struct AppendLock {
+    ledger: LedgerId,
+    _guard: tokio::sync::OwnedMutexGuard<()>,
+}
+
+impl AppendLock {
+    /// The ledger this lock covers.
+    #[must_use]
+    pub fn ledger(&self) -> LedgerId {
+        self.ledger
+    }
+}
+
 /// The wallet's view of one node home.
 #[derive(Debug, Clone)]
 pub struct WalletCore {
     home: NodeHome,
+    /// One mutex per ledger this process has written, kept for the life of the
+    /// wallet. An entry is a few words and a home holds tens of ledgers.
+    locks: Arc<StdMutex<HashMap<LedgerId, Arc<tokio::sync::Mutex<()>>>>>,
 }
 
 impl WalletCore {
     /// A wallet over `home`.
     #[must_use]
     pub fn new(home: NodeHome) -> Self {
-        Self { home }
+        Self {
+            home,
+            locks: Arc::new(StdMutex::new(HashMap::new())),
+        }
+    }
+
+    /// Waits for the right to write `ledger`.
+    ///
+    /// Every append path takes this before it reads the head it will build on:
+    /// [`WalletCore::append`] and the sync splice of
+    /// [`crate::wallet::WalletSync`] both write events, and interleaving them
+    /// loses one. The guard covers the whole transaction, freshness query
+    /// included, and is released when it is dropped.
+    pub async fn append_lock(&self, ledger: LedgerId) -> AppendLock {
+        let mutex = {
+            let mut locks = self.locks.lock().expect("the lock table is poisoned");
+            Arc::clone(locks.entry(ledger).or_default())
+        };
+        AppendLock {
+            ledger,
+            _guard: mutex.lock_owned().await,
+        }
     }
 
     /// The home this wallet reads and writes.
@@ -316,11 +369,12 @@ impl WalletCore {
     /// As [`WalletCore::append`].
     pub fn set_witnesses(
         &self,
+        lock: &AppendLock,
         identity: IdentityId,
         witnesses: &[EndpointId],
     ) -> Result<Appended, ServiceError> {
         let mut loaded = self.load(identity)?;
-        let appended = self.append(identity, &mut loaded, |signer, at, timestamp_ms| {
+        let appended = self.append(lock, identity, &mut loaded, |signer, at, timestamp_ms| {
             build_witness_config(signer, at, witnesses, timestamp_ms)
         })?;
         self.appended_document(identity, &appended)
@@ -333,11 +387,12 @@ impl WalletCore {
     /// As [`WalletCore::append`].
     pub fn add_trust(
         &self,
+        lock: &AppendLock,
         issuer: IdentityId,
         subject: IdentityId,
     ) -> Result<Appended, ServiceError> {
         let mut loaded = self.load(issuer)?;
-        let appended = self.append(issuer, &mut loaded, |signer, at, timestamp_ms| {
+        let appended = self.append(lock, issuer, &mut loaded, |signer, at, timestamp_ms| {
             build_trust_attestation(signer, at, subject, timestamp_ms)
         })?;
         self.appended_document(issuer, &appended)
@@ -351,12 +406,13 @@ impl WalletCore {
     /// attestation.
     pub fn revoke_trust(
         &self,
+        lock: &AppendLock,
         issuer: IdentityId,
         attestation: EventId,
     ) -> Result<Revoked, ServiceError> {
         let mut loaded = self.load(issuer)?;
         let attestation_seq = loaded.seq_of.get(&attestation).copied();
-        let appended = self.append(issuer, &mut loaded, |signer, at, timestamp_ms| {
+        let appended = self.append(lock, issuer, &mut loaded, |signer, at, timestamp_ms| {
             build_trust_revocation(signer, at, attestation, timestamp_ms)
         })?;
         let Some(attestation_seq) = attestation_seq else {
@@ -401,6 +457,7 @@ impl WalletCore {
     /// the errors of [`WalletCore::append`].
     pub fn invite(
         &self,
+        lock: &AppendLock,
         ledger: LedgerId,
         by: IdentityId,
         role: RoleName,
@@ -421,7 +478,7 @@ impl WalletCore {
         })?;
 
         let mut loaded = self.load(ledger)?;
-        let appended = self.append(by, &mut loaded, |signer, at, timestamp_ms| {
+        let appended = self.append(lock, by, &mut loaded, |signer, at, timestamp_ms| {
             build_membership_invitation(
                 signer,
                 at,
@@ -545,6 +602,7 @@ impl WalletCore {
     /// and the errors of [`WalletCore::append`].
     pub fn admit_acceptance(
         &self,
+        lock: &AppendLock,
         ledger: LedgerId,
         by: IdentityId,
         acceptance: &[u8],
@@ -559,7 +617,7 @@ impl WalletCore {
         // before the append marks it accepted.
         let invitation = loaded.state.invitation(&file.invitation_event()).copied();
         let detached = file.detached();
-        let appended = self.append(by, &mut loaded, |signer, at, timestamp_ms| {
+        let appended = self.append(lock, by, &mut loaded, |signer, at, timestamp_ms| {
             build_membership_acceptance(signer, at, &detached, timestamp_ms)
         })?;
         let Some(invitation) = invitation else {
@@ -601,6 +659,7 @@ impl WalletCore {
     /// As [`WalletCore::append`].
     pub fn remove_membership(
         &self,
+        lock: &AppendLock,
         ledger: LedgerId,
         by: IdentityId,
         target: IdentityId,
@@ -608,7 +667,7 @@ impl WalletCore {
         let mut loaded = self.load(ledger)?;
         let principal_removed = loaded.state.principal(&target).is_some();
         let cancelled = open_invitation(&loaded.state, target);
-        let appended = self.append(by, &mut loaded, |signer, at, timestamp_ms| {
+        let appended = self.append(lock, by, &mut loaded, |signer, at, timestamp_ms| {
             build_membership_removal(signer, at, target, timestamp_ms)
         })?;
         Ok(Removed {
@@ -684,13 +743,18 @@ impl WalletCore {
 
     /// Signs one event for `identity` and appends it to `loaded`.
     ///
+    /// `lock` must be the append lock of `loaded.ledger`, held since before
+    /// the head in `loaded` was read: this signs on that head and writes, and
+    /// a second writer in between would take the same sequence.
+    ///
     /// # Errors
     ///
     /// Returns code 20 when the stored chain does not verify or the fold
-    /// rejects the new event, code 60 for an insecure key file, and the
-    /// storage errors of the append.
+    /// rejects the new event, code 50 for a lock naming another ledger, code
+    /// 60 for an insecure key file, and the storage errors of the append.
     pub fn append<F>(
         &self,
+        lock: &AppendLock,
         identity: IdentityId,
         loaded: &mut LoadedLedger,
         build: F,
@@ -698,6 +762,7 @@ impl WalletCore {
     where
         F: FnOnce(&SecretKey, &Position, u64) -> Result<BuiltEvent, BuildError>,
     {
+        check_lock(lock, loaded.ledger)?;
         self.require_valid(loaded)?;
         let head = loaded.state.head().ok_or_else(|| {
             ServiceError::usage(
@@ -830,19 +895,22 @@ impl WalletCore {
 
     /// Stores a run of events a peer served, keeping the bytes verbatim.
     ///
-    /// The caller has already verified the run from nothing. Events the home
-    /// already holds are skipped, which makes a repeated fetch idempotent.
+    /// The caller has already verified the run from nothing and holds
+    /// `ledger`'s append lock. Events the home already holds are skipped,
+    /// which makes a repeated fetch idempotent.
     ///
     /// # Errors
     ///
-    /// Returns code 50 when the stored copy diverges from the run, and the
-    /// storage errors of the append.
+    /// Returns code 50 when the stored copy diverges from the run or the lock
+    /// names another ledger, and the storage errors of the append.
     pub fn store_events(
         &self,
+        lock: &AppendLock,
         ledger: LedgerId,
         events: &[Vec<u8>],
         source: Option<EndpointId>,
     ) -> Result<u64, ServiceError> {
+        check_lock(lock, ledger)?;
         let store = self.store(ledger);
         let held = store
             .head()
@@ -876,13 +944,20 @@ impl WalletCore {
     /// Drops every event past `keep_through_seq` and rebuilds the head cache.
     ///
     /// This is what discarding a local unpushed event that lost a race means
-    /// on disk (proposal 001 section 5).
+    /// on disk (proposal 001 section 5). The caller holds `ledger`'s append
+    /// lock, since what it drops is what another writer would be building on.
     ///
     /// # Errors
     ///
-    /// Returns the storage errors of removing the files and rebuilding the
-    /// cache.
-    pub fn truncate(&self, ledger: LedgerId, keep_through_seq: u64) -> Result<(), ServiceError> {
+    /// Returns code 50 for a lock naming another ledger, and the storage
+    /// errors of removing the files and rebuilding the cache.
+    pub fn truncate(
+        &self,
+        lock: &AppendLock,
+        ledger: LedgerId,
+        keep_through_seq: u64,
+    ) -> Result<(), ServiceError> {
+        check_lock(lock, ledger)?;
         let store = self.store(ledger);
         for seq in store.sequences().map_err(storage_error)? {
             if seq > keep_through_seq {
@@ -943,6 +1018,24 @@ impl WalletCore {
         }
         Ok(())
     }
+}
+
+/// Refuses a lock taken for another ledger, which would leave this one
+/// unserialized.
+///
+/// A caller mistake, not a peer's: the type system asks for a lock, this asks
+/// for the right one.
+fn check_lock(lock: &AppendLock, ledger: LedgerId) -> Result<(), ServiceError> {
+    if lock.ledger() == ledger {
+        return Ok(());
+    }
+    Err(ServiceError::state(
+        "wrong_append_lock",
+        format!(
+            "this write holds the append lock of {}, not of {ledger}",
+            lock.ledger()
+        ),
+    ))
 }
 
 /// The 404 a ledger this home does not hold answers.

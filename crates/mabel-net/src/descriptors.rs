@@ -386,11 +386,12 @@ pub static REJECTED_RESP: MessageDescriptor = MessageDescriptor {
             },
         ),
         optional(2, "at_seq", COUNT64),
+        // `msg` is a proto `string`, so a peer that puts arbitrary bytes there
+        // is refused rather than read with replacement characters.
         optional(
             3,
             "msg",
-            FieldKind::Bytes {
-                exact: None,
+            FieldKind::String {
                 max: MAX_REJECT_MSG_BYTES,
             },
         ),

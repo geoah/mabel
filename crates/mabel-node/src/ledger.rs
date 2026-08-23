@@ -252,6 +252,13 @@ impl LedgerStore {
     ///
     /// This is the first half of [`LedgerStore::append`]; a process that dies
     /// here has written valid event files that no read path serves yet.
+    ///
+    /// An event file that already holds different bytes is never overwritten:
+    /// two writers that read the same head both offer a seq, and the second
+    /// write would erase the first. This is the storage-level backstop under
+    /// the in-process append lock of `WalletCore`, and it also catches a
+    /// second process. Identical bytes pass, so a repeated append is
+    /// idempotent.
     fn write_events(&self, events: &[NewEvent<'_>]) -> Result<Head> {
         create_dir(&self.dir)?;
         let expected = self.head()?.map_or(0, |head| head.seq + 1);
@@ -270,6 +277,13 @@ impl LedgerStore {
                     seq: event.seq,
                     claimed: event.event_id,
                     actual,
+                });
+            }
+            if self.holds_other_bytes(event.seq, event.bytes)? {
+                return Err(StorageError::ConflictingEvent {
+                    ledger: self.ledger,
+                    seq: event.seq,
+                    offered: event.event_id,
                 });
             }
         }
@@ -444,6 +458,17 @@ impl LedgerStore {
         }
         forks.sort_by_key(|fork| (fork.seq, fork.conflicting));
         Ok(forks)
+    }
+
+    /// Whether an event file at `seq` exists and holds bytes other than
+    /// `bytes`.
+    fn holds_other_bytes(&self, seq: u64, bytes: &[u8]) -> Result<bool> {
+        let path = self.event_path(seq);
+        match fs::read(&path) {
+            Ok(stored) => Ok(stored != bytes),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+            Err(error) => Err(io_at(&path)(error)),
+        }
     }
 
     fn write_head(&self, head: &Head) -> Result<()> {
@@ -658,21 +683,87 @@ mod tests {
         assert_eq!(read.len(), 2, "the orphan event is not served");
         assert_eq!(store.sequences().unwrap(), vec![0, 1, 2]);
 
-        // The next append overwrites the orphan and moves the head.
+        // The next append does not overwrite the orphan: the file holds an
+        // event somebody built, and erasing it is how a lost append looks on
+        // disk.
         let (id, bytes) = event(7);
-        let head = store
+        let error = store
             .append(&[NewEvent {
                 seq: 2,
                 event_id: id,
                 bytes: &bytes,
             }])
+            .expect_err("seq 2 already holds other bytes");
+        assert_eq!(error.exit_code(), 50);
+        assert_eq!(store.read_event(2).unwrap(), orphan_bytes);
+
+        // Offering the orphan's own bytes again is idempotent and commits it.
+        let head = store
+            .append(&[NewEvent {
+                seq: 2,
+                event_id: orphan_id,
+                bytes: &orphan_bytes,
+            }])
             .unwrap()
             .unwrap();
         assert_eq!(head.seq, 2);
-        assert_eq!(head.event_id, id);
-        assert_ne!(id, orphan_id);
-        assert_eq!(store.read_event(2).unwrap(), bytes);
+        assert_eq!(head.event_id, orphan_id);
         assert_eq!(store.read_all().unwrap().len(), 3);
+    }
+
+    /// The backstop under the wallet's in-process append lock: whatever wrote
+    /// the file first, a second writer's different bytes are refused rather
+    /// than landed on top.
+    #[test]
+    fn an_append_over_a_different_event_at_the_same_seq_is_refused() {
+        let home = tempfile::tempdir().unwrap();
+        let store = store(home.path());
+        let (first, first_bytes) = event(1);
+        store
+            .append(&[NewEvent {
+                seq: 0,
+                event_id: first,
+                bytes: &first_bytes,
+            }])
+            .unwrap();
+
+        // Another writer lands its seq-1 file, straight to disk, before this
+        // one commits its own.
+        let (theirs, their_bytes) = event(2);
+        std::fs::write(store.event_path(1), &their_bytes).unwrap();
+
+        let (mine, my_bytes) = event(3);
+        let error = store
+            .append(&[NewEvent {
+                seq: 1,
+                event_id: mine,
+                bytes: &my_bytes,
+            }])
+            .expect_err("seq 1 already holds other bytes");
+        assert_eq!(error.exit_code(), 50);
+        assert!(error.to_string().contains("seq 1"), "{error}");
+        assert_eq!(
+            store.read_event(1).unwrap(),
+            their_bytes,
+            "the stored event is untouched"
+        );
+        assert_eq!(
+            store.cached_head().unwrap().unwrap().seq,
+            0,
+            "the head did not move"
+        );
+
+        // The same bytes again are idempotent, which is what makes a repeated
+        // fetch of a run this node already holds a no-op.
+        let head = store
+            .append(&[NewEvent {
+                seq: 1,
+                event_id: theirs,
+                bytes: &their_bytes,
+            }])
+            .expect("identical bytes are not a conflict")
+            .expect("a head");
+        assert_eq!(head.event_id, theirs);
     }
 
     /// Names the home the crash child writes into.

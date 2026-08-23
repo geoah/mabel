@@ -16,7 +16,7 @@ use iroh_tickets::endpoint::EndpointTicket;
 use mabel_core::proto::RejectCode;
 use mabel_core::{IdentityId, LedgerId};
 use mabel_net::store::{ForkRecord, Provenance};
-use mabel_net::testing::{Call, MemoryStore, sample_chain, sample_events};
+use mabel_net::testing::{Call, MemoryStore, sample_chain, sample_events, sample_fork};
 use mabel_net::wire::{self, Response};
 use mabel_net::{
     ALPN, Client, EndpointConfig, Error, LedgerProtocol, MAX_EVENT_BYTES, MAX_FRAME_BYTES,
@@ -360,17 +360,82 @@ async fn a_forks_request_returns_both_events_verbatim() {
             source_endpoint: Some(peers.client_endpoint.id()),
         });
 
-        let page = peers.client.forks(Some(ledger), 0, 0).await.unwrap();
+        let page = peers
+            .client
+            .forks_unverified(Some(ledger), 0, 0)
+            .await
+            .unwrap();
         assert_eq!(page.items.len(), 1);
         assert_eq!(page.items[0].kept, events[1]);
         assert_eq!(page.items[0].conflicting, other[1]);
         assert_eq!(page.items[0].seq, 1);
 
-        let every = peers.client.forks(None, 0, 0).await.unwrap();
+        let every = peers.client.forks_unverified(None, 0, 0).await.unwrap();
         assert_eq!(
             every.items, page.items,
             "an absent ledger means all of them"
         );
+    });
+}
+
+/// A record whose conflicting event belongs to another ledger is not evidence
+/// of anything, whoever served it.
+#[tokio::test]
+async fn a_fabricated_fork_record_is_dropped_and_counted() {
+    bounded!({
+        let peers = setup(ServerConfig::default()).await;
+        let fork = sample_fork(14);
+        peers.store.insert(fork.ledger, fork.stored());
+        peers.store.insert_fork(ForkRecord {
+            ledger: fork.ledger,
+            seq: fork.seq,
+            kept: fork.kept.clone(),
+            // An event of another ledger, which the fold refuses at seq 1.
+            conflicting: sample_chain(15, 2).1[1].clone(),
+            observed_ms: 1_700_000_000_009,
+            source_endpoint: Some(peers.client_endpoint.id()),
+        });
+
+        let page = peers.client.forks(None, 0, 0).await.unwrap();
+        assert!(page.verified.is_empty(), "{page:?}");
+        assert_eq!(page.rejected, 1);
+        assert_eq!(
+            peers
+                .client
+                .forks_unverified(None, 0, 0)
+                .await
+                .unwrap()
+                .items
+                .len(),
+            1,
+            "the raw page still shows what the peer claims"
+        );
+    });
+}
+
+/// Two events that both verify at one sequence are a fork, and the client
+/// checks that against the ledger the peer serves rather than taking the
+/// record's word.
+#[tokio::test]
+async fn a_real_fork_record_verifies_against_the_ledger_the_peer_serves() {
+    bounded!({
+        let peers = setup(ServerConfig::default()).await;
+        let fork = sample_fork(16);
+        peers.store.insert(fork.ledger, fork.stored());
+        peers.store.insert_fork(ForkRecord {
+            ledger: fork.ledger,
+            seq: fork.seq,
+            kept: fork.kept.clone(),
+            conflicting: fork.conflicting.clone(),
+            observed_ms: 1_700_000_000_009,
+            source_endpoint: Some(peers.client_endpoint.id()),
+        });
+
+        let page = peers.client.forks(Some(fork.ledger), 0, 0).await.unwrap();
+        assert_eq!(page.rejected, 0);
+        assert_eq!(page.verified.len(), 1);
+        assert_eq!(page.verified[0].kept, fork.kept);
+        assert_eq!(page.verified[0].conflicting, fork.conflicting);
     });
 }
 
