@@ -35,3 +35,6 @@ without KERI.
   separation, manual sync with staleness, configurable depth.
 
 Number 013 was used briefly and retired.
+- [017-plain-language-ui.md](017-plain-language-ui.md): UI copy is plain
+  language, no middle dots or dashes as separators, no developer mode, and
+  identity creation offers the secret keys for saving. Accepted.
