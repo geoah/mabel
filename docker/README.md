@@ -134,11 +134,27 @@ Story 007 is what this is for. A hostname claim is
 `_mabel.<hostname> IN TXT "mabel=<identity id>"` (proposal 003 section 2), and
 the story publishes three cases: a record naming alice, a record under
 `bob.example` naming the wrong identity, and no record at all under
-`nobody.example`. The wallet side that reads them arrives with tickets 024 and
-026; today the overlay only has to exist and resolve, which
-`_mabel.health.example` proves, and which the resolver's own healthcheck asks
-for on every interval. A rewritten zone that drops that record makes the
-resolver unhealthy.
+`nobody.example`. Keep `_mabel.health.example` in any zone you write: the
+resolver's healthcheck asks for it on every interval, and a rewritten zone
+that drops it makes the container unhealthy.
+
+The overlay also passes `MABEL_WITNESSES` through to both wallets, empty
+unless the environment sets it. A witness's endpoint id only exists once the
+witness has started, so a run that wants the node-wide witness brings the
+topology up in two phases:
+
+```sh
+docker compose -f docker/compose.yaml -f docker/compose.dns.yaml \
+  up -d --wait witness resolver
+witness_id="$(docker compose -f docker/compose.yaml exec -T witness \
+  cat /shared/witness.id)"
+MABEL_WITNESSES="$witness_id" docker compose -f docker/compose.yaml \
+  -f docker/compose.dns.yaml up -d --wait
+```
+
+That is the crawler's third source (proposal 003 section 3): without it a
+wallet has nowhere to read a stranger's ledger from, and story 007's lookup
+finds no path to carol.
 
 ## Tickets
 
@@ -163,10 +179,9 @@ route to detect from: `--port` there exits 2 with `no_local_address`.
 A wrong ticket is loud rather than silent: `wallet serve --peer` exits 2 with
 reason `malformed_peer_ticket`, so the wallet never becomes healthy.
 
-`peers.json` still has a `tickets` field that no runtime reads; a ticket
-reaches a node on the command line. Its `ledgers` hints are written: an
-accepted `sync push` records the endpoint that took it as a source for that
-ledger (proposal 003 section 3).
+`peers.json` holds ledger hints: an accepted `sync push` records the endpoint
+that took it as a source for that ledger (proposal 003 section 3). A ticket
+reaches a node on the command line, never through this file.
 
 ## Operating notes
 

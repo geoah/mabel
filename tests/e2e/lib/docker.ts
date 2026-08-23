@@ -6,6 +6,8 @@ import * as path from "node:path";
 /** The repository root, three levels above this file. */
 export const REPO_ROOT = path.resolve(__dirname, "..", "..", "..");
 export const COMPOSE_FILE = path.join(REPO_ROOT, "docker", "compose.yaml");
+/** The test resolver overlay story 007 runs against (ticket 032). */
+export const DNS_COMPOSE_FILE = path.join(REPO_ROOT, "docker", "compose.dns.yaml");
 
 /** The image both roles run, and the compose project's derived names. */
 export const IMAGE = "mabel:dev";
@@ -30,12 +32,18 @@ export interface RunResult {
   command: string;
 }
 
-export function run(file: string, args: string[], timeoutMs = 60_000): RunResult {
+export function run(
+  file: string,
+  args: string[],
+  timeoutMs = 60_000,
+  env?: Record<string, string>,
+): RunResult {
   const result = spawnSync(file, args, {
     cwd: REPO_ROOT,
     encoding: "utf8",
     timeout: timeoutMs,
     maxBuffer: 32 * 1024 * 1024,
+    env: env ? { ...process.env, ...env } : process.env,
   });
   if (result.error) {
     throw new Error(`${file} ${args.join(" ")} failed to start: ${result.error.message}`);
@@ -49,8 +57,13 @@ export function run(file: string, args: string[], timeoutMs = 60_000): RunResult
 }
 
 /** Runs a command and throws its output when it exits non-zero. */
-export function mustRun(file: string, args: string[], timeoutMs = 60_000): RunResult {
-  const result = run(file, args, timeoutMs);
+export function mustRun(
+  file: string,
+  args: string[],
+  timeoutMs = 60_000,
+  env?: Record<string, string>,
+): RunResult {
+  const result = run(file, args, timeoutMs, env);
   if (result.status !== 0) {
     throw new Error(
       `${result.command} exited ${result.status}\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`,
@@ -122,12 +135,79 @@ export function stdoutLines(result: RunResult): string[] {
   return result.stdout.replace(/\n$/, "").split("\n");
 }
 
+/**
+ * The base topology. `--remove-orphans` clears the story 007 resolver: it
+ * belongs to this compose project, holds the network open and is not in this
+ * file, so a run that ended before its teardown would block the network here.
+ */
 export function composeUp(): void {
-  mustRun("docker", ["compose", "-f", COMPOSE_FILE, "up", "-d", "--wait"], 180_000);
+  mustRun(
+    "docker",
+    ["compose", "-f", COMPOSE_FILE, "up", "-d", "--wait", "--remove-orphans"],
+    180_000,
+  );
 }
 
+/**
+ * `down -v` naming both compose files, so a run that brought the story 007
+ * overlay up leaves no resolver container, no `resolver-zones` volume and no
+ * network behind for the next story to trip over. The overlay declares the
+ * network's subnet, so a leftover network would also be the wrong one.
+ */
 export function composeDown(): void {
-  dc(["down", "-v"], 120_000);
+  run(
+    "docker",
+    [
+      "compose",
+      "-f",
+      COMPOSE_FILE,
+      "-f",
+      DNS_COMPOSE_FILE,
+      "down",
+      "-v",
+      "--remove-orphans",
+    ],
+    120_000,
+  );
+}
+
+/**
+ * The topology of story 007: the base compose file plus the test resolver
+ * overlay, brought up in two phases and answering with the witness's endpoint
+ * id.
+ *
+ * Two phases because the wallets need `MABEL_WITNESSES`, and a witness's
+ * endpoint id only exists once the witness has started. The witness and the
+ * resolver come up first, `/shared/witness.id` is read, and the wallets start
+ * with that id in their environment; compose interpolates it into the
+ * overlay's `MABEL_WITNESSES`, the entrypoint runs `mabel witness set-default`
+ * with it, and the crawler's third source has somewhere to ask.
+ *
+ * No `--build`: the mabel image is the one global-setup built from committed
+ * HEAD, and `up --build` would rebuild it from the working tree. Compose still
+ * builds `mabel-resolver:dev` on its own the first time, because that image
+ * does not exist yet.
+ */
+export function composeUpWithResolver(): string {
+  const files = ["-f", COMPOSE_FILE, "-f", DNS_COMPOSE_FILE];
+  mustRun(
+    "docker",
+    ["compose", ...files, "up", "-d", "--wait", "witness", "resolver"],
+    300_000,
+  );
+  const witness = mustRun("docker", [
+    "compose",
+    ...files,
+    "exec",
+    "-T",
+    "witness",
+    "cat",
+    "/shared/witness.id",
+  ]).stdout.trim();
+  mustRun("docker", ["compose", ...files, "up", "-d", "--wait"], 180_000, {
+    MABEL_WITNESSES: witness,
+  });
+  return witness;
 }
 
 /** Removes the containers and volumes stories 004 to 006 start by hand. */
@@ -145,6 +225,16 @@ export function resetTopology(): void {
   removeExtras();
   composeDown();
   composeUp();
+}
+
+/**
+ * The same reset with the test resolver overlay, for story 007, answering
+ * with the witness's endpoint id.
+ */
+export function resetTopologyWithResolver(): string {
+  removeExtras();
+  composeDown();
+  return composeUpWithResolver();
 }
 
 export function containerRunning(name: string): boolean {
@@ -212,6 +302,19 @@ export async function apiPost<T = any>(
 ): Promise<{ status: number; body: T }> {
   const response = await fetch(`${base}${route}`, {
     method: "POST",
+    headers: { "Content-Type": "application/json", Origin: base },
+    body: JSON.stringify(body),
+  });
+  return { status: response.status, body: (await response.json()) as T };
+}
+
+export async function apiPut<T = any>(
+  base: string,
+  route: string,
+  body: unknown,
+): Promise<{ status: number; body: T }> {
+  const response = await fetch(`${base}${route}`, {
+    method: "PUT",
     headers: { "Content-Type": "application/json", Origin: base },
     body: JSON.stringify(body),
   });

@@ -14,9 +14,12 @@
 # gives `mabel` one; bringing the topology up with the overlay recreates the
 # network.
 #
-# The wallet side of story 007 arrives with tickets 024 and 026. Until then
-# this overlay is verified on its own: resolve `_mabel.health.example` from
-# inside a wallet container.
+# Both wallets also read `MABEL_WITNESSES` from the environment, empty by
+# default. A witness endpoint id only exists once the witness has started, so
+# story 007 brings the witness up first, reads /shared/witness.id and re-runs
+# `up` with MABEL_WITNESSES set. That is the node-wide witness the crawler's
+# source order needs (proposal 003 section 3 step 3): without it a wallet has
+# nowhere to read a stranger's ledger from.
 
 services:
   resolver:
@@ -50,6 +53,8 @@ services:
         condition: service_healthy
     dns:
       - 172.29.0.53
+    environment:
+      MABEL_WITNESSES: ${MABEL_WITNESSES:-}
 
   bob:
     depends_on:
@@ -57,6 +62,8 @@ services:
         condition: service_healthy
     dns:
       - 172.29.0.53
+    environment:
+      MABEL_WITNESSES: ${MABEL_WITNESSES:-}
 
 networks:
   mabel:

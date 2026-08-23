@@ -61,17 +61,31 @@ export interface MeetState {
   bobId: string;
 }
 
+/** The default topology of story 001 step 1: `dc down -v && dc up -d --wait`. */
+function resetAndReadWitness(): string {
+  resetTopology();
+  return readWitnessId();
+}
+
 /**
  * Story 001 steps 1 to 7 with the outcomes they verify. Stories 002, 003 and
  * 006 all open with "run story 001 steps 1 to N", so this is the one
  * implementation of them.
  */
-export async function story001Steps1to7(alicePage: Page, bobPage: Page): Promise<MeetState> {
+export async function story001Steps1to7(
+  alicePage: Page,
+  bobPage: Page,
+  /**
+   * Brings the topology up from nothing and answers with the witness's
+   * endpoint id. Story 007 passes its own, because it needs the test resolver
+   * overlay and the node-wide witness the wallets start with.
+   */
+  reset: () => string = resetAndReadWitness,
+): Promise<MeetState> {
   const state: MeetState = { witnessId: "", aliceId: "", bobId: "" };
 
   await test.step("001 step 1: the topology from nothing", async () => {
-    resetTopology();
-    state.witnessId = readWitnessId();
+    state.witnessId = reset();
     expect(state.witnessId).toMatch(BASE32_ID);
   });
 

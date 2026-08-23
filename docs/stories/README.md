@@ -8,7 +8,8 @@ Template: [../templates/story.md](../templates/story.md).
 Every story runs against the compose topology of
 [../../docker/compose.yaml](../../docker/compose.yaml): one witness on
 `http://127.0.0.1:9080` and two wallets on `http://127.0.0.1:9081` and
-`http://127.0.0.1:9082`. Each node serves its own UI and its own API from that
+`http://127.0.0.1:9082`. Story 007 adds the test resolver overlay on top of
+it, and is the only one that does. Each node serves its own UI and its own API from that
 origin, and the host port equals the container port because the API refuses any
 `Host` that is not `127.0.0.1` or `localhost` on the port it bound. Assertion
 strings come from [../../contracts/](../../contracts/README.md) and the
@@ -38,5 +39,7 @@ whole value, because the hidden middle characters stay in the DOM in an
 - [006-stale-append.md](006-stale-append.md): a shared-ledger append that lost
   the race, the exit-50 recovery, and the retry that lands.
 - [007-profile-and-verification.md](007-profile-and-verification.md): display
-  names, DNS verification states and lookup with degrees of separation. Draft,
-  blocked on tickets 023-029.
+  names, the five DNS verification states, private contact notes and lookup
+  with degrees of separation. The one story that also needs
+  [../../docker/compose.dns.yaml](../../docker/compose.dns.yaml), the test
+  resolver overlay; its spec brings the topology up with that overlay itself.
