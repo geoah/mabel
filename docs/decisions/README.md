@@ -27,5 +27,5 @@ without KERI.
   semver, frequent pushes.
 - [012-naming-full-words.md](012-naming-full-words.md): full words in
   identifiers, `organization` not `org`.
-- [013-test-time-budgets.md](013-test-time-budgets.md): fast tests, short
-  explicit timeouts, no internet in tests.
+
+Number 013 was used briefly and retired; the next decision takes 014.
