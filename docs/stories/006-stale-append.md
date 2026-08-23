@@ -1,8 +1,8 @@
 # 006: stale append
 
-- Status: draft
+- Status: implemented
 - Surfaces: wallet UI (alice), CLI, wallet HTTP API, witness HTTP API
-- Test: `tests/e2e/006-stale-append.spec.ts` (not written yet)
+- Test: `tests/e2e/specs/006-stale-append.spec.ts`
 
 Two machines may sign for one shared ledger. One of them signs on a head the
 other has already moved, and the wallet refuses with exit code 50 instead of

@@ -6,11 +6,13 @@ import { composeUp, docker, mustRun, removeExtras, REPO_ROOT, run } from "./lib/
  * serves halfway through a run. The commit is recorded as an image label, and
  * a rebuild is skipped when the label already matches.
  *
- * MABEL_E2E_REBUILD=1 forces the build; KEEP_TOPOLOGY=1 keeps the containers
- * after the run, for a failure worth poking at.
+ * MABEL_E2E_COMMIT names the commit to build, HEAD by default; set it when
+ * HEAD does not compile. MABEL_E2E_REBUILD=1 forces the build, and
+ * KEEP_TOPOLOGY=1 keeps the containers after the run, for a post mortem.
  */
 export default async function globalSetup(): Promise<void> {
-  const commit = mustRun("git", ["rev-parse", "HEAD"]).stdout.trim();
+  const revision = process.env.MABEL_E2E_COMMIT ?? "HEAD";
+  const commit = mustRun("git", ["rev-parse", revision]).stdout.trim();
   const labelled = docker(["inspect", "-f", '{{index .Config.Labels "mabel.commit"}}', "mabel:dev"]);
   const current = labelled.status === 0 ? labelled.stdout.trim() : "";
 
@@ -20,7 +22,7 @@ export default async function globalSetup(): Promise<void> {
       "sh",
       [
         "-c",
-        `git archive --format=tar HEAD | docker build -f docker/Dockerfile -t mabel:dev --label mabel.commit=${commit} -`,
+        `git archive --format=tar ${commit} | docker build -f docker/Dockerfile -t mabel:dev --label mabel.commit=${commit} -`,
       ],
       900_000,
     );

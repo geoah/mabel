@@ -6,20 +6,54 @@ import {
   apiPost,
   BOB_URL,
   carry,
+  COMPOSE_FILE,
+  dcExec,
   dcSh,
+  docker,
   json,
   mabel,
   mustRun,
   readFileBase64,
-  removeExtras,
   resetTopology,
   stdoutLines,
+  until,
+  waitForNode,
   witnessId as readWitnessId,
+  WITNESS_TWO_URL,
   writeFileBase64,
+  type RunResult,
 } from "./docker";
-import { addTrust, addWitness, createIdentity, identifier, openIdentity, push } from "./ui";
+import { addWitness, createIdentity, openIdentity, push } from "./ui";
 
 export const BASE32_ID = /^[a-z2-7]{52}$/;
+
+/** The RFC 4648 base32 alphabet, lowercased: how an id's characters order. */
+const BASE32_ALPHABET = "abcdefghijklmnopqrstuvwxyz234567";
+
+/**
+ * Orders two ids the way the node orders them, by the bytes they encode.
+ * `2` sorts after `z` in base32 and before `a` in ASCII, so a plain string
+ * sort disagrees with "ascending identity" on roughly a fifth of pairs.
+ */
+export function compareIds(left: string, right: string): number {
+  for (let index = 0; index < Math.min(left.length, right.length); index += 1) {
+    const difference =
+      BASE32_ALPHABET.indexOf(left[index]) - BASE32_ALPHABET.indexOf(right[index]);
+    if (difference !== 0) {
+      return difference;
+    }
+  }
+  return left.length - right.length;
+}
+
+/** Asserts an exit code and returns the result, with the output in the message. */
+export function expectExit(result: RunResult, status: number): RunResult {
+  expect(
+    result.status,
+    `${result.command}\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`,
+  ).toBe(status);
+  return result;
+}
 
 export interface MeetState {
   witnessId: string;
@@ -28,8 +62,8 @@ export interface MeetState {
 }
 
 /**
- * Story 001 steps 1 to 7, with the outcomes those steps verify. Stories 002,
- * 003 and 006 all open with "run story 001 steps 1 to N", so this is the one
+ * Story 001 steps 1 to 7 with the outcomes they verify. Stories 002, 003 and
+ * 006 all open with "run story 001 steps 1 to N", so this is the one
  * implementation of them.
  */
 export async function story001Steps1to7(alicePage: Page, bobPage: Page): Promise<MeetState> {
@@ -98,18 +132,14 @@ function exportDescriptor(
   identityId: string,
   outPath: string,
 ): void {
-  const result = mabel(service, ["identity", "export", alias, "--out", outPath]);
-  expect(result.status, result.stderr).toBe(0);
+  const result = expectExit(mabel(service, ["identity", "export", alias, "--out", outPath]), 0);
   const lines = stdoutLines(result);
-  expect(lines[0]).toMatch(
-    new RegExp(`^exported ${identityId} to ${outPath} \\(\\d+ bytes\\)$`),
-  );
+  expect(lines[0]).toMatch(new RegExp(`^exported ${identityId} to ${outPath} \\(\\d+ bytes\\)$`));
   expect(lines[1]).toBe("declared kind person, raw root, 0 witnesses");
 }
 
 export interface SharedLedgerState extends MeetState {
   orgId: string;
-  invitationBundleBase64: string;
 }
 
 /**
@@ -121,7 +151,7 @@ export async function story002Steps1to8(
   bobPage: Page,
 ): Promise<SharedLedgerState> {
   const meet = await story001Steps1to7(alicePage, bobPage);
-  const state: SharedLedgerState = { ...meet, orgId: "", invitationBundleBase64: "" };
+  const state: SharedLedgerState = { ...meet, orgId: "" };
 
   await test.step("002 step 2: alice founds the shared ledger", async () => {
     await alicePage.goto(`${ALICE_URL}/wallet`);
@@ -141,37 +171,37 @@ export async function story002Steps1to8(
   });
 
   await test.step("002 step 4: alice invites bob as a controller", async () => {
-    const invite = mabel("alice", [
-      "membership",
-      "invite",
-      "--ledger",
-      "mabel-demo-co",
-      "--by",
-      "alice",
-      "--invitee",
-      "/tmp/bob.descriptor",
-      "--role",
-      "controller",
-      "--out",
-      "/tmp/invitation.bundle",
-    ]);
-    expect(invite.status, invite.stderr).toBe(0);
+    const invite = expectExit(
+      mabel("alice", [
+        "membership",
+        "invite",
+        "--ledger",
+        "mabel-demo-co",
+        "--by",
+        "alice",
+        "--invitee",
+        "/tmp/bob.descriptor",
+        "--role",
+        "controller",
+        "--out",
+        "/tmp/invitation.bundle",
+      ]),
+      0,
+    );
     const lines = stdoutLines(invite);
     expect(lines[0]).toBe(`invited ${state.bobId} as controller at seq 1 of ${state.orgId}`);
     expect(lines[1]).toMatch(/^wrote \/tmp\/invitation\.bundle \(2 events, \d+ bytes\)$/);
   });
 
-  await test.step("002 step 5: the bundle travels to bob's machine", async () => {
-    state.invitationBundleBase64 = readFileBase64("mabel-alice", "/tmp/invitation.bundle");
-    expect(state.invitationBundleBase64.length).toBeGreaterThan(0);
-  });
-
   let acceptanceBase64 = "";
-  await test.step("002 step 6: bob's wallet folds the bundle and signs", async () => {
+  await test.step("002 steps 5 and 6: the bundle travels and bob signs", async () => {
+    const bundle = readFileBase64("mabel-alice", "/tmp/invitation.bundle");
+    expect(bundle.length).toBeGreaterThan(0);
+
     const surface = await apiPost(
       BOB_URL,
       `/api/identities/${state.bobId}/memberships/acceptances`,
-      { invitation_bundle_base64: state.invitationBundleBase64 },
+      { invitation_bundle_base64: bundle },
     );
     expect(surface.status).toBe(200);
     expect(surface.body.ledger_id).toBe(state.orgId);
@@ -191,44 +221,47 @@ export async function story002Steps1to8(
 
   await test.step("002 step 7: a controller admits the acceptance", async () => {
     writeFileBase64("mabel-alice", "/tmp/acceptance.file", acceptanceBase64);
-    const admit = mabel("alice", [
-      "membership",
-      "admit",
-      "--ledger",
-      "mabel-demo-co",
-      "--by",
-      "alice",
-      "/tmp/acceptance.file",
-    ]);
-    expect(admit.status, admit.stderr).toBe(0);
+    const admit = expectExit(
+      mabel("alice", [
+        "membership",
+        "admit",
+        "--ledger",
+        "mabel-demo-co",
+        "--by",
+        "alice",
+        "/tmp/acceptance.file",
+      ]),
+      0,
+    );
     expect(stdoutLines(admit)[0]).toBe(
       `admitted ${state.bobId} as controller at seq 2 of ${state.orgId}`,
     );
   });
 
   await test.step("002 step 8: the membership state reads back", async () => {
-    const list = mabel("alice", ["membership", "list", "--ledger", "mabel-demo-co"]);
-    expect(list.status, list.stderr).toBe(0);
-    const lines = stdoutLines(list);
+    const list = expectExit(mabel("alice", ["membership", "list", "--ledger", "mabel-demo-co"]), 0);
+    const lines = stdoutLines(list).map((line) => line.trim());
     expect(lines[0]).toBe(`${state.orgId}: 2 principals, 0 open invitations up to seq 2`);
-    expect(lines.some((line) => new RegExp(`^controller ${state.aliceId} \\([a-z2-7]{52}\\) root$`).test(line.trim()))).toBe(
-      true,
-    );
-    expect(lines.some((line) => new RegExp(`^controller ${state.bobId} \\([a-z2-7]{52}\\)$`).test(line.trim()))).toBe(
-      true,
-    );
     expect(
       lines.some((line) =>
-        new RegExp(`^invitation .* offers controller to ${state.bobId}, accepted$`).test(
-          line.trim(),
-        ),
+        new RegExp(`^controller ${state.aliceId} \\([a-z2-7]{52}\\) root$`).test(line),
+      ),
+    ).toBe(true);
+    expect(
+      lines.some((line) => new RegExp(`^controller ${state.bobId} \\([a-z2-7]{52}\\)$`).test(line)),
+    ).toBe(true);
+    expect(
+      lines.some((line) =>
+        new RegExp(`^invitation .* offers controller to ${state.bobId}, accepted$`).test(line),
       ),
     ).toBe(true);
 
-    const document = json(mabel("alice", ["membership", "list", "--ledger", "mabel-demo-co", "--json"]));
+    const document = json(
+      expectExit(mabel("alice", ["membership", "list", "--ledger", "mabel-demo-co", "--json"]), 0),
+    );
     expect(document.root).toBe("identity");
     const identities = document.principals.map((principal: any) => principal.identity);
-    expect(identities).toEqual([...identities].sort());
+    expect(identities).toEqual([...identities].sort(compareIds));
     expect(document.invitations[0].status).toBe("accepted");
   });
 
@@ -247,9 +280,9 @@ export interface ForkState {
 }
 
 /**
- * Story 004 steps 1 to 7: two witnesses, one home on two machines, one branch
- * to each witness and the second branch offered to witness one. Story 005
- * opens with it and tears down what it leaves running.
+ * Story 004 steps 1 to 7: two witnesses, alice's home on two machines, one
+ * branch to each witness and the second branch offered to witness one. Story
+ * 005 opens with it and tears down what it leaves running.
  */
 export async function story004Steps1to7(): Promise<ForkState> {
   const state: ForkState = {
@@ -271,9 +304,16 @@ export async function story004Steps1to7(): Promise<ForkState> {
 
   await test.step("004 step 2: a second witness on the same bridge", async () => {
     startWitnessTwo();
-    const { id, ticket } = await witnessTwoIdentity();
-    state.witnessTwoId = id;
-    state.witnessTwoTicket = ticket;
+    await until(
+      "/shared/witness-two.ticket",
+      () => dcExec("alice", ["test", "-f", "/shared/witness-two.ticket"]).status === 0,
+    );
+    await waitForNode(WITNESS_TWO_URL);
+    state.witnessTwoId = expectExit(dcExec("alice", ["cat", "/shared/witness-two.id"]), 0).stdout.trim();
+    state.witnessTwoTicket = expectExit(
+      dcExec("alice", ["cat", "/shared/witness-two.ticket"]),
+      0,
+    ).stdout.trim();
     expect(state.witnessTwoId).toMatch(BASE32_ID);
   });
 
@@ -282,47 +322,57 @@ export async function story004Steps1to7(): Promise<ForkState> {
     state.carolId = createIdentityCli("alice", "carol");
     state.daveId = createIdentityCli("alice", "dave");
     for (const endpoint of [state.witnessId, state.witnessTwoId]) {
-      const added = mabel("alice", ["witness", "add", "--identity", "alice", "--endpoint", endpoint]);
-      expect(added.status, added.stderr).toBe(0);
+      expectExit(
+        mabel("alice", ["witness", "add", "--identity", "alice", "--endpoint", endpoint]),
+        0,
+      );
     }
-    const pushed = dcSh(
-      "alice",
-      'mabel sync push --identity alice --peer "$(cat /shared/witness.ticket)" --peer "$(cat /shared/witness-two.ticket)"',
+    expectExit(
+      dcSh(
+        "alice",
+        'mabel sync push --identity alice --peer "$(cat /shared/witness.ticket)" --peer "$(cat /shared/witness-two.ticket)"',
+      ),
+      0,
     );
-    expect(pushed.status, pushed.stderr).toBe(0);
   });
 
   await test.step("004 step 4: alice's home on a second machine", async () => {
-    startAliceTwo();
+    await startAliceTwo();
   });
 
   await test.step("004 step 5: both machines append at the same sequence", async () => {
     const kept = json(
-      mabel("alice", [
-        "trust",
-        "add",
-        "--issuer",
-        "alice",
-        "--subject",
-        state.carolId,
-        "--no-sync",
-        "--json",
-      ]),
+      expectExit(
+        mabel("alice", [
+          "trust",
+          "add",
+          "--issuer",
+          "alice",
+          "--subject",
+          state.carolId,
+          "--no-sync",
+          "--json",
+        ]),
+        0,
+      ),
     );
     const conflicting = json(
-      mustRun("docker", [
-        "exec",
-        "mabel-alice-two",
-        "mabel",
-        "trust",
-        "add",
-        "--issuer",
-        "alice",
-        "--subject",
-        state.daveId,
-        "--no-sync",
-        "--json",
-      ]),
+      expectExit(
+        docker([
+          "exec",
+          "mabel-alice-two",
+          "mabel",
+          "trust",
+          "add",
+          "--issuer",
+          "alice",
+          "--subject",
+          state.daveId,
+          "--no-sync",
+          "--json",
+        ]),
+        0,
+      ),
     );
     expect(kept.attestation_seq).toBe(3);
     expect(conflicting.attestation_seq).toBe(3);
@@ -332,30 +382,42 @@ export async function story004Steps1to7(): Promise<ForkState> {
   });
 
   await test.step("004 step 6: one branch to each witness", async () => {
-    const first = dcSh(
-      "alice",
-      `mabel sync push --identity alice --to ${state.witnessId} --peer "$(cat /shared/witness.ticket)"`,
+    const first = expectExit(
+      dcSh(
+        "alice",
+        `mabel sync push --identity alice --to ${state.witnessId} --peer "$(cat /shared/witness.ticket)"`,
+      ),
+      0,
     );
-    expect(first.status, first.stderr).toBe(0);
-    const second = mustRun("docker", [
-      "exec",
-      "mabel-alice-two",
-      "sh",
-      "-c",
-      `mabel sync push --identity alice --to ${state.witnessTwoId} --peer "$(cat /shared/witness-two.ticket)"`,
-    ]);
-    expect(second.stdout).toContain("stored 1");
+    expect(stdoutLines(first)).toContain(`${state.witnessId} accepted, stored 1`);
+    const second = expectExit(
+      docker([
+        "exec",
+        "mabel-alice-two",
+        "sh",
+        "-c",
+        `mabel sync push --identity alice --to ${state.witnessTwoId} --peer "$(cat /shared/witness-two.ticket)"`,
+      ]),
+      0,
+    );
+    expect(stdoutLines(second)).toContain(`${state.witnessTwoId} accepted, stored 1`);
   });
 
   await test.step("004 step 7: the second branch reaches witness one", async () => {
-    const pushed = mustRunAllowing(
-      ["exec", "mabel-alice-two", "sh", "-c",
-        `mabel sync push --identity alice --to ${state.witnessId} --peer "$(cat /shared/witness.ticket)" --json`],
+    const pushed = expectExit(
+      docker([
+        "exec",
+        "mabel-alice-two",
+        "sh",
+        "-c",
+        `mabel sync push --identity alice --to ${state.witnessId} --peer "$(cat /shared/witness.ticket)" --json`,
+      ]),
       30,
     );
     const document = json(pushed);
     expect(document.ok).toBe(false);
     expect(document.code).toBe(30);
+    expect(document.message).toMatch(/^Network error: /);
     expect(document.details.reason).toBe("all_witnesses_failed");
     expect(document.details.results[0].status).toBe("rejected");
     expect(document.details.results[0].reject_code).toBe("FORK");
@@ -365,25 +427,17 @@ export async function story004Steps1to7(): Promise<ForkState> {
   return state;
 }
 
-/** `docker <args>` that must exit with one expected non-zero code. */
-export function mustRunAllowing(args: string[], expectedStatus: number) {
-  const result = mustRunOrStatus(args, expectedStatus);
-  return result;
-}
-
-function mustRunOrStatus(args: string[], expectedStatus: number) {
-  const { docker } = require("./docker") as typeof import("./docker");
-  const result = docker(args);
-  expect(result.status, `${result.command}\n${result.stdout}\n${result.stderr}`).toBe(
-    expectedStatus,
+/** `mabel identity create` in one container, returning the new identity id. */
+export function createIdentityCli(
+  service: string,
+  alias: string,
+  extra: string[] = ["--kind", "person"],
+): string {
+  const result = expectExit(
+    mabel(service, ["identity", "create", "--alias", alias, ...extra, "--json"]),
+    0,
   );
-  return result;
-}
-
-export function createIdentityCli(service: string, alias: string, extra: string[] = []): string {
-  const result = mabel(service, ["identity", "create", "--alias", alias, "--kind", "person", ...extra, "--json"]);
-  expect(result.status, result.stderr).toBe(0);
-  return json(result).identity.identity_id;
+  return json(result).identity_id;
 }
 
 /** Story 004 step 2's `docker run` for witness two. */
@@ -421,29 +475,12 @@ export function startWitnessTwo(): void {
   ]);
 }
 
-/** The two waits story 004 step 2 spells out, then the id and the ticket. */
-export async function witnessTwoIdentity(): Promise<{ id: string; ticket: string }> {
-  const { dcExec, until, waitForNode, WITNESS_TWO_URL } = require("./docker") as typeof import("./docker");
-  await until("/shared/witness-two.ticket", () =>
-    dcExec("alice", ["test", "-f", "/shared/witness-two.ticket"]).status === 0,
-  );
-  await waitForNode(WITNESS_TWO_URL);
-  return {
-    id: mustRun("docker", ["compose", "-f", composeFile(), "exec", "-T", "alice", "cat", "/shared/witness-two.id"]).stdout.trim(),
-    ticket: mustRun("docker", ["compose", "-f", composeFile(), "exec", "-T", "alice", "cat", "/shared/witness-two.ticket"]).stdout.trim(),
-  };
-}
-
-function composeFile(): string {
-  const { COMPOSE_FILE } = require("./docker") as typeof import("./docker");
-  return COMPOSE_FILE;
-}
-
 /**
- * Stories 004 step 4 and 006 step 3: alice's home copied to a second machine,
- * without node.json and node.key, then served on 9084.
+ * Story 004 step 4 and story 006 step 3: alice's home copied to a second
+ * machine without node.json and node.key, served on 9084. `docker run -d`
+ * returns before the home is prepared, so the API answering is the signal.
  */
-export function startAliceTwo(): void {
+export async function startAliceTwo(): Promise<void> {
   mustRun("docker", ["volume", "create", "mabel-alice-second"]);
   mustRun("docker", [
     "run",
@@ -489,6 +526,7 @@ export function startAliceTwo(): void {
     "--iroh-port",
     "9074",
   ]);
+  await waitForNode("http://127.0.0.1:9084");
 }
 
-export { removeExtras, addTrust, identifier };
+export { COMPOSE_FILE };

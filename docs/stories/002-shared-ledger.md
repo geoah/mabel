@@ -1,8 +1,8 @@
 # 002: the shared ledger
 
-- Status: draft
+- Status: implemented
 - Surfaces: wallet UI (alice), wallet HTTP API (bob), CLI
-- Test: `tests/e2e/002-shared-ledger.spec.ts` (not written yet)
+- Test: `tests/e2e/specs/002-shared-ledger.spec.ts`
 
 Alice founds a ledger with an identity root, invites bob as a controller
 through the three file artifacts, and the shared ledger attests trust in bob.

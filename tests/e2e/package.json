@@ -5,9 +5,12 @@
   "description": "The Playwright suite that runs docs/stories/001 to 006 against docker/compose.yaml",
   "scripts": {
     "test": "playwright test",
-    "test:keep": "KEEP_TOPOLOGY=1 playwright test"
+    "test:keep": "KEEP_TOPOLOGY=1 playwright test",
+    "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
-    "@playwright/test": "1.57.0"
+    "@playwright/test": "1.57.0",
+    "@types/node": "24.13.3",
+    "typescript": "5.9.3"
   }
 }

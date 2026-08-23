@@ -1,8 +1,8 @@
 # 004: the fork
 
-- Status: draft
+- Status: implemented
 - Surfaces: CLI, witness UI, witness HTTP API, wallet HTTP API
-- Test: `tests/e2e/004-fork-on-two-witnesses.spec.ts` (not written yet)
+- Test: `tests/e2e/specs/004-fork-on-two-witnesses.spec.ts`
 
 One wallet on two machines signs two different events at one sequence. Each
 branch reaches a different witness, one witness meets both and records the

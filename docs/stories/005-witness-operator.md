@@ -1,8 +1,8 @@
 # 005: the witness operator
 
-- Status: draft
+- Status: implemented
 - Surfaces: witness UI, CLI, witness HTTP API
-- Test: `tests/e2e/005-witness-operator.spec.ts` (not written yet)
+- Test: `tests/e2e/specs/005-witness-operator.spec.ts`
 
 Someone runs a witness and wants to know what it holds. The debug route
 enumerates one witness's own store, pages through it, names the fork it

@@ -1,8 +1,8 @@
 # 001: two people meet
 
-- Status: draft
+- Status: implemented
 - Surfaces: wallet UI (alice and bob), CLI, wallet HTTP API, witness HTTP API
-- Test: `tests/e2e/001-two-people-meet.spec.ts` (not written yet)
+- Test: `tests/e2e/specs/001-two-people-meet.spec.ts`
 
 Two strangers create identities in two wallet UIs, exchange descriptors out of
 band, name the same witness, push, and each attests trust in the other. A third

@@ -1,8 +1,8 @@
 # 003: revocation
 
-- Status: draft
+- Status: implemented
 - Surfaces: wallet UI (alice), CLI, wallet HTTP API
-- Test: `tests/e2e/003-revocation.spec.ts` (not written yet)
+- Test: `tests/e2e/specs/003-revocation.spec.ts`
 
 Alice revokes an attestation in her wallet UI. A verifier that has never seen
 the earlier answer reads the revocation from the witness and says how far it
