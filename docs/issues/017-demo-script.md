@@ -20,7 +20,8 @@ CLI, so a reader sees mabel work without reading the tests.
   verification lines with their source and head (section 6, flag R).
 - Root `README.md` gains a short section on running the demo.
 
-Out of scope: Playwright specs, which are phase 6.
+Out of scope: Playwright specs, which belong to milestone 10 and are
+deliberately not ticketed here.
 
 ## Acceptance criteria
 

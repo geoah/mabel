@@ -11,39 +11,42 @@ section 5, records forks and serves reads.
 
 ## Scope
 
-- Store implementation over ticket 007 storage backing the ticket 009 server.
+- Store implementation over ticket 007 storage backing the ticket 009 server,
+  using ticket 007's fork file naming.
 - Admission: a `Push` is accepted only if the ledger is already stored or the
-  pushed chain's folded `WitnessConfig` lists this witness's own `EndpointId`;
-  otherwise `Rejected { NOT_ADMITTED }`. Reads stay open to all (section 5).
+  pushed chain's folded `WitnessConfig` lists this witness's own `EndpointId`
+  (section 5). Reads stay open to all.
 - Push semantics: events must start at seq 0 for an unheld ledger, at
   `stored_head + 1`, or overlap the stored suffix byte-identically; a gap is
   `Rejected { MALFORMED }`; a partially valid push stores its valid prefix
-  atomically and answers `Rejected { INVALID }` with the failing `at_seq`
-  (section 5).
+  atomically and answers `Rejected { INVALID }` with the failing `at_seq`.
 - Verification strategy: full verification from nothing at first ingest, the
   folded state kept and rebuilt from disk on startup or on demand, later pushes
   verifying only the spliced suffix against it (section 5).
 - Forks: first-seen-wins, a divergent event validated with
-  `validate_fork_record` and stored as a `ForkRecord` carrying both events and
-  the source endpoint; recording stops at 8 records per ledger with
-  `forks_truncated` set (section 5).
-- Per-ledger caps 4096 events and 4 MiB, per witness 10000 ledgers and the
-  storage cap from `node.json`, default 2 GiB (section 5).
-- `LedgerSummary` assembly for `List` and paging for `List` and `Forks`
-  (section 5).
-- `witness run [--http <addr>] [--iroh-port <n>]` starting the Iroh endpoint;
-  the HTTP surface is ticket 012.
+  `validate_fork_record` and stored as a `ForkRecord` with both events and the
+  source endpoint; recording stops after 8 records per ledger (section 5).
+- Caps: 4096 events and 4 MiB per ledger, 10000 ledgers and the configurable
+  `storage_cap` per witness (sections 5 and 8).
+- `LedgerSummary` assembly, paging for `List` and `Forks`, and `witness run
+  [--http <addr>] [--iroh-port <n>]`; the HTTP surface is ticket 012.
 - The witness holds no identity keys and signs nothing (section 2).
 
 ## Acceptance criteria
 
-- [ ] Admission, push, fork and cap behaviour match section 5 clause by clause.
+- [ ] tests, each a named case: a push of an unheld ledger naming this witness
+      is admitted; a third party may relay to an already stored ledger; a push
+      for an unknown ledger not naming the witness answers `NOT_ADMITTED`.
+- [ ] tests: first ingest verifies the full chain and a following push verifies
+      only the spliced suffix; a restart rebuilds folded state from disk.
+- [ ] tests: a gapped push answers `MALFORMED`; an overlapping re-push is
+      idempotent; a partially invalid push stores the valid prefix atomically
+      and answers `INVALID` with the right `at_seq`.
+- [ ] tests: a fork push produces a `ForkRecord` carrying both events while the
+      first event survives; an invalid conflicting event is rejected and not
+      stored; the ninth fork on one ledger is not recorded and
+      `forks_truncated` is set.
+- [ ] tests: pushes crossing the 4096-event, 4 MiB, 10000-ledger and
+      `storage_cap` limits are rejected.
+- [ ] tests: `List` paging is stable in ascending ledger id order across pages.
 - [ ] The stored event bytes are the received bytes (section 3.1).
-- [ ] tests: protocol tests over two endpoints cover a gapped push
-      (`MALFORMED`), an idempotent overlapping re-push, a partially invalid
-      push storing the valid prefix and naming `at_seq`, a push for an unknown
-      ledger that does not name the witness (`NOT_ADMITTED`), and a fork push
-      producing a `ForkRecord` with both events while the first event survives
-      (section 11, protocol tests bullet).
-- [ ] tests: restarting the runtime rebuilds folded state from disk and a
-      following suffix push verifies against it.

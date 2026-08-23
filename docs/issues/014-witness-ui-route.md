@@ -7,7 +7,7 @@
 
 The witness route lists what one witness holds and shows fork records with both
 conflicting events, the diagnostic surface proposal 001 sections 5 and 6
-describe.
+describe. It must land before the milestone 10 Playwright run, which drives it.
 
 ## Scope
 
@@ -15,7 +15,7 @@ describe.
   section 5: ledger, kind, head sequence, head event, event count, first seen,
   updated, fork count and `forks_truncated`.
 - Ledger detail from `GET /ledgers/:id` and `/ledgers/:id/events?since=` with
-  paging.
+  paging, using the inclusive `since` semantics of ticket 012.
 - Forks view from `GET /forks`, showing each `ForkRecord`'s sequence, both
   `SignedEvent`s, observed time and source endpoint, labelled as evidence of
   equivocation or of a lost race between honest controllers, and not as
@@ -24,7 +24,8 @@ describe.
   index (section 6, flag D).
 - `data-testid` attributes on ledger rows, fork rows and both event panes.
 
-Out of scope: Playwright specs, which are phase 6.
+Out of scope: Playwright specs, which belong to milestone 10 and are
+deliberately not ticketed here.
 
 ## Acceptance criteria
 
@@ -33,5 +34,7 @@ Out of scope: Playwright specs, which are phase 6.
 - [ ] The fork view shows the kept and the conflicting event side by side so a
       reader checks the conflict without a second request (section 5).
 - [ ] The route is read-only and issues no mutating request (section 10).
-- [ ] tests: `npm run build`, typecheck and lint pass, and the route renders
-      against a witness node holding at least one ledger and one fork record.
+- [ ] tests: vitest plus testing-library component tests with a mocked API
+      cover ledger paging, fork rendering with both events, the
+      `forks_truncated` indicator, and the absence of any mutating control.
+- [ ] tests: `npm run build`, typecheck and lint pass.

@@ -6,8 +6,8 @@
 ## Goal
 
 `mabel-node` owns a node home on disk with the exact layout of proposal 001
-section 8, atomic writes, the permission rules, key generation and a rebuildable
-head cache.
+section 8, a typed `node.json`, atomic writes, the permission rules, key
+generation and a rebuildable head cache.
 
 ## Scope
 
@@ -17,6 +17,10 @@ head cache.
   `identities/<id>/meta.json`, `identities/<id>/{active,reserve}.key`,
   `ledgers/<id>/<zero-padded-seq>.ev`, `ledgers/<id>/head.json`,
   `ledgers/<id>/meta.json`, `forks/<id>/<seq>-<event_id>.fork`, `peers.json`.
+  The fork file name carries the conflicting event's id, not the kept one.
+- Typed `node.json`: `role` (`wallet` or `witness`), `http_bind`, `witnesses`,
+  `storage_cap` defaulting to 2 GiB (section 5), and `relay` with values `n0`
+  (default) or `disabled`; an unknown field or value is a load error.
 - Key generation: 32 bytes from `getrandom` into `SecretKey::from_bytes` for
   the node key and for each identity's active and reserve key; the node key is
   distinct from every identity key (sections 4 and 12).
@@ -41,7 +45,9 @@ head cache.
 - [ ] Reading an event returns the stored bytes with no decode-then-encode
       round trip (section 3.1, byte authority).
 - [ ] No database and no index beyond the sorted listing (section 8).
+- [ ] tests: `node.json` round-trips with defaults applied, and `relay:
+      "sometimes"` is rejected with a load error.
 - [ ] tests: unit tests over a `tempfile` home cover atomic append and crash
-      truncation, head rebuild, 0700 and 0600 enforcement on create, the exit-60
-      condition for a 0644 key file and the
-      `--allow-insecure-permissions` bypass (section 11, CLI tests bullet).
+      truncation, head rebuild, fork file naming by conflicting event id, 0700
+      and 0600 enforcement on create, the exit-60 condition for a 0644 key file
+      and the `--allow-insecure-permissions` bypass (section 11).

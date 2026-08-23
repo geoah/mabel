@@ -23,10 +23,14 @@ the repository has a golden vector harness that pins those bytes.
   prefix (section 3.1).
 - Signing path: the only function that produces event bytes, returning the
   encoded `EventBody` bytes and a `SignedEvent`; nothing else may re-encode an
-  event (byte authority, section 3.1 and pitfall 1).
-- `test-vectors/` harness: a generator plus checked-in vectors, one per event
-  type, each carrying encoded body hex, `event_id`, the signature under a fixed
-  test key and a JSON rendering (section 11, golden vectors bullet).
+  event (byte authority, section 3.1 and pitfall 1). It sets `timestamp_ms =
+  max(now_ms, prev.timestamp_ms)` and enforces the `4102444800000` ceiling
+  (section 3.2).
+- `test-vectors/`: checked-in literal bytes, ids and signatures, one vector per
+  payload variant, produced under fixed keys, nonces and timestamps, each
+  carrying encoded body hex, `event_id`, the signature and a JSON rendering
+  (section 11, golden vectors bullet). Regeneration is a separate command run
+  by a human for review; tests never regenerate.
 
 ## Acceptance criteria
 
@@ -35,9 +39,11 @@ the repository has a golden vector harness that pins those bytes.
 - [ ] The four digest and input formulas match section 3.1 byte for byte,
       including the trailing newline in each domain separator.
 - [ ] Ids render as 52 lowercase base32 characters and round-trip to 32 bytes.
-- [ ] `test-vectors/` holds one golden vector per event type with the four
-      fields listed in section 11.
-- [ ] tests: a golden test asserts the encoder reproduces every vector's bytes,
-      `event_id` and signature; flipping one byte of a vector body makes
-      signature verification fail; the base32 round trip and each digest
-      formula have a unit test.
+- [ ] `test-vectors/` covers every payload variant in sections 3.2, 3.4 and
+      3.5, and no test writes to it.
+- [ ] tests: the golden test compares the encoder's output against the
+      checked-in bytes, `event_id` and signature; mutating any single byte of a
+      vector body makes signature verification fail.
+- [ ] tests: appending with a clock behind `prev.timestamp_ms` produces
+      `prev`'s timestamp and a valid event, not a rejection (section 3.2).
+- [ ] tests: the base32 round trip and each digest formula have a unit test.

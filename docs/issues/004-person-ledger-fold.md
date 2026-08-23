@@ -17,18 +17,21 @@ takes an event sequence, applies steps 1 to 6 at each position, and returns
 - Steps 1 to 6 of section 3.6 in that order, with the exclusive state boundary:
   event `i` is checked against the fold of `0..=i-1` and applied only after
   every check passes (pitfall 3).
-- Envelope rules of section 3.2: `seq == i`, `ledger == ledger_id`, `prev ==
-  event_id(events[i-1])`, non-decreasing `timestamp_ms` with the
+- The stateful field-table rows ticket 003 leaves open, for every ledger kind:
+  `author_key` authorized by the state from `0..=i-1`, the `ledger`, `prev` and
+  `seq` equalities of section 3.4, and `TrustRevocation.target` naming an
+  unrevoked attestation earlier in this ledger.
+- Envelope rules of section 3.2: non-decreasing `timestamp_ms` with the
   `4102444800000` upper bound, seq-0 self-authorization.
 - Person payload rules of section 3.4: `PersonInception` at seq 0 then
   `WitnessConfig`, `TrustAttestation`, `TrustRevocation`, all under the same
   active key; witness config replaces the whole set; an attestation is rejected
-  when an unrevoked attestation for the same subject exists; a revocation must
-  name an unrevoked attestation earlier in the same ledger.
+  when an unrevoked attestation for the same subject exists.
 - `Violation` carrying the failing sequence and reason, with the returned state
   being the fold of the valid prefix (partial validity, section 3.6).
 
-Out of scope: org payloads (ticket 005), any IO (section 7).
+Out of scope: org payloads and `OrgRemoval.target` validity (ticket 005), any
+IO (section 7).
 
 ## Acceptance criteria
 

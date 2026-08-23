@@ -1,48 +1,49 @@
-# 008: CLI local commands, exit codes and `--json`
+# 008: CLI skeleton, output framework and identity, trust and node commands
 
 - Status: open
-- Depends on: 006, 007
+- Depends on: 005, 007
 
 ## Goal
 
-The `mabel` binary runs every command in proposal 001 section 9 that needs no
-network: identity, trust, org, witness config and verify, with the section 9
-exit codes, error prefixes and `--json` documents.
+The `mabel` binary exists with the global flags, output rendering, `--json`
+envelope and exit codes of proposal 001 section 9, and runs the identity,
+trust, witness-config, verify and `node id` commands.
 
 ## Scope
 
 - `crates/mabel-cli` with clap: global flags `--home`, `--json`, `--verbose`,
   `--allow-insecure-permissions` (section 9).
-- Commands: `identity create|list|show|export`, `trust add|revoke|list`,
-  `org create|show|invite|accept|admit|remove`, `witness add`,
-  `verify ledger`, `verify trust`, `node id` (section 9).
-- Artifact flow: `org invite` takes the invitee's `IdentityDescriptor` file and
-  writes an `InviteBundle`; `org accept` verifies the bundle, shows the summary
-  and writes an `AcceptanceFile`; `org admit` appends `OrgAcceptance` (sections
-  3.8 and 9).
-- Output: `--json` on every command with `{ok, code, message, details}` for
-  errors; every `--json` verification result carries `source`, `head_seq`,
-  `head_event`, `fetched_at` (section 6, flag R).
-- Text output for verification uses the flag R wording, never "unrevoked", and
-  includes the flag L sentence about subject control (section 6).
+- Output framework: `--json` on every command, errors rendered as
+  `{ok, code, message, details}`, text errors prefixed with their layer
+  (`Schema error:`, `Ledger error:`, `Policy error:`, `State error:`,
+  `Replay error:`, `Network error:`), and the exit-code table of section 9.
+- Commands: `identity create|list|show`, `trust add|revoke|list`,
+  `witness add`, `verify ledger`, `verify trust`, `node id` (section 9).
+- `identity rotate`, a stub that exits 70 with the message `key rotation is not
+  part of this POC` (decisions/008, section 9 code 70).
+- Every `--json` verification result carries `source`, `head_seq`,
+  `head_event`, `fetched_at`; text output uses the flag R wording, never
+  "unrevoked", and includes the flag L sentence about subject control
+  (section 6).
 - `verify ledger` prints `valid to seq N, failed at seq M: <reason>` and exits
   20 on partial validity (section 3.6). `verify trust` is pinned as section 9
   specifies and exits 0 for both `trusted: true` and `trusted: false`.
-- Exit codes 0, 2, 10, 20, 50, 60, 70 and the six error layer prefixes
-  (section 9).
 
-Out of scope: `sync`, `--from`, `--peer`, `witness run`, `wallet serve`
-(tickets 010, 011, 012).
+Out of scope: org commands, the three file artifacts and `identity export`
+(ticket 018); all network commands (tickets 011 and 012).
 
 ## Acceptance criteria
 
-- [ ] Every command and flag spelled in section 9 exists with those names.
+- [ ] Every command and flag this ticket owns is spelled as in section 9.
 - [ ] Aliases resolve locally and are never signed; ids are authoritative
       (section 9).
 - [ ] `verify trust` output is identical in text and `--json` content and
       matches the pinned rule in section 9, including the revoked-attestation
       count and event ids.
-- [ ] tests: `assert_cmd` tests over a temp home cover each command, exit codes
-      0, 2, 10, 20 and 60, `--json` shape stability, `verify trust` trusted and
-      revoked cases, and the file-artifact caps of section 3.8 (section 11,
-      CLI tests bullet).
+- [ ] This ticket owns exit codes 0, 2, 20, 60 and 70: a successful
+      `identity list`, an unknown flag, `verify ledger` on a tampered ledger, a
+      0644 `active.key`, and `identity rotate`. Each has a test asserting the
+      code, the `{ok, code, message, details}` JSON body and the text prefix.
+- [ ] tests: `assert_cmd` tests over a temp home cover each command, `--json`
+      shape stability and the `verify trust` trusted and revoked cases
+      (section 11, CLI tests bullet).

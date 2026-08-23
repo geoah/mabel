@@ -1,7 +1,7 @@
 # 015: container image and compose topology
 
 - Status: open
-- Depends on: 014
+- Depends on: 013
 
 ## Goal
 
@@ -17,20 +17,19 @@ already seeded, needing no internet.
 - `docker/compose.yaml`: two wallet services and one witness service, keys on
   named volumes, fixed UDP ports, wallet HTTP ports exposed, witness HTTP port
   exposed (section 11, containers bullet).
-- Seeding: the witness `EndpointTicket` written into each wallet's
-  `peers.json` at startup, and each wallet's `node.json` listing the witness,
-  so no discovery service is contacted (sections 8 and 11).
-- Endpoint configuration that keeps the topology working with no outbound
-  network, stating in `docker/README.md` which iroh discovery or relay setting
-  achieves it.
+- Each service's `node.json` sets `relay: "disabled"` (ticket 007), so no
+  external relay or discovery service is contacted.
+- Startup order: the witness comes up first, its real `EndpointTicket` is
+  written into each wallet's `peers.json`, and the wallets start only then
+  (sections 8 and 11).
 
 ## Acceptance criteria
 
 - [ ] One image, selected role by command, for all three services (section 11).
 - [ ] The UI bundle is embedded in the image, so no host `ui/` mount is needed
       (section 10).
-- [ ] Each wallet's `peers.json` contains the witness ticket before its first
-      command runs (section 11).
+- [ ] Each wallet's `peers.json` contains the witness's real ticket before its
+      first command runs (section 11).
 - [ ] tests: `docker compose up` reaches all three services healthy on a host
       with no outbound network, and a scripted check pushes a ledger from one
       wallet and reads its head from the other through the witness.

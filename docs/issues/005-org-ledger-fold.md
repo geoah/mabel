@@ -23,8 +23,10 @@ in proposal 001 sections 3.4 and 3.5.
 - Authority: `author_key` must equal the active key the org ledger recorded for
   an identity whose role is `CONTROLLER` in the state from `0..=i-1`; `MEMBER`
   grants no signing authority (section 3.4).
-- Acceptance verification: all seven conditions listed in section 3.5,
-  including branch-local single use.
+- The stateful `OrgRemoval.target` row ticket 003 leaves open: the target must
+  be a current member, controller or open invitee (section 3.4).
+- Acceptance verification: all conditions listed in section 3.5, including
+  branch-local single use.
 - Invite lifecycle and removal semantics of section 3.4: a new invite is
   rejected only against an `open` invite for the same invitee, re-invite plus
   acceptance updates the role, removal cancels an open invite and removes
@@ -39,11 +41,15 @@ in proposal 001 sections 3.4 and 3.5.
 - [ ] tests: an `OrgInvite` whose embedded inception does not hash to
       `invitee`, and one whose `active_key` differs from `invitee_key`, are
       both rejected (section 11, field table bullet).
-- [ ] tests: a `MEMBER` signing an org event is rejected (section 11, chain
-      bullet).
-- [ ] tests: acceptance replayed to another org, to another invite and twice to
-      one invite; invite over an open invite; re-invite plus acceptance
-      promoting a member; removal of the last controller; removal cancelling an
-      open invite (section 11, policy bullet).
+- [ ] tests: a `MEMBER` signing an org event is rejected (section 11).
+- [ ] tests: an `OrgAcceptance` is rejected for each of malformed acceptance
+      bytes, wrong `org`, unknown `invite_event`, an invite that is not `open`,
+      mismatched `invitee`, mismatched `invitee_key`, an invalid invitee
+      signature, reuse on the same branch, and an outer event signed by a
+      non-controller (section 3.5).
+- [ ] tests: invite over an open invite is rejected; re-invite plus acceptance
+      promotes a member; removal of an unknown target is rejected; self-removal
+      succeeds while another controller remains; removal of the last controller
+      is rejected; removal cancels an open invite (section 3.4).
 - [ ] tests: a valid founder, invite, acceptance, promotion and removal
       sequence folds with no violation and the expected controller set.
