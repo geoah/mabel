@@ -10,8 +10,17 @@
 //! `mabel trust revoke`, `trust list` and `witness add` have no fixture. They
 //! reuse the frozen field names, and `contracts/cli/` grows a case when one is
 //! pinned.
+//!
+//! The membership documents have no fixture either:
+//! `contracts/http/PENDING-membership.md` lists the whole membership surface as
+//! pending and ticket 021 fixtures the HTTP counterpart. They reuse the frozen
+//! names (`ledger_id`, `head_seq`, `head_event`, `timestamp_ms`, `event_count`)
+//! and spell every ledger word as proposal 002 does: `invitation`, never
+//! `invite`.
 
+use mabel_core::fold::{InvitationStatus, LedgerRoot};
 use mabel_node::api::documents::{DeclaredKind, Id, TrustEntry};
+use mabel_proto::v0::Role as ProtoRole;
 use serde::Serialize;
 
 /// `mabel identity create --json`.
@@ -135,4 +144,302 @@ pub struct IdentityList {
 pub struct NodeId {
     /// This node's Iroh endpoint id.
     pub endpoint_id: Id,
+}
+
+/// Where a ledger's signing authority came from (proposal 002 section 2).
+///
+/// This is what proposal 001 called the ledger kind. The declared kind is a
+/// separate, advisory field and gates nothing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RootName {
+    /// The ledger keys itself.
+    Raw,
+    /// One founding identity keys it.
+    Identity,
+}
+
+impl RootName {
+    /// The name for a folded root.
+    #[must_use]
+    pub const fn of(root: LedgerRoot) -> Self {
+        match root {
+            LedgerRoot::Raw { .. } => Self::Raw,
+            LedgerRoot::Identity { .. } => Self::Identity,
+        }
+    }
+
+    /// The lowercase name, which is also what the text output prints.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Raw => "raw",
+            Self::Identity => "identity",
+        }
+    }
+}
+
+/// What a principal or an invitation may do (proposal 002 section 1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RoleName {
+    /// Recorded data with no signing authority.
+    Member,
+    /// May append to the ledger.
+    Controller,
+}
+
+impl RoleName {
+    /// The name for a folded role, or `None` for a value this build does not
+    /// know, which the fold never records.
+    #[must_use]
+    pub const fn of(role: ProtoRole) -> Option<Self> {
+        match role {
+            ProtoRole::Member => Some(Self::Member),
+            ProtoRole::Controller => Some(Self::Controller),
+            ProtoRole::Unspecified => None,
+        }
+    }
+
+    /// The lowercase name, which is also what the text output prints.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Member => "member",
+            Self::Controller => "controller",
+        }
+    }
+}
+
+/// What became of an invitation (proposal 002 section 4).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum StatusName {
+    /// Issued and neither accepted nor cancelled.
+    Open,
+    /// An acceptance consumed it.
+    Accepted,
+    /// A removal cancelled it.
+    Cancelled,
+}
+
+impl StatusName {
+    /// The name for a folded status.
+    #[must_use]
+    pub const fn of(status: InvitationStatus) -> Self {
+        match status {
+            InvitationStatus::Open => Self::Open,
+            InvitationStatus::Accepted => Self::Accepted,
+            InvitationStatus::Cancelled => Self::Cancelled,
+        }
+    }
+
+    /// The lowercase name, which is also what the text output prints.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Open => "open",
+            Self::Accepted => "accepted",
+            Self::Cancelled => "cancelled",
+        }
+    }
+}
+
+/// One entry of a ledger's `principals` array.
+#[derive(Debug, Serialize)]
+pub struct PrincipalEntry {
+    /// The identity the ledger records.
+    pub identity: Id,
+    /// The key that identity signs under here.
+    pub active_key: Id,
+    /// What it may do.
+    pub role: RoleName,
+    /// Whether this is the principal the inception seeded, which no removal
+    /// may take off a raw-rooted ledger.
+    pub is_root: bool,
+}
+
+/// One entry of a ledger's `invitations` array.
+#[derive(Debug, Serialize)]
+pub struct InvitationEntry {
+    /// The invitation event, which an acceptance names.
+    pub invitation_event: Id,
+    /// Its position.
+    pub invitation_seq: u64,
+    /// The identity invited.
+    pub invitee: Id,
+    /// That identity's active key.
+    pub invitee_key: Id,
+    /// The role offered.
+    pub role: RoleName,
+    /// Whether it is still open.
+    pub status: StatusName,
+}
+
+/// `mabel identity export --json`.
+#[derive(Debug, Serialize)]
+pub struct ExportedIdentity {
+    /// The identity the descriptor describes.
+    pub identity_id: Id,
+    /// What its inception declares it is.
+    pub declared_kind: DeclaredKind,
+    /// Where its signing authority came from.
+    pub root: RootName,
+    /// The key it signs under, on a raw root only.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub active_key: Option<Id>,
+    /// The witness endpoints the descriptor carries.
+    pub witnesses: Vec<Id>,
+    /// The file that was written.
+    pub path: String,
+    /// Its length.
+    pub bytes: u64,
+}
+
+/// `mabel membership invite --json`.
+#[derive(Debug, Serialize)]
+pub struct Invited {
+    /// The ledger the invitation was appended to.
+    pub ledger_id: Id,
+    /// The identity that signed it.
+    pub by: Id,
+    /// The identity invited.
+    pub invitee: Id,
+    /// That identity's active key, from its descriptor.
+    pub invitee_key: Id,
+    /// The role offered.
+    pub role: RoleName,
+    /// The invitation event, which the acceptance names.
+    pub invitation_event: Id,
+    /// Its position.
+    pub invitation_seq: u64,
+    /// The `timestamp_ms` it carries.
+    pub timestamp_ms: u64,
+    /// The new head sequence number.
+    pub head_seq: u64,
+    /// The new head event.
+    pub head_event: Id,
+    /// The `InvitationBundle` that was written.
+    pub path: String,
+    /// Its length.
+    pub bytes: u64,
+    /// Events in the bundle, which are the ledger's `0..=invitation`.
+    pub event_count: u64,
+}
+
+/// What `mabel membership accept` shows before it signs anything (proposal 002
+/// section 4, accept surface).
+///
+/// `controller_on_raw_root` is the flag a screen reads; `warning` is the
+/// sentence a person reads. Both are present exactly when accepting means
+/// signing as the ledger's own identity.
+#[derive(Debug, Serialize)]
+pub struct AcceptSurface {
+    /// The ledger the invitation admits into.
+    pub ledger_id: Id,
+    /// What that ledger declares itself to be. Advisory.
+    pub declared_kind: DeclaredKind,
+    /// Where its signing authority came from.
+    pub root: RootName,
+    /// Every identity that may currently append to it.
+    pub controllers: Vec<PrincipalEntry>,
+    /// The invitation event.
+    pub invitation_event: Id,
+    /// The identity invited.
+    pub invitee: Id,
+    /// That identity's active key.
+    pub invitee_key: Id,
+    /// The role offered.
+    pub role: RoleName,
+    /// Whether accepting means signing as the ledger's own identity.
+    pub controller_on_raw_root: bool,
+    /// The warning that flag carries, `null` when it is false.
+    pub warning: Option<String>,
+}
+
+/// `mabel membership accept --json`: the surface that was shown, and the file
+/// that was signed.
+#[derive(Debug, Serialize)]
+pub struct Accepted {
+    /// The surface, flat beside the file fields.
+    #[serde(flatten)]
+    pub surface: AcceptSurface,
+    /// The `AcceptanceFile` that was written.
+    pub path: String,
+    /// Its length.
+    pub bytes: u64,
+}
+
+/// `mabel membership admit --json`.
+#[derive(Debug, Serialize)]
+pub struct Admitted {
+    /// The ledger the acceptance was appended to.
+    pub ledger_id: Id,
+    /// The identity that signed the acceptance event.
+    pub by: Id,
+    /// The identity admitted.
+    pub invitee: Id,
+    /// The key it signs under here.
+    pub invitee_key: Id,
+    /// The role it now holds.
+    pub role: RoleName,
+    /// The invitation the acceptance consumed.
+    pub invitation_event: Id,
+    /// The acceptance event.
+    pub acceptance_event: Id,
+    /// Its position.
+    pub acceptance_seq: u64,
+    /// The `timestamp_ms` it carries.
+    pub timestamp_ms: u64,
+    /// The new head sequence number.
+    pub head_seq: u64,
+    /// The new head event.
+    pub head_event: Id,
+    /// The `AcceptanceFile` that was read.
+    pub path: String,
+}
+
+/// `mabel membership remove --json`.
+#[derive(Debug, Serialize)]
+pub struct Removed {
+    /// The ledger the removal was appended to.
+    pub ledger_id: Id,
+    /// The identity that signed it.
+    pub by: Id,
+    /// The identity removed.
+    pub target: Id,
+    /// Whether the target held a principal that the removal took away.
+    pub principal_removed: bool,
+    /// The open invitation the removal cancelled, `null` if there was none.
+    pub invitation_cancelled: Option<Id>,
+    /// The removal event.
+    pub removal_event: Id,
+    /// Its position.
+    pub removal_seq: u64,
+    /// The `timestamp_ms` it carries.
+    pub timestamp_ms: u64,
+    /// The new head sequence number.
+    pub head_seq: u64,
+    /// The new head event.
+    pub head_event: Id,
+}
+
+/// `mabel membership list --json`.
+#[derive(Debug, Serialize)]
+pub struct Membership {
+    /// The ledger that was read.
+    pub ledger_id: Id,
+    /// What it declares itself to be. Advisory.
+    pub declared_kind: DeclaredKind,
+    /// Where its signing authority came from.
+    pub root: RootName,
+    /// Sequence number of its head event.
+    pub head_seq: u64,
+    /// Its head event.
+    pub head_event: Id,
+    /// Every identity it records, by ascending id.
+    pub principals: Vec<PrincipalEntry>,
+    /// Every invitation it issued, by ascending position, accepted and
+    /// cancelled ones included.
+    pub invitations: Vec<InvitationEntry>,
 }

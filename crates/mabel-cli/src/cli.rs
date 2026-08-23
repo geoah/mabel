@@ -10,6 +10,7 @@ use std::path::PathBuf;
 use clap::{Parser, Subcommand, ValueEnum};
 use mabel_node::DeclaredKind as StoredKind;
 use mabel_proto::v0::DeclaredKind as ProtoKind;
+use mabel_proto::v0::Role as ProtoRole;
 
 /// mabel: peer-to-peer identity ledgers over Iroh.
 #[derive(Debug, Parser)]
@@ -42,6 +43,16 @@ pub enum Command {
     Identity {
         #[command(subcommand)]
         command: IdentityCommand,
+    },
+    /// Invite, admit, remove and list the principals of a ledger.
+    ///
+    /// `org` and `member` are accepted for the same command and stay out of
+    /// `--help`, so a reader of the help text meets one spelling (proposal 002
+    /// section 6).
+    #[command(alias = "org", alias = "member")]
+    Membership {
+        #[command(subcommand)]
+        command: MembershipCommand,
     },
     /// Attest to an identity, revoke an attestation, list what one issued.
     Trust {
@@ -87,11 +98,113 @@ pub enum IdentityCommand {
         /// The identity, by alias or id.
         identity: String,
     },
+    /// Write an identity's `IdentityDescriptor` file, the artifact an invitation
+    /// embeds.
+    Export {
+        /// The identity, by alias or id.
+        identity: String,
+        /// Where to write the descriptor.
+        #[arg(long, value_name = "PATH")]
+        out: PathBuf,
+    },
     /// Not part of this POC; exits 70.
     Rotate {
         /// The identity, by alias or id.
         identity: Option<String>,
     },
+}
+
+/// `mabel membership ...`, the three-step flow of proposal 002 section 6.
+///
+/// Two parties sign: a controller invites, the invitee accepts, a controller
+/// admits. Each step hands the next one a file (proposal 001 section 3.8).
+#[derive(Debug, Subcommand)]
+pub enum MembershipCommand {
+    /// Append an invitation naming the identity a descriptor file describes.
+    Invite {
+        /// The ledger the invitation is appended to, by alias or id.
+        #[arg(long, value_name = "ALIAS_OR_ID")]
+        ledger: String,
+        /// The controller identity that signs it, by alias or id.
+        #[arg(long, value_name = "ALIAS_OR_ID")]
+        by: String,
+        /// The invitee's `IdentityDescriptor` file, from `identity export`.
+        #[arg(long, value_name = "PATH")]
+        invitee: PathBuf,
+        /// The role offered.
+        #[arg(long, value_enum)]
+        role: RoleArg,
+        /// Where to write the `InvitationBundle` for the invitee.
+        #[arg(long, value_name = "PATH")]
+        out: PathBuf,
+    },
+    /// Sign an acceptance of an invitation, after showing what it admits to.
+    Accept {
+        /// The `InvitationBundle` file the inviter sent.
+        #[arg(value_name = "INVITATION_BUNDLE")]
+        bundle: PathBuf,
+        /// The invited identity, by alias or id.
+        #[arg(long = "as", value_name = "ALIAS_OR_ID")]
+        identity: String,
+        /// Where to write the `AcceptanceFile` for a controller to admit.
+        #[arg(long, value_name = "PATH")]
+        out: PathBuf,
+        /// Accept without the interactive confirmation.
+        #[arg(long)]
+        yes: bool,
+    },
+    /// Append the acceptance an invitee signed, admitting them.
+    Admit {
+        /// The ledger the acceptance is appended to, by alias or id.
+        #[arg(long, value_name = "ALIAS_OR_ID")]
+        ledger: String,
+        /// The controller identity that signs it, by alias or id.
+        #[arg(long, value_name = "ALIAS_OR_ID")]
+        by: String,
+        /// The `AcceptanceFile` the invitee sent.
+        #[arg(value_name = "ACCEPTANCE_FILE")]
+        acceptance: PathBuf,
+    },
+    /// Remove a principal and cancel its open invitation, whichever exist.
+    Remove {
+        /// The ledger the removal is appended to, by alias or id.
+        #[arg(long, value_name = "ALIAS_OR_ID")]
+        ledger: String,
+        /// The controller identity that signs it, by alias or id.
+        #[arg(long, value_name = "ALIAS_OR_ID")]
+        by: String,
+        /// The identity to remove, by alias or id. `--target` is accepted for
+        /// the same flag, since the event field is `target`.
+        #[arg(long, alias = "target", value_name = "ALIAS_OR_ID")]
+        member: String,
+    },
+    /// Show a ledger's principals and its invitations.
+    List {
+        /// The ledger, by alias or id.
+        #[arg(long, value_name = "ALIAS_OR_ID")]
+        ledger: String,
+    },
+}
+
+/// The role an invitation offers (proposal 002 section 1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+#[value(rename_all = "lowercase")]
+pub enum RoleArg {
+    /// Recorded data with no signing authority.
+    Member,
+    /// May append to the ledger.
+    Controller,
+}
+
+impl RoleArg {
+    /// The enum value the invitation carries.
+    #[must_use]
+    pub const fn proto(self) -> ProtoRole {
+        match self {
+            Self::Member => ProtoRole::Member,
+            Self::Controller => ProtoRole::Controller,
+        }
+    }
 }
 
 /// `mabel trust ...`.

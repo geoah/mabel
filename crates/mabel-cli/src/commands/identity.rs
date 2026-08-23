@@ -1,6 +1,9 @@
 //! `mabel identity create|list|show|rotate`.
 
-use mabel_core::fold::LedgerState;
+use std::path::Path;
+
+use mabel_core::artifacts::IdentityDescriptor;
+use mabel_core::fold::{LedgerRoot, LedgerState};
 use mabel_core::sign::{Root, build_inception};
 use mabel_core::{IdentityId, NONCE_BYTES};
 use mabel_node::api::documents::Identity;
@@ -9,7 +12,7 @@ use mabel_node::{IdentityMeta, LedgerMeta, now_ms};
 
 use crate::cli::Kind;
 use crate::context::Context;
-use crate::documents::{CreatedIdentity, IdentityList};
+use crate::documents::{CreatedIdentity, ExportedIdentity, IdentityList, RootName};
 use crate::error::{CliError, Result};
 use crate::ids;
 use crate::ledger::Loaded;
@@ -174,6 +177,46 @@ pub fn show(ctx: &Context, name: &str) -> Result<Outcome> {
             entry.attestation_event, entry.attestation_seq, entry.subject
         ));
     }
+    Outcome::new(&document, text)
+}
+
+/// `mabel identity export <alias|id> --out <path>`.
+///
+/// The descriptor carries the ledger's seq-0 event bytes as they are stored and
+/// the witness set the ledger currently records. An invitation embeds those
+/// same inception bytes, which is what ties the invitee's id to their key
+/// (proposal 001 section 3.8).
+pub fn export(ctx: &Context, name: &str, out: &Path) -> Result<Outcome> {
+    let identity = ctx.resolve(name)?;
+    let loaded = ctx.load(identity)?;
+    loaded.require_valid()?;
+    let inception = ctx.store(identity).read_event(0)?;
+    let witnesses = loaded.state.witnesses().to_vec();
+    let descriptor = IdentityDescriptor::new(&inception, &witnesses).map_err(|error| {
+        crate::artifacts::failure(crate::artifacts::Kind::IdentityDescriptor, &error, out)
+    })?;
+    let bytes = crate::artifacts::write(out, &descriptor.write())?;
+
+    let root = match descriptor.root() {
+        LedgerRoot::Raw { .. } => RootName::Raw,
+        LedgerRoot::Identity { .. } => RootName::Identity,
+    };
+    let document = ExportedIdentity {
+        identity_id: ids::identity(identity),
+        declared_kind: loaded.declared_kind(),
+        root,
+        active_key: descriptor.active_key().as_ref().map(ids::key),
+        witnesses: loaded.witnesses(),
+        path: out.display().to_string(),
+        bytes,
+    };
+    let text = format!(
+        "exported {identity} to {} ({bytes} bytes)\ndeclared kind {}, {} root, {} witnesses",
+        out.display(),
+        document.declared_kind,
+        root.as_str(),
+        document.witnesses.len()
+    );
     Outcome::new(&document, text)
 }
 

@@ -1,13 +1,15 @@
 //! One module per command group, and the dispatch that reaches them.
 
 pub mod identity;
+pub mod membership;
 pub mod node;
 pub mod trust;
 pub mod verify;
 pub mod witness;
 
 use crate::cli::{
-    Cli, Command, IdentityCommand, NodeCommand, TrustCommand, VerifyCommand, WitnessCommand,
+    Cli, Command, IdentityCommand, MembershipCommand, NodeCommand, TrustCommand, VerifyCommand,
+    WitnessCommand,
 };
 use crate::context::Context;
 use crate::error::Result;
@@ -34,7 +36,32 @@ fn dispatch(ctx: &Context, cli: &Cli) -> Result<Outcome> {
             } => identity::create(ctx, alias, *kind, founder.as_deref()),
             IdentityCommand::List => identity::list(ctx),
             IdentityCommand::Show { identity } => identity::show(ctx, identity),
+            IdentityCommand::Export { identity, out } => identity::export(ctx, identity, out),
             IdentityCommand::Rotate { .. } => identity::rotate(),
+        },
+        Command::Membership { command } => match command {
+            MembershipCommand::Invite {
+                ledger,
+                by,
+                invitee,
+                role,
+                out,
+            } => membership::invite(ctx, ledger, by, invitee, *role, out),
+            MembershipCommand::Accept {
+                bundle,
+                identity,
+                out,
+                yes,
+            } => membership::accept(ctx, bundle, identity, out, *yes, cli.json),
+            MembershipCommand::Admit {
+                ledger,
+                by,
+                acceptance,
+            } => membership::admit(ctx, ledger, by, acceptance),
+            MembershipCommand::Remove { ledger, by, member } => {
+                membership::remove(ctx, ledger, by, member)
+            }
+            MembershipCommand::List { ledger } => membership::list(ctx, ledger),
         },
         Command::Trust { command } => match command {
             TrustCommand::Add { issuer, subject } => trust::add(ctx, issuer, subject),

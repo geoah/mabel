@@ -1,6 +1,6 @@
 # 018: membership CLI commands and the file artifacts
 
-- Status: open
+- Status: done
 - Depends on: 006, 008
 
 ## Goal
