@@ -5,6 +5,12 @@
 
 import walletNodeFixture from "@contracts/http/wallet-get-node.json";
 import identitiesFixture from "@contracts/http/wallet-get-identities.json";
+import profileFixture from "@contracts/http/wallet-post-identity-profile.json";
+import verificationFixture from "@contracts/http/wallet-post-identity-verification.json";
+import contactFixture from "@contracts/http/wallet-get-identity-contact.json";
+import contactPutFixture from "@contracts/http/wallet-put-identity-contact.json";
+import lookupFixture from "@contracts/http/wallet-get-lookup.json";
+import graphFixture from "@contracts/http/wallet-get-graph.json";
 import createIdentityFixture from "@contracts/http/wallet-post-identities.json";
 import witnessesFixture from "@contracts/http/wallet-post-identity-witnesses.json";
 import trustFixture from "@contracts/http/wallet-post-trust.json";
@@ -22,16 +28,22 @@ import cliErrors from "@contracts/cli/errors.json";
 
 import type {
   AppendResponse,
+  Contact,
   CreateIdentityResponse,
   DeclaredKind,
   ErrorEnvelope,
   ForkRecord,
+  Graph,
   Identity,
   LedgerEvent,
   LedgerPageResponse,
   LedgerSummary,
+  LookupResponse,
+  ReplaceProfileResponse,
+  ResolvedIdentity,
   RevokeTrustResponse,
   SyncPushResponse,
+  Verification,
   VerifyLedgerReport,
   VerifyTrustReport,
   WalletNodeInfo,
@@ -49,10 +61,83 @@ export const syncPush = syncPushFixture.response as SyncPushResponse;
 export const verifyTrust = verifyFixture.response as VerifyTrustReport;
 export const seedLedgerEvents = ledgerEventsFixture.response as LedgerPageResponse;
 
+/** POST /api/identities/:identity_id/profile, the whole-document replacement. */
+export const profileReplaced = profileFixture.response as ReplaceProfileResponse;
+/** POST /api/identities/:identity_id/verification, a forced check that verified. */
+export const forcedVerification = verificationFixture.response.verification as Verification;
+/** The local contact note the fixtures hold for Bob. */
+export const seedContact = contactFixture.response.contact as Contact;
+export const contactRoundTrip = contactPutFixture.request as {
+  nickname: string;
+  note: string;
+};
+/** GET /api/lookup/:identity_id, the two-hop answer from Alice to Carol. */
+export const seedLookup = lookupFixture.response as LookupResponse;
+/** GET /api/graph, the crawl generation this home last recorded. */
+export const seedGraph = graphFixture.response.graph as Graph;
+
 /** The ids the fixtures share with test-vectors/. */
 export const ALICE = "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq";
 export const BOB = "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq";
 export const ACME = "2okqwhextnpkpmydrgrkk563vbehcklffwfzidxlh5dslawjmn6a";
+/** The foreign identity the lookup fixture answers for, two hops from Alice. */
+export const CAROL = seedLookup.identity.identity_id;
+
+/**
+ * Every ResolvedIdentity the lookup and graph fixtures carry, keyed by id, so
+ * the mock names a foreign identity exactly the way the contract does.
+ */
+export function seedResolved(): Map<string, ResolvedIdentity> {
+  const table = new Map<string, ResolvedIdentity>();
+  const add = (resolved: ResolvedIdentity) => table.set(resolved.identity_id, { ...resolved });
+  add(seedLookup.identity);
+  add(seedLookup.from);
+  for (const path of seedLookup.paths) {
+    for (const hop of path.hops) {
+      add(hop.from);
+      add(hop.to);
+    }
+  }
+  for (const entry of seedLookup.trust) {
+    add(entry.subject);
+  }
+  for (const entry of seedLookup.reverse.entries) {
+    add(entry.identity);
+  }
+  for (const root of seedGraph.roots) {
+    add(root);
+  }
+  return table;
+}
+
+/**
+ * The crawled edges the lookup fixture implies: Alice attests to Bob, Bob to
+ * Carol, and Carol back to Bob. Attestation event ids come from the fixture so
+ * a rendered path quotes the contract's own values.
+ */
+export function seedEdges(): { from: string; to: string; attestation_event: string; seq: number }[] {
+  const [aliceToBob, bobToCarol] = seedLookup.paths[0].hops;
+  return [
+    {
+      from: aliceToBob.from.identity_id,
+      to: aliceToBob.to.identity_id,
+      attestation_event: aliceToBob.attestation_event,
+      seq: 8,
+    },
+    {
+      from: bobToCarol.from.identity_id,
+      to: bobToCarol.to.identity_id,
+      attestation_event: bobToCarol.attestation_event,
+      seq: seedLookup.reverse.entries[0].seq,
+    },
+    {
+      from: seedLookup.identity.identity_id,
+      to: seedLookup.trust[0].subject.identity_id,
+      attestation_event: seedLookup.trust[0].attestation_event,
+      seq: seedLookup.trust[0].seq,
+    },
+  ];
+}
 
 function verifyTrustCase(name: string): VerifyTrustReport {
   const found = verifyTrustCases.cases.find((entry) => entry.case === name);
@@ -97,6 +182,18 @@ export const errors = {
     status: number;
     body: ErrorEnvelope;
   },
+  /** code 2, a profile body that names only one of the two keys. */
+  profileMissingField: profileFixture.errors[0] as { status: number; body: ErrorEnvelope },
+  /** code 20 at 409, a replacement that would change nothing. */
+  noOpProfileUpdate: profileFixture.errors[1] as { status: number; body: ErrorEnvelope },
+  /** code 10, a display name that parses as an identity id. */
+  invalidDisplayName: profileFixture.errors[2] as { status: number; body: ErrorEnvelope },
+  /** code 20 at 409, a forced check on an identity claiming no hostname. */
+  noHostnameClaimed: verificationFixture.errors[0] as { status: number; body: ErrorEnvelope },
+  /** code 10, a contact nickname past its 64-byte cap. */
+  contactFieldTooLong: contactPutFixture.errors[0] as { status: number; body: ErrorEnvelope },
+  /** code 2, a lookup whose from names no identity in this home. */
+  unknownFromIdentity: lookupFixture.errors[1] as { status: number; body: ErrorEnvelope },
 } as const;
 
 /**

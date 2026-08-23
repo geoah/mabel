@@ -2,9 +2,10 @@ import { useState } from "react";
 
 import { getIdentityLedger } from "@/api/client";
 import { DeclaredKindNote, DeclaredKindValue } from "@/components/DeclaredKind";
+import { DeveloperOnly } from "@/components/DeveloperMode";
 import { ErrorEnvelopeView } from "@/components/ErrorEnvelopeView";
-import { Field, FieldGrid } from "@/components/Field";
 import { Identifier } from "@/components/Identifier";
+import { KeyValue, KeyValueTable } from "@/components/KeyValue";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -75,32 +76,34 @@ export function LedgerPanel({ identityId, version }: { identityId: string; versi
         {page.error && <ErrorEnvelopeView error={page.error} testId="ledger-error" />}
         {page.data && (
           <>
-            <FieldGrid>
-              <Field label="ledger_id" testId="ledger-id">
-                <Identifier value={page.data.ledger_id} />
-              </Field>
-              <Field label="declared_kind" testId="ledger-declared-kind-row">
+            <KeyValueTable>
+              <KeyValue label="declared_kind" testId="ledger-declared-kind-row">
                 <DeclaredKindValue
                   kind={page.data.declared_kind}
                   testId="ledger-declared-kind"
                 />
-              </Field>
-              <Field label="since" testId="ledger-page-since">
+              </KeyValue>
+              <KeyValue label="since" testId="ledger-page-since">
                 {page.data.since}
-              </Field>
-              <Field label="head_seq" testId="ledger-head-seq">
+              </KeyValue>
+              <KeyValue label="head_seq" testId="ledger-head-seq">
                 {page.data.head_seq}
-              </Field>
-              <Field label="head_event" testId="ledger-head-event">
-                <Identifier value={page.data.head_event} />
-              </Field>
-              <Field label="event_count" testId="ledger-event-count">
+              </KeyValue>
+              <KeyValue label="event_count" testId="ledger-event-count">
                 {page.data.event_count}
-              </Field>
-              <Field label="more" testId="ledger-more">
+              </KeyValue>
+              <KeyValue label="more" testId="ledger-more">
                 {String(page.data.more)}
-              </Field>
-            </FieldGrid>
+              </KeyValue>
+              <DeveloperOnly>
+                <KeyValue label="ledger_id" testId="ledger-id">
+                  <Identifier value={page.data.ledger_id} />
+                </KeyValue>
+                <KeyValue label="head_event" testId="ledger-head-event">
+                  <Identifier value={page.data.head_event} />
+                </KeyValue>
+              </DeveloperOnly>
+            </KeyValueTable>
             <DeclaredKindNote testId="ledger-declared-kind-note" />
             <Table stack="lg" data-testid="ledger-events">
               <TableHeader>

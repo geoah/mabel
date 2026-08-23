@@ -1,0 +1,209 @@
+import { type FormEvent, useState } from "react";
+
+import { type ApiError, replaceProfile } from "@/api/client";
+import type { Identity, ProfileFields, ReplaceProfileResponse } from "@/api/types";
+import { ErrorEnvelopeView } from "@/components/ErrorEnvelopeView";
+import { Identifier } from "@/components/Identifier";
+import { KeyValue, KeyValueTable } from "@/components/KeyValue";
+import { DeveloperOnly } from "@/components/DeveloperMode";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { asApiError } from "@/hooks/useResource";
+import { HOSTNAME_CONSENT_KEY, useConsent } from "@/lib/preferences";
+
+/**
+ * What publishing a hostname makes public, stated before the first one and
+ * remembered per node home (proposal 003, Consequences).
+ */
+const HOSTNAME_CONSENT_SENTENCES = [
+  "Every display name and hostname ever set stays readable forever by anyone who can name the ledger id.",
+  "The chain is the full history and replicas keep their copies, so a later change hides nothing.",
+];
+
+function trimmedOrNull(value: string): string | null {
+  const trimmed = value.trim();
+  return trimmed === "" ? null : trimmed;
+}
+
+function shown(value: string | null): string {
+  return value ?? "null";
+}
+
+/**
+ * Profile replacement, never a patch: both fields are always sent and an empty
+ * box clears that name. The confirmation shows the before-and-after diff, the
+ * same one `mabel profile replace` prints (proposal 003 section 1).
+ */
+export function ProfilePanel({
+  identity,
+  onAppended,
+}: {
+  identity: Identity;
+  onAppended: () => void;
+}) {
+  const current: ProfileFields = {
+    display_name: identity.profile?.display_name ?? null,
+    hostname: identity.profile?.hostname ?? null,
+  };
+  const [displayName, setDisplayName] = useState(current.display_name ?? "");
+  const [hostname, setHostname] = useState(current.hostname ?? "");
+  const [proposed, setProposed] = useState<ProfileFields | null>(null);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<ApiError | null>(null);
+  const [replaced, setReplaced] = useState<ReplaceProfileResponse | null>(null);
+  const [consented, giveConsent] = useConsent(HOSTNAME_CONSENT_KEY);
+
+  // Consent is asked for once, and only when a replacement would publish a
+  // hostname this node home has never published before.
+  const publishing =
+    proposed !== null && proposed.hostname !== null && proposed.hostname !== current.hostname;
+  const asking = publishing && !consented;
+
+  function propose(event: FormEvent) {
+    event.preventDefault();
+    setError(null);
+    setReplaced(null);
+    setProposed({
+      display_name: trimmedOrNull(displayName),
+      hostname: trimmedOrNull(hostname),
+    });
+  }
+
+  async function confirm() {
+    if (proposed === null) {
+      return;
+    }
+    setPending(true);
+    setError(null);
+    try {
+      const response = await replaceProfile(identity.identity_id, proposed);
+      if (publishing) {
+        giveConsent();
+      }
+      setReplaced(response);
+      setProposed(null);
+      onAppended();
+    } catch (thrown) {
+      setError(asApiError(thrown));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <Card data-testid="profile-panel">
+      <CardHeader>
+        <CardTitle>Profile</CardTitle>
+        <CardDescription>
+          Replaces the whole profile: an empty box clears that name for everyone
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <KeyValueTable>
+          <KeyValue label="display_name" testId="profile-current-display-name">
+            {shown(current.display_name)}
+          </KeyValue>
+          <KeyValue label="hostname" testId="profile-current-hostname">
+            <span className="font-mono text-xs">{shown(current.hostname)}</span>
+          </KeyValue>
+          <DeveloperOnly>
+            <KeyValue label="profile_event" testId="profile-event">
+              <Identifier value={identity.profile?.event ?? null} />
+            </KeyValue>
+            <KeyValue label="profile_seq" testId="profile-seq">
+              {identity.profile?.seq ?? "null"}
+            </KeyValue>
+            <KeyValue label="signing_principal" testId="profile-signing-principal">
+              <Identifier value={identity.profile?.signing_principal.key ?? null} />
+            </KeyValue>
+          </DeveloperOnly>
+        </KeyValueTable>
+        <form onSubmit={propose} className="space-y-2" data-testid="profile-replace-form">
+          <div className="space-y-1">
+            <Label htmlFor="profile-display-name">display_name</Label>
+            <Input
+              id="profile-display-name"
+              data-testid="profile-display-name"
+              value={displayName}
+              onChange={(event) => setDisplayName(event.target.value)}
+              placeholder="Alice Ashworth"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="profile-hostname">hostname</Label>
+            <Input
+              id="profile-hostname"
+              data-testid="profile-hostname"
+              value={hostname}
+              onChange={(event) => setHostname(event.target.value)}
+              placeholder="alice.example"
+            />
+          </div>
+          <Button type="submit" data-testid="profile-replace-submit" disabled={pending}>
+            Replace profile
+          </Button>
+        </form>
+        {proposed && (
+          <div className="space-y-2 rounded-md border p-2" data-testid="profile-diff">
+            <KeyValueTable>
+              <KeyValue label="display_name" testId="profile-diff-display-name">
+                <span data-testid="profile-diff-display-name-before">
+                  {shown(current.display_name)}
+                </span>{" "}
+                becomes{" "}
+                <span data-testid="profile-diff-display-name-after">
+                  {shown(proposed.display_name)}
+                </span>
+              </KeyValue>
+              <KeyValue label="hostname" testId="profile-diff-hostname">
+                <span data-testid="profile-diff-hostname-before" className="font-mono text-xs">
+                  {shown(current.hostname)}
+                </span>{" "}
+                becomes{" "}
+                <span data-testid="profile-diff-hostname-after" className="font-mono text-xs">
+                  {shown(proposed.hostname)}
+                </span>
+              </KeyValue>
+            </KeyValueTable>
+            {asking && (
+              <div data-testid="profile-hostname-consent" className="space-y-1">
+                {HOSTNAME_CONSENT_SENTENCES.map((sentence) => (
+                  <p key={sentence} className="text-xs">
+                    {sentence}
+                  </p>
+                ))}
+              </div>
+            )}
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                data-testid="profile-replace-confirm"
+                disabled={pending}
+                onClick={() => void confirm()}
+              >
+                {asking ? "Publish and replace" : "Confirm"}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                data-testid="profile-replace-cancel"
+                disabled={pending}
+                onClick={() => setProposed(null)}
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        )}
+        {error && <ErrorEnvelopeView error={error} testId="profile-error" />}
+        {replaced && (
+          <p data-testid="profile-replace-result" className="text-xs">
+            replaced at seq {replaced.profile.seq}
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}

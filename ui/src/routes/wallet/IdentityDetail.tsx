@@ -3,16 +3,21 @@ import { Link, useParams } from "react-router";
 
 import { getIdentity } from "@/api/client";
 import { DeclaredKindNote, DeclaredKindValue } from "@/components/DeclaredKind";
+import { DeveloperOnly, RawDocument } from "@/components/DeveloperMode";
 import { ErrorEnvelopeView } from "@/components/ErrorEnvelopeView";
-import { Field, FieldGrid } from "@/components/Field";
 import { Identifier } from "@/components/Identifier";
+import { KeyValue, KeyValueTable } from "@/components/KeyValue";
+import { ResolvedIdentity, resolvedFrom } from "@/components/ResolvedIdentity";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useResource } from "@/hooks/useResource";
 
+import { ContactPanel } from "./ContactPanel";
 import { LedgerPanel } from "./LedgerPanel";
 import { PrincipalsPanel } from "./PrincipalsPanel";
+import { ProfilePanel } from "./ProfilePanel";
 import { SyncPushPanel } from "./SyncPushPanel";
 import { TrustPanel } from "./TrustPanel";
+import { VerificationPanel } from "./VerificationPanel";
 import { WitnessConfigPanel } from "./WitnessConfigPanel";
 
 export function IdentityDetail() {
@@ -20,6 +25,7 @@ export function IdentityDetail() {
   const [version, setVersion] = useState(0);
   const identity = useResource(() => getIdentity(identityId), [identityId, version]);
   const refresh = useCallback(() => setVersion((value) => value + 1), []);
+  const held = identity.data?.identity ?? null;
 
   return (
     <div className="space-y-4">
@@ -34,54 +40,90 @@ export function IdentityDetail() {
       {identity.error && (
         <ErrorEnvelopeView error={identity.error} testId="identity-detail-error" />
       )}
-      {identity.data && (
+      {held && (
         <div className="grid gap-4 lg:grid-cols-2">
           <Card data-testid="identity-detail">
             <CardHeader>
-              <CardTitle className="text-base">{identity.data.identity.alias}</CardTitle>
+              <CardTitle className="text-base">
+                <ResolvedIdentity
+                  identity={resolvedFrom(held)}
+                  stale={held.verification.stale}
+                  testId="identity-detail-resolved"
+                />
+              </CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
-              <FieldGrid>
-                <Field label="identity_id" testId="identity-detail-identity-id">
-                  <Identifier value={identity.data.identity.identity_id} />
-                </Field>
-                <Field label="declared_kind" testId="identity-detail-declared-kind-row">
+              {/* One compact table, key and value on a line (decision 014). */}
+              <KeyValueTable>
+                <KeyValue label="identity_id" testId="identity-detail-identity-id">
+                  <Identifier value={held.identity_id} />
+                </KeyValue>
+                <KeyValue label="declared_kind" testId="identity-detail-declared-kind-row">
                   <DeclaredKindValue
-                    kind={identity.data.identity.declared_kind}
+                    kind={held.declared_kind}
                     testId="identity-detail-declared-kind"
                   />
-                </Field>
-                <Field label="alias" testId="identity-detail-alias">
-                  {identity.data.identity.alias}
-                </Field>
-                <Field label="created_at_ms" testId="identity-detail-created-at-ms">
-                  {identity.data.identity.created_at_ms}
-                </Field>
-                <Field label="head_seq" testId="identity-detail-head-seq">
-                  {identity.data.identity.head_seq}
-                </Field>
-                <Field label="head_event" testId="identity-detail-head-event">
-                  <Identifier value={identity.data.identity.head_event} />
-                </Field>
-                <Field label="event_count" testId="identity-detail-event-count">
-                  {identity.data.identity.event_count}
-                </Field>
-                <Field label="active_key" testId="identity-detail-active-key">
-                  <Identifier value={identity.data.identity.active_key} />
-                </Field>
-                <Field label="reserve_commit" testId="identity-detail-reserve-commit">
-                  <Identifier value={identity.data.identity.reserve_commit} />
-                </Field>
-              </FieldGrid>
+                </KeyValue>
+                <KeyValue label="alias" testId="identity-detail-alias">
+                  {held.alias}
+                </KeyValue>
+                <KeyValue label="created_at_ms" testId="identity-detail-created-at-ms">
+                  {held.created_at_ms}
+                </KeyValue>
+                <KeyValue label="hostname" testId="identity-detail-hostname">
+                  {held.profile?.hostname ?? "none"}
+                </KeyValue>
+                <KeyValue label="contact" testId="identity-detail-contact">
+                  {held.contact === null
+                    ? "none"
+                    : [held.contact.nickname, held.contact.note]
+                        .filter((part) => part !== null)
+                        .join(": ")}
+                </KeyValue>
+                <KeyValue label="events" testId="identity-detail-event-count">
+                  {held.event_count}
+                </KeyValue>
+                <KeyValue label="people trusted" testId="identity-detail-trusted-count">
+                  {held.trust.filter((record) => !record.revoked).length}
+                </KeyValue>
+                <KeyValue label="principals" testId="identity-detail-principal-count">
+                  {held.principals.length}
+                </KeyValue>
+                <KeyValue label="open invitations" testId="identity-detail-open-invitations">
+                  {held.open_invitation_count}
+                </KeyValue>
+                <KeyValue label="head_seq" testId="identity-detail-head-seq">
+                  {held.head_seq}
+                </KeyValue>
+                <KeyValue label="active_key" testId="identity-detail-active-key">
+                  <Identifier value={held.active_key} />
+                </KeyValue>
+                <KeyValue label="reserve_commit" testId="identity-detail-reserve-commit">
+                  <Identifier value={held.reserve_commit} />
+                </KeyValue>
+                <DeveloperOnly>
+                  <KeyValue label="head_event" testId="identity-detail-head-event">
+                    <Identifier value={held.head_event} />
+                  </KeyValue>
+                </DeveloperOnly>
+              </KeyValueTable>
               <DeclaredKindNote testId="identity-detail-declared-kind-note" />
+              <RawDocument value={identity.data} testId="identity-detail-raw" />
             </CardContent>
           </Card>
-          <PrincipalsPanel identity={identity.data.identity} />
-          <WitnessConfigPanel identity={identity.data.identity} onAppended={refresh} />
-          <TrustPanel identity={identity.data.identity} onAppended={refresh} />
-          <SyncPushPanel identityId={identity.data.identity.identity_id} />
+          <ProfilePanel identity={held} onAppended={refresh} />
+          <VerificationPanel identity={held} onChecked={refresh} />
+          <ContactPanel
+            identityId={held.identity_id}
+            contact={held.contact}
+            onSaved={refresh}
+          />
+          <PrincipalsPanel identity={held} />
+          <WitnessConfigPanel identity={held} onAppended={refresh} />
+          <TrustPanel identity={held} onAppended={refresh} />
+          <SyncPushPanel identityId={held.identity_id} />
           <div className="lg:col-span-2">
-            <LedgerPanel identityId={identity.data.identity.identity_id} version={version} />
+            <LedgerPanel identityId={held.identity_id} version={version} />
           </div>
         </div>
       )}

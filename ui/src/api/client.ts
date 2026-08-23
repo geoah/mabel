@@ -1,21 +1,29 @@
 import type {
   AddTrustRequest,
   AppendResponse,
+  ContactResponse,
   CreateIdentityRequest,
   CreateIdentityResponse,
   ErrorDetails,
   ErrorEnvelope,
   ForkListResponse,
+  GraphResponse,
+  GraphSyncResponse,
   IdentityListResponse,
   IdentityResponse,
   LedgerEntryResponse,
   LedgerListResponse,
   LedgerPageResponse,
+  LookupResponse,
+  ReplaceProfileRequest,
+  ReplaceProfileResponse,
   RevokeTrustRequest,
   RevokeTrustResponse,
+  SetContactRequest,
   SetWitnessesRequest,
   SyncPushRequest,
   SyncPushResponse,
+  VerificationResponse,
   VerifyLedgerReport,
   VerifyLedgerRequest,
   VerifyTrustReport,
@@ -107,6 +115,15 @@ function post<T>(path: string, body: unknown): Promise<T> {
   });
 }
 
+/** The contact document is the one route replaced whole under its own verb. */
+function put<T>(path: string, body: unknown): Promise<T> {
+  return request<T>(path, {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
 function query(params: Record<string, string | number | undefined>): string {
   const search = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
@@ -172,6 +189,54 @@ export function verifyTrust(body: VerifyTrustRequest): Promise<VerifyTrustReport
 
 export function verifyLedger(body: VerifyLedgerRequest): Promise<VerifyLedgerReport> {
   return post<VerifyLedgerReport>("/verify", body);
+}
+
+/**
+ * Replacement, not patch: both keys are always sent and a null clears that
+ * name. A replacement that would change nothing answers 409
+ * no_op_profile_update (proposal 003 section 1).
+ */
+export function replaceProfile(
+  identityId: string,
+  body: ReplaceProfileRequest,
+): Promise<ReplaceProfileResponse> {
+  return post<ReplaceProfileResponse>(`/identities/${identityId}/profile`, body);
+}
+
+/** Forces a DNS check and waits for it; the GET routes answer from cache. */
+export function forceVerification(identityId: string): Promise<VerificationResponse> {
+  return post<VerificationResponse>(`/identities/${identityId}/verification`, {});
+}
+
+/** The local contact store, valid for foreign identity ids too. */
+export function getContact(identityId: string): Promise<ContactResponse> {
+  return get<ContactResponse>(`/identities/${identityId}/contact`);
+}
+
+export function setContact(
+  identityId: string,
+  body: SetContactRequest,
+): Promise<ContactResponse> {
+  return put<ContactResponse>(`/identities/${identityId}/contact`, body);
+}
+
+/**
+ * "How do I know this identity", relative to one local root. from defaults on
+ * the node to the lowest local identity id, so the wallet sends the identity
+ * the selector holds.
+ */
+export function lookup(identityId: string, params: { from?: string } = {}): Promise<LookupResponse> {
+  return get<LookupResponse>(`/lookup/${identityId}${query(params)}`);
+}
+
+/** The current crawl generation, null when no crawl has run in this home. */
+export function getGraph(): Promise<GraphResponse> {
+  return get<GraphResponse>("/graph");
+}
+
+/** One crawl, run now: synchronizing is manual, there is no background timer. */
+export function syncGraph(): Promise<GraphSyncResponse> {
+  return post<GraphSyncResponse>("/graph/sync", {});
 }
 
 // Witness routes, read-only.

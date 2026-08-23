@@ -16,6 +16,7 @@ import {
 import { useResource } from "@/hooks/useResource";
 
 import { IdentityCreateForm } from "./IdentityCreateForm";
+import { IdentitySelector } from "./IdentitySelector";
 import { NodeInfoPanel } from "./NodeInfoPanel";
 
 export function WalletHome() {
@@ -23,6 +24,11 @@ export function WalletHome() {
 
   return (
     <div className="grid gap-4 lg:grid-cols-2">
+      {identities.data && (
+        <div className="lg:col-span-2">
+          <IdentitySelector identities={identities.data.identities} />
+        </div>
+      )}
       <NodeInfoPanel />
       <IdentityCreateForm onCreated={identities.reload} />
       <Card className="lg:col-span-2" data-testid="identity-list">

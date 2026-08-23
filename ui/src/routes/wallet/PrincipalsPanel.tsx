@@ -1,4 +1,5 @@
 import type { Identity } from "@/api/types";
+import { DeveloperOnly } from "@/components/DeveloperMode";
 import { Identifier } from "@/components/Identifier";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -42,9 +43,14 @@ export function PrincipalsPanel({ identity }: { identity: Identity }) {
                     </Badge>
                   )}
                 </div>
-                <div className="text-xs text-muted-foreground">
-                  active_key <Identifier value={principal.active_key} />
-                </div>
+                <DeveloperOnly>
+                  <div
+                    data-testid={`principal-key-${principal.identity}`}
+                    className="text-xs text-muted-foreground"
+                  >
+                    active_key <Identifier value={principal.active_key} />
+                  </div>
+                </DeveloperOnly>
               </li>
             ))}
           </ul>

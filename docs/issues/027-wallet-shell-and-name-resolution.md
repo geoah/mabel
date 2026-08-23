@@ -1,6 +1,6 @@
 # 027: wallet shell, name resolution and developer mode
 
-- Status: open
+- Status: done
 - Depends on: 026
 
 ## Goal

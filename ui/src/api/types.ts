@@ -66,6 +66,71 @@ export interface PrincipalEntry {
 }
 
 /**
+ * The two fields a ProfileUpdate carries (proposal 003 section 1). The payload
+ * replaces the whole document, so an omitted field clears that name; both the
+ * request body and the before-and-after diff use this shape.
+ */
+export interface ProfileFields {
+  display_name: string | null;
+  hostname: string | null;
+}
+
+/**
+ * Identity.profile: the fold of the latest ProfileUpdate, null on a ledger that
+ * carries none. signing_principal is who signed it, which is not always the
+ * ledger's own identity: any current controller may rename the ledger.
+ */
+export interface Profile extends ProfileFields {
+  signing_principal: SigningPrincipal;
+  event: string;
+  seq: number;
+}
+
+/**
+ * The five advisory DNS verdicts of proposal 003 section 2. unclaimed means the
+ * profile names no hostname; unverified also covers a hostname this node has
+ * never checked, which reads checked_at_ms: null.
+ */
+export type VerificationStatus =
+  | "verified"
+  | "mismatched"
+  | "unverified"
+  | "unreachable"
+  | "unclaimed";
+
+/** A failed re-check kept beside a decisive result, so both timestamps show. */
+export interface UnreachableRecheck {
+  checked_at_ms: number;
+  detail: string | null;
+}
+
+/**
+ * Identity.verification, always present. The verdict is advisory and gates no
+ * ledger validity (decision 015). stale marks a verified result older than 24
+ * hours, which is never rendered as a plain check.
+ */
+export interface Verification {
+  hostname: string | null;
+  status: VerificationStatus;
+  checked_at_ms: number | null;
+  last_verified_at_ms: number | null;
+  stale: boolean;
+  detail: string | null;
+  unreachable: UnreachableRecheck | null;
+}
+
+/**
+ * Identity.contact: the local private note of proposal 003 section 1, held in
+ * contacts/<identity_id>.json. It covers foreign identities too, and is never
+ * signed and never synced.
+ */
+export interface Contact {
+  nickname: string | null;
+  note: string | null;
+  updated_at_ms: number;
+}
+
+/**
  * contracts/README.md, "Identity document". active_key and reserve_commit are
  * the root-dependent exception to the nullability rule: a raw-rooted identity
  * carries both, an identity-rooted one holds no key of its own and omits them.
@@ -83,8 +148,167 @@ export interface Identity {
   trust: TrustRecord[];
   principals: PrincipalEntry[];
   open_invitation_count: number;
+  profile: Profile | null;
+  verification: Verification;
+  contact: Contact | null;
   active_key?: string;
   reserve_commit?: string;
+}
+
+/** Which source a resolved name came from, in the order section 4 fixes. */
+export type NameProvenance = "profile" | "alias" | "none";
+
+/**
+ * contracts/README.md, "ResolvedIdentity": the object returned everywhere a
+ * foreign identity renders. It carries the verdict as a status string alone,
+ * spelled verification_status, because a path hop needs the glyph and not six
+ * timestamps.
+ */
+export interface ResolvedIdentity {
+  identity_id: string;
+  display_name: string | null;
+  alias: string | null;
+  hostname: string | null;
+  verification_status: VerificationStatus;
+  provenance: NameProvenance;
+}
+
+/** One branch of an equivocation: the source that served it and the event. */
+export interface EquivocationBranch {
+  source: { kind: string; endpoint: string };
+  event: string;
+}
+
+/** Two signed events at one seq, recorded by the crawl (proposal 003 section 3). */
+export interface Equivocation {
+  at_seq: number;
+  branches: EquivocationBranch[];
+}
+
+/** One edge of a lookup path, carrying the freshness of the node it reaches. */
+export interface LookupHop {
+  from: ResolvedIdentity;
+  to: ResolvedIdentity;
+  attestation_event: string;
+  fetched_at_ms: number;
+  stale: boolean;
+  equivocation: Equivocation | null;
+}
+
+export interface LookupPath {
+  hops: LookupHop[];
+}
+
+/** One outgoing attestation of the looked-up identity. */
+export interface LookupTrustEntry {
+  subject: ResolvedIdentity;
+  attestation_event: string;
+  seq: number;
+}
+
+/** One incoming attestation this crawl happens to hold. */
+export interface LookupReverseEntry {
+  identity: ResolvedIdentity;
+  attestation_event: string;
+  seq: number;
+}
+
+/**
+ * best_effort is always true: the reverse list answers who in this crawl
+ * attests to the identity, never who trusts them in the world.
+ */
+export interface LookupReverse {
+  best_effort: true;
+  entries: LookupReverseEntry[];
+}
+
+/** What the crawl stopped for, null when nothing was cut. */
+export type TruncatedBy = "depth" | "nodes" | "fetches" | "time";
+
+/**
+ * GET /api/lookup/:identity_id?from=. An identity absent from the graph is a
+ * 200 with degrees null and an empty path list: "not in my crawl" is an answer.
+ */
+export interface LookupResponse {
+  ok: true;
+  identity: ResolvedIdentity;
+  from: ResolvedIdentity;
+  degrees: number | null;
+  paths: LookupPath[];
+  trust: LookupTrustEntry[];
+  reverse: LookupReverse;
+  equivocation: Equivocation | null;
+  fetched_at_ms: number | null;
+  stale: boolean;
+  sync_id: string | null;
+  last_sync_ms: number | null;
+  graph_stale: boolean;
+  graph_truncated: boolean;
+  truncated_by: TruncatedBy | null;
+}
+
+/** One crawl generation, described by contracts/README.md, "Graph". */
+export interface Graph {
+  sync_id: string;
+  last_sync_ms: number;
+  depth: number;
+  roots: ResolvedIdentity[];
+  node_count: number;
+  edge_count: number;
+  fetch_count: number;
+  truncated: boolean;
+  truncated_by: TruncatedBy | null;
+  equivocations: string[];
+  stale: boolean;
+}
+
+/** GET /api/graph. graph is null when no crawl has run in this node home. */
+export interface GraphResponse {
+  ok: true;
+  graph: Graph | null;
+}
+
+/** POST /api/graph/sync runs one crawl, so its graph is never null. */
+export interface GraphSyncResponse {
+  ok: true;
+  graph: Graph;
+}
+
+/**
+ * POST /api/identities/:identity_id/profile. Both keys are required and either
+ * may be null: a body missing one is refused with reason missing_field, because
+ * a partial update over a whole-document payload is how a hostname disappears.
+ */
+export type ReplaceProfileRequest = ProfileFields;
+
+export interface ReplaceProfileResponse {
+  ok: true;
+  ledger_id: string;
+  profile: Profile;
+  /** The profile as it was, which is what the confirmation diff shows. */
+  previous: ProfileFields;
+  head_seq: number;
+  head_event: string;
+  event: LedgerEvent;
+}
+
+/** POST /api/identities/:identity_id/verification forces a check and waits. */
+export interface VerificationResponse {
+  ok: true;
+  identity_id: string;
+  verification: Verification;
+}
+
+/** GET and PUT /api/identities/:identity_id/contact, valid for foreign ids too. */
+export interface ContactResponse {
+  ok: true;
+  identity_id: string;
+  contact: Contact | null;
+}
+
+export interface SetContactRequest {
+  nickname: string | null;
+  note: string | null;
 }
 
 /** GET /api/node on a wallet. */

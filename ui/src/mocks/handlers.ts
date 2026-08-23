@@ -60,6 +60,35 @@ export const handlers = [
     );
   }),
 
+  http.post("/api/identities/:identityId/profile", async ({ params, request }) => {
+    const body = await request.json();
+    return answer(() => store.replaceProfile(String(params.identityId), body as Body));
+  }),
+
+  http.post("/api/identities/:identityId/verification", ({ params }) =>
+    answer(() => store.forceVerification(String(params.identityId))),
+  ),
+
+  http.get("/api/identities/:identityId/contact", ({ params }) =>
+    answer(() => store.getContact(String(params.identityId))),
+  ),
+
+  http.put("/api/identities/:identityId/contact", async ({ params, request }) => {
+    const body = await request.json();
+    return answer(() => store.setContact(String(params.identityId), body as Body));
+  }),
+
+  http.get("/api/lookup/:identityId", ({ params, request }) => {
+    const from = new URL(request.url).searchParams.get("from");
+    return answer(() =>
+      store.lookup(String(params.identityId), { from: from ?? undefined }),
+    );
+  }),
+
+  http.get("/api/graph", () => answer(() => store.getGraph())),
+
+  http.post("/api/graph/sync", () => answer(() => store.syncGraph())),
+
   http.post("/api/trust", async ({ request }) => {
     const body = await request.json();
     return answer(() => store.addTrust(body as Body));

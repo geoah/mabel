@@ -5,11 +5,16 @@
 import type {
   AddTrustRequest,
   AppendResponse,
+  Contact,
+  ContactResponse,
   CreateIdentityRequest,
   CreateIdentityResponse,
   ErrorEnvelope,
   ForkListResponse,
   ForkRecord,
+  Graph,
+  GraphResponse,
+  GraphSyncResponse,
   Identity,
   IdentityListResponse,
   IdentityResponse,
@@ -17,10 +22,18 @@ import type {
   LedgerEvent,
   LedgerListResponse,
   LedgerPageResponse,
+  LookupHop,
+  LookupResponse,
+  ProfileFields,
+  ReplaceProfileResponse,
+  ResolvedIdentity,
   RevokeTrustRequest,
   RevokeTrustResponse,
+  SetContactRequest,
   SyncPushRequest,
   SyncPushResponse,
+  Verification,
+  VerificationResponse,
   VerifyLedgerReport,
   VerifyLedgerRequest,
   VerifyTrustReport,
@@ -34,8 +47,13 @@ import {
   BOB,
   createdIdentity,
   errors,
+  seedContact,
+  seedEdges,
   seedEvents,
+  seedGraph,
   seedIdentities,
+  seedLookup,
+  seedResolved,
   syncPush as syncPushFixture,
   verifyLedgerValid,
   verifyTrustRevoked,
@@ -97,9 +115,24 @@ export function setNodeRole(role: NodeRole | null): void {
   nodeRole = role;
 }
 
+/** One crawled attestation: who attests, to whom, with which event. */
+interface Edge {
+  from: string;
+  to: string;
+  attestation_event: string;
+  seq: number;
+}
+
 interface State {
   identities: Identity[];
   events: Map<string, LedgerEvent[]>;
+  /** contacts/<identity_id>.json, foreign ids included, never signed or synced. */
+  contacts: Map<string, Contact>;
+  /** The crawl generation this home holds, null before the first sync. */
+  graph: Graph | null;
+  /** How the crawl named the identities it reached, keyed by identity id. */
+  resolved: Map<string, ResolvedIdentity>;
+  edges: Edge[];
   /** The witness side, independent of the wallet: a witness holds copies. */
   held: HeldLedger[];
   forks: ForkRecord[];
@@ -108,19 +141,45 @@ interface State {
 let state: State = emptyState();
 
 function emptyState(): State {
-  return { identities: [], events: new Map(), held: [], forks: [] };
+  return {
+    identities: [],
+    events: new Map(),
+    contacts: new Map(),
+    graph: null,
+    resolved: new Map(),
+    edges: [],
+    held: [],
+    forks: [],
+  };
 }
 
 export function resetStore(): void {
   minted = 0;
   nodeRole = null;
+  const contacts = new Map<string, Contact>();
+  // Bob is a foreign identity with a local note: the contact store covers ids
+  // this home does not control.
+  contacts.set(BOB, { ...seedContact });
+  const identities = seedIdentities.map((identity) => ({
+    ...identity,
+    witnesses: [...identity.witnesses],
+    trust: identity.trust.map((record) => ({ ...record })),
+    profile: identity.profile ? { ...identity.profile } : null,
+    verification: { ...identity.verification },
+    contact: identity.contact ? { ...identity.contact } : null,
+  }));
+  for (const identity of identities) {
+    if (identity.contact) {
+      contacts.set(identity.identity_id, { ...identity.contact });
+    }
+  }
   state = {
-    identities: seedIdentities.map((identity) => ({
-      ...identity,
-      witnesses: [...identity.witnesses],
-      trust: identity.trust.map((record) => ({ ...record })),
-    })),
+    identities,
     events: new Map([[ALICE, seedEvents()]]),
+    contacts,
+    graph: { ...seedGraph, roots: seedGraph.roots.map((root) => ({ ...root })) },
+    resolved: seedResolved(),
+    edges: seedEdges(),
     held: witnessLedgers(),
     forks: witnessForks(),
   };
@@ -184,6 +243,17 @@ function appendResponse(identity: Identity, event: LedgerEvent): AppendResponse 
   };
 }
 
+/** status unclaimed with every other key null: the profile names no hostname. */
+const UNCLAIMED: Verification = {
+  hostname: null,
+  status: "unclaimed",
+  checked_at_ms: null,
+  last_verified_at_ms: null,
+  stale: false,
+  detail: null,
+  unreachable: null,
+};
+
 export function listIdentities(): IdentityListResponse {
   const identities = [...state.identities].sort((left, right) =>
     left.identity_id < right.identity_id ? -1 : 1,
@@ -240,6 +310,11 @@ export function createIdentity(body: Partial<CreateIdentityRequest>): CreateIden
       { identity: founder, active_key: founderKey, role: "controller", is_root: true },
     ],
     open_invitation_count: 0,
+    // A new ledger carries no ProfileUpdate yet, so it has no name of its own
+    // and nothing to check in DNS.
+    profile: null,
+    verification: UNCLAIMED,
+    contact: null,
     ...(rawRoot
       ? {
           active_key: activeKey,
@@ -490,6 +565,391 @@ export function verifyLedger(body: VerifyLedgerRequest): VerifyLedgerReport {
     declared_kind: identity.declared_kind,
     event_count: identity.event_count,
   };
+}
+
+// The profile, verification, contact, lookup and graph routes (proposal 003
+// sections 1 to 5). No DNS is resolved and no ledger is fetched here: the mock
+// keeps the documents those surfaces read, not the work behind them.
+
+function checkIdentityId(identityId: string): void {
+  if (identityId.length !== 52) {
+    failWith(400, {
+      ok: false,
+      code: 10,
+      message: "Schema error: identity id must be 52 base32 characters",
+      details: { reason: "malformed_identity_id", value: identityId },
+    });
+  }
+}
+
+function local(identityId: string): Identity | undefined {
+  return state.identities.find((entry) => entry.identity_id === identityId);
+}
+
+/**
+ * The name a surface shows for one identity: the profile display name, then the
+ * local alias or contact nickname, then nothing, in which case the id is the
+ * label (proposal 003 section 4).
+ */
+function resolve(identityId: string): ResolvedIdentity {
+  const nickname = state.contacts.get(identityId)?.nickname ?? null;
+  const held = local(identityId);
+  if (held) {
+    const displayName = held.profile?.display_name ?? null;
+    const alias = nickname ?? held.alias;
+    return {
+      identity_id: identityId,
+      display_name: displayName,
+      alias,
+      hostname: held.profile?.hostname ?? null,
+      verification_status: held.verification.status,
+      provenance: displayName ? "profile" : alias ? "alias" : "none",
+    };
+  }
+  const crawled = state.resolved.get(identityId);
+  const alias = nickname ?? crawled?.alias ?? null;
+  return {
+    identity_id: identityId,
+    display_name: crawled?.display_name ?? null,
+    alias,
+    hostname: crawled?.hostname ?? null,
+    verification_status: crawled?.verification_status ?? "unclaimed",
+    provenance: crawled?.display_name ? "profile" : alias ? "alias" : "none",
+  };
+}
+
+/** The signer of an append: the mock has one controller per ledger. */
+function signingPrincipal(identity: Identity): { identity: string; key: string } {
+  const root = identity.principals[0];
+  return { identity: root.identity, key: root.active_key };
+}
+
+/**
+ * The verdict after a profile replacement. An entry is bound to the hostname it
+ * verified, so a changed claim starts again at unverified and never inherits
+ * the old result (proposal 003 section 2).
+ */
+function verdictAfterReplacement(current: Verification, hostname: string | null): Verification {
+  if (hostname === null) {
+    return { ...UNCLAIMED };
+  }
+  if (hostname === current.hostname) {
+    return { ...current };
+  }
+  return {
+    hostname,
+    status: "unverified",
+    checked_at_ms: null,
+    last_verified_at_ms: null,
+    stale: true,
+    detail: null,
+    unreachable: null,
+  };
+}
+
+/** A display name that parses as an identity id is refused before signing. */
+function checkDisplayName(value: string | null): void {
+  if (value !== null && /^[a-z2-7]{52}$/.test(value)) {
+    failWith(400, {
+      ok: false,
+      code: 10,
+      message: "Schema error: ProfileUpdate.display_name is not a valid name: it parses as an identity id",
+      details: { reason: "invalid_display_name", field: "display_name", value },
+    });
+  }
+}
+
+/** POST /api/identities/:identity_id/profile: replacement, never a patch. */
+export function replaceProfile(
+  identityId: string,
+  body: Partial<ProfileFields>,
+): ReplaceProfileResponse {
+  const identity = find(identityId);
+  for (const field of ["display_name", "hostname"] as const) {
+    if (!(field in body)) {
+      failWith(400, {
+        ok: false,
+        code: 2,
+        message: `${field} is required`,
+        details: { reason: "missing_field", field },
+      });
+    }
+  }
+  const displayName = body.display_name ?? null;
+  const hostname = body.hostname ?? null;
+  checkDisplayName(displayName);
+  const previous: ProfileFields = {
+    display_name: identity.profile?.display_name ?? null,
+    hostname: identity.profile?.hostname ?? null,
+  };
+  if (previous.display_name === displayName && previous.hostname === hostname) {
+    failWith(409, {
+      ok: false,
+      code: 20,
+      message: `Policy error: this profile is already the profile of ${identityId}: nothing would change`,
+      details: {
+        reason: "no_op_profile_update",
+        ledger_id: identityId,
+        display_name: displayName,
+        hostname,
+        profile_event: identity.profile?.event ?? null,
+        profile_seq: identity.profile?.seq ?? null,
+      },
+    });
+  }
+  // The canonical encoding forbids a proto3 default on the wire, so a cleared
+  // name is simply absent from the payload.
+  const event = append(identity, "profile_update", {
+    ...(displayName === null ? {} : { display_name: displayName }),
+    ...(hostname === null ? {} : { hostname }),
+  });
+  identity.profile = {
+    display_name: displayName,
+    hostname,
+    signing_principal: signingPrincipal(identity),
+    event: event.event_id,
+    seq: event.seq,
+  };
+  identity.verification = verdictAfterReplacement(identity.verification, hostname);
+  return {
+    ok: true,
+    ledger_id: identityId,
+    profile: { ...identity.profile },
+    previous,
+    head_seq: identity.head_seq,
+    head_event: identity.head_event,
+    event,
+  };
+}
+
+/**
+ * POST /api/identities/:identity_id/verification. The real node queries
+ * _mabel.<hostname> and waits; the mock records a fresh decisive result so the
+ * verified and stale-verified states are both reachable in dev and demo mode.
+ */
+export function forceVerification(identityId: string): VerificationResponse {
+  const identity = find(identityId);
+  const hostname = identity.profile?.hostname ?? null;
+  if (hostname === null) {
+    failWith(409, {
+      ok: false,
+      code: 20,
+      message: `Policy error: ${identityId} claims no hostname, so there is nothing to check`,
+      details: { reason: "no_hostname_claimed", identity_id: identityId },
+    });
+  }
+  const checkedAt = Date.now();
+  identity.verification = {
+    hostname,
+    status: "verified",
+    checked_at_ms: checkedAt,
+    last_verified_at_ms: checkedAt,
+    stale: false,
+    detail: `_mabel.${hostname}. answers mabel=${identityId}`,
+    unreachable: null,
+  };
+  return { ok: true, identity_id: identityId, verification: { ...identity.verification } };
+}
+
+const CONTACT_CAPS = { nickname: 64, note: 512 } as const;
+
+export function getContact(identityId: string): ContactResponse {
+  checkIdentityId(identityId);
+  const contact = state.contacts.get(identityId);
+  return { ok: true, identity_id: identityId, contact: contact ? { ...contact } : null };
+}
+
+/** PUT replaces the contact document whole; both fields null clears it. */
+export function setContact(
+  identityId: string,
+  body: Partial<SetContactRequest>,
+): ContactResponse {
+  checkIdentityId(identityId);
+  const nickname = body.nickname ?? null;
+  const note = body.note ?? null;
+  for (const [field, value] of [
+    ["nickname", nickname],
+    ["note", note],
+  ] as const) {
+    if (value === null) {
+      continue;
+    }
+    const length = new TextEncoder().encode(value).length;
+    if (length > CONTACT_CAPS[field]) {
+      failWith(400, {
+        ok: false,
+        code: 10,
+        message: `Schema error: ${field} is at most ${CONTACT_CAPS[field]} bytes of UTF-8, and this is ${length}`,
+        details: {
+          reason: "contact_field_too_long",
+          field,
+          len: length,
+          cap: CONTACT_CAPS[field],
+        },
+      });
+    }
+  }
+  const held = local(identityId);
+  if (nickname === null && note === null) {
+    state.contacts.delete(identityId);
+    if (held) {
+      held.contact = null;
+    }
+    return { ok: true, identity_id: identityId, contact: null };
+  }
+  const contact: Contact = { nickname, note, updated_at_ms: Date.now() };
+  state.contacts.set(identityId, contact);
+  if (held) {
+    held.contact = { ...contact };
+  }
+  return { ok: true, identity_id: identityId, contact: { ...contact } };
+}
+
+function equivocationFor(identityId: string) {
+  if (!state.graph?.equivocations.includes(identityId)) {
+    return null;
+  }
+  return seedLookup.equivocation ? { ...seedLookup.equivocation } : null;
+}
+
+function hopOf(edge: Edge): LookupHop {
+  return {
+    from: resolve(edge.from),
+    to: resolve(edge.to),
+    attestation_event: edge.attestation_event,
+    fetched_at_ms: state.graph?.last_sync_ms ?? 0,
+    stale: state.graph?.stale ?? false,
+    equivocation: equivocationFor(edge.to),
+  };
+}
+
+/** Up to three shortest trails from one root, breadth first and depth capped. */
+function shortestTrails(from: string, to: string, maxDepth: number): Edge[][] {
+  if (from === to) {
+    return [];
+  }
+  const found: Edge[][] = [];
+  const seen = new Set([from]);
+  let level: { id: string; trail: Edge[] }[] = [{ id: from, trail: [] }];
+  for (let depth = 0; depth < maxDepth && found.length === 0 && level.length > 0; depth += 1) {
+    const next: { id: string; trail: Edge[] }[] = [];
+    for (const node of level) {
+      for (const edge of state.edges.filter((entry) => entry.from === node.id)) {
+        if (seen.has(edge.to)) {
+          continue;
+        }
+        const trail = [...node.trail, edge];
+        if (edge.to === to) {
+          found.push(trail);
+          continue;
+        }
+        next.push({ id: edge.to, trail });
+      }
+    }
+    for (const node of next) {
+      seen.add(node.id);
+    }
+    level = next;
+  }
+  return found.slice(0, 3);
+}
+
+/**
+ * GET /api/lookup/:identity_id?from=. An identity the crawl never reached is a
+ * 200 with degrees null and no paths: "not in my crawl" is an answer.
+ */
+export function lookup(identityId: string, params: { from?: string }): LookupResponse {
+  checkIdentityId(identityId);
+  const ordered = [...state.identities].sort((left, right) =>
+    left.identity_id < right.identity_id ? -1 : 1,
+  );
+  // The node defaults from to the lowest local identity id; the wallet sends
+  // the identity its selector holds.
+  const from = params.from ?? ordered[0]?.identity_id;
+  if (from === undefined || !local(from)) {
+    failWith(400, {
+      ok: false,
+      code: 2,
+      message: `no identity here is named ${from}`,
+      details: { reason: "unknown_from_identity", parameter: "from", value: String(from) },
+    });
+  }
+  const trails = shortestTrails(from, identityId, state.graph?.depth ?? 2);
+  return {
+    ok: true,
+    identity: resolve(identityId),
+    from: resolve(from),
+    degrees: trails.length > 0 ? trails[0].length : null,
+    paths: trails.map((trail) => ({ hops: trail.map(hopOf) })),
+    trust: state.edges
+      .filter((edge) => edge.from === identityId)
+      .map((edge) => ({
+        subject: resolve(edge.to),
+        attestation_event: edge.attestation_event,
+        seq: edge.seq,
+      })),
+    reverse: {
+      best_effort: true,
+      entries: state.edges
+        .filter((edge) => edge.to === identityId)
+        .map((edge) => ({
+          identity: resolve(edge.from),
+          attestation_event: edge.attestation_event,
+          seq: edge.seq,
+        })),
+    },
+    equivocation: equivocationFor(identityId),
+    fetched_at_ms: state.graph?.last_sync_ms ?? null,
+    stale: state.graph?.stale ?? false,
+    sync_id: state.graph?.sync_id ?? null,
+    last_sync_ms: state.graph?.last_sync_ms ?? null,
+    graph_stale: state.graph?.stale ?? false,
+    graph_truncated: state.graph?.truncated ?? false,
+    truncated_by: state.graph?.truncated_by ?? null,
+  };
+}
+
+function cloneGraph(graph: Graph): Graph {
+  return { ...graph, roots: graph.roots.map((root) => ({ ...root })), equivocations: [...graph.equivocations] };
+}
+
+export function getGraph(): GraphResponse {
+  return { ok: true, graph: state.graph ? cloneGraph(state.graph) : null };
+}
+
+/** POST /api/graph/sync mints one generation; synchronizing is always manual. */
+export function syncGraph(): GraphSyncResponse {
+  if (state.identities.length === 0) {
+    failWith(400, {
+      ok: false,
+      code: 2,
+      message: "this home holds no identity to crawl from",
+      details: { reason: "no_local_identity" },
+    });
+  }
+  const now = Date.now();
+  const nodes = new Set<string>(state.identities.map((entry) => entry.identity_id));
+  for (const edge of state.edges) {
+    nodes.add(edge.from);
+    nodes.add(edge.to);
+  }
+  state.graph = {
+    sync_id: `${now}-${mintId("sync").slice(0, 5)}`,
+    last_sync_ms: now,
+    depth: seedGraph.depth,
+    // Every local identity is a crawl root at depth 0 (proposal 003 section 3).
+    roots: [...state.identities]
+      .sort((left, right) => (left.identity_id < right.identity_id ? -1 : 1))
+      .map((entry) => resolve(entry.identity_id)),
+    node_count: nodes.size,
+    edge_count: state.edges.length,
+    fetch_count: nodes.size,
+    truncated: seedGraph.truncated,
+    truncated_by: seedGraph.truncated_by,
+    equivocations: [...seedGraph.equivocations],
+    stale: false,
+  };
+  return { ok: true, graph: cloneGraph(state.graph) };
 }
 
 // The witness routes. Every one of them reads: a witness serves no mutation
