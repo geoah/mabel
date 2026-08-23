@@ -1,10 +1,10 @@
 import { useState } from "react";
-import { Link } from "react-router";
 
 import { listForks } from "@/api/client";
 import type { ForkRecord, LedgerEvent } from "@/api/types";
 import { ErrorEnvelopeView } from "@/components/ErrorEnvelopeView";
-import { Field, FieldGrid, Nullable } from "@/components/Field";
+import { Field, FieldGrid } from "@/components/Field";
+import { Identifier } from "@/components/Identifier";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useResource } from "@/hooks/useResource";
@@ -28,21 +28,21 @@ function ForkEventPane({
       <p className="mb-2 text-xs font-medium">
         {side === "kept" ? "kept, the event stored first" : "conflicting, recorded not stored"}
       </p>
-      <FieldGrid className="grid-cols-[7rem_1fr]">
-        <Field label="event_id" testId={`${testId}-event-id`} mono>
-          {event.event_id}
+      <FieldGrid className="sm:grid-cols-[7rem_minmax(0,1fr)]">
+        <Field label="event_id" testId={`${testId}-event-id`}>
+          <Identifier value={event.event_id} />
         </Field>
         <Field label="seq" testId={`${testId}-seq`}>
           {event.seq}
         </Field>
-        <Field label="prev" testId={`${testId}-prev`} mono>
-          <Nullable value={event.prev} />
+        <Field label="prev" testId={`${testId}-prev`}>
+          <Identifier value={event.prev} />
         </Field>
         <Field label="timestamp_ms" testId={`${testId}-timestamp-ms`}>
           {event.timestamp_ms}
         </Field>
-        <Field label="author_key" testId={`${testId}-author-key`} mono>
-          {event.author_key}
+        <Field label="author_key" testId={`${testId}-author-key`}>
+          <Identifier value={event.author_key} />
         </Field>
         <Field label="payload_kind" testId={`${testId}-payload-kind`}>
           {event.payload_kind}
@@ -61,14 +61,12 @@ function ForkRecordView({ record }: { record: ForkRecord }) {
   return (
     <div className="space-y-3 rounded-md border p-3" data-testid={`fork-record-${key}`}>
       <FieldGrid>
-        <Field label="ledger_id" testId={`fork-ledger-id-${key}`} mono>
-          <Link
+        <Field label="ledger_id" testId={`fork-ledger-id-${key}`}>
+          <Identifier
+            value={record.ledger_id}
             to={`/witness/ledgers/${record.ledger_id}`}
-            className="underline"
-            data-testid={`fork-ledger-link-${key}`}
-          >
-            {record.ledger_id}
-          </Link>
+            linkTestId={`fork-ledger-link-${key}`}
+          />
         </Field>
         <Field label="seq" testId={`fork-seq-${key}`}>
           {record.seq}
@@ -76,8 +74,8 @@ function ForkRecordView({ record }: { record: ForkRecord }) {
         <Field label="observed_ms" testId={`fork-observed-ms-${key}`}>
           {record.observed_ms}
         </Field>
-        <Field label="source_endpoint" testId={`fork-source-endpoint-${key}`} mono>
-          {record.source_endpoint}
+        <Field label="source_endpoint" testId={`fork-source-endpoint-${key}`}>
+          <Identifier value={record.source_endpoint} />
         </Field>
       </FieldGrid>
       <p className="text-xs" data-testid={`fork-statement-${key}`}>
@@ -115,8 +113,11 @@ export function ForksPanel({ ledgerId }: { ledgerId?: string }) {
       </CardHeader>
       <CardContent className="space-y-3">
         {ledgerId && (
-          <p className="text-xs text-muted-foreground" data-testid="witness-forks-filter">
-            filtered to ledger_id {ledgerId}
+          <p
+            className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground"
+            data-testid="witness-forks-filter"
+          >
+            filtered to ledger_id <Identifier value={ledgerId} />
           </p>
         )}
         {page.loading && <p data-testid="witness-forks-loading">loading</p>}
@@ -134,7 +135,7 @@ export function ForksPanel({ ledgerId }: { ledgerId?: string }) {
             <p className="text-xs text-muted-foreground" data-testid="witness-forks-holdings-note">
               {WITNESS_HOLDINGS_NOTE}
             </p>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <Button
                 variant="outline"
                 size="sm"

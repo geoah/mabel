@@ -1,6 +1,7 @@
 import type { VerifyReport } from "@/api/types";
 import { DeclaredKindNote, DeclaredKindValue } from "@/components/DeclaredKind";
 import { Field, FieldGrid, Nullable } from "@/components/Field";
+import { Identifier } from "@/components/Identifier";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -30,24 +31,37 @@ export function VerifyReportView({ report }: { report: VerifyReport }) {
           <Field label="kind" testId="verify-report-kind">
             {report.kind}
           </Field>
-          <Field label="source" testId="verify-report-source" mono>
-            {report.source}
+          <Field label="source" testId="verify-report-source">
+            <Identifier value={report.source} full />
           </Field>
-          <Field label="sources_queried" testId="verify-report-sources-queried" mono>
-            {report.sources_queried.join(", ")}
+          <Field label="sources_queried" testId="verify-report-sources-queried">
+            <span className="flex flex-col gap-1">
+              {report.sources_queried.map((source) => (
+                <Identifier key={source} value={source} full />
+              ))}
+            </span>
           </Field>
           <Field label="head_seq" testId="verify-report-head-seq">
             {report.head_seq}
           </Field>
-          <Field label="head_event" testId="verify-report-head-event" mono>
-            {report.head_event}
+          <Field label="head_event" testId="verify-report-head-event">
+            <Identifier value={report.head_event} full />
           </Field>
           <Field label="fetched_at_ms" testId="verify-report-fetched-at-ms">
             {report.fetched_at_ms}
           </Field>
           {report.signing_principal !== undefined && (
-            <Field label="signing_principal" testId="verify-report-signing-principal" mono>
-              <Nullable value={report.signing_principal} />
+            <Field label="signing_principal" testId="verify-report-signing-principal">
+              {report.signing_principal === null ? (
+                <Identifier value={null} full />
+              ) : (
+                <span className="flex flex-col gap-1">
+                  <Identifier value={report.signing_principal.identity} full />
+                  <span className="text-muted-foreground text-xs">
+                    key <Identifier value={report.signing_principal.key} full />
+                  </span>
+                </span>
+              )}
             </Field>
           )}
           {report.kind === "trust" ? (
@@ -60,7 +74,7 @@ export function VerifyReportView({ report }: { report: VerifyReport }) {
           <DeclaredKindNote testId="verify-report-declared-kind-note" />
         )}
         {report.kind === "trust" && report.revoked_attestations.length > 0 && (
-          <Table data-testid="verify-report-revoked-attestations">
+          <Table stack="md" data-testid="verify-report-revoked-attestations">
             <TableHeader>
               <TableRow>
                 <TableHead>attestation_event</TableHead>
@@ -75,14 +89,14 @@ export function VerifyReportView({ report }: { report: VerifyReport }) {
                   key={revoked.attestation_event}
                   data-testid={`verify-report-revoked-${revoked.attestation_event}`}
                 >
-                  <TableCell className="break-all font-mono text-xs">
-                    {revoked.attestation_event}
+                  <TableCell label="attestation_event">
+                    <Identifier value={revoked.attestation_event} full />
                   </TableCell>
-                  <TableCell>{revoked.attestation_seq}</TableCell>
-                  <TableCell className="break-all font-mono text-xs">
-                    {revoked.revocation_event}
+                  <TableCell label="attestation_seq">{revoked.attestation_seq}</TableCell>
+                  <TableCell label="revocation_event">
+                    <Identifier value={revoked.revocation_event} full />
                   </TableCell>
-                  <TableCell>{revoked.revocation_seq}</TableCell>
+                  <TableCell label="revocation_seq">{revoked.revocation_seq}</TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -112,11 +126,11 @@ function TrustFields({ report }: { report: Extract<VerifyReport, { kind: "trust"
           {String(report.trusted)}
         </Badge>
       </Field>
-      <Field label="issuer" testId="verify-report-issuer" mono>
-        {report.issuer}
+      <Field label="issuer" testId="verify-report-issuer">
+        <Identifier value={report.issuer} full />
       </Field>
-      <Field label="subject" testId="verify-report-subject" mono>
-        {report.subject}
+      <Field label="subject" testId="verify-report-subject">
+        <Identifier value={report.subject} full />
       </Field>
       <Field label="subject_resolution" testId="verify-report-subject-resolution">
         {report.subject_resolution}
@@ -124,8 +138,8 @@ function TrustFields({ report }: { report: Extract<VerifyReport, { kind: "trust"
       <Field label="subject_note" testId="verify-report-subject-note">
         <Nullable value={report.subject_note} />
       </Field>
-      <Field label="attestation_event" testId="verify-report-attestation-event" mono>
-        <Nullable value={report.attestation_event} />
+      <Field label="attestation_event" testId="verify-report-attestation-event">
+        <Identifier value={report.attestation_event} full />
       </Field>
       <Field label="attestation_seq" testId="verify-report-attestation-seq">
         <Nullable value={report.attestation_seq} />
@@ -140,8 +154,8 @@ function TrustFields({ report }: { report: Extract<VerifyReport, { kind: "trust"
 function LedgerFields({ report }: { report: Extract<VerifyReport, { kind: "ledger" }> }) {
   return (
     <>
-      <Field label="ledger_id" testId="verify-report-ledger-id" mono>
-        {report.ledger_id}
+      <Field label="ledger_id" testId="verify-report-ledger-id">
+        <Identifier value={report.ledger_id} full />
       </Field>
       <Field label="declared_kind" testId="verify-report-declared-kind-row">
         <DeclaredKindValue

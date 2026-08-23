@@ -3,6 +3,7 @@ import { type FormEvent, useState } from "react";
 import { type ApiError, setIdentityWitnesses } from "@/api/client";
 import type { Identity } from "@/api/types";
 import { ErrorEnvelopeView } from "@/components/ErrorEnvelopeView";
+import { Identifier } from "@/components/Identifier";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -58,12 +59,8 @@ export function WitnessConfigPanel({
         ) : (
           <ul data-testid="witness-list" className="space-y-1">
             {identity.witnesses.map((id) => (
-              <li
-                key={id}
-                data-testid={`witness-row-${id}`}
-                className="break-all font-mono text-xs"
-              >
-                {id}
+              <li key={id} data-testid={`witness-row-${id}`}>
+                <Identifier value={id} />
               </li>
             ))}
           </ul>

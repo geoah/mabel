@@ -14,6 +14,8 @@ import {
 } from "@/mocks/fixtures";
 import { server } from "@/mocks/server";
 
+const BOB_KEY = "hpjcooyeb7dsjfaxusuucqfyzvv4y2m2z6ohsvkfw3ivl6dqssba";
+
 import { renderApp } from "./render";
 
 function serveReport(document: unknown, status = 200) {
@@ -64,7 +66,14 @@ describe("verify report", () => {
     expect(screen.getByTestId("verify-report-verified-means")).toHaveTextContent(
       verifyTrustTrusted.verified_means,
     );
-    expect(screen.queryByTestId("verify-report-signing-principal")).not.toBeInTheDocument();
+    // The frozen trusted fixture carries the signing principal.
+    const principal = verifyTrustTrusted.signing_principal;
+    expect(principal).not.toBeNull();
+    if (principal) {
+      const field = screen.getByTestId("verify-report-signing-principal");
+      expect(field).toHaveTextContent(principal.identity);
+      expect(field).toHaveTextContent(principal.key);
+    }
   });
 
   it("renders the revoked report with every revoked attestation", async () => {
@@ -102,12 +111,14 @@ describe("verify report", () => {
   it("names the signing principal when the report carries one", async () => {
     const withPrincipal: VerifyTrustReport = {
       ...verifyTrustTrusted,
-      signing_principal: BOB,
+      signing_principal: { identity: BOB, key: BOB_KEY },
     };
     serveReport(withPrincipal);
     await submitTrust();
 
-    expect(screen.getByTestId("verify-report-signing-principal")).toHaveTextContent(BOB);
+    const field = screen.getByTestId("verify-report-signing-principal");
+    expect(field).toHaveTextContent(BOB);
+    expect(field).toHaveTextContent(BOB_KEY);
   });
 
   it("renders the ledger report with the declared kind called advisory", async () => {

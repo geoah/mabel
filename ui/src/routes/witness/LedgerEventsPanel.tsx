@@ -2,7 +2,8 @@ import { useState } from "react";
 
 import { getLedgerEvents } from "@/api/client";
 import { ErrorEnvelopeView } from "@/components/ErrorEnvelopeView";
-import { Field, FieldGrid, Nullable } from "@/components/Field";
+import { Field, FieldGrid } from "@/components/Field";
+import { Identifier } from "@/components/Identifier";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -37,7 +38,7 @@ export function LedgerEventsPanel({ ledgerId }: { ledgerId: string }) {
         <CardDescription>since is inclusive: the page starts at seq equal to since</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
-        <div className="flex items-end gap-2">
+        <div className="flex flex-wrap items-end gap-2">
           <div className="space-y-1">
             <Label htmlFor="witness-events-since">since</Label>
             <Input
@@ -84,7 +85,7 @@ export function LedgerEventsPanel({ ledgerId }: { ledgerId: string }) {
                 {String(page.data.more)}
               </Field>
             </FieldGrid>
-            <Table data-testid="witness-events-table">
+            <Table stack="lg" data-testid="witness-events-table">
               <TableHeader>
                 <TableRow>
                   <TableHead>seq</TableHead>
@@ -99,34 +100,35 @@ export function LedgerEventsPanel({ ledgerId }: { ledgerId: string }) {
               <TableBody>
                 {page.data.events.map((event) => (
                   <TableRow key={event.event_id} data-testid={`witness-event-${event.seq}`}>
-                    <TableCell data-testid={`witness-event-seq-${event.seq}`}>
+                    <TableCell label="seq" data-testid={`witness-event-seq-${event.seq}`}>
                       {event.seq}
                     </TableCell>
-                    <TableCell data-testid={`witness-event-payload-kind-${event.seq}`}>
+                    <TableCell
+                      label="payload_kind"
+                      data-testid={`witness-event-payload-kind-${event.seq}`}
+                    >
                       {event.payload_kind}
                     </TableCell>
-                    <TableCell
-                      data-testid={`witness-event-id-${event.seq}`}
-                      className="break-all font-mono text-xs"
-                    >
-                      {event.event_id}
+                    <TableCell label="event_id" data-testid={`witness-event-id-${event.seq}`}>
+                      <Identifier value={event.event_id} />
+                    </TableCell>
+                    <TableCell label="prev" data-testid={`witness-event-prev-${event.seq}`}>
+                      <Identifier value={event.prev} />
                     </TableCell>
                     <TableCell
-                      data-testid={`witness-event-prev-${event.seq}`}
-                      className="break-all font-mono text-xs"
+                      label="timestamp_ms"
+                      data-testid={`witness-event-timestamp-ms-${event.seq}`}
                     >
-                      <Nullable value={event.prev} />
-                    </TableCell>
-                    <TableCell data-testid={`witness-event-timestamp-ms-${event.seq}`}>
                       {event.timestamp_ms}
                     </TableCell>
                     <TableCell
+                      label="author_key"
                       data-testid={`witness-event-author-key-${event.seq}`}
-                      className="break-all font-mono text-xs"
                     >
-                      {event.author_key}
+                      <Identifier value={event.author_key} />
                     </TableCell>
                     <TableCell
+                      label="payload"
                       data-testid={`witness-event-payload-${event.seq}`}
                       className="break-all font-mono text-xs"
                     >

@@ -2,3 +2,4 @@ node_modules
 dist
 *.local
 dist-demo
+screenshots

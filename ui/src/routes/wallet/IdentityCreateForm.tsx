@@ -4,6 +4,7 @@ import { createIdentity } from "@/api/client";
 import type { CreateIdentityResponse, DeclaredKind } from "@/api/types";
 import { DeclaredKindNote } from "@/components/DeclaredKind";
 import { ErrorEnvelopeView } from "@/components/ErrorEnvelopeView";
+import { Identifier } from "@/components/Identifier";
 import type { ApiError } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -101,11 +102,11 @@ export function IdentityCreateForm({ onCreated }: { onCreated: () => void }) {
         )}
         {created && (
           <div className="mt-3 space-y-1 text-xs" data-testid="identity-create-result">
-            <p data-testid="identity-create-result-identity-id" className="break-all font-mono">
-              {created.identity.identity_id}
+            <p data-testid="identity-create-result-identity-id">
+              <Identifier value={created.identity.identity_id} />
             </p>
-            <p data-testid="identity-create-result-inception-event" className="break-all font-mono">
-              {created.inception_event}
+            <p data-testid="identity-create-result-inception-event">
+              <Identifier value={created.inception_event} />
             </p>
           </div>
         )}

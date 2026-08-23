@@ -1,6 +1,7 @@
 import { getWalletNode } from "@/api/client";
 import { ErrorEnvelopeView } from "@/components/ErrorEnvelopeView";
 import { Field, FieldGrid } from "@/components/Field";
+import { Identifier } from "@/components/Identifier";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useResource } from "@/hooks/useResource";
 
@@ -20,17 +21,25 @@ export function NodeInfoPanel() {
             <Field label="role" testId="node-role">
               {node.data.role}
             </Field>
-            <Field label="endpoint_id" testId="node-endpoint-id" mono>
-              {node.data.endpoint_id}
+            <Field label="endpoint_id" testId="node-endpoint-id">
+              <Identifier value={node.data.endpoint_id} />
             </Field>
-            <Field label="http_bind" testId="node-http-bind">
+            <Field label="http_bind" testId="node-http-bind" mono>
               {node.data.http_bind}
             </Field>
             <Field label="relay" testId="node-relay">
               {node.data.relay}
             </Field>
-            <Field label="witnesses" testId="node-witnesses" mono>
-              {node.data.witnesses.length === 0 ? "none" : node.data.witnesses.join(", ")}
+            <Field label="witnesses" testId="node-witnesses">
+              {node.data.witnesses.length === 0 ? (
+                "none"
+              ) : (
+                <span className="flex flex-col gap-1">
+                  {node.data.witnesses.map((witness) => (
+                    <Identifier key={witness} value={witness} />
+                  ))}
+                </span>
+              )}
             </Field>
             <Field label="storage_capacity" testId="node-storage-capacity">
               {node.data.storage_capacity}

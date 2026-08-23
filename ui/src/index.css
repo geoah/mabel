@@ -31,4 +31,37 @@ body {
   background-color: var(--color-background);
   color: var(--color-foreground);
   font-family: ui-sans-serif, system-ui, sans-serif;
+  /*
+   * The node writes 52-character ids into its own sentences, and a phone column
+   * is narrower than one. Breaking inside a word that does not fit its line
+   * keeps those sentences on the screen instead of pushing the page sideways.
+   * break-word, not anywhere: a column still asks for the width of its longest
+   * word, so a table stops cutting timestamps in half.
+   */
+  overflow-wrap: break-word;
+}
+
+/**
+ * A table that outgrows its card scrolls inside it, and says so: the shadows
+ * are painted by the scroll container itself, so each one shows only while
+ * there is content that way. Nothing is drawn when the table fits.
+ */
+.table-scroll {
+  background:
+    linear-gradient(to right, var(--color-card) 30%, transparent) left center / 2rem 100% no-repeat
+      local,
+    linear-gradient(to left, var(--color-card) 30%, transparent) right center / 2rem 100% no-repeat
+      local,
+    radial-gradient(farthest-side at 0 50%, rgb(0 0 0 / 0.14), transparent) left center / 0.5rem
+      100% no-repeat scroll,
+    radial-gradient(farthest-side at 100% 50%, rgb(0 0 0 / 0.14), transparent) right center /
+      0.5rem 100% no-repeat scroll;
+}
+
+/**
+ * The hidden middle of a truncated identifier stays in the DOM as sr-only text,
+ * so the ellipsis has to be drawn: CSS cannot ellipsize the middle of a string.
+ */
+.identifier-ellipsis::before {
+  content: "\2026";
 }

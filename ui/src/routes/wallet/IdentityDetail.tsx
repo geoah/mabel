@@ -4,7 +4,8 @@ import { Link, useParams } from "react-router";
 import { getIdentity } from "@/api/client";
 import { DeclaredKindNote, DeclaredKindValue } from "@/components/DeclaredKind";
 import { ErrorEnvelopeView } from "@/components/ErrorEnvelopeView";
-import { Field, FieldGrid, Nullable } from "@/components/Field";
+import { Field, FieldGrid } from "@/components/Field";
+import { Identifier } from "@/components/Identifier";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useResource } from "@/hooks/useResource";
 
@@ -22,7 +23,11 @@ export function IdentityDetail() {
 
   return (
     <div className="space-y-4">
-      <Link to="/wallet" className="text-sm underline" data-testid="identity-back">
+      <Link
+        to="/wallet"
+        className="inline-flex min-h-10 items-center text-sm underline"
+        data-testid="identity-back"
+      >
         Identities
       </Link>
       {identity.loading && <p data-testid="identity-detail-loading">loading</p>}
@@ -33,12 +38,12 @@ export function IdentityDetail() {
         <div className="grid gap-4 lg:grid-cols-2">
           <Card data-testid="identity-detail">
             <CardHeader>
-              <CardTitle>{identity.data.identity.alias}</CardTitle>
+              <CardTitle className="text-base">{identity.data.identity.alias}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
               <FieldGrid>
-                <Field label="identity_id" testId="identity-detail-identity-id" mono>
-                  {identity.data.identity.identity_id}
+                <Field label="identity_id" testId="identity-detail-identity-id">
+                  <Identifier value={identity.data.identity.identity_id} />
                 </Field>
                 <Field label="declared_kind" testId="identity-detail-declared-kind-row">
                   <DeclaredKindValue
@@ -55,17 +60,17 @@ export function IdentityDetail() {
                 <Field label="head_seq" testId="identity-detail-head-seq">
                   {identity.data.identity.head_seq}
                 </Field>
-                <Field label="head_event" testId="identity-detail-head-event" mono>
-                  {identity.data.identity.head_event}
+                <Field label="head_event" testId="identity-detail-head-event">
+                  <Identifier value={identity.data.identity.head_event} />
                 </Field>
                 <Field label="event_count" testId="identity-detail-event-count">
                   {identity.data.identity.event_count}
                 </Field>
-                <Field label="active_key" testId="identity-detail-active-key" mono>
-                  <Nullable value={identity.data.identity.active_key} />
+                <Field label="active_key" testId="identity-detail-active-key">
+                  <Identifier value={identity.data.identity.active_key} />
                 </Field>
-                <Field label="reserve_commit" testId="identity-detail-reserve-commit" mono>
-                  <Nullable value={identity.data.identity.reserve_commit} />
+                <Field label="reserve_commit" testId="identity-detail-reserve-commit">
+                  <Identifier value={identity.data.identity.reserve_commit} />
                 </Field>
               </FieldGrid>
               <DeclaredKindNote testId="identity-detail-declared-kind-note" />

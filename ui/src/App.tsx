@@ -15,12 +15,18 @@ const LINKS = [
 
 export function App() {
   return (
-    <div className="mx-auto max-w-6xl p-4">
+    // pb-20 keeps the last card clear of the bar the nav becomes on a phone.
+    // The wider cap on xl is what lets the nine-column witness table fit.
+    <div className="mx-auto max-w-6xl px-3 pt-3 pb-20 sm:px-4 sm:pt-4 md:pb-4 xl:max-w-7xl">
       <header className="mb-4 flex items-baseline gap-4 border-b pb-3">
         <span className="text-sm font-semibold" data-testid="app-title">
           mabel
         </span>
-        <nav className="flex gap-3">
+        {/*
+          One nav element at every width: a row in the header on md+, a fixed
+          bottom bar below it, where a thumb reaches it.
+        */}
+        <nav className="flex max-md:fixed max-md:inset-x-0 max-md:bottom-0 max-md:z-20 max-md:border-t max-md:bg-background md:gap-3">
           {LINKS.map((link) => (
             <NavLink
               key={link.to}
@@ -28,7 +34,10 @@ export function App() {
               end={link.to === "/wallet"}
               data-testid={link.testId}
               className={({ isActive }) =>
-                cn("text-sm", isActive ? "font-medium underline" : "text-muted-foreground")
+                cn(
+                  "flex min-h-11 items-center justify-center px-3 text-sm max-md:flex-1 md:min-h-0 md:px-0",
+                  isActive ? "font-medium underline" : "text-muted-foreground",
+                )
               }
             >
               {link.label}

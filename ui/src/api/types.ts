@@ -260,11 +260,14 @@ export interface VerifyTrustReport extends ReportProvenance {
   revoked_attestations: RevokedAttestation[];
   /** Flag L, verbatim. */
   subject_control: string;
-  /**
-   * The author_key and the principal it matched (proposal 002 section 5). Not in
-   * the frozen fixtures, so it is optional until the membership surface freezes.
-   */
-  signing_principal?: string | null;
+  /** The author_key and the principal it matched (proposal 002 section 5). */
+  signing_principal?: SigningPrincipal | null;
+}
+
+/** The principal whose key signed an event (proposal 002 section 5). */
+export interface SigningPrincipal {
+  identity: string;
+  key: string;
 }
 
 /** POST /api/verify with kind ledger, and mabel verify ledger --json. */
@@ -277,7 +280,7 @@ export interface VerifyLedgerReport extends ReportProvenance {
   valid_to_seq: number;
   failed_at_seq: number | null;
   event_count: number;
-  signing_principal?: string | null;
+  signing_principal?: SigningPrincipal | null;
 }
 
 export type VerifyReport = VerifyTrustReport | VerifyLedgerReport;

@@ -4,6 +4,7 @@ import { type ApiError, syncPush } from "@/api/client";
 import type { SyncPushResponse } from "@/api/types";
 import { ErrorEnvelopeView } from "@/components/ErrorEnvelopeView";
 import { Field, FieldGrid, Nullable } from "@/components/Field";
+import { Identifier } from "@/components/Identifier";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -67,17 +68,17 @@ export function SyncPushPanel({ identityId }: { identityId: string }) {
         {report && (
           <div className="space-y-2" data-testid="sync-push-report">
             <FieldGrid>
-              <Field label="ledger_id" testId="sync-push-ledger-id" mono>
-                {report.ledger_id}
+              <Field label="ledger_id" testId="sync-push-ledger-id">
+                <Identifier value={report.ledger_id} />
               </Field>
               <Field label="head_seq" testId="sync-push-head-seq">
                 {report.head_seq}
               </Field>
-              <Field label="head_event" testId="sync-push-head-event" mono>
-                {report.head_event}
+              <Field label="head_event" testId="sync-push-head-event">
+                <Identifier value={report.head_event} />
               </Field>
             </FieldGrid>
-            <Table data-testid="sync-push-results">
+            <Table stack="lg" data-testid="sync-push-results">
               <TableHeader>
                 <TableRow>
                   <TableHead>endpoint</TableHead>
@@ -95,25 +96,29 @@ export function SyncPushPanel({ identityId }: { identityId: string }) {
                     key={result.endpoint}
                     data-testid={`sync-push-result-${result.endpoint}`}
                   >
-                    <TableCell className="break-all font-mono text-xs">
-                      {result.endpoint}
+                    <TableCell label="endpoint">
+                      <Identifier value={result.endpoint} />
                     </TableCell>
-                    <TableCell data-testid={`push-status-${result.endpoint}`}>
+                    <TableCell label="status" data-testid={`push-status-${result.endpoint}`}>
                       {result.status}
                     </TableCell>
-                    <TableCell data-testid={`push-head-seq-${result.endpoint}`}>
+                    <TableCell label="head_seq" data-testid={`push-head-seq-${result.endpoint}`}>
                       <Nullable value={result.head_seq} />
                     </TableCell>
-                    <TableCell data-testid={`push-stored-${result.endpoint}`}>
+                    <TableCell label="stored" data-testid={`push-stored-${result.endpoint}`}>
                       {result.stored}
                     </TableCell>
-                    <TableCell data-testid={`push-reject-code-${result.endpoint}`}>
+                    <TableCell
+                      label="reject_code"
+                      data-testid={`push-reject-code-${result.endpoint}`}
+                    >
                       <Nullable value={result.reject_code} />
                     </TableCell>
-                    <TableCell data-testid={`push-at-seq-${result.endpoint}`}>
+                    <TableCell label="at_seq" data-testid={`push-at-seq-${result.endpoint}`}>
                       <Nullable value={result.at_seq} />
                     </TableCell>
                     <TableCell
+                      label="message"
                       data-testid={`push-message-${result.endpoint}`}
                       className="text-xs"
                     >

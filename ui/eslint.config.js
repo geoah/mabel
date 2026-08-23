@@ -4,7 +4,24 @@ import tseslint from "typescript-eslint";
 import reactHooks from "eslint-plugin-react-hooks";
 
 export default tseslint.config(
-  { ignores: ["dist", "public/mockServiceWorker.js", "node_modules"] },
+  {
+    ignores: [
+      "dist",
+      "dist-demo",
+      "screenshots",
+      "public/mockServiceWorker.js",
+      "node_modules",
+    ],
+  },
+  {
+    // A script runs in node and hands functions to a page, so it names both.
+    files: ["scripts/**/*.mjs"],
+    extends: [js.configs.recommended],
+    languageOptions: {
+      ecmaVersion: 2022,
+      globals: { ...globals.node, ...globals.browser },
+    },
+  },
   {
     files: ["**/*.{ts,tsx}"],
     extends: [js.configs.recommended, ...tseslint.configs.recommended],

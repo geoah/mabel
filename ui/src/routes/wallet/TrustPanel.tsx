@@ -3,6 +3,7 @@ import { type FormEvent, useState } from "react";
 import { addTrust, type ApiError, revokeTrust } from "@/api/client";
 import type { Identity } from "@/api/types";
 import { ErrorEnvelopeView } from "@/components/ErrorEnvelopeView";
+import { Identifier } from "@/components/Identifier";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -90,8 +91,8 @@ export function TrustPanel({
           </Button>
         </form>
         {appended && (
-          <p data-testid="trust-appended-event" className="break-all font-mono text-xs">
-            {appended}
+          <p data-testid="trust-appended-event">
+            <Identifier value={appended} />
           </p>
         )}
         {error && <ErrorEnvelopeView error={error} testId="trust-error" />}
@@ -100,7 +101,7 @@ export function TrustPanel({
             no attestations in this ledger
           </p>
         ) : (
-          <Table data-testid="trust-list">
+          <Table stack="md" data-testid="trust-list">
             <TableHeader>
               <TableRow>
                 <TableHead>subject</TableHead>
@@ -115,11 +116,16 @@ export function TrustPanel({
                   key={record.attestation_event}
                   data-testid={`trust-row-${record.attestation_event}`}
                 >
-                  <TableCell className="break-all font-mono text-xs">{record.subject}</TableCell>
-                  <TableCell data-testid={`trust-attestation-seq-${record.attestation_event}`}>
+                  <TableCell label="subject">
+                    <Identifier value={record.subject} />
+                  </TableCell>
+                  <TableCell
+                    label="attestation_seq"
+                    data-testid={`trust-attestation-seq-${record.attestation_event}`}
+                  >
                     {record.attestation_seq}
                   </TableCell>
-                  <TableCell>
+                  <TableCell label="state">
                     <Badge
                       variant={record.revoked ? "destructive" : "secondary"}
                       data-testid={`trust-state-${record.attestation_event}`}

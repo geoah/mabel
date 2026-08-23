@@ -1,9 +1,9 @@
 import { useState } from "react";
-import { Link } from "react-router";
 
 import { listLedgers } from "@/api/client";
 import { DeclaredKindNote, DeclaredKindValue } from "@/components/DeclaredKind";
 import { ErrorEnvelopeView } from "@/components/ErrorEnvelopeView";
+import { Identifier } from "@/components/Identifier";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -48,7 +48,7 @@ export function LedgerListPanel() {
         )}
         {page.data && page.data.entries.length > 0 && (
           <>
-            <Table data-testid="witness-ledger-table">
+            <Table stack="xl" data-testid="witness-ledger-table">
               <TableHeader>
                 <TableRow>
                   <TableHead>ledger_id</TableHead>
@@ -68,65 +68,76 @@ export function LedgerListPanel() {
                     key={entry.ledger_id}
                     data-testid={`witness-ledger-row-${entry.ledger_id}`}
                   >
-                    <TableCell className="break-all font-mono text-xs">
-                      <Link
+                    <TableCell label="ledger_id">
+                      <Identifier
+                        value={entry.ledger_id}
                         to={`/witness/ledgers/${entry.ledger_id}`}
-                        className="underline"
-                        data-testid={`witness-ledger-link-${entry.ledger_id}`}
-                      >
-                        {entry.ledger_id}
-                      </Link>
+                        linkTestId={`witness-ledger-link-${entry.ledger_id}`}
+                      />
                     </TableCell>
-                    <TableCell>
+                    <TableCell label="declared">
                       <DeclaredKindValue
                         kind={entry.declared_kind}
                         testId={`witness-ledger-declared-kind-${entry.ledger_id}`}
                       />
                     </TableCell>
-                    <TableCell data-testid={`witness-ledger-head-seq-${entry.ledger_id}`}>
+                    <TableCell
+                      label="head_seq"
+                      data-testid={`witness-ledger-head-seq-${entry.ledger_id}`}
+                    >
                       {entry.head_seq}
                     </TableCell>
                     <TableCell
+                      label="head_event"
                       data-testid={`witness-ledger-head-event-${entry.ledger_id}`}
-                      className="break-all font-mono text-xs"
                     >
-                      {entry.head_event}
+                      <Identifier value={entry.head_event} />
                     </TableCell>
-                    <TableCell data-testid={`witness-ledger-event-count-${entry.ledger_id}`}>
+                    <TableCell
+                      label="event_count"
+                      data-testid={`witness-ledger-event-count-${entry.ledger_id}`}
+                    >
                       {entry.event_count}
                     </TableCell>
-                    <TableCell>
-                      <span data-testid={`witness-ledger-fork-count-${entry.ledger_id}`}>
-                        {entry.fork_count}
-                      </span>
-                      {entry.forks_truncated ? (
-                        <Badge
-                          variant="outline"
-                          className="ml-2"
-                          data-testid={`witness-ledger-forks-truncated-${entry.ledger_id}`}
-                        >
-                          forks_truncated true
-                        </Badge>
-                      ) : (
-                        <span
-                          className="ml-2 text-xs text-muted-foreground"
-                          data-testid={`witness-ledger-forks-truncated-${entry.ledger_id}`}
-                        >
-                          forks_truncated false
+                    <TableCell label="fork_count">
+                      <span className="flex flex-wrap items-center gap-2">
+                        <span data-testid={`witness-ledger-fork-count-${entry.ledger_id}`}>
+                          {entry.fork_count}
                         </span>
-                      )}
+                        {entry.forks_truncated ? (
+                          <Badge
+                            variant="outline"
+                            data-testid={`witness-ledger-forks-truncated-${entry.ledger_id}`}
+                          >
+                            forks_truncated true
+                          </Badge>
+                        ) : (
+                          <span
+                            className="text-xs text-muted-foreground"
+                            data-testid={`witness-ledger-forks-truncated-${entry.ledger_id}`}
+                          >
+                            forks_truncated false
+                          </span>
+                        )}
+                      </span>
                     </TableCell>
-                    <TableCell data-testid={`witness-ledger-first-seen-ms-${entry.ledger_id}`}>
+                    <TableCell
+                      label="first_seen_ms"
+                      data-testid={`witness-ledger-first-seen-ms-${entry.ledger_id}`}
+                    >
                       {entry.first_seen_ms}
                     </TableCell>
-                    <TableCell data-testid={`witness-ledger-updated-ms-${entry.ledger_id}`}>
+                    <TableCell
+                      label="updated_ms"
+                      data-testid={`witness-ledger-updated-ms-${entry.ledger_id}`}
+                    >
                       {entry.updated_ms}
                     </TableCell>
                     <TableCell
+                      label="source_endpoint"
                       data-testid={`witness-ledger-source-endpoint-${entry.ledger_id}`}
-                      className="break-all font-mono text-xs"
                     >
-                      {entry.source_endpoint}
+                      <Identifier value={entry.source_endpoint} />
                     </TableCell>
                   </TableRow>
                 ))}
@@ -137,7 +148,7 @@ export function LedgerListPanel() {
               forks_truncated says this witness stopped recording fork records for that ledger,
               so its fork_count is a floor
             </p>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <Button
                 variant="outline"
                 size="sm"

@@ -2,8 +2,20 @@ import type * as React from "react";
 
 import { cn } from "@/lib/utils";
 
+/**
+ * Label and value sit side by side from 640px up. Below that the pair stacks,
+ * because a 10rem label column leaves too little room for a 52-character id.
+ */
 export function FieldGrid({ className, ...props }: React.ComponentProps<"dl">) {
-  return <dl className={cn("grid grid-cols-[10rem_1fr] gap-x-4 gap-y-1", className)} {...props} />;
+  return (
+    <dl
+      className={cn(
+        "grid grid-cols-[minmax(0,1fr)] gap-x-4 gap-y-2 sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-y-1",
+        className,
+      )}
+      {...props}
+    />
+  );
 }
 
 interface FieldProps {
@@ -20,7 +32,7 @@ export function Field({ label, testId, mono = false, children }: FieldProps) {
       <dt className="text-xs text-muted-foreground">{label}</dt>
       <dd
         data-testid={testId}
-        className={cn("text-sm", mono && "break-all font-mono text-xs")}
+        className={cn("min-w-0 text-sm", mono && "break-all font-mono text-xs")}
       >
         {children}
       </dd>

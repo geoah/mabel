@@ -3,7 +3,8 @@ import { useState } from "react";
 import { getIdentityLedger } from "@/api/client";
 import { DeclaredKindNote, DeclaredKindValue } from "@/components/DeclaredKind";
 import { ErrorEnvelopeView } from "@/components/ErrorEnvelopeView";
-import { Field, FieldGrid, Nullable } from "@/components/Field";
+import { Field, FieldGrid } from "@/components/Field";
+import { Identifier } from "@/components/Identifier";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -38,7 +39,7 @@ export function LedgerPanel({ identityId, version }: { identityId: string; versi
         <CardDescription>since is inclusive: the page starts at seq equal to since</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
-        <div className="flex items-end gap-2">
+        <div className="flex flex-wrap items-end gap-2">
           <div className="space-y-1">
             <Label htmlFor="ledger-since">since</Label>
             <Input
@@ -75,8 +76,8 @@ export function LedgerPanel({ identityId, version }: { identityId: string; versi
         {page.data && (
           <>
             <FieldGrid>
-              <Field label="ledger_id" testId="ledger-id" mono>
-                {page.data.ledger_id}
+              <Field label="ledger_id" testId="ledger-id">
+                <Identifier value={page.data.ledger_id} />
               </Field>
               <Field label="declared_kind" testId="ledger-declared-kind-row">
                 <DeclaredKindValue
@@ -90,8 +91,8 @@ export function LedgerPanel({ identityId, version }: { identityId: string; versi
               <Field label="head_seq" testId="ledger-head-seq">
                 {page.data.head_seq}
               </Field>
-              <Field label="head_event" testId="ledger-head-event" mono>
-                {page.data.head_event}
+              <Field label="head_event" testId="ledger-head-event">
+                <Identifier value={page.data.head_event} />
               </Field>
               <Field label="event_count" testId="ledger-event-count">
                 {page.data.event_count}
@@ -101,7 +102,7 @@ export function LedgerPanel({ identityId, version }: { identityId: string; versi
               </Field>
             </FieldGrid>
             <DeclaredKindNote testId="ledger-declared-kind-note" />
-            <Table data-testid="ledger-events">
+            <Table stack="lg" data-testid="ledger-events">
               <TableHeader>
                 <TableRow>
                   <TableHead>seq</TableHead>
@@ -115,26 +116,29 @@ export function LedgerPanel({ identityId, version }: { identityId: string; versi
               <TableBody>
                 {page.data.events.map((event) => (
                   <TableRow key={event.event_id} data-testid={`ledger-event-${event.seq}`}>
-                    <TableCell data-testid={`event-seq-${event.seq}`}>{event.seq}</TableCell>
-                    <TableCell data-testid={`event-payload-kind-${event.seq}`}>
+                    <TableCell label="seq" data-testid={`event-seq-${event.seq}`}>
+                      {event.seq}
+                    </TableCell>
+                    <TableCell
+                      label="payload_kind"
+                      data-testid={`event-payload-kind-${event.seq}`}
+                    >
                       {event.payload_kind}
                     </TableCell>
-                    <TableCell
-                      data-testid={`event-id-${event.seq}`}
-                      className="break-all font-mono text-xs"
-                    >
-                      {event.event_id}
+                    <TableCell label="event_id" data-testid={`event-id-${event.seq}`}>
+                      <Identifier value={event.event_id} />
+                    </TableCell>
+                    <TableCell label="prev" data-testid={`event-prev-${event.seq}`}>
+                      <Identifier value={event.prev} />
                     </TableCell>
                     <TableCell
-                      data-testid={`event-prev-${event.seq}`}
-                      className="break-all font-mono text-xs"
+                      label="timestamp_ms"
+                      data-testid={`event-timestamp-ms-${event.seq}`}
                     >
-                      <Nullable value={event.prev} />
-                    </TableCell>
-                    <TableCell data-testid={`event-timestamp-ms-${event.seq}`}>
                       {event.timestamp_ms}
                     </TableCell>
                     <TableCell
+                      label="payload"
                       data-testid={`event-payload-${event.seq}`}
                       className="break-all font-mono text-xs"
                     >

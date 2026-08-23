@@ -1,6 +1,7 @@
 import { getWitnessNode } from "@/api/client";
 import { ErrorEnvelopeView } from "@/components/ErrorEnvelopeView";
 import { Field, FieldGrid } from "@/components/Field";
+import { Identifier } from "@/components/Identifier";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useResource } from "@/hooks/useResource";
 
@@ -26,10 +27,10 @@ export function WitnessNodeInfoPanel() {
             <Field label="role" testId="witness-node-role">
               {node.data.role}
             </Field>
-            <Field label="endpoint_id" testId="witness-node-endpoint-id" mono>
-              {node.data.endpoint_id}
+            <Field label="endpoint_id" testId="witness-node-endpoint-id">
+              <Identifier value={node.data.endpoint_id} />
             </Field>
-            <Field label="http_bind" testId="witness-node-http-bind">
+            <Field label="http_bind" testId="witness-node-http-bind" mono>
               {node.data.http_bind}
             </Field>
             <Field label="relay" testId="witness-node-relay">

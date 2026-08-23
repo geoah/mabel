@@ -4,6 +4,7 @@ import { getLedger } from "@/api/client";
 import { DeclaredKindNote, DeclaredKindValue } from "@/components/DeclaredKind";
 import { ErrorEnvelopeView } from "@/components/ErrorEnvelopeView";
 import { Field, FieldGrid } from "@/components/Field";
+import { Identifier } from "@/components/Identifier";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useResource } from "@/hooks/useResource";
@@ -19,7 +20,11 @@ export function WitnessLedgerDetail() {
 
   return (
     <div className="space-y-4">
-      <Link to="/witness" className="text-sm underline" data-testid="witness-ledger-back">
+      <Link
+        to="/witness"
+        className="inline-flex min-h-10 items-center text-sm underline"
+        data-testid="witness-ledger-back"
+      >
         Ledgers
       </Link>
       {ledger.loading && <p data-testid="witness-ledger-detail-loading">loading</p>}
@@ -30,14 +35,14 @@ export function WitnessLedgerDetail() {
         <>
           <Card data-testid="witness-ledger-detail">
             <CardHeader>
-              <CardTitle className="break-all font-mono text-sm">
-                {ledger.data.entry.ledger_id}
+              <CardTitle>
+                <Identifier value={ledger.data.entry.ledger_id} />
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
               <FieldGrid>
-                <Field label="ledger_id" testId="witness-detail-ledger-id" mono>
-                  {ledger.data.entry.ledger_id}
+                <Field label="ledger_id" testId="witness-detail-ledger-id">
+                  <Identifier value={ledger.data.entry.ledger_id} />
                 </Field>
                 <Field label="declared" testId="witness-detail-declared-kind-row">
                   <DeclaredKindValue
@@ -48,8 +53,8 @@ export function WitnessLedgerDetail() {
                 <Field label="head_seq" testId="witness-detail-head-seq">
                   {ledger.data.entry.head_seq}
                 </Field>
-                <Field label="head_event" testId="witness-detail-head-event" mono>
-                  {ledger.data.entry.head_event}
+                <Field label="head_event" testId="witness-detail-head-event">
+                  <Identifier value={ledger.data.entry.head_event} />
                 </Field>
                 <Field label="event_count" testId="witness-detail-event-count">
                   {ledger.data.entry.event_count}
@@ -70,13 +75,19 @@ export function WitnessLedgerDetail() {
                 <Field label="updated_ms" testId="witness-detail-updated-ms">
                   {ledger.data.entry.updated_ms}
                 </Field>
-                <Field label="source_endpoint" testId="witness-detail-source-endpoint" mono>
-                  {ledger.data.entry.source_endpoint}
+                <Field label="source_endpoint" testId="witness-detail-source-endpoint">
+                  <Identifier value={ledger.data.entry.source_endpoint} />
                 </Field>
-                <Field label="witnesses" testId="witness-detail-witnesses" mono>
-                  {ledger.data.witnesses.length === 0
-                    ? "none"
-                    : ledger.data.witnesses.join(", ")}
+                <Field label="witnesses" testId="witness-detail-witnesses">
+                  {ledger.data.witnesses.length === 0 ? (
+                    "none"
+                  ) : (
+                    <span className="flex flex-col gap-1">
+                      {ledger.data.witnesses.map((witness) => (
+                        <Identifier key={witness} value={witness} />
+                      ))}
+                    </span>
+                  )}
                 </Field>
               </FieldGrid>
               <DeclaredKindNote testId="witness-detail-declared-kind-note" />

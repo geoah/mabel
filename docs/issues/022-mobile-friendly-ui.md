@@ -1,6 +1,6 @@
 # 022: mobile-friendly UI
 
-- Status: open
+- Status: done
 - Depends on: 013, 014
 
 ## Goal
