@@ -57,7 +57,9 @@ signatures.
    report names alice as the principal that signed, so a delegate's signature
    is not read as the ledger's own (proposal 002 section 5).
 8. **Push what the witness will take.** Alice's ledger goes up with the
-   attestation. The shared ledger does not: see the known gap below.
+   attestation. The shared ledger first names the witness on its own chain,
+   because a witness only admits a ledger whose witness config names it
+   (admission, proposal 001 section 5), and then its push is accepted too.
 9. **A stranger verifies from an empty home.** A throwaway container with no
    identities, no aliases and no keys but the node key it makes on the spot
    reads alice's ledger from the witness and reports `trusted: true`. The
@@ -70,23 +72,14 @@ signatures.
     debug API, from the host on `127.0.0.1:9080`, lists each ledger with its
     head sequence and head event.
 
-## The known gap in phase 8
+## A gap this demo found, now fixed
 
-As of commit 4bf902e the witness rejects every identity-rooted ledger with
-`MALFORMED`, "a message nests more than 8 levels deep", so the shared ledger of
-phase 5 stays on alice's disk and phases 9 and 10 verify alice's own ledger
-instead.
-
-A pushed event is scanned inside `Frame` -> `PushReq` -> `SignedEvent`, two
-levels below where the same bytes are scanned locally, so the founder inception
-that an identity root embeds lands at depth 9 against the cap of 8 in
-`mabel_core::validate::MAX_NESTING`. Locally the same event reaches depth 7,
-which is why `identity create --founder` succeeds and the push does not.
-
-The demo prints that rejection as JSON rather than hiding it, and exits 0
-either way: when the cap stops rejecting these events, phase 8 reports that the
-witness took the ledger, the summary drops the "local only" note, and the
-witness list in phase 11 gains a third entry.
+An earlier build rejected every identity-rooted ledger at push time with
+`MALFORMED`, "a message nests more than 8 levels deep": a pushed event was
+scanned inside `Frame` -> `PushReq` -> `SignedEvent`, two levels below where
+the same bytes are scanned locally, so the founder inception an identity root
+embeds landed past `MAX_NESTING`. Embedded events now carry their own nesting
+budget (`FieldKind::Detached`), and phase 8 asserts the push is accepted.
 
 ## Reading the output
 

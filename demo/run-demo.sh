@@ -233,25 +233,12 @@ phase "8. push what the witness will take"
 push alice --identity alice
 [ "$RUN_STATUS" -eq 0 ] || fail "alice could not push her attestation"
 blank
-note "now the shared ledger, to the same witness by endpoint id. The reply is"
-note "shown as JSON because the text line does not name the rejection."
-push alice --identity mabel-demo-co --to "$witness_id" --json
-org_pushed="$RUN_STATUS"
-if [ "$org_pushed" -eq 0 ]; then
-    blank
-    note "the witness took the identity-rooted ledger."
-else
-    blank
-    note "KNOWN GAP: the witness rejects every identity-rooted ledger as"
-    note "MALFORMED, \"a message nests more than 8 levels deep\". A pushed"
-    note "event is scanned inside Frame -> PushReq -> SignedEvent, two levels"
-    note "below where the same bytes are scanned locally, so the founder"
-    note "inception an identity root embeds lands at depth 9 against the cap"
-    note "of 8 in mabel_core::validate::MAX_NESTING. Locally it reaches depth"
-    note "7, which is why \`identity create --founder\` succeeds and the push"
-    note "does not. The shared ledger stays local for the rest of this demo,"
-    note "and the verification below reads alice's own ledger, which pushes."
-fi
+note "now the shared ledger. First it names the witness on its own chain,"
+note "because a witness only admits a ledger whose witness config names it"
+note "(admission, proposal 001 section 5); then the push is accepted."
+run alice witness add --identity mabel-demo-co --endpoint "$witness_id"
+push alice --identity mabel-demo-co
+[ "$RUN_STATUS" -eq 0 ] || fail "the witness refused the shared ledger"
 
 phase "9. a stranger verifies alice-trusts-bob from an empty home"
 note "a fresh container: no identities, no aliases, no keys but the node key"
@@ -290,16 +277,12 @@ printf '%s' "$ledgers" |
     jq -r '.entries[] | "      \(.ledger_id)  \(.declared_kind)  head seq \(.head_seq) at \(.head_event)  \(.event_count) events"' ||
     fail "the witness ledger list did not parse"
 count="$(printf '%s' "$ledgers" | jq '.entries | length')"
-[ "$count" -ge 2 ] || fail "the witness holds $count ledgers, expected at least 2"
+[ "$count" -ge 3 ] || fail "the witness holds $count ledgers, expected at least 3"
 
 printf '\n\n=== the demo ran green in %s seconds\n' "$(($(date +%s) - started_at))"
 printf '  alice        %s\n' "$alice_id"
 printf '  bob          %s\n' "$bob_id"
-if [ "$org_pushed" -eq 0 ]; then
-    printf '  shared       %s\n' "$org_id"
-else
-    printf '  shared       %s (local only, see phase 8)\n' "$org_id"
-fi
+printf '  shared       %s\n' "$org_id"
 printf '  witness      %s, holding %s ledgers\n' "$witness_id" "$count"
 if [ "$keep" -eq 1 ]; then
     printf '\n  --keep: the topology is still up. The UI is on http://127.0.0.1:9081\n'
