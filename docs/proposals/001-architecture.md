@@ -774,6 +774,9 @@ part of the accepted proposal.
   already lives in the ledger directory.
 - Orgs surface through `GET /identities` (an org is an identity with kind
   `org`); there is no separate `GET /orgs`.
+- Ids use literal RFC 4648 base32, lowercase display, case-insensitive
+  parse. iroh-base 1.0.3 displays keys as hex, so "Iroh's alphabet" in 3.1
+  was inaccurate; the encoding stands on its own.
 
 ## Consequences
 

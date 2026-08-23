@@ -1,0 +1,31 @@
+{
+  "body": {
+    "author_key_hex": "d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c9778737",
+    "ledger_hex": "91673b2723ff7a44e7206cca4c616e6f7278fea984538b468ba85d2ffde2ad31",
+    "payload": {
+      "trust_revocation": {
+        "target_hex": "f745291bb36c766c5c9a8d8f23405b68a7b7d8da0c2f1d3aef22c89a39d15c9b"
+      }
+    },
+    "prev_hex": "f745291bb36c766c5c9a8d8f23405b68a7b7d8da0c2f1d3aef22c89a39d15c9b",
+    "seq": 3,
+    "timestamp_ms": 1700000180000,
+    "version": 0
+  },
+  "body_hex": "122091673b2723ff7a44e7206cca4c616e6f7278fea984538b468ba85d2ffde2ad3118032220f745291bb36c766c5c9a8d8f23405b68a7b7d8da0c2f1d3aef22c89a39d15c9b28a0cea0ffbc313220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c977873772220a20f745291bb36c766c5c9a8d8f23405b68a7b7d8da0c2f1d3aef22c89a39d15c9b",
+  "description": "Alice revokes the attestation at seq 2.",
+  "event_id": "ewckxhi7cixugkyrql6eqnncbgxqtnrho3rpsp6plhhh7yr6rosq",
+  "event_id_hex": "2584ab9d1f122f432b1182fc4835a209af09b62776e2f93fcf59ce7fe23e8ba5",
+  "file": "04-trust-revocation.json",
+  "inputs": {
+    "ledger": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+    "now_ms": 1700000180000,
+    "prev": "65cssg5tnr3gyxe2rwhsgqc3nct3pwg2bqxr2oxpelejuoorlsnq",
+    "prev_timestamp_ms": 1700000120000,
+    "secret_key_hex": "1111111111111111111111111111111111111111111111111111111111111111",
+    "seq": 3,
+    "target": "65cssg5tnr3gyxe2rwhsgqc3nct3pwg2bqxr2oxpelejuoorlsnq"
+  },
+  "signature_hex": "17f8e6912dd126df76c18ee7fbd6e79d78ea750a49a39a0901163d11c2313c8f1f1585a062087b9301f66e18f4cdff4d3d72f0dbd535689c9291b71628aaab0e",
+  "signed_event_hex": "0a9301122091673b2723ff7a44e7206cca4c616e6f7278fea984538b468ba85d2ffde2ad3118032220f745291bb36c766c5c9a8d8f23405b68a7b7d8da0c2f1d3aef22c89a39d15c9b28a0cea0ffbc313220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c977873772220a20f745291bb36c766c5c9a8d8f23405b68a7b7d8da0c2f1d3aef22c89a39d15c9b124017f8e6912dd126df76c18ee7fbd6e79d78ea750a49a39a0901163d11c2313c8f1f1585a062087b9301f66e18f4cdff4d3d72f0dbd535689c9291b71628aaab0e"
+}

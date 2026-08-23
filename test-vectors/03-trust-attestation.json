@@ -1,0 +1,31 @@
+{
+  "body": {
+    "author_key_hex": "d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c9778737",
+    "ledger_hex": "91673b2723ff7a44e7206cca4c616e6f7278fea984538b468ba85d2ffde2ad31",
+    "payload": {
+      "trust_attestation": {
+        "subject_hex": "4da1f46c97d331f94f0f22e8416142734444f30fb418144ab7686879d25f4a97"
+      }
+    },
+    "prev_hex": "549fd9d5783228e58d717eabdfbcb16bffe4401addbf35da8ea43f645b199339",
+    "seq": 2,
+    "timestamp_ms": 1700000120000,
+    "version": 0
+  },
+  "body_hex": "122091673b2723ff7a44e7206cca4c616e6f7278fea984538b468ba85d2ffde2ad3118022220549fd9d5783228e58d717eabdfbcb16bffe4401addbf35da8ea43f645b19933928c0f99cffbc313220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c97787376a220a204da1f46c97d331f94f0f22e8416142734444f30fb418144ab7686879d25f4a97",
+  "description": "Alice attests that she trusts Bob.",
+  "event_id": "65cssg5tnr3gyxe2rwhsgqc3nct3pwg2bqxr2oxpelejuoorlsnq",
+  "event_id_hex": "f745291bb36c766c5c9a8d8f23405b68a7b7d8da0c2f1d3aef22c89a39d15c9b",
+  "file": "03-trust-attestation.json",
+  "inputs": {
+    "ledger": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+    "now_ms": 1700000120000,
+    "prev": "ksp5tvlygiuoldlrp2v57pfrnp76iqa23w7tlwuouq7wiwyzsm4q",
+    "prev_timestamp_ms": 1700000060000,
+    "secret_key_hex": "1111111111111111111111111111111111111111111111111111111111111111",
+    "seq": 2,
+    "subject": "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq"
+  },
+  "signature_hex": "7c9fa48e0c50a56ab1e00002c6e402429ee084781621f2f5e5a45c8c2659e41f848b6217a06e0356f002a34797fba75255e2a0471c645aad16ad289ddd30fc08",
+  "signed_event_hex": "0a9301122091673b2723ff7a44e7206cca4c616e6f7278fea984538b468ba85d2ffde2ad3118022220549fd9d5783228e58d717eabdfbcb16bffe4401addbf35da8ea43f645b19933928c0f99cffbc313220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c97787376a220a204da1f46c97d331f94f0f22e8416142734444f30fb418144ab7686879d25f4a9712407c9fa48e0c50a56ab1e00002c6e402429ee084781621f2f5e5a45c8c2659e41f848b6217a06e0356f002a34797fba75255e2a0471c645aad16ad289ddd30fc08"
+}

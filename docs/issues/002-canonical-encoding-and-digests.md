@@ -1,6 +1,6 @@
 # 002: canonical encoding, digests and the golden vector harness
 
-- Status: open
+- Status: done
 - Depends on: 001
 
 ## Goal
