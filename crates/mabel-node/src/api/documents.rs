@@ -454,6 +454,24 @@ pub struct RevokedAttestation {
     pub revocation_seq: u64,
 }
 
+/// The sentence a trust report carries when no queried source holds the
+/// subject's own ledger (`contracts/cli/verify-trust.json`).
+pub const UNRESOLVED_SUBJECT_NOTE: &str = "subject: unresolved (not held by any queried source)";
+
+/// Who signed the attestation a trust report answers with.
+///
+/// The `author_key` and the principal identity it matched, so a delegate's
+/// signature is never attributed to the ledger subject (proposal 002
+/// section 5).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SigningPrincipal {
+    /// The identity whose principal the `author_key` matched.
+    pub identity: Id,
+    /// The key the event names in `author_key`.
+    pub key: Id,
+}
+
 /// The trust verification report (`contracts/README.md`, "Verification
 /// reports").
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -475,6 +493,8 @@ pub struct TrustReport {
     pub attestation_event: Option<Id>,
     /// Its sequence number, `null` when `trusted` is false.
     pub attestation_seq: Option<u64>,
+    /// Who signed that attestation, `null` when `trusted` is false.
+    pub signing_principal: Option<SigningPrincipal>,
     /// How many attestations for this subject were revoked.
     pub revoked_count: u64,
     /// Those attestations.

@@ -26,7 +26,7 @@
 //! # }
 //! ```
 
-mod events;
+pub(crate) mod events;
 mod runtime;
 mod service;
 mod storage;

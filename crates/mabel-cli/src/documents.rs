@@ -19,7 +19,7 @@
 //! `invite`.
 
 use mabel_core::fold::{InvitationStatus, LedgerRoot};
-use mabel_node::api::documents::{DeclaredKind, Id, TrustEntry};
+use mabel_node::api::documents::{DeclaredKind, Id, Pushed, TrustEntry};
 use mabel_proto::v0::Role as ProtoRole;
 use serde::Serialize;
 
@@ -137,6 +137,41 @@ pub struct AddedWitness {
 pub struct IdentityList {
     /// Sorted by ascending `identity_id`.
     pub identities: Vec<mabel_node::api::documents::Identity>,
+}
+
+/// `mabel sync push --json` (`contracts/cli/sync-push.json`).
+///
+/// The push report of the HTTP route with the identity named beside it, which
+/// is what the command was given.
+#[derive(Debug, Serialize)]
+pub struct PushedLedger {
+    /// The identity whose ledger was pushed.
+    pub identity_id: Id,
+    /// The report, flat beside it.
+    #[serde(flatten)]
+    pub pushed: Pushed,
+}
+
+/// `mabel sync fetch --json`.
+///
+/// No fixture pins this command. It reuses the frozen names: `ledger_id`,
+/// `source`, `head_seq`, `head_event`, `event_count` and `fetched_at_ms`.
+#[derive(Debug, Serialize)]
+pub struct FetchedLedger {
+    /// The ledger that was fetched.
+    pub ledger_id: Id,
+    /// The endpoint that served it.
+    pub source: Id,
+    /// Events the source served.
+    pub event_count: u64,
+    /// Events this fetch newly stored.
+    pub stored: u64,
+    /// The head this home now holds.
+    pub head_seq: u64,
+    /// The head event this home now holds.
+    pub head_event: Id,
+    /// When the source answered.
+    pub fetched_at_ms: u64,
 }
 
 /// `mabel node id --json`.

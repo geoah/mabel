@@ -39,7 +39,7 @@ milestone 10 and are deliberately not ticketed here.
   009.
 - [011-wallet-sync-and-multi-source-verify.md](011-wallet-sync-and-multi-source-verify.md):
   push and fetch, append discipline, equivocation, `signing_principal`, the
-  sync and verify service traits. Depends on 007, 008, 009.
+  sync and verify service traits. Depends on 007, 008, 009. Done.
 - [012-http-api-and-loopback-rules.md](012-http-api-and-loopback-rules.md):
   axum routes over the fixtures, service traits, stub answers, loopback
   middleware, UI serving. Depends on 020.

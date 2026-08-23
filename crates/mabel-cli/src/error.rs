@@ -10,7 +10,7 @@
 use mabel_core::fold::Reason;
 use mabel_core::sign::BuildError;
 use mabel_node::StorageError;
-use mabel_node::api::ErrorLayer;
+use mabel_node::api::{ErrorLayer, ServiceError};
 use serde::Serialize;
 use serde_json::{Map, Value};
 
@@ -147,6 +147,24 @@ impl CliError {
     }
 }
 
+/// A failure the wallet runtime already classed.
+///
+/// The runtime answers the HTTP API and the CLI from one body of code, so the
+/// code, the message and the details cross unchanged: `mabel sync push` and
+/// `POST /api/sync/push` report the same failure with the same
+/// `details.reason`.
+impl From<ServiceError> for CliError {
+    fn from(error: ServiceError) -> Self {
+        let prefix = error.layer().prefix();
+        let message = error
+            .message()
+            .strip_prefix(prefix)
+            .unwrap_or_else(|| error.message())
+            .to_owned();
+        Self::new(error.layer(), error.reason(), message).with_details(error.details().clone())
+    }
+}
+
 /// A rejection from the fold, which is the authority on why an event is not
 /// allowed.
 ///
@@ -212,5 +230,41 @@ impl From<StorageError> for CliError {
 impl From<BuildError> for CliError {
     fn from(error: BuildError) -> Self {
         Self::schema("event_not_buildable", error.to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::CliError;
+    use mabel_node::api::ServiceError;
+
+    /// A wallet failure keeps its code, its prefixed message and every detail
+    /// when the CLI renders it, so `mabel sync push --json` and
+    /// `POST /api/sync/push` answer the same document.
+    #[test]
+    fn a_service_error_crosses_into_the_cli_envelope_unchanged() {
+        let service = ServiceError::state(
+            "stale_head",
+            "witness zbj22 reports head seq 4, this node holds seq 3",
+        )
+        .with_detail("local_head_seq", 3)
+        .with_detail("observed_head_seq", 4);
+        let cli = CliError::from(service.clone());
+
+        assert_eq!(cli.exit_code(), 50);
+        assert_eq!(cli.message(), service.message());
+        assert!(cli.message().starts_with("State error: "), "{cli:?}");
+        assert_eq!(cli.to_document(), service.to_document());
+    }
+
+    /// Code 30 carries the `Network error:` prefix once, not twice.
+    #[test]
+    fn a_network_failure_is_prefixed_once() {
+        let cli = CliError::from(ServiceError::network(
+            "peer_unreachable",
+            "no route to zbj22",
+        ));
+        assert_eq!(cli.exit_code(), 30);
+        assert_eq!(cli.message(), "Network error: no route to zbj22");
     }
 }

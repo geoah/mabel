@@ -2008,6 +2008,7 @@ dependencies = [
  "data-encoding",
  "getrandom 0.4.3",
  "iroh-base",
+ "iroh-tickets",
  "mabel-core",
  "mabel-net",
  "mabel-node",

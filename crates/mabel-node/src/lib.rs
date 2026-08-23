@@ -20,17 +20,21 @@
 pub mod api;
 mod atomic;
 mod config;
+mod endpoint;
 mod error;
 mod home;
 pub mod keys;
 mod ledger;
 mod peers;
+mod time;
+pub mod wallet;
 pub mod witness;
 
 pub use atomic::{DATA_MODE, DIR_MODE, KEY_MODE};
 pub use config::{
     DEFAULT_HTTP_BIND, DEFAULT_HTTP_PORT, DEFAULT_STORAGE_CAPACITY, NodeConfig, NodeRole, RelayMode,
 };
+pub use endpoint::bind_endpoint;
 pub use error::{Result, StorageError};
 pub use home::{
     ACTIVE_KEY_FILE, CONFIG_FILE, DEFAULT_HOME_NAME, DeclaredKind, HOME_ENV, HomeOptions,
@@ -42,13 +46,4 @@ pub use ledger::{
     SEQ_DIGITS, StoredEvent,
 };
 pub use peers::Peers;
-
-/// Milliseconds since the unix epoch, saturating at 0 before it.
-#[must_use]
-pub fn now_ms() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |elapsed| {
-            u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX)
-        })
-}
+pub use time::{now_ms, rfc3339_utc};

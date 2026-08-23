@@ -3,14 +3,16 @@
 pub mod identity;
 pub mod membership;
 pub mod node;
+pub mod sync;
 pub mod trust;
 pub mod verify;
+pub mod wallet_serve;
 pub mod witness;
 pub mod witness_run;
 
 use crate::cli::{
-    Cli, Command, IdentityCommand, MembershipCommand, NodeCommand, TrustCommand, VerifyCommand,
-    WitnessCommand,
+    Cli, Command, IdentityCommand, MembershipCommand, NodeCommand, SyncCommand, TrustCommand,
+    VerifyCommand, WalletCommand, WitnessCommand,
 };
 use crate::context::Context;
 use crate::error::Result;
@@ -80,9 +82,35 @@ fn dispatch(ctx: &Context, cli: &Cli) -> Result<Outcome> {
                 peer,
             } => witness_run::run(ctx, *http, *iroh_port, peer),
         },
+        Command::Sync { command } => match command {
+            SyncCommand::Push { identity, to, peer } => {
+                sync::push(ctx, identity, to.as_deref(), peer)
+            }
+            SyncCommand::Fetch {
+                ledger_id,
+                from,
+                peer,
+            } => sync::fetch(ctx, ledger_id, from, peer),
+        },
         Command::Verify { command } => match command {
-            VerifyCommand::Ledger { ledger_id } => verify::ledger(ctx, ledger_id),
-            VerifyCommand::Trust { issuer, subject } => verify::trust(ctx, issuer, subject),
+            VerifyCommand::Ledger {
+                ledger_id,
+                from,
+                peer,
+            } => verify::ledger(ctx, ledger_id, from.as_deref(), peer),
+            VerifyCommand::Trust {
+                issuer,
+                subject,
+                from,
+                peer,
+            } => verify::trust(ctx, issuer, subject, from.as_deref(), peer),
+        },
+        Command::Wallet { command } => match command {
+            WalletCommand::Serve {
+                http,
+                iroh_port,
+                peer,
+            } => wallet_serve::serve(ctx, *http, *iroh_port, peer),
         },
         Command::Node { command } => match command {
             NodeCommand::Id => node::id(ctx),

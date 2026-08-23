@@ -65,10 +65,20 @@ pub enum Command {
         #[command(subcommand)]
         command: WitnessCommand,
     },
+    /// Push a ledger to its witnesses, or fetch one from a peer.
+    Sync {
+        #[command(subcommand)]
+        command: SyncCommand,
+    },
     /// Verify a ledger, or trust from an issuer to a subject.
     Verify {
         #[command(subcommand)]
         command: VerifyCommand,
+    },
+    /// Serve this home as a wallet.
+    Wallet {
+        #[command(subcommand)]
+        command: WalletCommand,
     },
     /// Report on this node.
     Node {
@@ -263,13 +273,51 @@ pub enum WitnessCommand {
     },
 }
 
+/// `mabel sync ...`, the two network commands of proposal 001 section 9.
+#[derive(Debug, Subcommand)]
+pub enum SyncCommand {
+    /// Push an identity's ledger to the witnesses it names.
+    Push {
+        /// The identity whose ledger is pushed, by alias or id.
+        #[arg(long, value_name = "ALIAS_OR_ID")]
+        identity: String,
+        /// Push to this endpoint alone instead of the configured witnesses.
+        #[arg(long, value_name = "ENDPOINT_ID")]
+        to: Option<String>,
+        /// Endpoint ticket to seed into address lookup. Repeatable.
+        #[arg(long, value_name = "TICKET")]
+        peer: Vec<String>,
+    },
+    /// Fetch a ledger from a peer, verify it from nothing and store it.
+    Fetch {
+        /// The ledger to fetch.
+        ledger_id: String,
+        /// The endpoint to fetch from.
+        #[arg(long, value_name = "ENDPOINT_ID")]
+        from: String,
+        /// Endpoint ticket to seed into address lookup. Repeatable.
+        #[arg(long, value_name = "TICKET")]
+        peer: Vec<String>,
+    },
+}
+
 /// `mabel verify ...`.
+///
+/// With no `--from` a ledger that names witnesses is verified against every
+/// one of them in parallel; a ledger that names none is read from this home
+/// (proposal 001 section 3.7).
 #[derive(Debug, Subcommand)]
 pub enum VerifyCommand {
-    /// Verify one ledger held by this home.
+    /// Verify one ledger.
     Ledger {
         /// The ledger, by alias or id.
         ledger_id: String,
+        /// Read from this endpoint alone.
+        #[arg(long, value_name = "ENDPOINT_ID")]
+        from: Option<String>,
+        /// Endpoint ticket to seed into address lookup. Repeatable.
+        #[arg(long, value_name = "TICKET")]
+        peer: Vec<String>,
     },
     /// Verify whether an issuer trusts a subject.
     Trust {
@@ -279,6 +327,29 @@ pub enum VerifyCommand {
         /// The subject, by alias or id.
         #[arg(long)]
         subject: String,
+        /// Read from this endpoint alone.
+        #[arg(long, value_name = "ENDPOINT_ID")]
+        from: Option<String>,
+        /// Endpoint ticket to seed into address lookup. Repeatable.
+        #[arg(long, value_name = "TICKET")]
+        peer: Vec<String>,
+    },
+}
+
+/// `mabel wallet ...`.
+#[derive(Debug, Subcommand)]
+pub enum WalletCommand {
+    /// Serve this home as a wallet until ctrl-c.
+    Serve {
+        /// Address the HTTP API binds, overriding node.json's http_bind.
+        #[arg(long, value_name = "ADDR")]
+        http: Option<SocketAddr>,
+        /// UDP port the Iroh endpoint binds, instead of an ephemeral one.
+        #[arg(long, value_name = "PORT")]
+        iroh_port: Option<u16>,
+        /// Endpoint ticket to seed into address lookup. Repeatable.
+        #[arg(long, value_name = "TICKET")]
+        peer: Vec<String>,
     },
 }
 

@@ -1,0 +1,654 @@
+//! The wallet runtime against real witnesses on loopback (ticket 011).
+//!
+//! Every test here runs two Iroh endpoints in one process with relays
+//! disabled, so nothing touches DNS, a relay or the internet (proposal 001
+//! section 11). A wallet dials by `EndpointId` and the witness's loopback
+//! address is seeded into the lookup first, which is what a `--peer` ticket
+//! does on the command line.
+
+#[macro_use]
+mod common;
+
+use std::sync::Arc;
+use std::time::Duration;
+
+use common::{Served, TIMEOUT, secret, subject};
+use iroh_base::EndpointId;
+use mabel_core::sign::{Position, build_trust_attestation};
+use mabel_core::{EventId, IdentityId};
+use mabel_net::store::Provenance;
+use mabel_net::{Client, EndpointConfig, RelayChoice, bind_endpoint};
+use mabel_node::api::documents::{DeclaredKind, PushStatus, SubjectResolution};
+use mabel_node::wallet::{Freshness, Sources, Verifier, WalletCore, WalletSync};
+use mabel_node::witness::WitnessCaps;
+use mabel_node::{HomeOptions, NodeConfig, NodeHome, NodeRole, RelayMode};
+use tempfile::TempDir;
+
+/// A wallet home in a temp directory, with the core over it.
+struct Wallet {
+    _dir: TempDir,
+    core: Arc<WalletCore>,
+}
+
+impl Wallet {
+    /// A fresh wallet home with relays disabled.
+    fn new() -> Self {
+        let dir = tempfile::tempdir().expect("a temp directory");
+        let config = NodeConfig {
+            role: NodeRole::Wallet,
+            relay: RelayMode::Disabled,
+            ..NodeConfig::default()
+        };
+        let home = NodeHome::create(dir.path(), &config, HomeOptions::default())
+            .expect("the home is created");
+        Self {
+            _dir: dir,
+            core: Arc::new(WalletCore::new(home)),
+        }
+    }
+
+    /// Mints an identity and returns its id.
+    fn identity(&self, alias: &str) -> IdentityId {
+        let created = self
+            .core
+            .create_identity(alias, DeclaredKind::Person)
+            .expect("the identity is created");
+        created
+            .identity
+            .identity_id
+            .as_str()
+            .parse()
+            .expect("a rendered identity id parses")
+    }
+
+    /// Records `witnesses` on `identity`'s ledger, which is what admits a push.
+    fn witnesses(&self, identity: IdentityId, witnesses: &[EndpointId]) {
+        self.core
+            .set_witnesses(identity, witnesses)
+            .expect("the witness config is appended");
+    }
+
+    /// A sync client on its own endpoint, with every address in `peers`
+    /// seeded into the lookup.
+    async fn sync(&self, peers: &[iroh::EndpointAddr]) -> WalletSync {
+        let secret = self.core.home().node_key().expect("the node key reads");
+        let endpoint = mabel_node::bind_endpoint(RelayMode::Disabled, secret, None, peers)
+            .await
+            .expect("the endpoint binds");
+        WalletSync::new(endpoint).with_timeout(Duration::from_secs(3))
+    }
+
+    /// Signs one attestation at the ledger's next position without storing it.
+    fn attestation_at_head(&self, identity: IdentityId, seed: u8) -> (EventId, Vec<u8>) {
+        let loaded = self.core.load(identity).expect("the ledger loads");
+        let head = loaded.state.head().expect("a head");
+        let signer = self.core.signing_key(identity).expect("the key reads");
+        let built = build_trust_attestation(
+            &signer,
+            &Position {
+                ledger: identity,
+                seq: head.seq + 1,
+                prev: head.event_id,
+                prev_timestamp_ms: head.timestamp_ms,
+            },
+            subject(seed),
+            head.timestamp_ms + 1_000 + u64::from(seed),
+        )
+        .expect("the attestation builds");
+        (built.event_id, built.signed_event)
+    }
+
+    /// Every stored event of one ledger.
+    fn events(&self, identity: IdentityId) -> Vec<Vec<u8>> {
+        self.core
+            .load(identity)
+            .map(|loaded| loaded.events)
+            .unwrap_or_default()
+    }
+}
+
+/// An endpoint id nothing in the test binds, so dialling it always fails.
+fn nowhere() -> EndpointId {
+    secret(199).public()
+}
+
+/// Pushes `events` for `ledger` straight at one witness, bypassing the wallet.
+///
+/// This is how a test makes a witness hold something the wallet does not: it
+/// stands in for the second controller of a shared ledger.
+async fn push_directly(witness: &Served, ledger: IdentityId, events: &[Vec<u8>]) {
+    let endpoint = bind_endpoint(EndpointConfig::new(RelayChoice::Disabled))
+        .await
+        .expect("the endpoint binds")
+        .endpoint;
+    let client = Client::connect(&endpoint, witness.addr.clone())
+        .await
+        .expect("the client connects");
+    client.push(ledger, events).await.expect("the push lands");
+    client.close();
+    endpoint.close().await;
+}
+
+#[tokio::test]
+async fn a_push_lands_on_every_configured_witness() {
+    bounded!({
+        let first = Served::new().await;
+        let second = Served::new().await;
+        let wallet = Wallet::new();
+        let alice = wallet.identity("alice");
+        wallet.witnesses(alice, &[first.endpoint_id, second.endpoint_id]);
+        let sync = wallet
+            .sync(&[first.addr.clone(), second.addr.clone()])
+            .await;
+
+        let pushed = sync
+            .push(
+                &wallet.core,
+                alice,
+                &[first.endpoint_id, second.endpoint_id],
+            )
+            .await
+            .expect("the push reports");
+
+        assert_eq!(pushed.head_seq, 1, "inception plus the witness config");
+        assert_eq!(pushed.results.len(), 2);
+        for result in &pushed.results {
+            assert_eq!(result.status, PushStatus::Accepted, "{result:?}");
+            assert_eq!(result.stored, 2);
+            assert_eq!(result.head_seq, Some(1));
+            assert_eq!(result.message, None);
+        }
+        for witness in [&first, &second] {
+            let head = witness.storage.head(alice).expect("the witness holds it");
+            assert_eq!(head.head_seq, 1);
+        }
+
+        // A second push of the same events is idempotent: nothing new stored.
+        let again = sync
+            .push(&wallet.core, alice, &[first.endpoint_id])
+            .await
+            .expect("the push reports");
+        assert_eq!(again.results[0].status, PushStatus::Accepted);
+        assert_eq!(again.results[0].stored, 0);
+
+        first.stop().await;
+        second.stop().await;
+    });
+}
+
+#[tokio::test]
+async fn a_witness_that_cannot_be_reached_is_one_row_of_the_push_report() {
+    bounded!({
+        let witness = Served::new().await;
+        let wallet = Wallet::new();
+        let alice = wallet.identity("alice");
+        wallet.witnesses(alice, &[witness.endpoint_id, nowhere()]);
+        let sync = wallet.sync(std::slice::from_ref(&witness.addr)).await;
+
+        let pushed = sync
+            .push(&wallet.core, alice, &[witness.endpoint_id, nowhere()])
+            .await
+            .expect("a partial failure is still a report");
+
+        assert_eq!(pushed.results[0].status, PushStatus::Accepted);
+        assert_eq!(pushed.results[1].status, PushStatus::Unreachable);
+        assert_eq!(pushed.results[1].head_seq, None);
+        assert_eq!(pushed.results[1].stored, 0);
+        let message = pushed.results[1]
+            .message
+            .as_deref()
+            .expect("an unreachable row says why");
+        assert!(
+            message.starts_with("Network error: no route to"),
+            "{message}"
+        );
+        assert!(
+            message.contains(pushed.results[1].endpoint.as_str()),
+            "{message}"
+        );
+        assert_eq!(
+            witness
+                .storage
+                .head(alice)
+                .expect("the reachable one holds it")
+                .head_seq,
+            1,
+            "the reachable witness still stored the ledger"
+        );
+
+        witness.stop().await;
+    });
+}
+
+#[tokio::test]
+async fn a_fetch_verifies_from_nothing_before_it_stores() {
+    bounded!({
+        let witness = Served::new().await;
+        let publisher = Wallet::new();
+        let alice = publisher.identity("alice");
+        publisher.witnesses(alice, &[witness.endpoint_id]);
+        publisher
+            .sync(std::slice::from_ref(&witness.addr))
+            .await
+            .push(&publisher.core, alice, &[witness.endpoint_id])
+            .await
+            .expect("the push lands");
+
+        let reader = Wallet::new();
+        let sync = reader.sync(std::slice::from_ref(&witness.addr)).await;
+        let fetched = sync
+            .fetch(&reader.core, alice, witness.endpoint_id)
+            .await
+            .expect("the fetch verifies and stores");
+
+        assert_eq!(fetched.event_count, 2);
+        assert_eq!(fetched.stored, 2);
+        assert_eq!(fetched.head_seq, 1);
+        assert_eq!(fetched.source, witness.endpoint_id);
+        assert_eq!(
+            reader.events(alice),
+            publisher.events(alice),
+            "the stored bytes are the bytes that were signed"
+        );
+        assert_eq!(
+            reader
+                .core
+                .store(alice)
+                .meta()
+                .expect("provenance reads")
+                .expect("provenance was written")
+                .source_endpoint,
+            Some(witness.endpoint_id),
+            "the fetch records where the events came from"
+        );
+
+        // A second fetch stores nothing and does not fail.
+        let again = sync
+            .fetch(&reader.core, alice, witness.endpoint_id)
+            .await
+            .expect("the fetch is idempotent");
+        assert_eq!(again.stored, 0);
+        assert_eq!(again.head_seq, 1);
+
+        witness.stop().await;
+    });
+}
+
+#[tokio::test]
+async fn a_witness_ahead_on_an_extending_chain_is_fast_forwarded() {
+    bounded!({
+        let witness = Served::new().await;
+        let wallet = Wallet::new();
+        let alice = wallet.identity("alice");
+        wallet.witnesses(alice, &[witness.endpoint_id]);
+        let sync = wallet.sync(std::slice::from_ref(&witness.addr)).await;
+        sync.push(&wallet.core, alice, &[witness.endpoint_id])
+            .await
+            .expect("the push lands");
+
+        // Another holder of the key appends at seq 2 and pushes it; this home
+        // never saw the event.
+        let (ahead, bytes) = wallet.attestation_at_head(alice, 7);
+        let mut chain = wallet.events(alice);
+        chain.push(bytes);
+        push_directly(&witness, alice, &chain).await;
+        assert_eq!(wallet.core.load(alice).unwrap().head_seq, 1);
+
+        let freshness = sync
+            .ensure_fresh(&wallet.core, alice, &[witness.endpoint_id])
+            .await
+            .expect("an extending chain is not a conflict");
+
+        assert_eq!(freshness, Freshness::FastForwarded { head_seq: 2 });
+        let loaded = wallet.core.load(alice).expect("the ledger loads");
+        assert_eq!(loaded.head_seq, 2);
+        assert_eq!(loaded.head_event, ahead);
+        assert!(loaded.violation.is_none(), "the fetched chain verifies");
+
+        // Nothing left to do the second time.
+        assert_eq!(
+            sync.ensure_fresh(&wallet.core, alice, &[witness.endpoint_id])
+                .await
+                .expect("still fresh"),
+            Freshness::UpToDate
+        );
+
+        witness.stop().await;
+    });
+}
+
+#[tokio::test]
+async fn a_local_event_that_lost_a_race_exits_50_and_leaves_no_stale_event() {
+    bounded!({
+        let witness = Served::new().await;
+        let wallet = Wallet::new();
+        let alice = wallet.identity("alice");
+        wallet.witnesses(alice, &[witness.endpoint_id]);
+        let sync = wallet.sync(std::slice::from_ref(&witness.addr)).await;
+        sync.push(&wallet.core, alice, &[witness.endpoint_id])
+            .await
+            .expect("the push lands");
+
+        // The other controller wins seq 2 at the witness.
+        let (theirs, bytes) = wallet.attestation_at_head(alice, 7);
+        let mut chain = wallet.events(alice);
+        chain.push(bytes);
+        push_directly(&witness, alice, &chain).await;
+
+        // This home appends its own seq 2, unpushed, naming a different
+        // subject: the intent it wants to land.
+        let mine = wallet
+            .core
+            .add_trust(alice, subject(8))
+            .expect("the local append lands");
+        assert_eq!(mine.head_seq, 2);
+        let stale = mine.head_event.clone();
+
+        let error = sync
+            .ensure_fresh(&wallet.core, alice, &[witness.endpoint_id])
+            .await
+            .expect_err("the local event lost the race");
+
+        assert_eq!(error.code(), 50);
+        assert_eq!(error.reason(), "stale_head");
+        assert!(
+            error.message().starts_with("State error: witness "),
+            "{error}"
+        );
+        let document = error.to_document();
+        assert_eq!(document["details"]["local_head_seq"], 2);
+        assert_eq!(document["details"]["observed_head_seq"], 2);
+        assert_eq!(document["details"]["ledger_id"], alice.to_string());
+
+        // No stale event is left in the home: the witness's chain is what is
+        // stored now.
+        let loaded = wallet.core.load(alice).expect("the ledger loads");
+        assert_eq!(loaded.head_seq, 2);
+        assert_eq!(loaded.head_event, theirs);
+        assert_ne!(loaded.head_event.to_string(), stale.to_string());
+        assert!(loaded.violation.is_none());
+        assert_eq!(loaded.events.len(), 3, "nothing past the new head survives");
+
+        // The retry re-signs the same intent on the new head and succeeds.
+        assert_eq!(
+            sync.ensure_fresh(&wallet.core, alice, &[witness.endpoint_id])
+                .await
+                .expect("fresh now"),
+            Freshness::UpToDate
+        );
+        let retried = wallet
+            .core
+            .add_trust(alice, subject(8))
+            .expect("the same intent lands on the new head");
+        assert_eq!(retried.head_seq, 3);
+
+        witness.stop().await;
+    });
+}
+
+#[tokio::test]
+async fn two_witnesses_on_divergent_branches_report_equivocation() {
+    bounded!({
+        let first = Served::new().await;
+        let second = Served::new().await;
+        let wallet = Wallet::new();
+        let alice = wallet.identity("alice");
+        wallet.witnesses(alice, &[first.endpoint_id, second.endpoint_id]);
+        let sync = wallet
+            .sync(&[first.addr.clone(), second.addr.clone()])
+            .await;
+        sync.push(
+            &wallet.core,
+            alice,
+            &[first.endpoint_id, second.endpoint_id],
+        )
+        .await
+        .expect("the push lands");
+
+        // Two events at seq 2, one per witness: a lost race, or a signer that
+        // equivocated. The verifier cannot tell and does not guess.
+        let shared = wallet.events(alice);
+        let (left, left_bytes) = wallet.attestation_at_head(alice, 7);
+        let (right, right_bytes) = wallet.attestation_at_head(alice, 8);
+        assert_ne!(left, right);
+        let mut left_chain = shared.clone();
+        left_chain.push(left_bytes);
+        let mut right_chain = shared;
+        right_chain.push(right_bytes);
+        push_directly(&first, alice, &left_chain).await;
+        push_directly(&second, alice, &right_chain).await;
+
+        let error = Verifier::new(&wallet.core, Some(&sync))
+            .ledger_report(alice, None)
+            .await
+            .expect_err("two valid branches are equivocation");
+
+        assert_eq!(error.code(), 20);
+        assert_eq!(error.reason(), "equivocation");
+        assert_eq!(
+            error.message(),
+            format!("Ledger error: two sources hold divergent events at seq 2 of {alice}")
+        );
+        let document = error.to_document();
+        assert_eq!(document["details"]["at_seq"], 2);
+        let candidates = document["details"]["candidates"]
+            .as_array()
+            .expect("two candidates")
+            .clone();
+        assert_eq!(candidates.len(), 2);
+        let sources: Vec<String> = candidates
+            .iter()
+            .map(|entry| entry["source"].as_str().expect("a source").to_owned())
+            .collect();
+        let events: Vec<String> = candidates
+            .iter()
+            .map(|entry| entry["event_id"].as_str().expect("an event").to_owned())
+            .collect();
+        for witness in [first.endpoint_id, second.endpoint_id] {
+            assert!(
+                sources.contains(&rendered(&witness)),
+                "{sources:?} names both sources"
+            );
+        }
+        for event in [left, right] {
+            assert!(
+                events.contains(&rendered_event(event)),
+                "{events:?} names both events"
+            );
+        }
+
+        first.stop().await;
+        second.stop().await;
+    });
+}
+
+#[tokio::test]
+async fn a_source_holding_a_strict_prefix_loses_without_an_equivocation_report() {
+    bounded!({
+        let ahead = Served::new().await;
+        let behind = Served::new().await;
+        let wallet = Wallet::new();
+        let alice = wallet.identity("alice");
+        wallet.witnesses(alice, &[ahead.endpoint_id, behind.endpoint_id]);
+        let sync = wallet
+            .sync(&[ahead.addr.clone(), behind.addr.clone()])
+            .await;
+        sync.push(
+            &wallet.core,
+            alice,
+            &[ahead.endpoint_id, behind.endpoint_id],
+        )
+        .await
+        .expect("both hold the prefix");
+
+        // Only the first witness gets the third event.
+        wallet.core.add_trust(alice, subject(9)).expect("appended");
+        sync.push(&wallet.core, alice, &[ahead.endpoint_id])
+            .await
+            .expect("the longer chain lands on one witness");
+
+        let report = Verifier::new(&wallet.core, Some(&sync))
+            .ledger_report(alice, None)
+            .await
+            .expect("a prefix is not a divergence");
+
+        assert!(report.valid);
+        assert_eq!(report.head_seq, 2, "the longer candidate wins");
+        assert_eq!(report.source.as_str(), rendered(&ahead.endpoint_id));
+        assert_eq!(report.sources_queried.len(), 2);
+        assert!(
+            report.statement.contains("valid as of seq 2 of"),
+            "{}",
+            report.statement
+        );
+
+        ahead.stop().await;
+        behind.stop().await;
+    });
+}
+
+#[tokio::test]
+async fn a_pinned_source_is_the_only_one_asked() {
+    bounded!({
+        let pinned = Served::new().await;
+        let other = Served::new().await;
+        let wallet = Wallet::new();
+        let alice = wallet.identity("alice");
+        wallet.witnesses(alice, &[pinned.endpoint_id, other.endpoint_id]);
+        let sync = wallet
+            .sync(&[pinned.addr.clone(), other.addr.clone()])
+            .await;
+        sync.push(&wallet.core, alice, &[pinned.endpoint_id])
+            .await
+            .expect("only the pinned witness holds it");
+
+        let verified = Verifier::new(&wallet.core, Some(&sync))
+            .verify(alice, Sources::Pinned(pinned.endpoint_id))
+            .await
+            .expect("the pinned source answers");
+
+        assert_eq!(verified.sources_queried, vec![pinned.endpoint_id]);
+        assert_eq!(verified.candidate.source, pinned.endpoint_id);
+
+        // The witness that holds nothing cannot answer, pinned or not.
+        let error = Verifier::new(&wallet.core, Some(&sync))
+            .verify(alice, Sources::Pinned(other.endpoint_id))
+            .await
+            .expect_err("a source that does not hold it answers nothing");
+        assert_eq!(error.code(), 30);
+        assert_eq!(error.reason(), "no_source_available");
+
+        pinned.stop().await;
+        other.stop().await;
+    });
+}
+
+#[tokio::test]
+async fn a_subject_no_source_holds_is_unresolved_and_still_succeeds() {
+    bounded!({
+        let witness = Served::new().await;
+        let wallet = Wallet::new();
+        let alice = wallet.identity("alice");
+        wallet.witnesses(alice, &[witness.endpoint_id]);
+        let stranger = subject(42);
+        wallet
+            .core
+            .add_trust(alice, stranger)
+            .expect("the attestation lands");
+        let sync = wallet.sync(std::slice::from_ref(&witness.addr)).await;
+        sync.push(&wallet.core, alice, &[witness.endpoint_id])
+            .await
+            .expect("the push lands");
+
+        let report = Verifier::new(&wallet.core, Some(&sync))
+            .trust_report(alice, stranger, None)
+            .await
+            .expect("an unresolved subject is not a failure");
+
+        assert!(report.trusted);
+        assert_eq!(report.subject_resolution, SubjectResolution::Unresolved);
+        assert_eq!(
+            report.subject_note.as_deref(),
+            Some("subject: unresolved (not held by any queried source)")
+        );
+        assert_eq!(report.source.as_str(), rendered(&witness.endpoint_id));
+        assert!(report.statement.ends_with("; no revocation up to seq 2"));
+
+        // The attestation names who signed it, which is alice's own key here.
+        let principal = report
+            .signing_principal
+            .as_ref()
+            .expect("a trusted answer names its signer");
+        assert_eq!(principal.identity.as_str(), alice.to_string());
+        let expected_key = wallet
+            .core
+            .signing_key(alice)
+            .expect("the key reads")
+            .public();
+        assert_eq!(principal.key.as_str(), rendered(&expected_key));
+
+        witness.stop().await;
+    });
+}
+
+#[tokio::test]
+async fn a_wallet_serves_its_own_ledgers_read_only() {
+    bounded!({
+        let wallet = Wallet::new();
+        let alice = wallet.identity("alice");
+        let store = mabel_node::wallet::WalletReadStore::new(wallet.core.home().clone());
+        let served = mabel_net::store::Store::head(&store, alice)
+            .await
+            .expect("the store answers")
+            .expect("the wallet holds alice");
+        assert_eq!(served.head_seq, 0);
+
+        let page = mabel_net::store::Store::read_from(&store, alice, 0, 16)
+            .await
+            .expect("the store answers")
+            .expect("the wallet holds alice");
+        assert_eq!(page.events, wallet.events(alice));
+        assert!(!page.more);
+
+        let listed = mabel_net::store::Store::list(&store, 0, 16)
+            .await
+            .expect("the store answers");
+        assert_eq!(listed.items.len(), 1);
+        assert_eq!(listed.items[0].ledger, alice);
+
+        let refused = mabel_net::store::Store::push(
+            &store,
+            alice,
+            wallet.events(alice),
+            Provenance::default(),
+        )
+        .await
+        .expect_err("a wallet stores nothing a stranger pushes");
+        assert!(refused.to_string().contains("NOT_ADMITTED"), "{refused}");
+    });
+}
+
+/// A public key as every document spells it.
+fn rendered(key: &EndpointId) -> String {
+    data_encoding::BASE32_NOPAD
+        .encode(key.as_bytes())
+        .to_ascii_lowercase()
+}
+
+/// An event id as every document spells it.
+fn rendered_event(event: EventId) -> String {
+    data_encoding::BASE32_NOPAD
+        .encode(event.as_bytes())
+        .to_ascii_lowercase()
+}
+
+/// Keeps the witness caps import honest: the tests run with the section 5
+/// caps, which is what a witness enforces in production.
+#[test]
+fn the_tests_use_the_section_five_caps() {
+    assert_eq!(
+        WitnessCaps::default().storage_capacity,
+        mabel_node::DEFAULT_STORAGE_CAPACITY
+    );
+    assert_eq!(TIMEOUT, Duration::from_secs(10));
+}

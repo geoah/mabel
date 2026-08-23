@@ -29,3 +29,6 @@ tracing-subscriber.workspace = true
 [dev-dependencies]
 assert_cmd.workspace = true
 tempfile.workspace = true
+# The network tests build the `--peer` ticket they hand the binary, which is
+# the only way a relay-disabled peer is dialable in a test.
+iroh-tickets.workspace = true

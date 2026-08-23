@@ -44,3 +44,7 @@ deliberately not ticketed here.
 - [ ] tests: the suite runs under `cargo test` with no network access beyond
       loopback and asserts exit codes 0, 20, 30 and 50 with their JSON bodies
       and text prefixes.
+
+- [ ] Wire the append discipline (WalletSync::ensure_fresh) into the CLI
+      appending commands (trust add/revoke, witness add, membership) for
+      ledgers that name witnesses, with a test (ticket 011 deviation 2).

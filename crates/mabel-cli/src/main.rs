@@ -9,9 +9,8 @@
 //! `--json` output goes to stdout, whether it succeeded or not, so a caller can
 //! pipe one document either way. Text errors go to stderr.
 //!
-//! What this build does not carry yet: `sync push`, `sync fetch` and `wallet
-//! serve` (tickets 011 and 012), and `identity rotate`, which exits 70 because
-//! key rotation is out of scope (decision 008).
+//! What this build does not carry yet: `identity rotate`, which exits 70
+//! because key rotation is out of scope (decision 008).
 
 mod append;
 mod artifacts;
@@ -22,6 +21,7 @@ mod documents;
 mod error;
 mod ids;
 mod ledger;
+mod network;
 mod render;
 
 use std::ffi::OsString;

@@ -1,10 +1,12 @@
-//! Starting and stopping a witness: the Iroh endpoint, the sync server and the
-//! read-only HTTP API, over one home.
+//! Starting and stopping a wallet: the Iroh endpoint, the read-only sync
+//! server and the HTTP API plus the UI, over one home.
 //!
-//! [`WitnessRuntime::start`] does everything that can fail and reports where
-//! the witness ended up listening, so a caller prints the endpoint id and both
-//! addresses before the serve loop begins. [`WitnessRuntime::serve`] then runs
-//! until ctrl-c and shuts both listeners down.
+//! [`WalletRuntime::start`] does everything that can fail and reports where the
+//! wallet ended up listening, so a caller prints the endpoint id and both
+//! addresses before the serve loop begins. [`WalletRuntime::serve`] then runs
+//! until ctrl-c and shuts both listeners down. This mirrors
+//! [`crate::witness::WitnessRuntime`]; the two differ in which service the
+//! router gets and in the store the sync server answers from.
 
 use std::future::Future;
 use std::net::SocketAddr;
@@ -16,17 +18,18 @@ use mabel_net::{ALPN, LedgerProtocol};
 use tokio::net::TcpListener;
 use tracing::{info, warn};
 
-use crate::api::{ApiOptions, UiSource, witness_router};
+use crate::api::{ApiOptions, UiSource, wallet_router};
 use crate::config::NodeRole;
 use crate::endpoint::bind_endpoint;
 use crate::home::NodeHome;
-use crate::witness::service::WitnessReadService;
-use crate::witness::storage::{WitnessCaps, WitnessStorage};
-use crate::witness::store::WitnessStore;
+use crate::wallet::core::WalletCore;
+use crate::wallet::service::WalletApiService;
+use crate::wallet::store::WalletReadStore;
+use crate::wallet::sync::WalletSync;
 
-/// What `mabel witness run` was told on the command line.
+/// What `mabel wallet serve` was told on the command line.
 #[derive(Debug, Default)]
-pub struct WitnessOptions {
+pub struct WalletOptions {
     /// `--http <addr>`, overriding `node.json`'s `http_bind`.
     pub http_bind: Option<SocketAddr>,
     /// `--iroh-port <n>`, overriding the ephemeral UDP port.
@@ -36,14 +39,11 @@ pub struct WitnessOptions {
     pub peers: Vec<EndpointAddr>,
     /// Where the UI bundle comes from.
     pub ui: UiSource,
-    /// The caps to enforce, `node.json`'s and section 5's unless a test
-    /// shrinks them.
-    pub caps: Option<WitnessCaps>,
 }
 
-/// A witness that has bound both listeners and not yet begun serving.
+/// A wallet that has bound both listeners and not yet begun serving.
 #[derive(Debug)]
-pub struct WitnessRuntime {
+pub struct WalletRuntime {
     endpoint_id: EndpointId,
     http_address: SocketAddr,
     iroh_addresses: Vec<SocketAddr>,
@@ -51,59 +51,49 @@ pub struct WitnessRuntime {
     listener: TcpListener,
     app: axum::Router,
     iroh: IrohRouter,
-    storage: Arc<WitnessStorage>,
+    core: Arc<WalletCore>,
 }
 
-impl WitnessRuntime {
-    /// Reads the home, rebuilds the folded state, binds the Iroh endpoint and
-    /// the HTTP listener.
+impl WalletRuntime {
+    /// Reads the home, binds the Iroh endpoint and the HTTP listener.
     ///
     /// # Errors
     ///
-    /// Returns the errors of reading `node.json` and `node.key`, of rebuilding
-    /// the index from the event files, and of binding either listener.
-    pub async fn start(home: NodeHome, options: WitnessOptions) -> anyhow::Result<Self> {
+    /// Returns the errors of reading `node.json` and `node.key` and of binding
+    /// either listener.
+    pub async fn start(home: NodeHome, options: WalletOptions) -> anyhow::Result<Self> {
         let config = home.config()?;
-        if config.role != NodeRole::Witness {
+        if config.role != NodeRole::Wallet {
             warn!(
-                "node.json says this home is a {:?} home; running it as a witness stores no keys \
-                 and signs nothing",
+                "node.json says this home is a {:?} home; running it as a wallet serves its \
+                 ledgers read-only and signs with whatever keys it holds",
                 config.role
             );
         }
         let secret = home.node_key()?;
         let endpoint_id = secret.public();
 
-        let caps = options
-            .caps
-            .unwrap_or_else(|| WitnessCaps::from_config(&config));
-        let opened = home.clone();
-        let storage = Arc::new(
-            tokio::task::spawn_blocking(move || WitnessStorage::open(opened, endpoint_id, caps))
-                .await??,
-        );
-
         let endpoint =
             bind_endpoint(config.relay, secret, options.iroh_port, &options.peers).await?;
         let iroh_addresses = endpoint.bound_sockets();
-        let store = Arc::new(WitnessStore::new(storage.clone()));
-        let iroh = IrohRouter::builder(endpoint)
-            .accept(ALPN, LedgerProtocol::new(store))
+        let iroh = IrohRouter::builder(endpoint.clone())
+            .accept(
+                ALPN,
+                LedgerProtocol::new(Arc::new(WalletReadStore::new(home.clone()))),
+            )
             .spawn();
 
         let bound = crate::api::bind::bind(options.http_bind.unwrap_or(config.http_bind)).await?;
-        let service = Arc::new(WitnessReadService::new(
-            storage.clone(),
+        let core = Arc::new(WalletCore::new(home));
+        let service = Arc::new(WalletApiService::new(
+            core.clone(),
+            WalletSync::new(endpoint),
             bound.address,
             config.relay,
         ));
-        let app = witness_router(service, &ApiOptions::new(bound.address).with_ui(options.ui));
+        let app = wallet_router(service, &ApiOptions::new(bound.address).with_ui(options.ui));
 
-        info!(
-            %endpoint_id,
-            http = %bound.address,
-            "the witness is listening"
-        );
+        info!(%endpoint_id, http = %bound.address, "the wallet is listening");
         Ok(Self {
             endpoint_id,
             http_address: bound.address,
@@ -112,12 +102,12 @@ impl WitnessRuntime {
             listener: bound.listener,
             app,
             iroh,
-            storage,
+            core,
         })
     }
 
-    /// This witness's Iroh endpoint id, which a wallet names in a
-    /// `WitnessConfig`.
+    /// This wallet's Iroh endpoint id, which a peer dials to fetch its
+    /// ledgers.
     #[must_use]
     pub fn endpoint_id(&self) -> EndpointId {
         self.endpoint_id
@@ -141,10 +131,10 @@ impl WitnessRuntime {
         self.warning.as_deref()
     }
 
-    /// The storage both surfaces share.
+    /// The home this wallet serves.
     #[must_use]
-    pub fn storage(&self) -> &Arc<WitnessStorage> {
-        &self.storage
+    pub fn core(&self) -> &Arc<WalletCore> {
+        &self.core
     }
 
     /// Serves until ctrl-c, then shuts both listeners down.
@@ -155,7 +145,7 @@ impl WitnessRuntime {
     pub async fn serve(self) -> anyhow::Result<()> {
         self.serve_until(async {
             if let Err(error) = tokio::signal::ctrl_c().await {
-                warn!(%error, "listening for ctrl-c failed; the witness keeps serving");
+                warn!(%error, "listening for ctrl-c failed; the wallet keeps serving");
                 std::future::pending::<()>().await;
             }
         })
@@ -185,7 +175,7 @@ impl WitnessRuntime {
             warn!(%error, "the sync server did not shut down cleanly");
         }
         endpoint.close().await;
-        info!("the witness has stopped");
+        info!("the wallet has stopped");
         served.map_err(anyhow::Error::from)
     }
 }

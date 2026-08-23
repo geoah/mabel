@@ -152,6 +152,11 @@ and both report types carry the pitfall-8 sentence in `verified_means`.
 exit 0. An unresolved subject also exits 0, with
 `subject_resolution: "unresolved"` and the sentence in `subject_note`.
 
+A trust report names who signed the attestation it answers with, as
+`signing_principal: {identity, key}`: the principal identity the `author_key`
+matched and that key, so a delegate's signature is not read as the subject's
+(proposal 002 section 5). It is `null` when `trusted` is false.
+
 Partial validity is a failure, not a result: `mabel verify ledger` on a
 chain that breaks part way exits 20 with the error envelope, and the report
 fields including `valid_to_seq` and `failed_at_seq` live in `details`.

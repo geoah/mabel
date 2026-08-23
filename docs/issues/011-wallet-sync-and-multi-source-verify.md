@@ -1,6 +1,6 @@
 # 011: wallet sync, append discipline and multi-source verification
 
-- Status: open
+- Status: done
 - Depends on: 007, 008, 009
 
 ## Goal

@@ -1,37 +1,110 @@
-//! `mabel verify ledger|trust`, against what this home holds.
+//! `mabel verify ledger|trust`, against a peer or against what this home
+//! holds.
 //!
-//! Both reports name their source, head and fetch time, and neither claims
-//! anything beyond the one ledger it read (flag R, proposal 001 section 6). The
-//! source of a local verification is this node's own endpoint id: no witness is
-//! asked, since fetching from a peer is ticket 011.
+//! Where a report is read from is decided before anything is dialled: a
+//! `--from` pins one source, a ledger that names witnesses is verified against
+//! every one of them in parallel, and a ledger that names none is read from
+//! this home, whose source is this node's own endpoint id. Both reports name
+//! their source, head and fetch time, and neither claims anything beyond the
+//! one chain it read (flag R, proposal 001 section 6).
 //!
-//! `verify trust` exits 0 for `trusted: true` and for `trusted: false`, and for
-//! a subject no source holds. `verify ledger` on a chain that breaks part way
-//! exits 20 with the report inside `details`, because partial validity is a
-//! failure, not a result (section 3.6).
+//! `verify trust` exits 0 for `trusted: true` and for `trusted: false`, and
+//! for a subject no source holds. `verify ledger` on a chain that breaks part
+//! way exits 20 with the report inside `details`, because partial validity is
+//! a failure, not a result (section 3.6).
 
 use mabel_core::IdentityId;
 use mabel_node::api::documents::{
-    Id, LedgerReport, RevokedAttestation, SUBJECT_CONTROL_SENTENCE, SubjectResolution, TrustReport,
-    VERIFIED_MEANS_SENTENCE, VerifyKind,
+    Id, LedgerReport, RevokedAttestation, SUBJECT_CONTROL_SENTENCE, SigningPrincipal,
+    SubjectResolution, TrustReport, UNRESOLVED_SUBJECT_NOTE, VERIFIED_MEANS_SENTENCE, VerifyKind,
 };
 use mabel_node::now_ms;
+use mabel_node::wallet::{Sources, Verifier, WalletCore, WalletSync, as_of, revocation_clause};
 use serde_json::{Map, Value};
 
 use crate::context::Context;
 use crate::error::{CliError, Result};
 use crate::ids;
+use crate::network::on_network;
 use crate::render::{Outcome, rfc3339_utc};
 
-/// The sentence a subject no source holds carries (`contracts/cli/
-/// verify-trust.json`).
-const UNRESOLVED_SUBJECT_NOTE: &str = "subject: unresolved (not held by any queried source)";
-
-/// `mabel verify ledger <alias|id>`.
-pub fn ledger(ctx: &Context, name: &str) -> Result<Outcome> {
+/// `mabel verify ledger <alias|id> [--from <endpoint id>] [--peer <ticket>]`.
+///
+/// # Errors
+///
+/// Returns code 20 for a chain that does not verify and for equivocation
+/// between two sources, and code 30 when no source answered.
+pub fn ledger(
+    ctx: &Context,
+    name: &str,
+    from: Option<&str>,
+    tickets: &[String],
+) -> Result<Outcome> {
     let ledger = ctx.resolve(name)?;
+    match plan(ctx, ledger, from)? {
+        Sources::Local(_) => local_ledger(ctx, ledger),
+        remote => {
+            let report = on_network(
+                ctx,
+                tickets,
+                |core: WalletCore, sync: WalletSync| async move {
+                    let verified = Verifier::new(&core, Some(&sync))
+                        .verify(ledger, remote)
+                        .await?;
+                    Ok(mabel_node::wallet::ledger_report(&verified))
+                },
+            )?;
+            render_ledger(&report)
+        }
+    }
+}
+
+/// `mabel verify trust --issuer <alias|id> --subject <alias|id> [--from
+/// <endpoint id>] [--peer <ticket>]`.
+///
+/// # Errors
+///
+/// As [`ledger`]. A subject no source holds is not a failure: the report says
+/// `unresolved` and the command exits 0 (proposal 001 section 3.7).
+pub fn trust(
+    ctx: &Context,
+    issuer: &str,
+    subject: &str,
+    from: Option<&str>,
+    tickets: &[String],
+) -> Result<Outcome> {
+    let issuer = ctx.resolve(issuer)?;
+    let subject = ctx.resolve(subject)?;
+    match plan(ctx, issuer, from)? {
+        Sources::Local(_) => local_trust(ctx, issuer, subject),
+        remote => {
+            let report = on_network(
+                ctx,
+                tickets,
+                |core: WalletCore, sync: WalletSync| async move {
+                    let verifier = Verifier::new(&core, Some(&sync));
+                    let verified = verifier.verify(issuer, remote).await?;
+                    let resolution = verifier.resolve(subject, &verified).await;
+                    Ok(mabel_node::wallet::trust_report(
+                        &verified, subject, resolution,
+                    ))
+                },
+            )?;
+            render_trust(&report)
+        }
+    }
+}
+
+/// Which sources answer for this ledger, decided before an endpoint is bound.
+fn plan(ctx: &Context, ledger: IdentityId, from: Option<&str>) -> Result<Sources> {
+    let from = from.map(ids::parse_endpoint).transpose()?;
+    let core = WalletCore::new(ctx.home().clone());
+    Ok(mabel_node::wallet::sources(&core, ledger, from)?)
+}
+
+/// `mabel verify ledger` against this home's own copy.
+fn local_ledger(ctx: &Context, ledger: IdentityId) -> Result<Outcome> {
     let source = ctx.source()?;
-    require_held(ctx, ledger, &source)?;
     let loaded = ctx.load(ledger)?;
     let fetched_at_ms = now_ms();
     let valid_to_seq = loaded.valid_to_seq();
@@ -55,8 +128,7 @@ pub fn ledger(ctx: &Context, name: &str) -> Result<Outcome> {
 
     let Some(violation) = &loaded.violation else {
         report.statement = as_of(valid_to_seq, &report.ledger_id, &source, fetched_at_ms);
-        let text = format!("{}\n{VERIFIED_MEANS_SENTENCE}", report.statement);
-        return Outcome::new(&report, text);
+        return render_ledger(&report);
     };
 
     report.statement = format!(
@@ -72,12 +144,9 @@ pub fn ledger(ctx: &Context, name: &str) -> Result<Outcome> {
     )
 }
 
-/// `mabel verify trust --issuer <alias|id> --subject <alias|id>`.
-pub fn trust(ctx: &Context, issuer: &str, subject: &str) -> Result<Outcome> {
-    let issuer = ctx.resolve(issuer)?;
-    let subject = ctx.resolve(subject)?;
+/// `mabel verify trust` against this home's own copy.
+fn local_trust(ctx: &Context, issuer: IdentityId, subject: IdentityId) -> Result<Outcome> {
     let source = ctx.source()?;
-    require_held(ctx, issuer, &source)?;
     let loaded = ctx.load(issuer)?;
     loaded.require_valid()?;
     let fetched_at_ms = now_ms();
@@ -109,6 +178,16 @@ pub fn trust(ctx: &Context, issuer: &str, subject: &str) -> Result<Outcome> {
         as_of(head_seq, &issuer_id, &source, fetched_at_ms),
         revocation_clause(head_seq, &revoked)
     );
+    // Proposal 002 section 5: the report names who signed, so a delegate's
+    // signature is not read as the subject's.
+    let signing_principal = standing.and_then(|entry| {
+        let event = ids::parse_event(entry.attestation_event.as_str()).ok()?;
+        let attestation = loaded.state.attestation(&event)?;
+        Some(SigningPrincipal {
+            identity: ids::identity(attestation.signing_principal.identity),
+            key: ids::key(&attestation.signing_principal.key),
+        })
+    });
     let report = TrustReport {
         kind: VerifyKind::Trust,
         trusted: standing.is_some(),
@@ -120,6 +199,7 @@ pub fn trust(ctx: &Context, issuer: &str, subject: &str) -> Result<Outcome> {
             SubjectResolution::Unresolved
         },
         subject_note: (!resolved).then(|| UNRESOLVED_SUBJECT_NOTE.to_owned()),
+        signing_principal,
         attestation_event: standing.map(|entry| entry.attestation_event.clone()),
         attestation_seq: standing.map(|entry| entry.attestation_seq),
         revoked_count: revoked.len() as u64,
@@ -133,16 +213,22 @@ pub fn trust(ctx: &Context, issuer: &str, subject: &str) -> Result<Outcome> {
         subject_control: SUBJECT_CONTROL_SENTENCE.to_owned(),
         verified_means: VERIFIED_MEANS_SENTENCE.to_owned(),
     };
+    render_trust(&report)
+}
 
+/// The text and the document of a ledger report that verified.
+fn render_ledger(report: &LedgerReport) -> Result<Outcome> {
+    let text = format!("{}\n{VERIFIED_MEANS_SENTENCE}", report.statement);
+    Outcome::new(report, text)
+}
+
+/// The text and the document of a trust report.
+fn render_trust(report: &TrustReport) -> Result<Outcome> {
     let mut text = format!("trusted: {}\n{}", report.trusted, report.statement);
-    // Proposal 002 section 5: the text names who signed, so a delegate's
-    // signature is not read as the subject's.
-    if let Some(entry) = standing
-        && let Some(attestation) = loaded.state.attestation(&parse(&entry.attestation_event))
-    {
+    if let Some(principal) = &report.signing_principal {
         text.push_str(&format!(
-            "\nsigned by principal {}",
-            attestation.signing_principal
+            "\nsigned by principal {} ({})",
+            principal.identity, principal.key
         ));
     }
     if let Some(note) = &report.subject_note {
@@ -151,45 +237,7 @@ pub fn trust(ctx: &Context, issuer: &str, subject: &str) -> Result<Outcome> {
     text.push_str(&format!(
         "\n{SUBJECT_CONTROL_SENTENCE}\n{VERIFIED_MEANS_SENTENCE}"
     ));
-    Outcome::new(&report, text)
-}
-
-/// `valid as of seq N of <ledger>, fetched from <source> at <RFC 3339>`.
-fn as_of(seq: u64, ledger: &Id, source: &Id, fetched_at_ms: u64) -> String {
-    format!(
-        "valid as of seq {seq} of {ledger}, fetched from {source} at {}",
-        rfc3339_utc(fetched_at_ms)
-    )
-}
-
-/// The revocation clause of a trust statement, which never says "unrevoked".
-fn revocation_clause(head_seq: u64, revoked: &[RevokedAttestation]) -> String {
-    if revoked.is_empty() {
-        return format!("; no revocation up to seq {head_seq}");
-    }
-    revoked
-        .iter()
-        .map(|entry| {
-            format!(
-                "; attestation {} revoked at seq {}",
-                entry.attestation_event, entry.revocation_seq
-            )
-        })
-        .collect()
-}
-
-/// Code 30 when this home holds no events for the ledger: the local store is
-/// the only source a local verification has.
-fn require_held(ctx: &Context, ledger: IdentityId, source: &Id) -> Result<()> {
-    if ctx.store(ledger).head()?.is_some() {
-        return Ok(());
-    }
-    Err(CliError::network(
-        "no_source_available",
-        format!("no source answered for {ledger}"),
-    )
-    .with_detail("ledger_id", ledger.to_string())
-    .with_detail("sources_queried", [source.as_str()]))
+    Outcome::new(report, text)
 }
 
 /// The report as the `details` of a code-20 envelope: every report field
@@ -206,9 +254,4 @@ fn details(report: &LedgerReport, failed_event: Option<Id>) -> Map<String, Value
         failed_event.map_or(Value::Null, |id| Value::String(id.as_str().to_owned())),
     );
     details
-}
-
-/// Reads back an id the report already rendered.
-fn parse(id: &Id) -> mabel_core::EventId {
-    id.as_str().parse().expect("a rendered event id parses")
 }

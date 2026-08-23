@@ -17,6 +17,10 @@
     "subject_note": null,
     "attestation_event": "65cssg5tnr3gyxe2rwhsgqc3nct3pwg2bqxr2oxpelejuoorlsnq",
     "attestation_seq": 2,
+    "signing_principal": {
+      "identity": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+      "key": "hpjcooyeb7dsjfaxusuucqfyzvv4y2m2z6ohsvkfw3ivl6dqssba"
+    },
     "revoked_count": 0,
     "revoked_attestations": [],
     "source": "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq",

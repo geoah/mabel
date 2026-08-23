@@ -227,6 +227,15 @@ impl ServiceError {
         &self.message
     }
 
+    /// The code-specific keys of `details`, without `reason`.
+    ///
+    /// A caller that re-renders this failure in another envelope, as the CLI
+    /// does, carries them over rather than re-deriving them.
+    #[must_use]
+    pub fn details(&self) -> &Map<String, Value> {
+        &self.details
+    }
+
     /// The error envelope as a JSON value, `reason` first inside `details`.
     #[must_use]
     pub fn to_document(&self) -> Value {
