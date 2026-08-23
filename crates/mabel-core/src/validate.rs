@@ -22,8 +22,9 @@
 //!
 //! What is *not* checked here, because it needs the folded state: the
 //! `author_key` authorization and the outer event signature, the
-//! `ledger`/`prev`/`seq` chain equalities, `TrustRevocation.target` liveness
-//! and `OrgRemoval.target` validity.
+//! `ledger`/`prev`/`seq` chain equalities, `TrustRevocation.target` liveness,
+//! the invitation an acceptance names, and `MembershipRemoval.target`
+//! validity.
 
 use iroh_base::{PublicKey, Signature};
 
@@ -36,16 +37,21 @@ use crate::{
 
 /// How deep messages may nest before the scanner gives up.
 ///
-/// A legitimate event reaches five: `SignedEvent`, `EventBody`,
-/// `OrgInception`, the embedded `SignedEvent` and its `EventBody`.
+/// A legitimate event reaches depth 7: `SignedEvent`, `EventBody`,
+/// `Inception`, `IdentityRoot`, then the embedded `SignedEvent`, its
+/// `EventBody`, its `Inception` and that inception's `RawRoot`.
 pub const MAX_NESTING: u32 = 8;
 
-/// The `oneof payload` tag of `PersonInception`.
-const PERSON_INCEPTION_TAG: u32 = 10;
-/// The `oneof payload` tag of `OrgInception`.
-const ORG_INCEPTION_TAG: u32 = 11;
+/// The `oneof payload` tag of `Inception`.
+const INCEPTION_TAG: u32 = 10;
 /// The `oneof payload` tag of `TrustAttestation`.
-const TRUST_ATTESTATION_TAG: u32 = 13;
+const TRUST_ATTESTATION_TAG: u32 = 12;
+/// The `oneof payload` tag of `MembershipInvitation`.
+const MEMBERSHIP_INVITATION_TAG: u32 = 14;
+/// The `oneof root` tag of `RawRoot`.
+const RAW_ROOT_TAG: u32 = 10;
+/// The `oneof root` tag of `IdentityRoot`.
+const IDENTITY_ROOT_TAG: u32 = 11;
 
 /// Why a byte string is not a valid message.
 ///
@@ -283,9 +289,10 @@ pub enum WireError {
     /// A seq-0 event carried a payload other than an inception.
     #[error("seq 0 requires an inception payload")]
     NonInceptionAtSeqZero,
-    /// An embedded inception was not a `PersonInception`.
-    #[error("the embedded inception is not a PersonInception")]
-    NotPersonInception,
+    /// An embedded inception was not a raw-rooted seq-0 event, so it names no
+    /// key of its own (proposal 002 section 2).
+    #[error("the embedded inception is not a raw-rooted inception")]
+    EmbeddedInceptionNotRawRooted,
     /// An embedded inception did not hash to the identity recorded beside it.
     #[error("{field} does not equal the event id of the inception embedded beside it")]
     InceptionIdMismatch {
@@ -353,7 +360,7 @@ impl WireError {
             Self::MissingChainField { .. } => "missing_chain_field",
             Self::InceptionPastSeqZero => "inception_past_seq_zero",
             Self::NonInceptionAtSeqZero => "non_inception_at_seq_zero",
-            Self::NotPersonInception => "not_person_inception",
+            Self::EmbeddedInceptionNotRawRooted => "embedded_inception_not_raw_rooted",
             Self::InceptionIdMismatch { .. } => "inception_id_mismatch",
             Self::InceptionKeyMismatch { .. } => "inception_key_mismatch",
             Self::InvalidPublicKey { .. } => "invalid_public_key",
@@ -572,7 +579,7 @@ const NONCE: FieldKind = FieldKind::Bytes {
     max: NONCE_BYTES,
 };
 
-/// An embedded person inception, checked by the enclosing message's
+/// An embedded raw-rooted inception, checked by the enclosing message's
 /// cross-field rule rather than by the scanner, so the bytes are scanned once.
 const EMBEDDED_INCEPTION: FieldKind = FieldKind::Bytes {
     exact: None,
@@ -585,51 +592,87 @@ const VERSION: FieldKind = FieldKind::Varint {
     max: u32::MAX as u64,
 };
 
-/// `PersonInception` (proposal 001 section 3.4).
-pub static PERSON_INCEPTION: MessageDescriptor = MessageDescriptor {
-    name: "PersonInception",
-    max_bytes: MAX_EVENT_BYTES,
-    fields: &[
-        required(
-            1,
-            "kind",
-            FieldKind::Enum {
-                values: &[EnumValue {
-                    number: 1,
-                    name: "PERSON",
-                }],
-            },
-        ),
-        required(2, "active_key", ID),
-        required(3, "reserve_commit", ID),
-        required(4, "nonce", NONCE),
+/// The `DeclaredKind` values a defined kind may hold. `KIND_UNSPECIFIED` is
+/// absent, so an unset or zero kind is rejected (proposal 002 section 3).
+const DECLARED_KIND: FieldKind = FieldKind::Enum {
+    values: &[
+        EnumValue {
+            number: 1,
+            name: "PERSON",
+        },
+        EnumValue {
+            number: 2,
+            name: "ORGANIZATION",
+        },
+        EnumValue {
+            number: 3,
+            name: "AGENT",
+        },
+        EnumValue {
+            number: 4,
+            name: "SERVICE",
+        },
     ],
-    oneof: None,
-    check: Some(check_person_inception),
 };
 
-/// `OrgInception` (proposal 001 section 3.4).
-pub static ORG_INCEPTION: MessageDescriptor = MessageDescriptor {
-    name: "OrgInception",
+/// The `Role` values an invitation may offer. Values 3 and up are the
+/// narrower-capability slot of proposal 002 section 9 and are rejected here.
+const ROLE: FieldKind = FieldKind::Enum {
+    values: &[
+        EnumValue {
+            number: 1,
+            name: "MEMBER",
+        },
+        EnumValue {
+            number: 2,
+            name: "CONTROLLER",
+        },
+    ],
+};
+
+/// `RawRoot` (proposal 002 section 8).
+pub static RAW_ROOT: MessageDescriptor = MessageDescriptor {
+    name: "RawRoot",
     max_bytes: MAX_EVENT_BYTES,
     fields: &[
-        required(
-            1,
-            "kind",
-            FieldKind::Enum {
-                values: &[EnumValue {
-                    number: 2,
-                    name: "ORG",
-                }],
-            },
-        ),
-        required(2, "founder", ID),
-        required(3, "founder_key", ID),
-        required(4, "founder_inception", EMBEDDED_INCEPTION),
-        required(5, "nonce", NONCE),
+        required(1, "active_key", ID),
+        required(2, "reserve_commit", ID),
     ],
     oneof: None,
-    check: Some(check_org_inception),
+    check: Some(check_raw_root),
+};
+
+/// `IdentityRoot` (proposal 002 section 8).
+pub static IDENTITY_ROOT: MessageDescriptor = MessageDescriptor {
+    name: "IdentityRoot",
+    max_bytes: MAX_EVENT_BYTES,
+    fields: &[
+        required(1, "founder", ID),
+        required(2, "founder_key", ID),
+        required(3, "founder_inception", EMBEDDED_INCEPTION),
+    ],
+    oneof: None,
+    check: Some(check_identity_root),
+};
+
+/// `Inception`, the one seq-0 payload (proposal 002 section 8).
+///
+/// `kind` must be a defined value and the `root` `oneof` must name exactly
+/// one recognised variant. The kind never selects the root: it is advisory.
+pub static INCEPTION: MessageDescriptor = MessageDescriptor {
+    name: "Inception",
+    max_bytes: MAX_EVENT_BYTES,
+    fields: &[
+        required(1, "kind", DECLARED_KIND),
+        required(2, "nonce", NONCE),
+        variant(RAW_ROOT_TAG, "raw_root", &RAW_ROOT),
+        variant(IDENTITY_ROOT_TAG, "identity_root", &IDENTITY_ROOT),
+    ],
+    oneof: Some(Oneof {
+        name: "root",
+        first_number: RAW_ROOT_TAG,
+    }),
+    check: None,
 };
 
 /// `WitnessConfig` (proposal 001 section 3.4).
@@ -668,44 +711,29 @@ pub static TRUST_REVOCATION: MessageDescriptor = MessageDescriptor {
     check: None,
 };
 
-/// `OrgInvite` (proposal 001 section 3.4).
-pub static ORG_INVITE: MessageDescriptor = MessageDescriptor {
-    name: "OrgInvite",
+/// `MembershipInvitation` (proposal 002 section 8).
+pub static MEMBERSHIP_INVITATION: MessageDescriptor = MessageDescriptor {
+    name: "MembershipInvitation",
     max_bytes: MAX_EVENT_BYTES,
     fields: &[
         required(1, "invitee", ID),
         required(2, "invitee_key", ID),
-        required(
-            3,
-            "role",
-            FieldKind::Enum {
-                values: &[
-                    EnumValue {
-                        number: 1,
-                        name: "MEMBER",
-                    },
-                    EnumValue {
-                        number: 2,
-                        name: "CONTROLLER",
-                    },
-                ],
-            },
-        ),
+        required(3, "role", ROLE),
         required(4, "invitee_inception", EMBEDDED_INCEPTION),
     ],
     oneof: None,
-    check: Some(check_org_invite),
+    check: Some(check_membership_invitation),
 };
 
-/// `Acceptance`, the detached blob an `OrgAcceptance` embeds verbatim
+/// `Acceptance`, the detached blob a `MembershipAcceptance` embeds verbatim
 /// (proposal 001 section 3.5).
 pub static ACCEPTANCE: MessageDescriptor = MessageDescriptor {
     name: "Acceptance",
     max_bytes: MAX_ACCEPTANCE_BYTES,
     fields: &[
         forbidden(1, "version", VERSION),
-        required(2, "org", ID),
-        required(3, "invite_event", ID),
+        required(2, "ledger", ID),
+        required(3, "invitation_event", ID),
         required(4, "invitee", ID),
         required(5, "invitee_key", ID),
     ],
@@ -713,9 +741,9 @@ pub static ACCEPTANCE: MessageDescriptor = MessageDescriptor {
     check: None,
 };
 
-/// `OrgAcceptance` (proposal 001 section 3.4).
-pub static ORG_ACCEPTANCE: MessageDescriptor = MessageDescriptor {
-    name: "OrgAcceptance",
+/// `MembershipAcceptance` (proposal 002 section 8).
+pub static MEMBERSHIP_ACCEPTANCE: MessageDescriptor = MessageDescriptor {
+    name: "MembershipAcceptance",
     max_bytes: MAX_EVENT_BYTES,
     fields: &[
         required(
@@ -726,15 +754,15 @@ pub static ORG_ACCEPTANCE: MessageDescriptor = MessageDescriptor {
                 max: MAX_ACCEPTANCE_BYTES,
             },
         ),
-        required(2, "sig", SIG),
+        required(2, "signature", SIG),
     ],
     oneof: None,
-    check: Some(check_org_acceptance),
+    check: Some(check_membership_acceptance),
 };
 
-/// `OrgRemoval` (proposal 001 section 3.4).
-pub static ORG_REMOVAL: MessageDescriptor = MessageDescriptor {
-    name: "OrgRemoval",
+/// `MembershipRemoval` (proposal 002 section 8).
+pub static MEMBERSHIP_REMOVAL: MessageDescriptor = MessageDescriptor {
+    name: "MembershipRemoval",
     max_bytes: MAX_EVENT_BYTES,
     fields: &[required(1, "target", ID)],
     oneof: None,
@@ -767,22 +795,25 @@ pub static EVENT_BODY: MessageDescriptor = MessageDescriptor {
             },
         ),
         required(6, "author_key", ID),
-        variant(PERSON_INCEPTION_TAG, "person_inception", &PERSON_INCEPTION),
-        variant(ORG_INCEPTION_TAG, "org_inception", &ORG_INCEPTION),
-        variant(12, "witness_config", &WITNESS_CONFIG),
+        variant(INCEPTION_TAG, "inception", &INCEPTION),
+        variant(11, "witness_config", &WITNESS_CONFIG),
         variant(
             TRUST_ATTESTATION_TAG,
             "trust_attestation",
             &TRUST_ATTESTATION,
         ),
-        variant(14, "trust_revocation", &TRUST_REVOCATION),
-        variant(15, "org_invite", &ORG_INVITE),
-        variant(16, "org_acceptance", &ORG_ACCEPTANCE),
-        variant(17, "org_removal", &ORG_REMOVAL),
+        variant(13, "trust_revocation", &TRUST_REVOCATION),
+        variant(
+            MEMBERSHIP_INVITATION_TAG,
+            "membership_invitation",
+            &MEMBERSHIP_INVITATION,
+        ),
+        variant(15, "membership_acceptance", &MEMBERSHIP_ACCEPTANCE),
+        variant(16, "membership_removal", &MEMBERSHIP_REMOVAL),
     ],
     oneof: Some(Oneof {
         name: "payload",
-        first_number: PERSON_INCEPTION_TAG,
+        first_number: INCEPTION_TAG,
     }),
     check: Some(check_event_body),
 };
@@ -801,7 +832,7 @@ pub static SIGNED_EVENT: MessageDescriptor = MessageDescriptor {
                 max: MAX_EVENT_BYTES,
             },
         ),
-        required(2, "sig", SIG),
+        required(2, "signature", SIG),
     ],
     oneof: None,
     check: None,
@@ -924,7 +955,7 @@ pub fn message(descriptor: &'static MessageDescriptor, bytes: &[u8]) -> Result<(
     validate(descriptor, bytes, 0).map(|_| ())
 }
 
-/// What an embedded inception proves about the person it names.
+/// What an embedded inception proves about the identity it names.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StandaloneInception {
     /// The recomputed `event_id` of the inception.
@@ -932,18 +963,21 @@ pub struct StandaloneInception {
     /// The identity the inception creates, which is that same digest
     /// (proposal 001 section 3.3).
     pub identity: IdentityId,
-    /// The active key the inception records, authoritative for life.
+    /// The `RawRoot.active_key` the inception records, authoritative for life.
     pub active_key: PublicKey,
 }
 
 /// Verifies an embedded `founder_inception` or `invitee_inception` on its own
-/// (proposal 001 section 3.4).
+/// (proposal 002 section 8).
 ///
 /// The bytes must be a canonical `SignedEvent` that passes the field table,
-/// carry a `PersonInception` payload at seq 0, and bear a signature that
-/// verifies under the `active_key` it records. The caller compares the
-/// returned `event_id` and `active_key` with the id and key recorded beside
-/// the inception.
+/// carry an `Inception` at seq 0 whose root is a `RawRoot`, and bear a
+/// signature that verifies under the `active_key` that root records. Declared
+/// kind is ignored: a raw root is the requirement, because an identity-rooted
+/// ledger holds no key of its own and cannot sign anything (proposal 002
+/// section 9 caps nesting at depth 1). The caller compares the returned
+/// `event_id` and `active_key` with the id and key recorded beside the
+/// inception.
 pub fn verify_inception_standalone(bytes: &[u8]) -> Result<StandaloneInception, WireError> {
     inception_standalone(bytes, 0)
 }
@@ -951,20 +985,31 @@ pub fn verify_inception_standalone(bytes: &[u8]) -> Result<StandaloneInception, 
 fn inception_standalone(bytes: &[u8], depth: u32) -> Result<StandaloneInception, WireError> {
     let signed = validate(&SIGNED_EVENT, bytes, depth)?;
     let body = signed.bytes(1).expect("body is required");
-    let sig = signed.bytes(2).expect("sig is required");
+    let signature = signed.bytes(2).expect("signature is required");
 
     let body_fields = scan(&EVENT_BODY, body, depth + 1)?;
     let (number, payload) = body_fields.oneof().expect("payload is required");
-    if number != PERSON_INCEPTION_TAG {
-        return Err(WireError::NotPersonInception);
+    if number != INCEPTION_TAG {
+        return Err(WireError::EmbeddedInceptionNotRawRooted);
     }
-    let inception = scan(&PERSON_INCEPTION, payload, depth + 2)?;
+    let inception = scan(&INCEPTION, payload, depth + 2)?;
+    let (root_number, root) = inception.oneof().expect("root is required");
+    if root_number != RAW_ROOT_TAG {
+        return Err(WireError::EmbeddedInceptionNotRawRooted);
+    }
+    let raw_root = scan(&RAW_ROOT, root, depth + 3)?;
     let active_key = public_key(
-        "PersonInception",
+        "RawRoot",
         "active_key",
-        inception.bytes(2).expect("active_key is required"),
+        raw_root.bytes(1).expect("active_key is required"),
     )?;
-    verify(&active_key, &sign_input(body), sig, "SignedEvent", "sig")?;
+    verify(
+        &active_key,
+        &sign_input(body),
+        signature,
+        "SignedEvent",
+        "signature",
+    )?;
 
     let id = event_id(body);
     Ok(StandaloneInception {
@@ -1311,7 +1356,7 @@ fn check_event_body(scanned: &Scanned<'_>) -> Result<(), WireError> {
     }
 
     let (number, payload) = scanned.oneof().expect("payload is required");
-    let is_inception = number == PERSON_INCEPTION_TAG || number == ORG_INCEPTION_TAG;
+    let is_inception = number == INCEPTION_TAG;
     if is_inception && seq.is_some() {
         return Err(WireError::InceptionPastSeqZero);
     }
@@ -1321,25 +1366,21 @@ fn check_event_body(scanned: &Scanned<'_>) -> Result<(), WireError> {
 
     let author_key = scanned.bytes(6).expect("author_key is required");
     match number {
-        // A person's seq-0 event is self-signed by the key it records
-        // (proposal 001 section 3.6, step 3).
-        PERSON_INCEPTION_TAG => {
-            let inception = scanned.subfields(&PERSON_INCEPTION, payload)?;
-            if inception.bytes(2) != Some(author_key) {
+        // Seq 0 self-authorizes under its root: the raw root's `active_key`
+        // or the identity root's `founder_key` (proposal 002 section 5).
+        INCEPTION_TAG => {
+            let inception = scanned.subfields(&INCEPTION, payload)?;
+            let (root_number, root) = inception.oneof().expect("root is required");
+            // The scan already refused every tag but these two.
+            let (descriptor, field, name) = match root_number {
+                RAW_ROOT_TAG => (&RAW_ROOT, 1, "RawRoot.active_key"),
+                _ => (&IDENTITY_ROOT, 2, "IdentityRoot.founder_key"),
+            };
+            let root = inception.subfields(descriptor, root)?;
+            if root.bytes(field) != Some(author_key) {
                 return Err(WireError::FieldsMustMatch {
                     first: "EventBody.author_key",
-                    second: "PersonInception.active_key",
-                });
-            }
-        }
-        // An org's seq-0 event is signed by the founder's personal key
-        // (proposal 001 section 3.4).
-        ORG_INCEPTION_TAG => {
-            let inception = scanned.subfields(&ORG_INCEPTION, payload)?;
-            if inception.bytes(3) != Some(author_key) {
-                return Err(WireError::FieldsMustMatch {
-                    first: "EventBody.author_key",
-                    second: "OrgInception.founder_key",
+                    second: name,
                 });
             }
         }
@@ -1353,42 +1394,53 @@ fn check_event_body(scanned: &Scanned<'_>) -> Result<(), WireError> {
                 });
             }
         }
+        // An invitee equal to the ledger id would shadow the root principal
+        // of a raw-rooted ledger (proposal 002 section 4).
+        MEMBERSHIP_INVITATION_TAG => {
+            let invitation = scanned.subfields(&MEMBERSHIP_INVITATION, payload)?;
+            if ledger.is_some() && invitation.bytes(1) == ledger {
+                return Err(WireError::FieldsMustDiffer {
+                    first: "MembershipInvitation.invitee",
+                    second: "EventBody.ledger",
+                });
+            }
+        }
         _ => {}
     }
     Ok(())
 }
 
-fn check_person_inception(scanned: &Scanned<'_>) -> Result<(), WireError> {
-    if scanned.bytes(2) == scanned.bytes(3) {
+fn check_raw_root(scanned: &Scanned<'_>) -> Result<(), WireError> {
+    if scanned.bytes(1) == scanned.bytes(2) {
         return Err(WireError::FieldsMustDiffer {
-            first: "PersonInception.active_key",
-            second: "PersonInception.reserve_commit",
+            first: "RawRoot.active_key",
+            second: "RawRoot.reserve_commit",
         });
     }
     Ok(())
 }
 
-fn check_org_inception(scanned: &Scanned<'_>) -> Result<(), WireError> {
+fn check_identity_root(scanned: &Scanned<'_>) -> Result<(), WireError> {
     check_embedded_inception(
         scanned,
-        4,
-        (2, "OrgInception.founder"),
-        (3, "OrgInception.founder_key"),
+        3,
+        (1, "IdentityRoot.founder"),
+        (2, "IdentityRoot.founder_key"),
     )
 }
 
-fn check_org_invite(scanned: &Scanned<'_>) -> Result<(), WireError> {
+fn check_membership_invitation(scanned: &Scanned<'_>) -> Result<(), WireError> {
     check_embedded_inception(
         scanned,
         4,
-        (1, "OrgInvite.invitee"),
-        (2, "OrgInvite.invitee_key"),
+        (1, "MembershipInvitation.invitee"),
+        (2, "MembershipInvitation.invitee_key"),
     )
 }
 
-/// The rule of proposal 001 section 3.4: an org event that names a person
-/// embeds that person's inception, which must verify standalone, hash to the
-/// recorded id and record the key recorded beside it.
+/// The rule of proposal 002 section 8: an event that names another identity
+/// embeds that identity's inception, which must verify standalone, carry a
+/// raw root, hash to the recorded id and record the key recorded beside it.
 fn check_embedded_inception(
     scanned: &Scanned<'_>,
     inception_field: u32,
@@ -1408,9 +1460,9 @@ fn check_embedded_inception(
     Ok(())
 }
 
-fn check_org_acceptance(scanned: &Scanned<'_>) -> Result<(), WireError> {
+fn check_membership_acceptance(scanned: &Scanned<'_>) -> Result<(), WireError> {
     let blob = scanned.bytes(1).expect("acceptance is required");
-    let sig = scanned.bytes(2).expect("sig is required");
+    let signature = scanned.bytes(2).expect("signature is required");
     let fields = scanned.subfields(&ACCEPTANCE, blob)?;
     let invitee_key = public_key(
         "Acceptance",
@@ -1420,9 +1472,9 @@ fn check_org_acceptance(scanned: &Scanned<'_>) -> Result<(), WireError> {
     verify(
         &invitee_key,
         &accept_input(blob),
-        sig,
-        "OrgAcceptance",
-        "sig",
+        signature,
+        "MembershipAcceptance",
+        "signature",
     )
 }
 
@@ -1440,17 +1492,17 @@ fn public_key(
 fn verify(
     key: &PublicKey,
     input: &[u8],
-    sig: &[u8],
+    signature: &[u8],
     message: &'static str,
     field: &'static str,
 ) -> Result<(), WireError> {
-    let sig: [u8; SIG_BYTES] = sig.try_into().map_err(|_| WireError::WrongLength {
+    let signature: [u8; SIG_BYTES] = signature.try_into().map_err(|_| WireError::WrongLength {
         message,
         field,
         expected: SIG_BYTES,
-        actual: sig.len(),
+        actual: signature.len(),
     })?;
-    key.verify(input, &Signature::from_bytes(&sig))
+    key.verify(input, &Signature::from_bytes(&signature))
         .map_err(|_| WireError::BadSignature { message, field })
 }
 
@@ -1458,10 +1510,10 @@ fn verify(
 mod tests {
     use super::*;
     use crate::sign::{
-        BuiltEvent, Position, build_org_inception, build_person_inception, build_trust_attestation,
-        build_witness_config,
+        BuiltEvent, Position, Root, build_inception, build_trust_attestation, build_witness_config,
     };
     use iroh_base::SecretKey;
+    use mabel_proto::v0::DeclaredKind;
 
     const T0: u64 = 1_700_000_000_000;
 
@@ -1469,13 +1521,37 @@ mod tests {
         SecretKey::from_bytes(&[seed; 32])
     }
 
-    fn person() -> BuiltEvent {
-        build_person_inception(&secret(1), &secret(2).public(), [3u8; NONCE_BYTES], T0)
-            .expect("builds")
+    /// A raw-rooted ledger: the shape that signs for itself.
+    fn raw_rooted() -> BuiltEvent {
+        build_inception(
+            &secret(1),
+            DeclaredKind::Person,
+            Root::Raw {
+                reserve_key: &secret(2).public(),
+            },
+            [3u8; NONCE_BYTES],
+            T0,
+        )
+        .expect("builds")
+    }
+
+    /// An identity-rooted ledger founded by [`raw_rooted`].
+    fn identity_rooted(founder: &BuiltEvent, founder_id: IdentityId) -> BuiltEvent {
+        build_inception(
+            &secret(1),
+            DeclaredKind::Organization,
+            Root::Identity {
+                founder: founder_id,
+                founder_inception: &founder.signed_event,
+            },
+            [4u8; NONCE_BYTES],
+            T0,
+        )
+        .expect("builds")
     }
 
     fn attestation() -> BuiltEvent {
-        let head = person();
+        let head = raw_rooted();
         build_trust_attestation(
             &secret(1),
             &Position {
@@ -1523,12 +1599,26 @@ mod tests {
         attestation().body
     }
 
+    /// The encoded `Inception` of a raw root, as parts a test can mutate.
+    fn raw_root_payload(
+        active: &PublicKey,
+        reserve: &PublicKey,
+        nonce: [u8; NONCE_BYTES],
+    ) -> Vec<u8> {
+        let mut root = len_field(1, active.as_bytes());
+        root.extend_from_slice(&len_field(2, &crate::digest::reserve_commit(reserve)));
+        let mut payload = varint_field(1, 1);
+        payload.extend_from_slice(&len_field(2, &nonce));
+        payload.extend_from_slice(&len_field(RAW_ROOT_TAG, &root));
+        payload
+    }
+
     // The seven wire-format classes of proposal 001 section 3.1.
 
     #[test]
     fn a_valid_event_passes() {
-        signed_event(&person().signed_event).expect("the built event passes");
-        event_body(&person().body).expect("the built body passes");
+        signed_event(&raw_rooted().signed_event).expect("the built event passes");
+        event_body(&raw_rooted().body).expect("the built body passes");
         signed_event(&attestation().signed_event).expect("the built event passes");
     }
 
@@ -1554,7 +1644,10 @@ mod tests {
         bytes.extend_from_slice(&varint_field(5, T0));
         bytes.extend_from_slice(&len_field(6, &[3u8; ID_BYTES]));
         bytes.extend_from_slice(&len_field(6, &[3u8; ID_BYTES]));
-        bytes.extend_from_slice(&len_field(13, &len_field(1, &[4u8; ID_BYTES])));
+        bytes.extend_from_slice(&len_field(
+            TRUST_ATTESTATION_TAG,
+            &len_field(1, &[4u8; ID_BYTES]),
+        ));
         assert_eq!(
             event_body(&bytes),
             Err(WireError::DuplicateField {
@@ -1572,7 +1665,10 @@ mod tests {
         bytes.extend_from_slice(&len_field(4, &[2u8; ID_BYTES]));
         bytes.extend_from_slice(&len_field(6, &[3u8; ID_BYTES]));
         bytes.extend_from_slice(&varint_field(5, T0));
-        bytes.extend_from_slice(&len_field(13, &len_field(1, &[4u8; ID_BYTES])));
+        bytes.extend_from_slice(&len_field(
+            TRUST_ATTESTATION_TAG,
+            &len_field(1, &[4u8; ID_BYTES]),
+        ));
         assert_eq!(
             event_body(&bytes),
             Err(WireError::FieldOutOfOrder {
@@ -1601,7 +1697,10 @@ mod tests {
         bytes.extend_from_slice(&len_field(4, &[2u8; ID_BYTES]));
         bytes.extend_from_slice(&varint_field(5, T0));
         bytes.extend_from_slice(&len_field(6, &[3u8; ID_BYTES]));
-        bytes.extend_from_slice(&len_field(13, &len_field(1, &[4u8; ID_BYTES])));
+        bytes.extend_from_slice(&len_field(
+            TRUST_ATTESTATION_TAG,
+            &len_field(1, &[4u8; ID_BYTES]),
+        ));
         assert_eq!(
             event_body(&bytes),
             Err(WireError::NonMinimalVarint {
@@ -1641,43 +1740,131 @@ mod tests {
     #[test]
     fn unrecognised_oneof_variants_are_rejected() {
         let mut bytes = body();
-        bytes.extend_from_slice(&len_field(18, &[]));
+        bytes.extend_from_slice(&len_field(17, &[]));
         assert_eq!(
             event_body(&bytes),
             Err(WireError::UnknownOneofVariant {
                 message: "EventBody",
                 oneof: "payload",
-                number: 18,
+                number: 17,
+            })
+        );
+    }
+
+    /// The tags proposal 002 section 9 holds for the deferred payloads read as
+    /// unrecognised variants, not as unknown fields.
+    #[test]
+    fn the_reserved_payload_tags_read_as_unrecognised_variants() {
+        for number in [20, 25, 29] {
+            let mut bytes = body();
+            bytes.extend_from_slice(&len_field(number, &[]));
+            assert_eq!(
+                event_body(&bytes),
+                Err(WireError::UnknownOneofVariant {
+                    message: "EventBody",
+                    oneof: "payload",
+                    number,
+                })
+            );
+        }
+    }
+
+    #[test]
+    fn unspecified_enums_are_rejected() {
+        // An explicit zero and an absent field both mean KIND_UNSPECIFIED.
+        let mut payload = varint_field(1, 0);
+        payload.extend_from_slice(&len_field(2, &[1u8; NONCE_BYTES]));
+        assert_eq!(
+            message(&INCEPTION, &payload),
+            Err(WireError::UnspecifiedEnum {
+                message: "Inception",
+                field: "kind",
+            })
+        );
+
+        let absent = len_field(2, &[1u8; NONCE_BYTES]);
+        assert_eq!(
+            message(&INCEPTION, &absent),
+            Err(WireError::UnspecifiedEnum {
+                message: "Inception",
+                field: "kind",
+            })
+        );
+    }
+
+    /// Declared kind gates nothing, so every defined value is accepted with
+    /// either root (proposal 002 section 3).
+    #[test]
+    fn every_declared_kind_is_accepted_with_a_raw_root() {
+        for kind in [
+            DeclaredKind::Person,
+            DeclaredKind::Organization,
+            DeclaredKind::Agent,
+            DeclaredKind::Service,
+        ] {
+            let built = build_inception(
+                &secret(1),
+                kind,
+                Root::Raw {
+                    reserve_key: &secret(2).public(),
+                },
+                [3u8; NONCE_BYTES],
+                T0,
+            )
+            .expect("builds");
+            signed_event(&built.signed_event)
+                .unwrap_or_else(|err| panic!("{} is rejected: {err}", kind.as_str_name()));
+        }
+
+        let mut payload =
+            raw_root_payload(&secret(1).public(), &secret(2).public(), [3u8; NONCE_BYTES]);
+        // Kind 5 is not a value this version defines.
+        payload.splice(0..2, varint_field(1, 5));
+        assert_eq!(
+            message(&INCEPTION, &payload),
+            Err(WireError::EnumValue {
+                message: "Inception",
+                field: "kind",
+                value: 5,
             })
         );
     }
 
     #[test]
-    fn unspecified_enums_are_rejected() {
-        // An explicit zero and an absent field both mean IDENTITY_KIND_UNSPECIFIED.
-        let mut payload = varint_field(1, 0);
-        payload.extend_from_slice(&len_field(2, &[1u8; ID_BYTES]));
+    fn an_inception_with_no_root_is_rejected() {
+        let mut payload = varint_field(1, 1);
+        payload.extend_from_slice(&len_field(2, &[3u8; NONCE_BYTES]));
         assert_eq!(
-            message(&PERSON_INCEPTION, &payload),
-            Err(WireError::UnspecifiedEnum {
-                message: "PersonInception",
-                field: "kind",
+            message(&INCEPTION, &payload),
+            Err(WireError::MissingOneof {
+                message: "Inception",
+                oneof: "root",
             })
         );
+    }
 
-        let absent = len_field(2, &[1u8; ID_BYTES]);
+    #[test]
+    fn an_inception_with_two_roots_is_rejected() {
+        let founder = raw_rooted();
+        let mut identity_root = len_field(1, founder.event_id.as_bytes());
+        identity_root.extend_from_slice(&len_field(2, secret(1).public().as_bytes()));
+        identity_root.extend_from_slice(&len_field(3, &founder.signed_event));
+
+        let mut payload =
+            raw_root_payload(&secret(1).public(), &secret(2).public(), [3u8; NONCE_BYTES]);
+        payload.extend_from_slice(&len_field(IDENTITY_ROOT_TAG, &identity_root));
         assert_eq!(
-            message(&PERSON_INCEPTION, &absent),
-            Err(WireError::UnspecifiedEnum {
-                message: "PersonInception",
-                field: "kind",
+            message(&INCEPTION, &payload),
+            Err(WireError::MultipleOneofVariants {
+                message: "Inception",
+                oneof: "root",
             })
         );
     }
 
     #[test]
     fn truncated_input_is_rejected() {
-        let bytes = person().signed_event;
+        let bytes = raw_rooted().signed_event;
         for cut in [1, bytes.len() / 2, bytes.len() - 1] {
             let err = signed_event(&bytes[..cut]).expect_err("truncated input is rejected");
             assert!(
@@ -1714,14 +1901,13 @@ mod tests {
 
     #[test]
     fn oversize_embedded_inceptions_are_rejected() {
-        let mut payload = varint_field(1, 2);
-        payload.extend_from_slice(&len_field(2, &[1u8; ID_BYTES]));
-        payload.extend_from_slice(&len_field(3, &[2u8; ID_BYTES]));
-        payload.extend_from_slice(&len_field(4, &[0u8; MAX_EMBEDDED_INCEPTION_BYTES + 1]));
+        let mut root = len_field(1, &[1u8; ID_BYTES]);
+        root.extend_from_slice(&len_field(2, &[2u8; ID_BYTES]));
+        root.extend_from_slice(&len_field(3, &[0u8; MAX_EMBEDDED_INCEPTION_BYTES + 1]));
         assert_eq!(
-            message(&ORG_INCEPTION, &payload),
+            message(&IDENTITY_ROOT, &root),
             Err(WireError::FieldTooLong {
-                message: "OrgInception",
+                message: "IdentityRoot",
                 field: "founder_inception",
                 len: MAX_EMBEDDED_INCEPTION_BYTES + 1,
                 cap: MAX_EMBEDDED_INCEPTION_BYTES,
@@ -1729,20 +1915,22 @@ mod tests {
         );
     }
 
-    /// A `SignedEvent` carrying an `OrgInception` whose `founder_inception`
-    /// is `inner`. Well formed enough to reach the embedded-inception check,
-    /// which is what recurses.
-    fn org_inception_around(inner: &[u8]) -> Vec<u8> {
+    /// A `SignedEvent` carrying an identity-rooted `Inception` whose
+    /// `founder_inception` is `inner`. Well formed enough to reach the
+    /// embedded-inception check, which is what recurses.
+    fn identity_root_around(inner: &[u8]) -> Vec<u8> {
         let author_key = [7u8; ID_BYTES];
+        let mut root = len_field(1, &[8u8; ID_BYTES]);
+        root.extend_from_slice(&len_field(2, &author_key));
+        root.extend_from_slice(&len_field(3, inner));
+
         let mut payload = varint_field(1, 2);
-        payload.extend_from_slice(&len_field(2, &[8u8; ID_BYTES]));
-        payload.extend_from_slice(&len_field(3, &author_key));
-        payload.extend_from_slice(&len_field(4, inner));
-        payload.extend_from_slice(&len_field(5, &[9u8; NONCE_BYTES]));
+        payload.extend_from_slice(&len_field(2, &[9u8; NONCE_BYTES]));
+        payload.extend_from_slice(&len_field(IDENTITY_ROOT_TAG, &root));
 
         let mut body = varint_field(5, T0);
         body.extend_from_slice(&len_field(6, &author_key));
-        body.extend_from_slice(&len_field(ORG_INCEPTION_TAG, &payload));
+        body.extend_from_slice(&len_field(INCEPTION_TAG, &payload));
 
         let mut signed = len_field(1, &body);
         signed.extend_from_slice(&len_field(2, &[0u8; SIG_BYTES]));
@@ -1751,17 +1939,17 @@ mod tests {
 
     #[test]
     fn deep_nesting_is_rejected() {
-        // Each embedded inception costs three levels, so three of them reach
+        // Each embedded inception costs four levels, so three of them reach
         // the guard before any signature is checked.
         let mut bytes = vec![0xffu8; 8];
         for _ in 0..3 {
-            bytes = org_inception_around(&bytes);
+            bytes = identity_root_around(&bytes);
         }
         assert!(bytes.len() <= MAX_EVENT_BYTES);
         assert_eq!(signed_event(&bytes), Err(WireError::TooDeeplyNested));
 
         // Two of them stop short of the guard and fail on their content.
-        let shallow = org_inception_around(&org_inception_around(&[0xffu8; 8]));
+        let shallow = identity_root_around(&identity_root_around(&[0xffu8; 8]));
         assert_ne!(signed_event(&shallow), Err(WireError::TooDeeplyNested));
     }
 
@@ -1801,7 +1989,10 @@ mod tests {
         bytes.extend_from_slice(&len_field(4, &[2u8; ID_BYTES]));
         bytes.extend_from_slice(&varint_field(5, MAX_TIMESTAMP_MS + 1));
         bytes.extend_from_slice(&len_field(6, &[3u8; ID_BYTES]));
-        bytes.extend_from_slice(&len_field(13, &len_field(1, &[4u8; ID_BYTES])));
+        bytes.extend_from_slice(&len_field(
+            TRUST_ATTESTATION_TAG,
+            &len_field(1, &[4u8; ID_BYTES]),
+        ));
         assert_eq!(
             event_body(&bytes),
             Err(WireError::ValueOutOfRange {
@@ -1831,8 +2022,11 @@ mod tests {
     fn two_payload_variants_are_rejected() {
         let mut bytes = varint_field(5, T0);
         bytes.extend_from_slice(&len_field(6, &[3u8; ID_BYTES]));
-        bytes.extend_from_slice(&len_field(13, &len_field(1, &[4u8; ID_BYTES])));
-        bytes.extend_from_slice(&len_field(14, &len_field(1, &[5u8; ID_BYTES])));
+        bytes.extend_from_slice(&len_field(
+            TRUST_ATTESTATION_TAG,
+            &len_field(1, &[4u8; ID_BYTES]),
+        ));
+        bytes.extend_from_slice(&len_field(13, &len_field(1, &[5u8; ID_BYTES])));
         assert_eq!(
             event_body(&bytes),
             Err(WireError::MultipleOneofVariants {
@@ -1844,11 +2038,14 @@ mod tests {
 
     #[test]
     fn chain_fields_follow_the_sequence() {
-        let head = person();
+        let head = raw_rooted();
         let mut bytes = len_field(2, head.event_id.as_bytes());
         bytes.extend_from_slice(&varint_field(5, T0));
         bytes.extend_from_slice(&len_field(6, &[3u8; ID_BYTES]));
-        bytes.extend_from_slice(&len_field(13, &len_field(1, &[4u8; ID_BYTES])));
+        bytes.extend_from_slice(&len_field(
+            TRUST_ATTESTATION_TAG,
+            &len_field(1, &[4u8; ID_BYTES]),
+        ));
         assert_eq!(
             event_body(&bytes),
             Err(WireError::SetAtSeqZero { field: "ledger" })
@@ -1857,7 +2054,10 @@ mod tests {
         let mut bytes = varint_field(3, 1);
         bytes.extend_from_slice(&varint_field(5, T0));
         bytes.extend_from_slice(&len_field(6, &[3u8; ID_BYTES]));
-        bytes.extend_from_slice(&len_field(13, &len_field(1, &[4u8; ID_BYTES])));
+        bytes.extend_from_slice(&len_field(
+            TRUST_ATTESTATION_TAG,
+            &len_field(1, &[4u8; ID_BYTES]),
+        ));
         assert_eq!(
             event_body(&bytes),
             Err(WireError::MissingChainField { field: "ledger" })
@@ -1905,7 +2105,7 @@ mod tests {
 
     #[test]
     fn a_witness_config_from_the_signing_path_passes() {
-        let head = person();
+        let head = raw_rooted();
         let built = build_witness_config(
             &secret(1),
             &Position {
@@ -1921,11 +2121,57 @@ mod tests {
         signed_event(&built.signed_event).expect("passes");
     }
 
+    // The seq-0 author_key row of proposal 002 section 8.
+
+    #[test]
+    fn a_raw_rooted_seq_zero_event_is_signed_by_its_active_key() {
+        // The author key is Bob's while the raw root records Alice's.
+        let mut body = varint_field(5, T0);
+        body.extend_from_slice(&len_field(6, secret(9).public().as_bytes()));
+        body.extend_from_slice(&len_field(
+            INCEPTION_TAG,
+            &raw_root_payload(&secret(1).public(), &secret(2).public(), [3u8; NONCE_BYTES]),
+        ));
+        let mut signed = len_field(1, &body);
+        signed.extend_from_slice(&len_field(2, &[0u8; SIG_BYTES]));
+        assert_eq!(
+            signed_event(&signed),
+            Err(WireError::FieldsMustMatch {
+                first: "EventBody.author_key",
+                second: "RawRoot.active_key",
+            })
+        );
+    }
+
+    #[test]
+    fn an_identity_rooted_seq_zero_event_is_signed_by_the_founder_key() {
+        let founder = raw_rooted();
+        let mut root = len_field(1, founder.event_id.as_bytes());
+        root.extend_from_slice(&len_field(2, secret(1).public().as_bytes()));
+        root.extend_from_slice(&len_field(3, &founder.signed_event));
+        let mut payload = varint_field(1, 2);
+        payload.extend_from_slice(&len_field(2, &[4u8; NONCE_BYTES]));
+        payload.extend_from_slice(&len_field(IDENTITY_ROOT_TAG, &root));
+
+        let mut body = varint_field(5, T0);
+        body.extend_from_slice(&len_field(6, secret(9).public().as_bytes()));
+        body.extend_from_slice(&len_field(INCEPTION_TAG, &payload));
+        let mut signed = len_field(1, &body);
+        signed.extend_from_slice(&len_field(2, &[0u8; SIG_BYTES]));
+        assert_eq!(
+            signed_event(&signed),
+            Err(WireError::FieldsMustMatch {
+                first: "EventBody.author_key",
+                second: "IdentityRoot.founder_key",
+            })
+        );
+    }
+
     // verify_inception_standalone.
 
     #[test]
-    fn a_standalone_inception_returns_its_id_and_key() {
-        let built = person();
+    fn a_standalone_inception_returns_its_id_and_root_key() {
+        let built = raw_rooted();
         let inception = verify_inception_standalone(&built.signed_event).expect("verifies");
         assert_eq!(inception.event_id, built.event_id);
         assert_eq!(inception.identity, built.event_id.into());
@@ -1934,52 +2180,54 @@ mod tests {
 
     #[test]
     fn a_standalone_inception_rejects_a_broken_signature() {
-        let mut bytes = person().signed_event;
+        let mut bytes = raw_rooted().signed_event;
         let last = bytes.len() - 1;
         bytes[last] ^= 0x01;
         assert_eq!(
             verify_inception_standalone(&bytes),
             Err(WireError::BadSignature {
                 message: "SignedEvent",
-                field: "sig",
+                field: "signature",
             })
         );
     }
 
+    /// Declared kind is ignored; the raw root is the requirement.
     #[test]
-    fn a_standalone_inception_rejects_an_org_inception() {
-        let founder = person();
-        let org = build_org_inception(
+    fn a_standalone_inception_rejects_an_identity_root_and_ignores_the_kind() {
+        let founder = raw_rooted();
+        let organization = identity_rooted(&founder, founder.event_id.into());
+        assert_eq!(
+            verify_inception_standalone(&organization.signed_event),
+            Err(WireError::EmbeddedInceptionNotRawRooted)
+        );
+        // The identity-rooted event itself is valid: its embedded founder
+        // inception is raw-rooted.
+        signed_event(&organization.signed_event).expect("passes");
+
+        // A raw root whose declared kind is ORGANIZATION verifies standalone.
+        let mislabelled = build_inception(
             &secret(1),
-            founder.event_id.into(),
-            &founder.signed_event,
-            [4u8; NONCE_BYTES],
+            DeclaredKind::Organization,
+            Root::Raw {
+                reserve_key: &secret(2).public(),
+            },
+            [3u8; NONCE_BYTES],
             T0,
         )
         .expect("builds");
-        assert_eq!(
-            verify_inception_standalone(&org.signed_event),
-            Err(WireError::NotPersonInception)
-        );
-        // The org event itself is valid: its embedded founder inception is.
-        signed_event(&org.signed_event).expect("passes");
+        verify_inception_standalone(&mislabelled.signed_event)
+            .expect("declared kind is not checked");
     }
 
     #[test]
     fn an_embedded_inception_must_match_the_id_recorded_beside_it() {
-        let founder = person();
-        let org = build_org_inception(
-            &secret(1),
-            IdentityId::from_bytes([0xaa; ID_BYTES]),
-            &founder.signed_event,
-            [4u8; NONCE_BYTES],
-            T0,
-        )
-        .expect("builds");
+        let founder = raw_rooted();
+        let organization = identity_rooted(&founder, IdentityId::from_bytes([0xaa; ID_BYTES]));
         assert_eq!(
-            signed_event(&org.signed_event),
+            signed_event(&organization.signed_event),
             Err(WireError::InceptionIdMismatch {
-                field: "OrgInception.founder",
+                field: "IdentityRoot.founder",
             })
         );
     }
@@ -1998,6 +2246,10 @@ mod tests {
             }
             .code(),
             "unknown_field"
+        );
+        assert_eq!(
+            WireError::EmbeddedInceptionNotRawRooted.code(),
+            "embedded_inception_not_raw_rooted"
         );
     }
 }

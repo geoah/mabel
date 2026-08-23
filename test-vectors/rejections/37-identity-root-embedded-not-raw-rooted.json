@@ -1,0 +1,10 @@
+{
+  "class": "field-table",
+  "code": "embedded_inception_not_raw_rooted",
+  "description": "An IdentityRoot embedding an attestation instead of a raw-rooted inception.",
+  "entry": "signed_event",
+  "file": "37-identity-root-embedded-not-raw-rooted.json",
+  "input_hex": "0ae2022880d095ffbc313220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c977873752b60208021210c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c15a9f020a208225a669a21ee244ba23bf4a1096ed5445a954ea01967150ccddee723635f1d11220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c97787371ad8010a930112208225a669a21ee244ba23bf4a1096ed5445a954ea01967150ccddee723635f1d1180122208225a669a21ee244ba23bf4a1096ed5445a954ea01967150ccddee723635f1d128e0a499ffbc313220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c977873762220a2056690b23dafe56de2271519b35601a4b4f4e54ce51439930cf99a731a0ab8b9612402f9602fdc97a68204e39a5136d3ebc5430a3e85131f048a1cff6406bb0df4ea958cf131372a115bffe4fa3db11dfe9c8322f7cb7caf57e9ae0eed58cd43d060f1240730d655d5f55a81ec525aef78c6e7115c8a3cacba1e707c33221dc18f911b1f263b8a1dcf6dc6b02c6ca955f5177975361bf30c4b1131da79e01c6ef2a856c0d",
+  "reason": "the embedded inception is not a raw-rooted inception",
+  "rule": "002 section 8 the embedded inception carries a raw root"
+}

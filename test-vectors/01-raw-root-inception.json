@@ -1,0 +1,37 @@
+{
+  "body": {
+    "author_key_hex": "d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c9778737",
+    "ledger_hex": "",
+    "payload": {
+      "inception": {
+        "declared_kind": "PERSON",
+        "nonce_hex": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+        "root": {
+          "raw_root": {
+            "active_key_hex": "d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c9778737",
+            "reserve_commit_hex": "e1ead60ce2981a689bc964158c97d173d1d1bbcb80c56dfc90747193ba06d301"
+          }
+        }
+      }
+    },
+    "prev_hex": "",
+    "seq": 0,
+    "timestamp_ms": 1700000000000,
+    "version": 0
+  },
+  "body_hex": "2880d095ffbc313220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c9778737525a08011210a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a152440a20d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c97787371220e1ead60ce2981a689bc964158c97d173d1d1bbcb80c56dfc90747193ba06d301",
+  "description": "Alice's seq-0 event: a raw root, self-signed by its active key.",
+  "event_id": "qis2m2ncd3rejordx5fbbfxnkrc2svhkaglhcugm3xxhenrv6hiq",
+  "event_id_hex": "8225a669a21ee244ba23bf4a1096ed5445a954ea01967150ccddee723635f1d1",
+  "file": "01-raw-root-inception.json",
+  "inputs": {
+    "declared_kind": "PERSON",
+    "nonce_hex": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+    "now_ms": 1700000000000,
+    "reserve_public_key_hex": "64c30815ff26d5c4aff8e11274a38ed6dd0553049da4c10372a9575b7a776909",
+    "root": "raw_root",
+    "secret_key_hex": "1111111111111111111111111111111111111111111111111111111111111111"
+  },
+  "signature_hex": "433bf84fc16951cfda6420a68e999daac54eff37b46b89750c145d84d64c662ee63c3f3bac4ac59fb8c67ea8f580d206b99ddf56f4df06c46f8dbaefcf6db308",
+  "signed_event_hex": "0a85012880d095ffbc313220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c9778737525a08011210a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a152440a20d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c97787371220e1ead60ce2981a689bc964158c97d173d1d1bbcb80c56dfc90747193ba06d3011240433bf84fc16951cfda6420a68e999daac54eff37b46b89750c145d84d64c662ee63c3f3bac4ac59fb8c67ea8f580d206b99ddf56f4df06c46f8dbaefcf6db308"
+}

@@ -1,6 +1,6 @@
 # 005: membership fold, admission and the last-controller rule
 
-- Status: open
+- Status: done
 - Depends on: 001
 
 ## Goal

@@ -1,6 +1,6 @@
 # 012: axum HTTP APIs over the contract fixtures, loopback rules and UI serving
 
-- Status: open
+- Status: done
 - Depends on: 020
 
 ## Goal

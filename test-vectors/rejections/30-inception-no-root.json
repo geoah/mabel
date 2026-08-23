@@ -1,0 +1,10 @@
+{
+  "class": "field-table",
+  "code": "missing_oneof",
+  "description": "An Inception carrying a kind and a nonce but no root.",
+  "entry": "signed_event",
+  "file": "30-inception-no-root.json",
+  "input_hex": "0a3f2880d095ffbc313220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c9778737521408011210a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a112400fc2e5477a114667514f905a53dc6fcc8e9708b2406f77963a7158c3ab7241be709f8429b10b42c5800847a2b831be017cfe5ece7f0b3812cc789f1cdf8a4a03",
+  "reason": "Inception.root names no variant",
+  "rule": "002 section 8 Inception.root names exactly one variant"
+}

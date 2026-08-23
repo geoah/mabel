@@ -1,5 +1,5 @@
 //! Golden vectors for the canonical encoding, the event ids and the
-//! signatures (proposal 001 section 11).
+//! signatures (proposal 001 section 11, proposal 002 section 7).
 //!
 //! The files under `test-vectors/` are literals: the tests here read them and
 //! compare, and never write them. The only writer is `gen_vectors`, which is
@@ -15,11 +15,11 @@ use std::path::{Path, PathBuf};
 use data_encoding::HEXLOWER;
 use iroh_base::{PublicKey, SecretKey, Signature};
 use mabel_core::proto::{
-    Acceptance, EventBody, IdentityKind, Role, SignedEvent, event_body::Payload,
+    Acceptance, DeclaredKind, EventBody, Role, SignedEvent, event_body::Payload, inception,
 };
 use mabel_core::{
-    BuiltEvent, IdentityId, LedgerId, Position, build_acceptance, build_org_acceptance,
-    build_org_inception, build_org_invite, build_org_removal, build_person_inception,
+    BuiltEvent, IdentityId, LedgerId, Position, Root, build_acceptance, build_inception,
+    build_membership_acceptance, build_membership_invitation, build_membership_removal,
     build_trust_attestation, build_trust_revocation, build_witness_config, event_id, sign_input,
 };
 use mabel_proto::prost::Message;
@@ -48,7 +48,7 @@ impl Vector {
             "signed_event_hex": hex(&self.built.signed_event),
             "event_id": self.built.event_id.to_string(),
             "event_id_hex": hex(self.built.event_id.as_bytes()),
-            "signature_hex": hex(&signed.sig),
+            "signature_hex": hex(&signed.signature),
             "body": render_body(&self.built.body),
         })
     }
@@ -66,8 +66,9 @@ fn vectors_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../test-vectors")
 }
 
-/// Every vector in one scenario: a person ledger and the org they found,
-/// covering all eight payload variants with fixed keys, nonces and
+/// Every vector in one scenario: Alice's raw-rooted ledger, the delegation she
+/// grants Bob on it, and the identity-rooted organization she founds, covering
+/// every payload variant and both roots with fixed keys, nonces and
 /// timestamps.
 fn vectors() -> Vec<Vector> {
     let alice = secret(0x11);
@@ -77,25 +78,42 @@ fn vectors() -> Vec<Vector> {
     let witnesses = [secret(0x77).public(), secret(0x78).public()];
     let alice_nonce = [0xa1u8; 16];
     let bob_nonce = [0xb1u8; 16];
-    let org_nonce = [0xc1u8; 16];
+    let organization_nonce = [0xc1u8; 16];
 
-    let person_inception =
-        build_person_inception(&alice, &alice_reserve, alice_nonce, T0).expect("builds");
-    let alice_id: IdentityId = person_inception.event_id.into();
+    let raw_root_inception = build_inception(
+        &alice,
+        DeclaredKind::Person,
+        Root::Raw {
+            reserve_key: &alice_reserve,
+        },
+        alice_nonce,
+        T0,
+    )
+    .expect("builds");
+    let alice_id: IdentityId = raw_root_inception.event_id.into();
 
-    let bob_inception = build_person_inception(&bob, &bob_reserve, bob_nonce, T0).expect("builds");
+    let bob_inception = build_inception(
+        &bob,
+        DeclaredKind::Person,
+        Root::Raw {
+            reserve_key: &bob_reserve,
+        },
+        bob_nonce,
+        T0,
+    )
+    .expect("builds");
     let bob_id: IdentityId = bob_inception.event_id.into();
 
-    let at = |ledger: LedgerId, seq: u64, prev: &BuiltEvent| Position {
+    let at = |ledger: LedgerId, seq: u64, prev: &BuiltEvent, prev_timestamp_ms: u64| Position {
         ledger,
         seq,
         prev: prev.event_id,
-        prev_timestamp_ms: T0 + (seq - 1) * STEP_MS,
+        prev_timestamp_ms,
     };
 
     let witness_config = build_witness_config(
         &alice,
-        &at(alice_id, 1, &person_inception),
+        &at(alice_id, 1, &raw_root_inception, T0),
         &witnesses,
         T0 + STEP_MS,
     )
@@ -103,7 +121,7 @@ fn vectors() -> Vec<Vector> {
 
     let trust_attestation = build_trust_attestation(
         &alice,
-        &at(alice_id, 2, &witness_config),
+        &at(alice_id, 2, &witness_config, T0 + STEP_MS),
         bob_id,
         T0 + 2 * STEP_MS,
     )
@@ -111,30 +129,35 @@ fn vectors() -> Vec<Vector> {
 
     let trust_revocation = build_trust_revocation(
         &alice,
-        &at(alice_id, 3, &trust_attestation),
+        &at(alice_id, 3, &trust_attestation, T0 + 2 * STEP_MS),
         trust_attestation.event_id,
         T0 + 3 * STEP_MS,
     )
     .expect("builds");
 
-    let org_inception = build_org_inception(
+    // The organization: an identity root founded by Alice, holding no key of
+    // its own.
+    let identity_root_inception = build_inception(
         &alice,
-        alice_id,
-        &person_inception.signed_event,
-        org_nonce,
+        DeclaredKind::Organization,
+        Root::Identity {
+            founder: alice_id,
+            founder_inception: &raw_root_inception.signed_event,
+        },
+        organization_nonce,
         T0 + 4 * STEP_MS,
     )
     .expect("builds");
-    let org_id: LedgerId = org_inception.event_id.into();
+    let organization_id: LedgerId = identity_root_inception.event_id.into();
 
-    let org_invite = build_org_invite(
+    let membership_invitation = build_membership_invitation(
         &alice,
-        &Position {
-            ledger: org_id,
-            seq: 1,
-            prev: org_inception.event_id,
-            prev_timestamp_ms: T0 + 4 * STEP_MS,
-        },
+        &at(
+            organization_id,
+            1,
+            &identity_root_inception,
+            T0 + 4 * STEP_MS,
+        ),
         bob_id,
         &bob.public(),
         Role::Controller,
@@ -143,30 +166,48 @@ fn vectors() -> Vec<Vector> {
     )
     .expect("builds");
 
-    let accepted = build_acceptance(&bob, org_id, org_invite.event_id, bob_id);
-    let org_acceptance = build_org_acceptance(
+    let accepted = build_acceptance(
+        &bob,
+        organization_id,
+        membership_invitation.event_id,
+        bob_id,
+    );
+    let membership_acceptance = build_membership_acceptance(
         &alice,
-        &Position {
-            ledger: org_id,
-            seq: 2,
-            prev: org_invite.event_id,
-            prev_timestamp_ms: T0 + 5 * STEP_MS,
-        },
+        &at(organization_id, 2, &membership_invitation, T0 + 5 * STEP_MS),
         &accepted,
         T0 + 6 * STEP_MS,
     )
     .expect("builds");
 
-    let org_removal = build_org_removal(
+    let membership_removal = build_membership_removal(
         &alice,
-        &Position {
-            ledger: org_id,
-            seq: 3,
-            prev: org_acceptance.event_id,
-            prev_timestamp_ms: T0 + 6 * STEP_MS,
-        },
+        &at(organization_id, 3, &membership_acceptance, T0 + 6 * STEP_MS),
         bob_id,
         T0 + 7 * STEP_MS,
+    )
+    .expect("builds");
+
+    // Delegation on the raw-rooted ledger: Alice admits Bob as a second
+    // controller of her own ledger (proposal 002 section 4).
+    let delegation_invitation = build_membership_invitation(
+        &alice,
+        &at(alice_id, 4, &trust_revocation, T0 + 3 * STEP_MS),
+        bob_id,
+        &bob.public(),
+        Role::Controller,
+        &bob_inception.signed_event,
+        T0 + 8 * STEP_MS,
+    )
+    .expect("builds");
+
+    let delegation_accepted =
+        build_acceptance(&bob, alice_id, delegation_invitation.event_id, bob_id);
+    let delegation_acceptance = build_membership_acceptance(
+        &alice,
+        &at(alice_id, 5, &delegation_invitation, T0 + 8 * STEP_MS),
+        &delegation_accepted,
+        T0 + 9 * STEP_MS,
     )
     .expect("builds");
 
@@ -179,15 +220,17 @@ fn vectors() -> Vec<Vector> {
 
     vec![
         Vector {
-            file: "01-person-inception.json",
-            description: "Alice's seq-0 event, self-signed by her active key.",
+            file: "01-raw-root-inception.json",
+            description: "Alice's seq-0 event: a raw root, self-signed by its active key.",
             inputs: json!({
                 "secret_key_hex": hex(&alice.to_bytes()),
+                "declared_kind": "PERSON",
+                "root": "raw_root",
                 "reserve_public_key_hex": hex(alice_reserve.as_bytes()),
                 "nonce_hex": hex(&alice_nonce),
                 "now_ms": T0,
             }),
-            built: person_inception.clone(),
+            built: raw_root_inception.clone(),
         },
         Vector {
             file: "02-witness-config.json",
@@ -196,7 +239,7 @@ fn vectors() -> Vec<Vector> {
                 "secret_key_hex": hex(&alice.to_bytes()),
                 "ledger": alice_id.to_string(),
                 "seq": 1,
-                "prev": person_inception.event_id.to_string(),
+                "prev": raw_root_inception.event_id.to_string(),
                 "prev_timestamp_ms": T0,
                 "now_ms": T0 + STEP_MS,
                 "witnesses_hex": witnesses.iter().map(|w| hex(w.as_bytes())).collect::<Vec<_>>(),
@@ -229,28 +272,31 @@ fn vectors() -> Vec<Vector> {
                 "now_ms": T0 + 3 * STEP_MS,
                 "target": trust_attestation.event_id.to_string(),
             }),
-            built: trust_revocation,
+            built: trust_revocation.clone(),
         },
         Vector {
-            file: "05-org-inception.json",
-            description: "Alice founds an org, embedding her own inception.",
+            file: "05-identity-root-inception.json",
+            description: "Alice founds an organization: an identity root embedding her own \
+                          inception.",
             inputs: json!({
                 "founder_secret_key_hex": hex(&alice.to_bytes()),
+                "declared_kind": "ORGANIZATION",
+                "root": "identity_root",
                 "founder": alice_id.to_string(),
-                "founder_inception_hex": hex(&person_inception.signed_event),
-                "nonce_hex": hex(&org_nonce),
+                "founder_inception_hex": hex(&raw_root_inception.signed_event),
+                "nonce_hex": hex(&organization_nonce),
                 "now_ms": T0 + 4 * STEP_MS,
             }),
-            built: org_inception.clone(),
+            built: identity_root_inception.clone(),
         },
         Vector {
-            file: "06-org-invite.json",
-            description: "Alice invites Bob as a controller, embedding his inception.",
+            file: "06-membership-invitation.json",
+            description: "The organization invites Bob as a controller, embedding his inception.",
             inputs: json!({
                 "secret_key_hex": hex(&alice.to_bytes()),
-                "ledger": org_id.to_string(),
+                "ledger": organization_id.to_string(),
                 "seq": 1,
-                "prev": org_inception.event_id.to_string(),
+                "prev": identity_root_inception.event_id.to_string(),
                 "prev_timestamp_ms": T0 + 4 * STEP_MS,
                 "now_ms": T0 + 5 * STEP_MS,
                 "invitee": bob_id.to_string(),
@@ -258,49 +304,84 @@ fn vectors() -> Vec<Vector> {
                 "role": "CONTROLLER",
                 "invitee_inception_hex": hex(&bob_inception.signed_event),
             }),
-            built: org_invite.clone(),
+            built: membership_invitation.clone(),
         },
         Vector {
-            file: "07-org-acceptance.json",
-            description: "Alice admits Bob, embedding the acceptance Bob signed.",
+            file: "07-membership-acceptance.json",
+            description: "The organization admits Bob, embedding the acceptance Bob signed.",
             inputs: json!({
                 "secret_key_hex": hex(&alice.to_bytes()),
-                "ledger": org_id.to_string(),
+                "ledger": organization_id.to_string(),
                 "seq": 2,
-                "prev": org_invite.event_id.to_string(),
+                "prev": membership_invitation.event_id.to_string(),
                 "prev_timestamp_ms": T0 + 5 * STEP_MS,
                 "now_ms": T0 + 6 * STEP_MS,
                 "acceptance_hex": hex(&accepted.acceptance),
-                "acceptance_sig_hex": hex(&accepted.sig),
+                "acceptance_signature_hex": hex(&accepted.signature),
                 "acceptance": render_acceptance(&accepted.acceptance),
             }),
-            built: org_acceptance.clone(),
+            built: membership_acceptance.clone(),
         },
         Vector {
-            file: "08-org-removal.json",
-            description: "Alice removes Bob from the org.",
+            file: "08-membership-removal.json",
+            description: "The organization removes Bob.",
             inputs: json!({
                 "secret_key_hex": hex(&alice.to_bytes()),
-                "ledger": org_id.to_string(),
+                "ledger": organization_id.to_string(),
                 "seq": 3,
-                "prev": org_acceptance.event_id.to_string(),
+                "prev": membership_acceptance.event_id.to_string(),
                 "prev_timestamp_ms": T0 + 6 * STEP_MS,
                 "now_ms": T0 + 7 * STEP_MS,
                 "target": bob_id.to_string(),
             }),
-            built: org_removal,
+            built: membership_removal,
         },
         Vector {
-            file: "09-embedded-person-inception.json",
-            description: "Bob's seq-0 event, embedded by vectors 06 and 07.",
+            file: "09-embedded-raw-root-inception.json",
+            description: "Bob's seq-0 event, embedded by vectors 06, 07, 10 and 11.",
             inputs: json!({
                 "secret_key_hex": hex(&bob.to_bytes()),
+                "declared_kind": "PERSON",
+                "root": "raw_root",
                 "reserve_public_key_hex": hex(bob_reserve.as_bytes()),
                 "nonce_hex": hex(&bob_nonce),
                 "now_ms": T0,
                 "scenario": key_inputs,
             }),
-            built: bob_inception,
+            built: bob_inception.clone(),
+        },
+        Vector {
+            file: "10-raw-root-delegation-invitation.json",
+            description: "Alice invites Bob as a second controller of her own raw-rooted ledger.",
+            inputs: json!({
+                "secret_key_hex": hex(&alice.to_bytes()),
+                "ledger": alice_id.to_string(),
+                "seq": 4,
+                "prev": trust_revocation.event_id.to_string(),
+                "prev_timestamp_ms": T0 + 3 * STEP_MS,
+                "now_ms": T0 + 8 * STEP_MS,
+                "invitee": bob_id.to_string(),
+                "invitee_key_hex": hex(bob.public().as_bytes()),
+                "role": "CONTROLLER",
+                "invitee_inception_hex": hex(&bob_inception.signed_event),
+            }),
+            built: delegation_invitation.clone(),
+        },
+        Vector {
+            file: "11-raw-root-delegation-acceptance.json",
+            description: "Alice admits Bob, who may then sign for her ledger beside its root.",
+            inputs: json!({
+                "secret_key_hex": hex(&alice.to_bytes()),
+                "ledger": alice_id.to_string(),
+                "seq": 5,
+                "prev": delegation_invitation.event_id.to_string(),
+                "prev_timestamp_ms": T0 + 8 * STEP_MS,
+                "now_ms": T0 + 9 * STEP_MS,
+                "acceptance_hex": hex(&delegation_accepted.acceptance),
+                "acceptance_signature_hex": hex(&delegation_accepted.signature),
+                "acceptance": render_acceptance(&delegation_accepted.acceptance),
+            }),
+            built: delegation_acceptance,
         },
     ]
 }
@@ -322,18 +403,10 @@ fn render_body(body_bytes: &[u8]) -> Value {
 
 fn render_payload(payload: Payload) -> Value {
     match payload {
-        Payload::PersonInception(p) => json!({"person_inception": {
-            "kind": IdentityKind::try_from(p.kind).expect("known kind").as_str_name(),
-            "active_key_hex": hex(&p.active_key),
-            "reserve_commit_hex": hex(&p.reserve_commit),
+        Payload::Inception(p) => json!({"inception": {
+            "declared_kind": DeclaredKind::try_from(p.kind).expect("known kind").as_str_name(),
             "nonce_hex": hex(&p.nonce),
-        }}),
-        Payload::OrgInception(p) => json!({"org_inception": {
-            "kind": IdentityKind::try_from(p.kind).expect("known kind").as_str_name(),
-            "founder_hex": hex(&p.founder),
-            "founder_key_hex": hex(&p.founder_key),
-            "founder_inception_hex": hex(&p.founder_inception),
-            "nonce_hex": hex(&p.nonce),
+            "root": render_root(p.root.expect("root present")),
         }}),
         Payload::WitnessConfig(p) => json!({"witness_config": {
             "witnesses_hex": p.witnesses.iter().map(|w| hex(w.as_slice())).collect::<Vec<_>>(),
@@ -344,18 +417,32 @@ fn render_payload(payload: Payload) -> Value {
         Payload::TrustRevocation(p) => json!({"trust_revocation": {
             "target_hex": hex(&p.target),
         }}),
-        Payload::OrgInvite(p) => json!({"org_invite": {
+        Payload::MembershipInvitation(p) => json!({"membership_invitation": {
             "invitee_hex": hex(&p.invitee),
             "invitee_key_hex": hex(&p.invitee_key),
             "role": Role::try_from(p.role).expect("known role").as_str_name(),
             "invitee_inception_hex": hex(&p.invitee_inception),
         }}),
-        Payload::OrgAcceptance(p) => json!({"org_acceptance": {
+        Payload::MembershipAcceptance(p) => json!({"membership_acceptance": {
             "acceptance_hex": hex(&p.acceptance),
-            "sig_hex": hex(&p.sig),
+            "signature_hex": hex(&p.signature),
         }}),
-        Payload::OrgRemoval(p) => json!({"org_removal": {
+        Payload::MembershipRemoval(p) => json!({"membership_removal": {
             "target_hex": hex(&p.target),
+        }}),
+    }
+}
+
+fn render_root(root: inception::Root) -> Value {
+    match root {
+        inception::Root::RawRoot(root) => json!({"raw_root": {
+            "active_key_hex": hex(&root.active_key),
+            "reserve_commit_hex": hex(&root.reserve_commit),
+        }}),
+        inception::Root::IdentityRoot(root) => json!({"identity_root": {
+            "founder_hex": hex(&root.founder),
+            "founder_key_hex": hex(&root.founder_key),
+            "founder_inception_hex": hex(&root.founder_inception),
         }}),
     }
 }
@@ -364,8 +451,8 @@ fn render_acceptance(acceptance_bytes: &[u8]) -> Value {
     let acceptance = Acceptance::decode(acceptance_bytes).expect("acceptance decodes");
     json!({
         "version": acceptance.version,
-        "org_hex": hex(&acceptance.org),
-        "invite_event_hex": hex(&acceptance.invite_event),
+        "ledger_hex": hex(&acceptance.ledger),
+        "invitation_event_hex": hex(&acceptance.invitation_event),
         "invitee_hex": hex(&acceptance.invitee),
         "invitee_key_hex": hex(&acceptance.invitee_key),
     })
@@ -418,7 +505,7 @@ fn vector_digests_and_signatures_hold_on_their_own_bytes() {
 
         let signed = SignedEvent::decode(&signed_bytes[..]).expect("decodes");
         assert_eq!(signed.body, body, "{}", vector.file);
-        assert_eq!(signed.sig, signature, "{}", vector.file);
+        assert_eq!(signed.signature, signature, "{}", vector.file);
 
         let id = event_id(&body);
         assert_eq!(
@@ -489,16 +576,39 @@ fn every_payload_variant_has_a_vector_and_no_file_is_stale() {
     assert_eq!(
         variants,
         vec![
-            "org_acceptance",
-            "org_inception",
-            "org_invite",
-            "org_removal",
-            "person_inception",
+            "inception",
+            "membership_acceptance",
+            "membership_invitation",
+            "membership_removal",
             "trust_attestation",
             "trust_revocation",
             "witness_config",
         ]
     );
+
+    // Both roots are pinned, since the root is the one thing that differs
+    // between ledgers (proposal 002 section 2).
+    let mut roots: Vec<String> = vectors()
+        .iter()
+        .filter_map(|v| {
+            let body = EventBody::decode(&v.built.body[..]).expect("decodes");
+            match body.payload.expect("payload present") {
+                Payload::Inception(inception) => Some(
+                    render_root(inception.root.expect("root present"))
+                        .as_object()
+                        .expect("one root key")
+                        .keys()
+                        .next()
+                        .expect("one root key")
+                        .clone(),
+                ),
+                _ => None,
+            }
+        })
+        .collect();
+    roots.sort();
+    roots.dedup();
+    assert_eq!(roots, vec!["identity_root", "raw_root"]);
 
     let mut on_disk: Vec<String> = std::fs::read_dir(vectors_dir())
         .expect("test-vectors/ exists")
@@ -515,6 +625,47 @@ fn every_payload_variant_has_a_vector_and_no_file_is_stale() {
     let mut expected: Vec<String> = built.iter().map(|f| f.to_string()).collect();
     expected.sort();
     assert_eq!(on_disk, expected);
+}
+
+/// The whole scenario folds: the two ledgers of the vectors are valid chains,
+/// and the delegation on the raw-rooted one admits a second controller.
+#[test]
+fn the_vector_scenario_folds_into_two_valid_ledgers() {
+    let files = |names: &[&str]| -> Vec<Vec<u8>> {
+        names
+            .iter()
+            .map(|name| {
+                HEXLOWER
+                    .decode(field(&read_vector(name), "signed_event_hex").as_bytes())
+                    .expect("signed_event_hex is hex")
+            })
+            .collect()
+    };
+
+    let (alice, violation) = mabel_core::fold(files(&[
+        "01-raw-root-inception.json",
+        "02-witness-config.json",
+        "03-trust-attestation.json",
+        "04-trust-revocation.json",
+        "10-raw-root-delegation-invitation.json",
+        "11-raw-root-delegation-acceptance.json",
+    ]));
+    assert_eq!(violation, None);
+    assert_eq!(alice.principals().len(), 2, "Alice delegated to Bob");
+    assert_eq!(alice.controller_keys().len(), 2);
+
+    let (organization, violation) = mabel_core::fold(files(&[
+        "05-identity-root-inception.json",
+        "06-membership-invitation.json",
+        "07-membership-acceptance.json",
+        "08-membership-removal.json",
+    ]));
+    assert_eq!(violation, None);
+    assert_eq!(
+        organization.principals().len(),
+        1,
+        "Bob was admitted and removed"
+    );
 }
 
 fn author_key(body_bytes: &[u8]) -> PublicKey {
@@ -536,6 +687,12 @@ fn to_signature(bytes: &[u8]) -> Signature {
 fn gen_vectors() {
     let dir = vectors_dir();
     std::fs::create_dir_all(&dir).expect("create test-vectors/");
+    for stale in std::fs::read_dir(&dir).expect("test-vectors/ exists") {
+        let path = stale.expect("entry").path();
+        if path.extension().and_then(|e| e.to_str()) == Some("json") {
+            std::fs::remove_file(&path).expect("remove a stale vector");
+        }
+    }
     for vector in vectors() {
         let mut text = serde_json::to_string_pretty(&vector.document()).expect("serializes");
         text.push('\n');

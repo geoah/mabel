@@ -1,0 +1,10 @@
+{
+  "class": "wire-format",
+  "code": "unknown_oneof_variant",
+  "description": "An EventBody whose payload uses tag 20, held for a deferred payload.",
+  "entry": "signed_event",
+  "file": "08-reserved-payload-tag.json",
+  "input_hex": "0a940112208225a669a21ee244ba23bf4a1096ed5445a954ea01967150ccddee723635f1d1180122208225a669a21ee244ba23bf4a1096ed5445a954ea01967150ccddee723635f1d128e0a499ffbc313220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c9778737a201220a2056690b23dafe56de2271519b35601a4b4f4e54ce51439930cf99a731a0ab8b961240afa65b2057f500c107f194310f1ca72679aeaefc72493aaaf2edc4dcff9492eb604cef2a2cb6bee726f9a3b24985067cfbb346cfdc1633877ecab0b9650bf301",
+  "reason": "unrecognised EventBody.payload variant, field number 20",
+  "rule": "002 section 9 reserved 20 to 29"
+}

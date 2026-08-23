@@ -108,7 +108,7 @@ mod tests {
             .into_iter()
             .map(|(tag, _)| tag)
             .collect();
-        assert_eq!(tags, vec![2, 3, 4, 5, 6, 14]);
+        assert_eq!(tags, vec![2, 3, 4, 5, 6, 13]);
         assert!(tags.windows(2).all(|w| w[0] < w[1]));
     }
 

@@ -1,0 +1,10 @@
+{
+  "class": "field-table",
+  "code": "wrong_length",
+  "description": "A removal whose target is 33 bytes.",
+  "entry": "signed_event",
+  "file": "60-membership-removal-target-length.json",
+  "input_hex": "0a95011220cbaeb5b335337c178dbd9879d6eba4ff5b72693f339aeb1dfcb79070e2a2d4291803222036aef53f22ebb5a93a09c0f1a3210d5097042d589ae14bd40016a5565fca4f4428a0cea0ffbc313220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c97787378201230a212222222222222222222222222222222222222222222222222222222222222222221240762ac35658b7ff3d643e69003f03d96947c76a969139891dc960694903d6bb81e378568403674c5f174bb911481e276ec9850ad939abaa8086cb7e916d05c807",
+  "reason": "MembershipRemoval.target is 33 bytes, expected exactly 32",
+  "rule": "002 section 8 MembershipRemoval.target is 32 bytes"
+}

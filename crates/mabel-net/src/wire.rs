@@ -11,7 +11,7 @@
 //! [`crate::descriptors`] accept: ascending field numbers, minimal varints
 //! and no proto3 default value written.
 
-use mabel_core::proto::{IdentityKind, RejectCode};
+use mabel_core::proto::{DeclaredKind, RejectCode};
 use mabel_core::validate::{self, WireError};
 use mabel_core::{EventId, LedgerId};
 
@@ -197,7 +197,7 @@ pub fn accepted_response(outcome: &PushOutcome) -> Vec<u8> {
 pub fn summary_entry(summary: &LedgerSummary) -> Vec<u8> {
     let mut body = Vec::new();
     put_bytes(&mut body, 1, summary.ledger.as_bytes());
-    put_uint(&mut body, 2, summary.kind as u64);
+    put_uint(&mut body, 2, summary.declared_kind as u64);
     put_uint(&mut body, 3, summary.head_seq);
     put_bytes(&mut body, 4, summary.head_event.as_bytes());
     put_uint(&mut body, 5, summary.event_count);
@@ -642,7 +642,7 @@ fn read_summary(entry: &[u8]) -> Option<LedgerSummary> {
     let f = fields(entry)?;
     Some(LedgerSummary {
         ledger: ledger_id(bytes(&f, 1))?,
-        kind: IdentityKind::try_from(uint(&f, 2) as i32).ok()?,
+        declared_kind: DeclaredKind::try_from(uint(&f, 2) as i32).ok()?,
         head_seq: uint(&f, 3),
         head_event: event_id(bytes(&f, 4))?,
         event_count: uint(&f, 5),
@@ -727,7 +727,7 @@ mod tests {
         };
         let summary = LedgerSummary {
             ledger: ledger(),
-            kind: IdentityKind::Person,
+            declared_kind: DeclaredKind::Person,
             head_seq: 1,
             head_event: head.head_event,
             event_count: 2,

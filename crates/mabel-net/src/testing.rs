@@ -7,8 +7,8 @@
 use std::collections::BTreeMap;
 use std::sync::Mutex;
 
-use mabel_core::proto::IdentityKind;
-use mabel_core::sign::{Position, build_person_inception, build_trust_attestation};
+use mabel_core::proto::DeclaredKind;
+use mabel_core::sign::{Position, Root, build_inception, build_trust_attestation};
 use mabel_core::{EventId, IdentityId, LedgerId};
 use tokio::sync::{Notify, RwLock, RwLockWriteGuard};
 
@@ -38,9 +38,12 @@ pub fn sample_events(count: usize) -> Vec<Vec<u8>> {
 /// `seed` picks the signing key, so two seeds give two distinct ledgers.
 pub fn sample_chain(seed: u8, count: usize) -> (LedgerId, Vec<Vec<u8>>) {
     let signer = secret(seed);
-    let inception = build_person_inception(
+    let inception = build_inception(
         &signer,
-        &secret(seed.wrapping_add(128)).public(),
+        DeclaredKind::Person,
+        Root::Raw {
+            reserve_key: &secret(seed.wrapping_add(128)).public(),
+        },
         [seed; 16],
         FIXTURE_MS,
     )
@@ -115,7 +118,7 @@ pub enum Call {
 
 #[derive(Debug)]
 struct Stored {
-    kind: IdentityKind,
+    declared_kind: DeclaredKind,
     events: Vec<Vec<u8>>,
     first_seen_ms: u64,
     updated_ms: u64,
@@ -125,7 +128,7 @@ struct Stored {
 impl Stored {
     fn empty() -> Self {
         Self {
-            kind: IdentityKind::Person,
+            declared_kind: DeclaredKind::Person,
             events: Vec::new(),
             first_seen_ms: FIXTURE_MS,
             updated_ms: FIXTURE_MS,
@@ -219,7 +222,7 @@ fn summary_of(ledger: LedgerId, stored: &Stored) -> LedgerSummary {
     let head = head_of(stored);
     LedgerSummary {
         ledger,
-        kind: stored.kind,
+        declared_kind: stored.declared_kind,
         head_seq: head.map_or(0, |head| head.head_seq),
         head_event: head.map_or(EventId::from_bytes([0u8; 32]), |head| head.head_event),
         event_count: stored.events.len() as u64,

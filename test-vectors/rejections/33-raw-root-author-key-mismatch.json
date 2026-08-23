@@ -1,0 +1,10 @@
+{
+  "class": "field-table",
+  "code": "fields_must_match",
+  "description": "A raw-rooted inception whose author_key is not the active_key it records.",
+  "entry": "signed_event",
+  "file": "33-raw-root-author-key-mismatch.json",
+  "input_hex": "0a85012880d095ffbc313220a09aa5f47a6759802ff955f8dc2d2a14a5c99d23be97f864127ff9383455a4f0525a08011210a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a152440a20d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c97787371220e1ead60ce2981a689bc964158c97d173d1d1bbcb80c56dfc90747193ba06d3011240681ae805af1d0fd0b2b4fe8ba06b6b852619f66f5ffd747c4a1b3e3e0c88962554f0cd8a844bd0ec682e8ce1f731fb37799056399c6693e47e5c49368f56e408",
+  "reason": "EventBody.author_key and RawRoot.active_key must be equal",
+  "rule": "002 section 8 author_key at seq 0 equals the root key"
+}

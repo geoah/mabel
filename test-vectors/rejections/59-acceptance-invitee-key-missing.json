@@ -1,0 +1,10 @@
+{
+  "class": "field-table",
+  "code": "missing_field",
+  "description": "An Acceptance blob with no invitee_key.",
+  "entry": "acceptance",
+  "file": "59-acceptance-invitee-key-missing.json",
+  "input_hex": "1220cbaeb5b335337c178dbd9879d6eba4ff5b72693f339aeb1dfcb79070e2a2d4291a20ac690d679f75d8f1e094b7857b8104d56290f44028f45997c20efdcc4f269378222056690b23dafe56de2271519b35601a4b4f4e54ce51439930cf99a731a0ab8b96",
+  "reason": "Acceptance.invitee_key is required",
+  "rule": "002 section 8 Acceptance fields are required"
+}

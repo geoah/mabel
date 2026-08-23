@@ -1,0 +1,10 @@
+{
+  "class": "field-table",
+  "code": "wrong_length",
+  "description": "An Acceptance blob whose ledger is 31 bytes.",
+  "entry": "acceptance",
+  "file": "58-acceptance-ledger-length.json",
+  "input_hex": "121f0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c1a20ac690d679f75d8f1e094b7857b8104d56290f44028f45997c20efdcc4f269378222056690b23dafe56de2271519b35601a4b4f4e54ce51439930cf99a731a0ab8b962a20a09aa5f47a6759802ff955f8dc2d2a14a5c99d23be97f864127ff9383455a4f0",
+  "reason": "Acceptance.ledger is 31 bytes, expected exactly 32",
+  "rule": "002 section 8 Acceptance fields are 32 bytes each"
+}

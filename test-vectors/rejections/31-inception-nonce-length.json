@@ -1,0 +1,10 @@
+{
+  "class": "field-table",
+  "code": "wrong_length",
+  "description": "An Inception whose nonce is 15 bytes.",
+  "entry": "signed_event",
+  "file": "31-inception-nonce-length.json",
+  "input_hex": "0a84012880d095ffbc313220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c977873752590801120fa1a1a1a1a1a1a1a1a1a1a1a1a1a1a152440a20d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c97787371220e1ead60ce2981a689bc964158c97d173d1d1bbcb80c56dfc90747193ba06d301124073f33d2edb9e926c0dbac7f8bd094e2726c89c8ac6b821e52e4d31d033c4332a6c28056abea40d9af56350627049788edc99859261a681ac8f93c7ad426e3501",
+  "reason": "Inception.nonce is 15 bytes, expected exactly 16",
+  "rule": "002 section 8 Inception.nonce is 16 bytes"
+}

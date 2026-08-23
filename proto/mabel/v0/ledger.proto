@@ -1,27 +1,33 @@
-// Normative schema for mabel ledger events (proposal 001, sections 3.1-3.5).
+// Normative schema for mabel ledger events (proposal 002, sections 7 and 8).
 //
 // Canonical encoding, required for every signed or hashed message:
 //   - fields in ascending field-number order;
 //   - minimal varints;
 //   - no field set to its proto3 default value is serialized;
 //   - each non-repeated field appears exactly once, and every field the
-//     field-validation table (proposal 001 section 3.4) marks required is
-//     present;
+//     field-validation table (proposal 002 section 8, proposal 001
+//     section 3.4) marks required is present;
 //   - no packed repeated fields in signed messages.
 //
 // The encoded bytes are authoritative: they are hashed, signed, stored and
 // shipped as-is, and are never re-serialized. Field numbers and oneof tags
 // are append-only; a breaking change means a v1 directory, a new envelope
-// version and a new ALPN.
+// version and a new ALPN. Proposal 002 section 7 rewrote this file in place
+// once, an exception that expires with the first ledger created outside the
+// test suite.
 
 syntax = "proto3";
 
 package mabel.v0;
 
-enum IdentityKind {
-  IDENTITY_KIND_UNSPECIFIED = 0;
+// What an identity says it is. Advisory: it never gates payload validity,
+// authorization or any verification outcome (proposal 002 section 3).
+enum DeclaredKind {
+  KIND_UNSPECIFIED = 0;
   PERSON = 1;
-  ORG = 2;
+  ORGANIZATION = 2;
+  AGENT = 3;
+  SERVICE = 4;
 }
 
 enum Role {
@@ -30,19 +36,29 @@ enum Role {
   CONTROLLER = 2;
 }
 
-message PersonInception {
-  IdentityKind kind = 1;      // must be PERSON
-  bytes active_key = 2;       // 32-byte ed25519 public key
-  bytes reserve_commit = 3;   // BLAKE3("mabel/reserve/v0\n" || reserve pubkey)
-  bytes nonce = 4;            // 16 bytes
+// A self-keyed ledger: this key is a permanent CONTROLLER principal whose
+// identity id is the ledger's own, and it is not removable in this POC.
+message RawRoot {
+  bytes active_key = 1;       // 32-byte ed25519 public key
+  bytes reserve_commit = 2;   // BLAKE3("mabel/reserve/v0\n" || reserve pubkey)
 }
 
-message OrgInception {
-  IdentityKind kind = 1;      // must be ORG
-  bytes founder = 2;          // founder person identity id, 32 bytes
-  bytes founder_key = 3;      // founder active key, 32 bytes
-  bytes founder_inception = 4; // founder's seq-0 SignedEvent bytes, <= 4096
-  bytes nonce = 5;            // 16 bytes
+// A ledger controlled by one founding identity, which holds no key of its
+// own. Exactly one founder: a single-signature envelope cannot carry consent
+// from several (proposal 002 section 2).
+message IdentityRoot {
+  bytes founder = 1;           // founding identity id, 32 bytes
+  bytes founder_key = 2;       // founder active key, 32 bytes
+  bytes founder_inception = 3; // founder's seq-0 SignedEvent bytes, <= 1024
+}
+
+message Inception {
+  DeclaredKind kind = 1;      // advisory, must not be KIND_UNSPECIFIED
+  bytes nonce = 2;            // 16 bytes
+  oneof root {                // the ledger's one cryptographic root
+    RawRoot raw_root = 10;
+    IdentityRoot identity_root = 11;
+  }
 }
 
 message WitnessConfig {
@@ -57,20 +73,21 @@ message TrustRevocation {
   bytes target = 1;           // event id of an unrevoked TrustAttestation
 }
 
-message OrgInvite {
-  bytes invitee = 1;          // person identity id, 32 bytes
+// Membership is legal on every ledger (proposal 002 section 4).
+message MembershipInvitation {
+  bytes invitee = 1;          // invited identity id, 32 bytes
   bytes invitee_key = 2;      // invitee active key, 32 bytes
   Role role = 3;              // MEMBER or CONTROLLER
-  bytes invitee_inception = 4; // invitee's seq-0 SignedEvent bytes, <= 4096
+  bytes invitee_inception = 4; // invitee's seq-0 SignedEvent bytes, <= 1024
 }
 
-message OrgAcceptance {
+message MembershipAcceptance {
   bytes acceptance = 1;       // encoded Acceptance bytes, <= 1024
-  bytes sig = 2;              // invitee signature over accept_input, 64 bytes
+  bytes signature = 2;        // invitee signature over accept_input, 64 bytes
 }
 
-message OrgRemoval {
-  bytes target = 1;           // identity id of member, controller or invitee
+message MembershipRemoval {
+  bytes target = 1;           // identity id of a principal or open invitee
 }
 
 message EventBody {
@@ -80,29 +97,30 @@ message EventBody {
   bytes prev = 4;             // previous event_id; absent at seq 0
   uint64 timestamp_ms = 5;    // unix ms, ledger order; 1..=4102444800000
   bytes author_key = 6;       // 32-byte ed25519 public key
-  oneof payload {             // tags 10..=17, append-only
-    PersonInception person_inception = 10;
-    OrgInception org_inception = 11;
-    WitnessConfig witness_config = 12;
-    TrustAttestation trust_attestation = 13;
-    TrustRevocation trust_revocation = 14;
-    OrgInvite org_invite = 15;
-    OrgAcceptance org_acceptance = 16;
-    OrgRemoval org_removal = 17;
+  oneof payload {             // tags 10..=16, append-only
+    Inception inception = 10;
+    WitnessConfig witness_config = 11;
+    TrustAttestation trust_attestation = 12;
+    TrustRevocation trust_revocation = 13;
+    MembershipInvitation membership_invitation = 14;
+    MembershipAcceptance membership_acceptance = 15;
+    MembershipRemoval membership_removal = 16;
   }
+  // Held for the deferred payloads of proposal 002 section 9.
+  reserved 20 to 29;
 }
 
 message SignedEvent {
   bytes body = 1;             // the exact encoded EventBody bytes, <= 4096
-  bytes sig = 2;              // 64-byte ed25519 signature over sign_input
+  bytes signature = 2;        // 64-byte ed25519 signature over sign_input
 }
 
 // Detached invitee acceptance (proposal 001 section 3.5). Signed over
 // accept_input = "mabel/accept/v0\n" || acceptance_bytes.
 message Acceptance {
   uint32 version = 1;         // 0, so absent under the canonical encoding
-  bytes org = 2;              // org ledger id, 32 bytes
-  bytes invite_event = 3;     // OrgInvite event id, 32 bytes
+  bytes ledger = 2;           // the inviting ledger id, 32 bytes
+  bytes invitation_event = 3; // MembershipInvitation event id, 32 bytes
   bytes invitee = 4;          // invitee identity id, 32 bytes
   bytes invitee_key = 5;      // invitee active key, 32 bytes
 }

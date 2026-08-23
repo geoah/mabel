@@ -1,0 +1,43 @@
+{
+  "body": {
+    "author_key_hex": "a09aa5f47a6759802ff955f8dc2d2a14a5c99d23be97f864127ff9383455a4f0",
+    "ledger_hex": "",
+    "payload": {
+      "inception": {
+        "declared_kind": "PERSON",
+        "nonce_hex": "b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1",
+        "root": {
+          "raw_root": {
+            "active_key_hex": "a09aa5f47a6759802ff955f8dc2d2a14a5c99d23be97f864127ff9383455a4f0",
+            "reserve_commit_hex": "52958ef0be7427c734d95475a3bc8874bcf28714f347d734fb47a7c81271b8a1"
+          }
+        }
+      }
+    },
+    "prev_hex": "",
+    "seq": 0,
+    "timestamp_ms": 1700000000000,
+    "version": 0
+  },
+  "body_hex": "2880d095ffbc313220a09aa5f47a6759802ff955f8dc2d2a14a5c99d23be97f864127ff9383455a4f0525a08011210b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b152440a20a09aa5f47a6759802ff955f8dc2d2a14a5c99d23be97f864127ff9383455a4f0122052958ef0be7427c734d95475a3bc8874bcf28714f347d734fb47a7c81271b8a1",
+  "description": "Bob's seq-0 event, embedded by vectors 06, 07, 10 and 11.",
+  "event_id": "kzuqwi627zln4itrkgntkya2jnhu4vgokfbzsmgptgttdiflrola",
+  "event_id_hex": "56690b23dafe56de2271519b35601a4b4f4e54ce51439930cf99a731a0ab8b96",
+  "file": "09-embedded-raw-root-inception.json",
+  "inputs": {
+    "declared_kind": "PERSON",
+    "nonce_hex": "b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1",
+    "now_ms": 1700000000000,
+    "reserve_public_key_hex": "197f6b23e16c8532c6abc838facd5ea789be0c76b2920334039bfa8b3d368d61",
+    "root": "raw_root",
+    "scenario": {
+      "alice_identity_id": "qis2m2ncd3rejordx5fbbfxnkrc2svhkaglhcugm3xxhenrv6hiq",
+      "alice_secret_key_hex": "1111111111111111111111111111111111111111111111111111111111111111",
+      "bob_identity_id": "kzuqwi627zln4itrkgntkya2jnhu4vgokfbzsmgptgttdiflrola",
+      "bob_secret_key_hex": "2222222222222222222222222222222222222222222222222222222222222222"
+    },
+    "secret_key_hex": "2222222222222222222222222222222222222222222222222222222222222222"
+  },
+  "signature_hex": "c3af57a15b5bb797a60b58c0e7e25488430328dc97daf2c9afd397a40c5ef68b4589d00174902f05d55595489f633ead817561ae604efe5a82310ba9b6f5cd00",
+  "signed_event_hex": "0a85012880d095ffbc313220a09aa5f47a6759802ff955f8dc2d2a14a5c99d23be97f864127ff9383455a4f0525a08011210b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b152440a20a09aa5f47a6759802ff955f8dc2d2a14a5c99d23be97f864127ff9383455a4f0122052958ef0be7427c734d95475a3bc8874bcf28714f347d734fb47a7c81271b8a11240c3af57a15b5bb797a60b58c0e7e25488430328dc97daf2c9afd397a40c5ef68b4589d00174902f05d55595489f633ead817561ae604efe5a82310ba9b6f5cd00"
+}

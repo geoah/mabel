@@ -1,0 +1,31 @@
+{
+  "body": {
+    "author_key_hex": "d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c9778737",
+    "ledger_hex": "cbaeb5b335337c178dbd9879d6eba4ff5b72693f339aeb1dfcb79070e2a2d429",
+    "payload": {
+      "membership_removal": {
+        "target_hex": "56690b23dafe56de2271519b35601a4b4f4e54ce51439930cf99a731a0ab8b96"
+      }
+    },
+    "prev_hex": "36aef53f22ebb5a93a09c0f1a3210d5097042d589ae14bd40016a5565fca4f44",
+    "seq": 3,
+    "timestamp_ms": 1700000420000,
+    "version": 0
+  },
+  "body_hex": "1220cbaeb5b335337c178dbd9879d6eba4ff5b72693f339aeb1dfcb79070e2a2d4291803222036aef53f22ebb5a93a09c0f1a3210d5097042d589ae14bd40016a5565fca4f4428a0a1afffbc313220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c97787378201220a2056690b23dafe56de2271519b35601a4b4f4e54ce51439930cf99a731a0ab8b96",
+  "description": "The organization removes Bob.",
+  "event_id": "t26qvdxjdxdfcgawz5akavw47cvf7cjf4vikgrspe4q56rtkku5a",
+  "event_id_hex": "9ebd0a8ee91dc6511816cf40a056dcf8aa5f8925e550a3464f2721df466a553a",
+  "file": "08-membership-removal.json",
+  "inputs": {
+    "ledger": "zoxllmzvgn6bpdn5tb45n25e75nxe2j7gonowhp4w6ihbyvc2quq",
+    "now_ms": 1700000420000,
+    "prev": "g2xpkpzc5o22soqjydy2giinkclqilkytlquxvaac2svmx6kj5ca",
+    "prev_timestamp_ms": 1700000360000,
+    "secret_key_hex": "1111111111111111111111111111111111111111111111111111111111111111",
+    "seq": 3,
+    "target": "kzuqwi627zln4itrkgntkya2jnhu4vgokfbzsmgptgttdiflrola"
+  },
+  "signature_hex": "89352a1e505af6e5126b14c196913e758126ce17fa8d1c0d21d1976bacd8e34e903669dec5ac3f3b4cd3c71f5cf95de0c6e4c6b4554839a7dd7ca5bc4bf0fb09",
+  "signed_event_hex": "0a94011220cbaeb5b335337c178dbd9879d6eba4ff5b72693f339aeb1dfcb79070e2a2d4291803222036aef53f22ebb5a93a09c0f1a3210d5097042d589ae14bd40016a5565fca4f4428a0a1afffbc313220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c97787378201220a2056690b23dafe56de2271519b35601a4b4f4e54ce51439930cf99a731a0ab8b96124089352a1e505af6e5126b14c196913e758126ce17fa8d1c0d21d1976bacd8e34e903669dec5ac3f3b4cd3c71f5cf95de0c6e4c6b4554839a7dd7ca5bc4bf0fb09"
+}

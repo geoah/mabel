@@ -1,0 +1,10 @@
+{
+  "class": "field-table",
+  "code": "bad_signature",
+  "description": "An IdentityRoot whose embedded inception has one signature bit flipped.",
+  "entry": "signed_event",
+  "file": "39-identity-root-embedded-bad-signature.json",
+  "input_hex": "0ad4022880d095ffbc313220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c977873752a80208021210c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c15a91020a208225a669a21ee244ba23bf4a1096ed5445a954ea01967150ccddee723635f1d11220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c97787371aca010a85012880d095ffbc313220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c9778737525a08011210a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a152440a20d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c97787371220e1ead60ce2981a689bc964158c97d173d1d1bbcb80c56dfc90747193ba06d3011240433bf84fc16951cfda6420a68e999daac54eff37b46b89750c145d84d64c662ee63c3f3bac4ac59fb8c67ea8f580d206b99ddf56f4df06c46f8dbaefcf6db30912409916efdc65ec65685c8480363b82281ca1fa6c803ae15aca27e396dae65d05d6cc3b41d623a9f9969808ff9b7307fe3a88191b8e041ed41b574dfaffbaebbc04",
+  "reason": "SignedEvent.signature does not verify",
+  "rule": "002 section 8 the embedded inception verifies standalone"
+}

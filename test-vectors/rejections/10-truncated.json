@@ -1,0 +1,10 @@
+{
+  "class": "wire-format",
+  "code": "truncated",
+  "description": "A SignedEvent whose body claims 4000 bytes and carries 8.",
+  "entry": "signed_event",
+  "file": "10-truncated.json",
+  "input_hex": "0aa01f12208225a669a21e",
+  "reason": "SignedEvent ends mid-record",
+  "rule": "3.1 truncated input"
+}

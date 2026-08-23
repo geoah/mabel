@@ -1,9 +1,10 @@
 # Golden vectors
 
-One file per event, covering every payload variant of `EventBody`. These are
-the cross-language contract for the canonical encoding, the event ids and the
-signatures (proposal 001 sections 3.1 and 11): a non-Rust client that emits
-different bytes for the same inputs is wrong.
+One file per event, covering every payload variant of `EventBody` and both
+variants of `Inception.root`. These are the cross-language contract for the
+canonical encoding, the event ids and the signatures (proposal 001 sections
+3.1 and 11, proposal 002 section 7): a non-Rust client that emits different
+bytes for the same inputs is wrong.
 
 The files are literals. `cargo test -p mabel-core` reads them and compares;
 no test writes them.
@@ -25,19 +26,26 @@ derived from them.
 
 ## Rejection vectors
 
-`rejections/` holds one byte string per wire-format class (proposal 001
-section 3.1) and per stateless field-table rule (section 3.4), each with the
-rejection the validator must produce. A client that accepts any of them is
-wrong.
+`rejections/` holds one case per wire-format class (proposal 001 section 3.1),
+per stateless field-table rule (proposal 002 section 8) and per membership
+rule of the fold (proposal 002 section 4), each with the rejection an
+implementation must produce. A client that accepts any of them is wrong.
 
 | Field | Meaning |
 |---|---|
-| `class` | `wire-format` or `field-table` |
+| `class` | `wire-format`, `field-table` or `fold` |
 | `rule` | the proposal section and rule the vector pins |
-| `entry` | the validator entry point that reads the bytes: `signed_event` or `acceptance` |
-| `input_hex` | the bytes to feed that entry point |
+| `entry` | what reads the bytes: `signed_event`, `acceptance` or `fold` |
+| `input_hex` | the bytes to feed that entry point, on the first two entries |
+| `events_hex` | the whole chain to fold, on the `fold` entry |
+| `at_seq` | the position the fold must reject, on the `fold` entry |
 | `code` | the stable snake-case name of the rejection class |
 | `reason` | the message `mabel-core` returns, for human review |
+
+A `fold` vector carries a chain because its rule needs the state folded from
+the events before the rejected one: an acceptance is only wrong given the
+invitation it names, and a removal is only wrong given the principals it would
+leave behind.
 
 `code` is the contract; `reason` is English and may be reworded. The
 generator is an ignored test in `crates/mabel-core/tests/rejections.rs`:
@@ -48,11 +56,16 @@ cargo test -p mabel-core --features gen-vectors -- --ignored gen_rejections
 
 ## The scenario
 
-Alice (secret key `0x11` repeated) creates a person ledger, configures two
-witnesses, attests trust in Bob (secret key `0x22` repeated) and revokes it.
-She then founds an org, invites Bob as a controller, admits him with the
-acceptance he signed, and removes him. `09-embedded-person-inception.json` is
-Bob's own inception, which the invite and the org events embed.
+Alice (secret key `0x11` repeated) creates a raw-rooted ledger, configures two
+witnesses, attests trust in Bob (secret key `0x22` repeated) and revokes it,
+then invites Bob as a second controller of her own ledger and admits him:
+vectors 10 and 11 are the delegation a raw root allows (proposal 002
+section 4). She also founds an organization, an identity-rooted ledger whose
+inception embeds her own, invites Bob as a controller there, admits him with
+the acceptance he signed, and removes him.
+`09-embedded-raw-root-inception.json` is Bob's own inception, which vectors
+06, 07, 10 and 11 embed. The rejection vectors add Carol (secret key `0x33`
+repeated), who signs the transplanted acceptances.
 
 ## Regenerating
 

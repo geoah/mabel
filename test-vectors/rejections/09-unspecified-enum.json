@@ -1,0 +1,10 @@
+{
+  "class": "wire-format",
+  "code": "unspecified_enum",
+  "description": "An Inception whose kind is KIND_UNSPECIFIED.",
+  "entry": "signed_event",
+  "file": "09-unspecified-enum.json",
+  "input_hex": "0a85012880d095ffbc313220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c9778737525a08001210a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a152440a20d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c97787371220e1ead60ce2981a689bc964158c97d173d1d1bbcb80c56dfc90747193ba06d3011240e57d4e1d46f7e9fc787be5ffae142ce32f5ee1bc943b01464bef4e635497f7ef638900d7e2aa55245b232890970f8d5b9c3aa5a54ad2eab87499bc300cd15003",
+  "reason": "Inception.kind is unspecified",
+  "rule": "3.1 *_UNSPECIFIED enum values"
+}

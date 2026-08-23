@@ -1,0 +1,10 @@
+{
+  "class": "field-table",
+  "code": "missing_chain_field",
+  "description": "An event at seq 1 with no prev.",
+  "entry": "signed_event",
+  "file": "17-event-body-prev-missing.json",
+  "input_hex": "0a7112208225a669a21ee244ba23bf4a1096ed5445a954ea01967150ccddee723635f1d1180128e0a499ffbc313220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c977873762220a2056690b23dafe56de2271519b35601a4b4f4e54ce51439930cf99a731a0ab8b961240b71e7a63db478ce53fc7a508370de75567a6d526c7fd97f9f3d7c07c08e82bd0f2f263553200b103475db8e311cff39dd6a43f7bf4e504ec99ad9d6aff5b4e01",
+  "reason": "EventBody.prev is required past seq 0",
+  "rule": "3.4 EventBody.prev is present past seq 0"
+}

@@ -1,0 +1,10 @@
+{
+  "class": "field-table",
+  "code": "missing_field",
+  "description": "A SignedEvent carrying only a signature.",
+  "entry": "signed_event",
+  "file": "14-signed-event-body-missing.json",
+  "input_hex": "12402f9602fdc97a68204e39a5136d3ebc5430a3e85131f048a1cff6406bb0df4ea958cf131372a115bffe4fa3db11dfe9c8322f7cb7caf57e9ae0eed58cd43d060f",
+  "reason": "SignedEvent.body is required",
+  "rule": "3.4 SignedEvent.body is required"
+}

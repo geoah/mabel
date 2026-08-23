@@ -20,8 +20,8 @@ pub const DEFAULT_HTTP_BIND: SocketAddr = SocketAddr::new(
 /// Port of [`DEFAULT_HTTP_BIND`].
 pub const DEFAULT_HTTP_PORT: u16 = 9080;
 
-/// Default storage cap, 2 GiB (proposal 001 section 5).
-pub const DEFAULT_STORAGE_CAP: u64 = 2 * 1024 * 1024 * 1024;
+/// Default storage capacity, 2 GiB (proposal 001 section 5).
+pub const DEFAULT_STORAGE_CAPACITY: u64 = 2 * 1024 * 1024 * 1024;
 
 /// What this node is (proposal 001 section 2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -61,8 +61,10 @@ pub struct NodeConfig {
     #[serde(default)]
     pub witnesses: Vec<EndpointId>,
     /// Bytes of stored ledger data this node accepts before refusing more.
-    #[serde(default = "default_storage_cap")]
-    pub storage_cap: u64,
+    /// Named in full, like the `storage_capacity` the HTTP API reports
+    /// (decision 012, contracts/README.md).
+    #[serde(default = "default_storage_capacity")]
+    pub storage_capacity: u64,
     /// Relay setting for the Iroh endpoint.
     #[serde(default)]
     pub relay: RelayMode,
@@ -72,8 +74,8 @@ fn default_http_bind() -> SocketAddr {
     DEFAULT_HTTP_BIND
 }
 
-fn default_storage_cap() -> u64 {
-    DEFAULT_STORAGE_CAP
+fn default_storage_capacity() -> u64 {
+    DEFAULT_STORAGE_CAPACITY
 }
 
 impl Default for NodeConfig {
@@ -82,7 +84,7 @@ impl Default for NodeConfig {
             role: NodeRole::default(),
             http_bind: DEFAULT_HTTP_BIND,
             witnesses: Vec::new(),
-            storage_cap: DEFAULT_STORAGE_CAP,
+            storage_capacity: DEFAULT_STORAGE_CAPACITY,
             relay: RelayMode::default(),
         }
     }
@@ -123,7 +125,7 @@ impl NodeConfig {
 
 #[cfg(test)]
 mod tests {
-    use super::{DEFAULT_HTTP_BIND, DEFAULT_STORAGE_CAP, NodeConfig, NodeRole, RelayMode};
+    use super::{DEFAULT_HTTP_BIND, DEFAULT_STORAGE_CAPACITY, NodeConfig, NodeRole, RelayMode};
 
     #[test]
     fn an_empty_object_loads_every_default() {
@@ -131,7 +133,7 @@ mod tests {
         assert_eq!(config, NodeConfig::default());
         assert_eq!(config.role, NodeRole::Wallet);
         assert_eq!(config.http_bind, DEFAULT_HTTP_BIND);
-        assert_eq!(config.storage_cap, DEFAULT_STORAGE_CAP);
+        assert_eq!(config.storage_capacity, DEFAULT_STORAGE_CAPACITY);
         assert_eq!(config.relay, RelayMode::N0);
         assert!(config.witnesses.is_empty());
     }
@@ -143,7 +145,7 @@ mod tests {
             role: NodeRole::Witness,
             http_bind: "127.0.0.1:1234".parse().unwrap(),
             witnesses: vec![key],
-            storage_cap: 42,
+            storage_capacity: 42,
             relay: RelayMode::Disabled,
         };
         let json = config.to_json().unwrap();
@@ -173,9 +175,8 @@ mod tests {
 
     #[test]
     fn an_unknown_field_is_a_load_error() {
-        let error =
-            NodeConfig::from_json(br#"{"storage_capacity": 1}"#).expect_err("unknown field");
-        assert!(error.to_string().contains("storage_capacity"), "{error}");
+        let error = NodeConfig::from_json(br#"{"storage_cap": 1}"#).expect_err("unknown field");
+        assert!(error.to_string().contains("storage_cap"), "{error}");
     }
 
     #[test]

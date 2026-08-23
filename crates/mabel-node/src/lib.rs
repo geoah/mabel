@@ -17,6 +17,7 @@
 //! # Ok::<(), mabel_node::StorageError>(())
 //! ```
 
+pub mod api;
 mod atomic;
 mod config;
 mod error;
@@ -27,12 +28,12 @@ mod peers;
 
 pub use atomic::{DATA_MODE, DIR_MODE, KEY_MODE};
 pub use config::{
-    DEFAULT_HTTP_BIND, DEFAULT_HTTP_PORT, DEFAULT_STORAGE_CAP, NodeConfig, NodeRole, RelayMode,
+    DEFAULT_HTTP_BIND, DEFAULT_HTTP_PORT, DEFAULT_STORAGE_CAPACITY, NodeConfig, NodeRole, RelayMode,
 };
 pub use error::{Result, StorageError};
 pub use home::{
-    ACTIVE_KEY_FILE, CONFIG_FILE, DEFAULT_HOME_NAME, HOME_ENV, HomeOptions, IDENTITY_META_FILE,
-    IdentityKind, IdentityMeta, NODE_KEY_FILE, NodeHome, PEERS_FILE, RESERVE_KEY_FILE,
+    ACTIVE_KEY_FILE, CONFIG_FILE, DEFAULT_HOME_NAME, DeclaredKind, HOME_ENV, HomeOptions,
+    IDENTITY_META_FILE, IdentityMeta, NODE_KEY_FILE, NodeHome, PEERS_FILE, RESERVE_KEY_FILE,
     resolve_home,
 };
 pub use ledger::{

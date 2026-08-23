@@ -1,0 +1,10 @@
+{
+  "class": "field-table",
+  "code": "wrong_length",
+  "description": "A WitnessConfig whose witness is 31 bytes.",
+  "entry": "signed_event",
+  "file": "44-witness-config-witness-length.json",
+  "input_hex": "0a920112208225a669a21ee244ba23bf4a1096ed5445a954ea01967150ccddee723635f1d1180122208225a669a21ee244ba23bf4a1096ed5445a954ea01967150ccddee723635f1d128e0a499ffbc313220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c97787375a210a1f7777777777777777777777777777777777777777777777777777777777777712403decb6c7aa0b99a5ecfa5a794f20548b9c3b9d062cd571c1a35779702db77719bd2532e981ad4d32cdd974b261881d495cb5280a53e22c4a6adece1fb2c55205",
+  "reason": "WitnessConfig.witnesses is 31 bytes, expected exactly 32",
+  "rule": "3.4 each witness is 32 bytes"
+}

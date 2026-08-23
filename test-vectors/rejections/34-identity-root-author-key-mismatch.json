@@ -1,0 +1,10 @@
+{
+  "class": "field-table",
+  "code": "fields_must_match",
+  "description": "An identity-rooted inception signed by someone other than the founder.",
+  "entry": "signed_event",
+  "file": "34-identity-root-author-key-mismatch.json",
+  "input_hex": "0ad4022880d095ffbc313220a09aa5f47a6759802ff955f8dc2d2a14a5c99d23be97f864127ff9383455a4f052a80208021210c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c15a91020a208225a669a21ee244ba23bf4a1096ed5445a954ea01967150ccddee723635f1d11220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c97787371aca010a85012880d095ffbc313220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c9778737525a08011210a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a152440a20d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c97787371220e1ead60ce2981a689bc964158c97d173d1d1bbcb80c56dfc90747193ba06d3011240433bf84fc16951cfda6420a68e999daac54eff37b46b89750c145d84d64c662ee63c3f3bac4ac59fb8c67ea8f580d206b99ddf56f4df06c46f8dbaefcf6db30812403f700b3f93d37e2f3962ad30a2c1edbf232f5a774992d1b880d01f45b760696afa35aca7cc328df9f3e4322ab4e199686fabd7d20a9fbe076cc62210b03d3400",
+  "reason": "EventBody.author_key and IdentityRoot.founder_key must be equal",
+  "rule": "002 section 8 author_key at seq 0 equals the root key"
+}

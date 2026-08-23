@@ -1,0 +1,10 @@
+{
+  "class": "field-table",
+  "code": "wrong_length",
+  "description": "A revocation whose target is 31 bytes.",
+  "entry": "signed_event",
+  "file": "47-trust-revocation-target-length.json",
+  "input_hex": "0a920112208225a669a21ee244ba23bf4a1096ed5445a954ea01967150ccddee723635f1d118022220bc43c962c0e15bcff7f2adb91d0daffb2f76eb67f4610d22fa510a2bf6e800ba28c0f99cffbc313220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c97787376a210a1ff7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f71240afc012f9461df9d0c84965a0187cafa6c44f5c7b00250afa4dcadc2417fae3ff5078bf1f447f2730552c8795b8fa25db57b51e9b1f2537138743e14ad62c670d",
+  "reason": "TrustRevocation.target is 31 bytes, expected exactly 32",
+  "rule": "3.4 TrustRevocation.target is 32 bytes"
+}

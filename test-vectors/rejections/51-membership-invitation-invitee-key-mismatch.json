@@ -1,0 +1,10 @@
+{
+  "class": "field-table",
+  "code": "inception_key_mismatch",
+  "description": "An invitation whose invitee_key is not the embedded inception's active_key.",
+  "entry": "signed_event",
+  "file": "51-membership-invitation-invitee-key-mismatch.json",
+  "input_hex": "0a85031220cbaeb5b335337c178dbd9879d6eba4ff5b72693f339aeb1dfcb79070e2a2d42918012220cbaeb5b335337c178dbd9879d6eba4ff5b72693f339aeb1dfcb79070e2a2d42928e0a499ffbc313220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c97787377293020a2056690b23dafe56de2271519b35601a4b4f4e54ce51439930cf99a731a0ab8b961220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c9778737180222ca010a85012880d095ffbc313220a09aa5f47a6759802ff955f8dc2d2a14a5c99d23be97f864127ff9383455a4f0525a08011210b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b152440a20a09aa5f47a6759802ff955f8dc2d2a14a5c99d23be97f864127ff9383455a4f0122052958ef0be7427c734d95475a3bc8874bcf28714f347d734fb47a7c81271b8a11240c3af57a15b5bb797a60b58c0e7e25488430328dc97daf2c9afd397a40c5ef68b4589d00174902f05d55595489f633ead817561ae604efe5a82310ba9b6f5cd001240ec2e30e14ec13cd8706804ab6e47b27e4126b1b0a1d7d1a64c10ebc32af02707f08c9bee933f9b6e4d6ef5ec7366b0373447e1e952df2d4f2b0a939944938705",
+  "reason": "MembershipInvitation.invitee_key does not equal the active key of the inception embedded beside it",
+  "rule": "002 section 8 the embedded inception records the recorded key"
+}

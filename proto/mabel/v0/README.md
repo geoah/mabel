@@ -48,9 +48,17 @@ base32 without padding, 52 characters, with no type prefix.
 Field numbers and `oneof` tags are append-only. A breaking change means a
 `v1` directory, a new envelope `version` and a new ALPN.
 
+Proposal 002 section 7 rewrote `ledger.proto` in place once, renumbering the
+`EventBody.payload` tags and replacing the person and organization inceptions
+with one `Inception` carrying a root `oneof`. That exception was available
+because nothing was deployed and no ledger existed outside the test suite; it
+expires with the first ledger created outside it. `EventBody` reserves tags 20
+to 29 for the payloads proposal 002 section 9 defers.
+
 ## Conformance
 
-`test-vectors/` at the repository root holds one vector per payload variant:
-the encoded body, the encoded `SignedEvent`, the event id and the signature,
-under fixed keys, nonces and timestamps. A second implementation is correct
-when it reproduces those bytes.
+`test-vectors/` at the repository root holds one vector per payload variant
+and per root variant: the encoded body, the encoded `SignedEvent`, the event
+id and the signature, under fixed keys, nonces and timestamps. A second
+implementation is correct when it reproduces those bytes and rejects every
+vector under `test-vectors/rejections/` with the `code` it names.

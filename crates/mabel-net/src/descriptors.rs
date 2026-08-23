@@ -228,6 +228,9 @@ pub static ACCEPTED_RESP: MessageDescriptor = MessageDescriptor {
 };
 
 /// `LedgerSummary`, one entry of a `LedgersResp`.
+///
+/// `declared_kind` is advisory and carries every value of `DeclaredKind`,
+/// `AGENT` and `SERVICE` included (proposal 002 section 3).
 pub static LEDGER_SUMMARY: MessageDescriptor = MessageDescriptor {
     name: "LedgerSummary",
     max_bytes: SMALL_REQUEST_BYTES,
@@ -235,7 +238,7 @@ pub static LEDGER_SUMMARY: MessageDescriptor = MessageDescriptor {
         required(1, "ledger", ID),
         required(
             2,
-            "kind",
+            "declared_kind",
             FieldKind::Enum {
                 values: &[
                     EnumValue {
@@ -244,7 +247,15 @@ pub static LEDGER_SUMMARY: MessageDescriptor = MessageDescriptor {
                     },
                     EnumValue {
                         number: 2,
-                        name: "ORG",
+                        name: "ORGANIZATION",
+                    },
+                    EnumValue {
+                        number: 3,
+                        name: "AGENT",
+                    },
+                    EnumValue {
+                        number: 4,
+                        name: "SERVICE",
                     },
                 ],
             },

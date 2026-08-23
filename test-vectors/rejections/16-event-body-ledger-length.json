@@ -1,0 +1,10 @@
+{
+  "class": "field-table",
+  "code": "wrong_length",
+  "description": "An EventBody whose ledger is 31 bytes.",
+  "entry": "signed_event",
+  "file": "16-event-body-ledger-length.json",
+  "input_hex": "0a9201121f5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a180122208225a669a21ee244ba23bf4a1096ed5445a954ea01967150ccddee723635f1d128e0a499ffbc313220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c977873762220a2056690b23dafe56de2271519b35601a4b4f4e54ce51439930cf99a731a0ab8b961240e5804fc3ec346489f5771ddf2619d6bd1fb8b52a93c4d16a97c2dcff3788cfb892d51d787d1e3475d9235e81841a970cc25d04420b7bf8d565fad2b5d9c37f09",
+  "reason": "EventBody.ledger is 31 bytes, expected exactly 32",
+  "rule": "3.4 EventBody.ledger is 32 bytes"
+}

@@ -8,13 +8,14 @@ package mabel.v0;
 
 import "mabel/v0/ledger.proto";
 
-message InviteBundle {
-  repeated SignedEvent org_prefix = 1; // org events 0..=invite; file <= 1 MiB
+message InvitationBundle {
+  // ledger events 0..=invitation; file <= 1 MiB
+  repeated SignedEvent ledger_prefix = 1;
 }
 
 message AcceptanceFile {
   bytes acceptance = 1; // encoded Acceptance bytes
-  bytes sig = 2;        // invitee signature, 64 bytes; file <= 4 KiB
+  bytes signature = 2;  // invitee signature, 64 bytes; file <= 4 KiB
 }
 
 message IdentityDescriptor {

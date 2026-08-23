@@ -12,14 +12,14 @@ pub mod validate;
 
 pub use digest::{accept_input, event_id, reserve_commit, sign_input};
 pub use fold::{
-    Attestation, Head, Invite, InviteStatus, LedgerKind, LedgerState, OrgState, PersonState,
-    Principal, Reason, Violation, fold,
+    Attestation, Head, Invitation, InvitationStatus, LedgerRoot, LedgerState, Principal, Reason,
+    SigningPrincipal, Violation, declared_kind_name, fold,
 };
 pub use id::{EventId, IdentityId, LedgerId, ParseIdError};
 pub use mabel_proto::v0 as proto;
 pub use sign::{
-    BuildError, BuiltEvent, DetachedAcceptance, Position, build_acceptance, build_org_acceptance,
-    build_org_inception, build_org_invite, build_org_removal, build_person_inception,
+    BuildError, BuiltEvent, DetachedAcceptance, Position, Root, build_acceptance, build_inception,
+    build_membership_acceptance, build_membership_invitation, build_membership_removal,
     build_trust_attestation, build_trust_revocation, build_witness_config, ledger_timestamp_ms,
 };
 pub use validate::{
@@ -37,8 +37,8 @@ pub const MAX_TIMESTAMP_MS: u64 = 4_102_444_800_000;
 /// Maximum encoded size of a `SignedEvent` (proposal 001 section 5).
 pub const MAX_EVENT_BYTES: usize = 4096;
 
-/// Maximum encoded size of an embedded inception, `founder_inception` or
-/// `invitee_inception` (proposal 001, clarifications).
+/// Maximum encoded size of an embedded inception, `IdentityRoot.founder_inception`
+/// or `MembershipInvitation.invitee_inception` (proposal 001, clarifications).
 pub const MAX_EMBEDDED_INCEPTION_BYTES: usize = 1024;
 
 /// Maximum encoded size of an `Acceptance` blob (proposal 001 section 3.4).
@@ -65,7 +65,7 @@ mod tests {
     fn iroh_base_key_probe() {
         let sk = iroh_base::SecretKey::from_bytes(&[7u8; 32]);
         let pk = sk.public();
-        let sig = sk.sign(b"probe");
-        pk.verify(b"probe", &sig).expect("signature verifies");
+        let signature = sk.sign(b"probe");
+        pk.verify(b"probe", &signature).expect("signature verifies");
     }
 }

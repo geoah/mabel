@@ -12,9 +12,9 @@
 
 use iroh_base::{EndpointId, PublicKey, SecretKey};
 use mabel_proto::v0::{
-    Acceptance, EventBody, IdentityKind, OrgAcceptance, OrgInception, OrgInvite, OrgRemoval,
-    PersonInception, Role, SignedEvent, TrustAttestation, TrustRevocation, WitnessConfig,
-    event_body::Payload,
+    Acceptance, DeclaredKind, EventBody, IdentityRoot, Inception, MembershipAcceptance,
+    MembershipInvitation, MembershipRemoval, RawRoot, Role, SignedEvent, TrustAttestation,
+    TrustRevocation, WitnessConfig, event_body::Payload, inception,
 };
 
 use crate::digest::{accept_input, event_id, reserve_commit, sign_input};
@@ -40,14 +40,40 @@ pub struct BuiltEvent {
     pub signed_event: Vec<u8>,
 }
 
-/// An invitee's detached acceptance, the blob an `OrgAcceptance` embeds
+/// An invitee's detached acceptance, the blob a `MembershipAcceptance` embeds
 /// verbatim (proposal 001 section 3.5).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DetachedAcceptance {
     /// The encoded `Acceptance`.
     pub acceptance: Vec<u8>,
     /// The invitee's signature over `accept_input(acceptance)`.
-    pub sig: [u8; 64],
+    pub signature: [u8; 64],
+}
+
+/// The one cryptographic root a ledger's inception carries (proposal 002
+/// section 2).
+///
+/// The root is the only difference between what proposal 001 called a person
+/// ledger and an organization ledger, and it is a fact about keys rather than
+/// a label.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Root<'a> {
+    /// A self-keyed ledger. The signing key becomes a permanent `CONTROLLER`
+    /// principal whose identity id is the ledger's own, and the event commits
+    /// to `reserve_key` without recording it.
+    Raw {
+        /// The key committed to at inception and unused in this POC.
+        reserve_key: &'a PublicKey,
+    },
+    /// A ledger whose first `CONTROLLER` is another identity. The signing key
+    /// is that identity's active key.
+    Identity {
+        /// The founding identity's id.
+        founder: IdentityId,
+        /// The founder's seq-0 `SignedEvent` bytes, which this ledger embeds
+        /// so membership needs no cross-ledger lookup.
+        founder_inception: &'a [u8],
+    },
 }
 
 /// Where a new event lands in an existing ledger.
@@ -101,51 +127,45 @@ pub fn ledger_timestamp_ms(now_ms: u64, prev_timestamp_ms: u64) -> u64 {
     now_ms.max(prev_timestamp_ms)
 }
 
-/// Builds a person's seq-0 event, self-signed by its active key.
+/// Builds a ledger's seq-0 event around one root (proposal 002 section 2).
 ///
-/// The reserve key is committed to, never recorded: the event carries
-/// `reserve_commit(reserve_key)`.
-pub fn build_person_inception(
-    active: &SecretKey,
-    reserve_key: &PublicKey,
+/// `signer` holds the root key: the ledger's own active key for
+/// [`Root::Raw`], the founder's active key for [`Root::Identity`]. Either way
+/// the seq-0 event is signed by the key its root records, which is what
+/// self-authorizes it.
+///
+/// `kind` is advisory and must not be `KIND_UNSPECIFIED`; it gates nothing.
+pub fn build_inception(
+    signer: &SecretKey,
+    kind: DeclaredKind,
+    root: Root<'_>,
     nonce: [u8; NONCE_BYTES],
     now_ms: u64,
 ) -> Result<BuiltEvent, BuildError> {
-    let author_key = active.public();
-    let payload = Payload::PersonInception(PersonInception {
-        kind: IdentityKind::Person as i32,
-        active_key: author_key.as_bytes().to_vec(),
-        reserve_commit: reserve_commit(reserve_key).to_vec(),
+    let author_key = signer.public();
+    let root = match root {
+        Root::Raw { reserve_key } => inception::Root::RawRoot(RawRoot {
+            active_key: author_key.as_bytes().to_vec(),
+            reserve_commit: reserve_commit(reserve_key).to_vec(),
+        }),
+        Root::Identity {
+            founder,
+            founder_inception,
+        } => {
+            check_embedded_inception(founder_inception)?;
+            inception::Root::IdentityRoot(IdentityRoot {
+                founder: founder.to_vec(),
+                founder_key: author_key.as_bytes().to_vec(),
+                founder_inception: founder_inception.to_vec(),
+            })
+        }
+    };
+    let payload = Payload::Inception(Inception {
+        kind: kind as i32,
         nonce: nonce.to_vec(),
+        root: Some(root),
     });
-    seal(active, inception_body(&author_key, now_ms, payload)?)
-}
-
-/// Builds an org's seq-0 event, signed by the founder's personal active key.
-///
-/// `founder_inception` is the founder's own seq-0 `SignedEvent` bytes, which
-/// the org ledger embeds so membership needs no cross-ledger lookup
-/// (proposal 001 section 3.4).
-pub fn build_org_inception(
-    founder_active: &SecretKey,
-    founder: IdentityId,
-    founder_inception: &[u8],
-    nonce: [u8; NONCE_BYTES],
-    now_ms: u64,
-) -> Result<BuiltEvent, BuildError> {
-    check_embedded_inception(founder_inception)?;
-    let author_key = founder_active.public();
-    let payload = Payload::OrgInception(OrgInception {
-        kind: IdentityKind::Org as i32,
-        founder: founder.to_vec(),
-        founder_key: author_key.as_bytes().to_vec(),
-        founder_inception: founder_inception.to_vec(),
-        nonce: nonce.to_vec(),
-    });
-    seal(
-        founder_active,
-        inception_body(&author_key, now_ms, payload)?,
-    )
+    seal(signer, inception_body(&author_key, now_ms, payload)?)
 }
 
 /// Builds an event replacing the ledger's whole witness set.
@@ -198,9 +218,12 @@ pub fn build_trust_revocation(
     build_append(signer, at, now_ms, payload)
 }
 
-/// Builds an org invitation, embedding the invitee's seq-0 `SignedEvent`
-/// bytes.
-pub fn build_org_invite(
+/// Builds a membership invitation, embedding the invitee's seq-0
+/// `SignedEvent` bytes.
+///
+/// Legal on every ledger: a raw-rooted ledger uses this to delegate signing
+/// to a second controller (proposal 002 section 4).
+pub fn build_membership_invitation(
     signer: &SecretKey,
     at: &Position,
     invitee: IdentityId,
@@ -210,7 +233,7 @@ pub fn build_org_invite(
     now_ms: u64,
 ) -> Result<BuiltEvent, BuildError> {
     check_embedded_inception(invitee_inception)?;
-    let payload = Payload::OrgInvite(OrgInvite {
+    let payload = Payload::MembershipInvitation(MembershipInvitation {
         invitee: invitee.to_vec(),
         invitee_key: invitee_key.as_bytes().to_vec(),
         role: role as i32,
@@ -219,9 +242,9 @@ pub fn build_org_invite(
     build_append(signer, at, now_ms, payload)
 }
 
-/// Builds the org event that admits an invitee, embedding their detached
+/// Builds the event that admits an invitee, embedding their detached
 /// acceptance verbatim.
-pub fn build_org_acceptance(
+pub fn build_membership_acceptance(
     signer: &SecretKey,
     at: &Position,
     accepted: &DetachedAcceptance,
@@ -230,47 +253,50 @@ pub fn build_org_acceptance(
     if accepted.acceptance.len() > MAX_ACCEPTANCE_BYTES {
         return Err(BuildError::AcceptanceTooLarge(accepted.acceptance.len()));
     }
-    let payload = Payload::OrgAcceptance(OrgAcceptance {
+    let payload = Payload::MembershipAcceptance(MembershipAcceptance {
         acceptance: accepted.acceptance.clone(),
-        sig: accepted.sig.to_vec(),
+        signature: accepted.signature.to_vec(),
     });
     build_append(signer, at, now_ms, payload)
 }
 
 /// Builds an event removing an identity's membership and cancelling its open
-/// invite, whichever exist.
-pub fn build_org_removal(
+/// invitation, whichever exist.
+pub fn build_membership_removal(
     signer: &SecretKey,
     at: &Position,
     target: IdentityId,
     now_ms: u64,
 ) -> Result<BuiltEvent, BuildError> {
-    let payload = Payload::OrgRemoval(OrgRemoval {
+    let payload = Payload::MembershipRemoval(MembershipRemoval {
         target: target.to_vec(),
     });
     build_append(signer, at, now_ms, payload)
 }
 
-/// Builds and signs an invitee's detached acceptance of an org invitation.
+/// Builds and signs an invitee's detached acceptance of an invitation.
 ///
-/// The invitee holds no org ledger and cannot append to it, so this blob and
-/// its signature travel back to a controller, who embeds them in an
-/// `OrgAcceptance` (proposal 001 section 3.5).
+/// The invitee cannot append to the inviting ledger, so this blob and its
+/// signature travel back to a controller, who embeds them in a
+/// `MembershipAcceptance` (proposal 001 section 3.5).
 pub fn build_acceptance(
     invitee_active: &SecretKey,
-    org: LedgerId,
-    invite_event: EventId,
+    ledger: LedgerId,
+    invitation_event: EventId,
     invitee: IdentityId,
 ) -> DetachedAcceptance {
     let acceptance = encode(&Acceptance {
         version: 0,
-        org: org.to_vec(),
-        invite_event: invite_event.to_vec(),
+        ledger: ledger.to_vec(),
+        invitation_event: invitation_event.to_vec(),
         invitee: invitee.to_vec(),
         invitee_key: invitee_active.public().as_bytes().to_vec(),
     });
-    let sig = invitee_active.sign(&accept_input(&acceptance)).to_bytes();
-    DetachedAcceptance { acceptance, sig }
+    let signature = invitee_active.sign(&accept_input(&acceptance)).to_bytes();
+    DetachedAcceptance {
+        acceptance,
+        signature,
+    }
 }
 
 fn inception_body(
@@ -317,10 +343,10 @@ fn build_append(
 
 fn seal(signer: &SecretKey, body: EventBody) -> Result<BuiltEvent, BuildError> {
     let body = encode(&body);
-    let sig = signer.sign(&sign_input(&body));
+    let signature = signer.sign(&sign_input(&body));
     let signed_event = encode(&SignedEvent {
         body: body.clone(),
-        sig: sig.to_bytes().to_vec(),
+        signature: signature.to_bytes().to_vec(),
     });
     if signed_event.len() > MAX_EVENT_BYTES {
         return Err(BuildError::EventTooLarge(signed_event.len()));
@@ -355,9 +381,18 @@ mod tests {
         SecretKey::from_bytes(&[seed; 32])
     }
 
-    fn person(now_ms: u64) -> BuiltEvent {
-        build_person_inception(&secret(1), &secret(2).public(), [3u8; 16], now_ms)
-            .expect("builds an inception")
+    /// A raw-rooted ledger, the shape proposal 001 called a person.
+    fn raw_rooted(now_ms: u64) -> BuiltEvent {
+        build_inception(
+            &secret(1),
+            DeclaredKind::Person,
+            Root::Raw {
+                reserve_key: &secret(2).public(),
+            },
+            [3u8; 16],
+            now_ms,
+        )
+        .expect("builds an inception")
     }
 
     fn position(after: &BuiltEvent, seq: u64, prev_timestamp_ms: u64) -> Position {
@@ -371,22 +406,22 @@ mod tests {
 
     #[test]
     fn signed_event_carries_the_signed_bytes_and_verifies() {
-        let built = person(1_700_000_000_000);
+        let built = raw_rooted(1_700_000_000_000);
         let decoded = SignedEvent::decode(&built.signed_event[..]).expect("decodes");
         assert_eq!(decoded.body, built.body);
         assert_eq!(built.event_id, event_id(&built.body));
 
-        let sig_bytes: [u8; 64] = decoded.sig.try_into().expect("64-byte signature");
-        let sig = iroh_base::Signature::from_bytes(&sig_bytes);
+        let signature: [u8; 64] = decoded.signature.try_into().expect("64-byte signature");
+        let signature = iroh_base::Signature::from_bytes(&signature);
         secret(1)
             .public()
-            .verify(&sign_input(&built.body), &sig)
+            .verify(&sign_input(&built.body), &signature)
             .expect("signature verifies over the body bytes");
     }
 
     #[test]
     fn inception_omits_ledger_and_prev() {
-        let built = person(1_700_000_000_000);
+        let built = raw_rooted(1_700_000_000_000);
         let body = EventBody::decode(&built.body[..]).expect("decodes");
         assert!(body.ledger.is_empty());
         assert!(body.prev.is_empty());
@@ -398,16 +433,74 @@ mod tests {
     }
 
     #[test]
-    fn inception_commits_to_the_reserve_key_without_recording_it() {
+    fn a_raw_root_commits_to_the_reserve_key_without_recording_it() {
         let reserve = secret(2).public();
-        let built = person(1_700_000_000_000);
+        let built = raw_rooted(1_700_000_000_000);
         let body = EventBody::decode(&built.body[..]).expect("decodes");
-        let Some(Payload::PersonInception(inception)) = body.payload else {
-            panic!("expected a PersonInception payload");
+        let Some(Payload::Inception(inception)) = body.payload else {
+            panic!("expected an Inception payload");
         };
-        assert_eq!(inception.reserve_commit, reserve_commit(&reserve).to_vec());
-        assert_ne!(inception.reserve_commit, reserve.as_bytes().to_vec());
-        assert_eq!(inception.kind, IdentityKind::Person as i32);
+        assert_eq!(inception.kind, DeclaredKind::Person as i32);
+        let Some(inception::Root::RawRoot(root)) = inception.root else {
+            panic!("expected a raw root");
+        };
+        assert_eq!(root.active_key, secret(1).public().as_bytes().to_vec());
+        assert_eq!(root.reserve_commit, reserve_commit(&reserve).to_vec());
+        assert_ne!(root.reserve_commit, reserve.as_bytes().to_vec());
+    }
+
+    #[test]
+    fn an_identity_root_records_the_founder_and_embeds_their_inception() {
+        let founder = raw_rooted(1_700_000_000_000);
+        let built = build_inception(
+            &secret(1),
+            DeclaredKind::Organization,
+            Root::Identity {
+                founder: founder.event_id.into(),
+                founder_inception: &founder.signed_event,
+            },
+            [5u8; 16],
+            1_700_000_000_000,
+        )
+        .expect("builds");
+        let body = EventBody::decode(&built.body[..]).expect("decodes");
+        let Some(Payload::Inception(inception)) = body.payload else {
+            panic!("expected an Inception payload");
+        };
+        assert_eq!(inception.kind, DeclaredKind::Organization as i32);
+        let Some(inception::Root::IdentityRoot(root)) = inception.root else {
+            panic!("expected an identity root");
+        };
+        assert_eq!(root.founder, founder.event_id.to_vec());
+        assert_eq!(root.founder_key, secret(1).public().as_bytes().to_vec());
+        assert_eq!(root.founder_inception, founder.signed_event);
+    }
+
+    /// Two ledgers with the same declared kind and the same founder differ by
+    /// nonce alone, which is what pitfall 6 asks of the id derivation.
+    #[test]
+    fn declared_kind_is_the_only_free_label_and_changes_the_id() {
+        let a = build_inception(
+            &secret(1),
+            DeclaredKind::Agent,
+            Root::Raw {
+                reserve_key: &secret(2).public(),
+            },
+            [3u8; 16],
+            1_700_000_000_000,
+        )
+        .expect("builds");
+        let b = build_inception(
+            &secret(1),
+            DeclaredKind::Service,
+            Root::Raw {
+                reserve_key: &secret(2).public(),
+            },
+            [3u8; 16],
+            1_700_000_000_000,
+        )
+        .expect("builds");
+        assert_ne!(a.event_id, b.event_id);
     }
 
     #[test]
@@ -416,7 +509,7 @@ mod tests {
         assert_eq!(ledger_timestamp_ms(9, 5), 9);
         assert_eq!(ledger_timestamp_ms(7, 7), 7);
 
-        let head = person(1_700_000_000_000);
+        let head = raw_rooted(1_700_000_000_000);
         let at = position(&head, 1, 1_700_000_000_000);
         let lagging = build_witness_config(&secret(1), &at, &[secret(4).public()], 1_000)
             .expect("builds despite the lagging clock");
@@ -431,31 +524,36 @@ mod tests {
 
     #[test]
     fn timestamps_outside_the_bounds_are_refused() {
+        let reserve_key = secret(2).public();
+        let raw = || Root::Raw {
+            reserve_key: &reserve_key,
+        };
         assert_eq!(
-            build_person_inception(&secret(1), &secret(2).public(), [3u8; 16], 0),
+            build_inception(&secret(1), DeclaredKind::Person, raw(), [3u8; 16], 0),
             Err(BuildError::Timestamp(0))
         );
         assert_eq!(
-            build_person_inception(
+            build_inception(
                 &secret(1),
-                &secret(2).public(),
+                DeclaredKind::Person,
+                raw(),
                 [3u8; 16],
                 MAX_TIMESTAMP_MS + 1
             ),
             Err(BuildError::Timestamp(MAX_TIMESTAMP_MS + 1))
         );
 
-        let head = person(1_700_000_000_000);
+        let head = raw_rooted(1_700_000_000_000);
         let at = position(&head, 1, MAX_TIMESTAMP_MS + 1);
         assert_eq!(
-            build_org_removal(&secret(1), &at, IdentityId::from_bytes([8u8; 32]), 1_000),
+            build_membership_removal(&secret(1), &at, IdentityId::from_bytes([8u8; 32]), 1_000),
             Err(BuildError::Timestamp(MAX_TIMESTAMP_MS + 1))
         );
     }
 
     #[test]
     fn an_append_cannot_take_seq_zero() {
-        let head = person(1_700_000_000_000);
+        let head = raw_rooted(1_700_000_000_000);
         let at = position(&head, 0, 1_700_000_000_000);
         assert_eq!(
             build_trust_attestation(&secret(1), &at, IdentityId::from_bytes([8u8; 32]), 1),
@@ -465,7 +563,7 @@ mod tests {
 
     #[test]
     fn witness_sets_are_bounded_and_distinct() {
-        let head = person(1_700_000_000_000);
+        let head = raw_rooted(1_700_000_000_000);
         let at = position(&head, 1, 1_700_000_000_000);
         assert_eq!(
             build_witness_config(&secret(1), &at, &[], 1_700_000_000_000),
@@ -487,21 +585,24 @@ mod tests {
 
     #[test]
     fn oversize_embedded_bytes_are_refused() {
-        let head = person(1_700_000_000_000);
+        let head = raw_rooted(1_700_000_000_000);
         let at = position(&head, 1, 1_700_000_000_000);
         let big = vec![0u8; MAX_EMBEDDED_INCEPTION_BYTES + 1];
         assert_eq!(
-            build_org_inception(
+            build_inception(
                 &secret(1),
-                IdentityId::from_bytes([8u8; 32]),
-                &big,
+                DeclaredKind::Organization,
+                Root::Identity {
+                    founder: IdentityId::from_bytes([8u8; 32]),
+                    founder_inception: &big,
+                },
                 [3u8; 16],
                 1_700_000_000_000
             ),
             Err(BuildError::InceptionTooLarge(big.len()))
         );
         assert_eq!(
-            build_org_invite(
+            build_membership_invitation(
                 &secret(1),
                 &at,
                 IdentityId::from_bytes([8u8; 32]),
@@ -515,10 +616,10 @@ mod tests {
 
         let accepted = DetachedAcceptance {
             acceptance: vec![0u8; MAX_ACCEPTANCE_BYTES + 1],
-            sig: [0u8; 64],
+            signature: [0u8; 64],
         };
         assert_eq!(
-            build_org_acceptance(&secret(1), &at, &accepted, 1_700_000_000_000),
+            build_membership_acceptance(&secret(1), &at, &accepted, 1_700_000_000_000),
             Err(BuildError::AcceptanceTooLarge(MAX_ACCEPTANCE_BYTES + 1))
         );
     }
@@ -532,13 +633,15 @@ mod tests {
             EventId::from_bytes([2u8; 32]),
             IdentityId::from_bytes([3u8; 32]),
         );
-        let sig = iroh_base::Signature::from_bytes(&accepted.sig);
+        let signature = iroh_base::Signature::from_bytes(&accepted.signature);
         invitee
             .public()
-            .verify(&accept_input(&accepted.acceptance), &sig)
+            .verify(&accept_input(&accepted.acceptance), &signature)
             .expect("acceptance signature verifies");
 
         let decoded = Acceptance::decode(&accepted.acceptance[..]).expect("decodes");
+        assert_eq!(decoded.ledger, vec![1u8; 32]);
+        assert_eq!(decoded.invitation_event, vec![2u8; 32]);
         assert_eq!(decoded.invitee_key, invitee.public().as_bytes().to_vec());
         assert_eq!(decoded.version, 0);
     }

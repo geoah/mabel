@@ -1,0 +1,10 @@
+{
+  "class": "field-table",
+  "code": "multiple_oneof_variants",
+  "description": "An event carrying both a trust_attestation and a trust_revocation.",
+  "entry": "signed_event",
+  "file": "25-event-body-two-payloads.json",
+  "input_hex": "0ab70112208225a669a21ee244ba23bf4a1096ed5445a954ea01967150ccddee723635f1d1180122208225a669a21ee244ba23bf4a1096ed5445a954ea01967150ccddee723635f1d128e0a499ffbc313220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c977873762220a2056690b23dafe56de2271519b35601a4b4f4e54ce51439930cf99a731a0ab8b966a220a20bc43c962c0e15bcff7f2adb91d0daffb2f76eb67f4610d22fa510a2bf6e800ba1240ab465a9d5919bf6addc908d39a7cbd9f6084326485929a172b74b56f1c087466f12ed978eac7dda4eb416274e69833ceb9c3547def787b4b59c562c6cb35400d",
+  "reason": "EventBody.payload names more than one variant",
+  "rule": "3.4 EventBody.payload is exactly one recognised variant"
+}

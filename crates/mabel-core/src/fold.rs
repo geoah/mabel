@@ -1,5 +1,5 @@
-//! The one fold of proposal 001 section 3.6: an event sequence in, a state
-//! and at most one violation out.
+//! The one fold of proposal 001 section 3.6, over the one ledger type of
+//! proposal 002: an event sequence in, a state and at most one violation out.
 //!
 //! The fold reads no local state, touches no disk and never consults the
 //! verifier's clock, so verifying from nothing is the same code path as
@@ -18,53 +18,98 @@
 //! 2. The chain rules: `seq` equals the position, and past seq 0 `ledger`
 //!    equals the ledger id, `prev` equals the previous event's id and
 //!    `timestamp_ms` does not fall below the previous event's.
-//! 3. The payload is one the ledger's kind accepts.
-//! 4. `author_key` is authorized by the state from `0..=i-1`; seq 0 is
-//!    authorized by itself.
+//! 3. The payload sits at a position that accepts it: an inception at seq 0
+//!    and nothing else there.
+//! 4. `author_key` is the key of a `CONTROLLER` principal in the state from
+//!    `0..=i-1`; seq 0 is authorized by its own root.
 //! 5. The signature verifies over `sign_input` of the *received* body bytes.
 //! 6. The payload's semantic rules, then the payload is applied.
 //!
-//! Person semantics are complete here. Org ledgers get their inception state
-//! (the founder as `CONTROLLER`) and the kind table, and their membership
-//! payloads report [`Reason::OrgSemanticsPending`] until ticket 005 lands.
+//! There is one ledger type and one set of rules. Declared kind is advisory
+//! and gates nothing (proposal 002 section 3); what a ledger's inception
+//! decided is its [`LedgerRoot`], and everything else is the principal set.
 //!
-//! Two seams keep the kinds from spreading through the fold: every seq-0
+//! Two seams keep the roots from spreading through the fold: the seq-0
 //! payload seeds the state in [`LedgerState::seed_from_inception`], and every
-//! authorization question goes through [`LedgerState::authorized_signer`],
-//! which reads the principal set both kinds share.
+//! authorization question goes through
+//! [`LedgerState::signing_principal`].
 
 use std::collections::BTreeMap;
 use std::fmt;
 
 use iroh_base::{EndpointId, PublicKey, Signature};
 use mabel_proto::prost::Message;
-use mabel_proto::v0::{EventBody, Role, SignedEvent, event_body::Payload};
+use mabel_proto::v0::{
+    Acceptance, DeclaredKind, EventBody, Role, SignedEvent, event_body::Payload, inception,
+};
 
 use crate::digest::{event_id, sign_input};
 use crate::id::{EventId, IdentityId, LedgerId};
 use crate::validate::{self, WireError};
 use crate::{ID_BYTES, SIG_BYTES};
 
-/// What an identity's seq-0 event made it (proposal 001 section 3.3).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum LedgerKind {
-    /// A person, incepted by a `PersonInception`.
-    Person,
-    /// An organization, incepted by an `OrgInception`.
-    Org,
+/// The lowercase name a declared kind carries in output and in artifacts.
+///
+/// Callers say "declared kind", never "kind", so nobody reads it as a checked
+/// claim (proposal 002 section 3).
+pub const fn declared_kind_name(kind: DeclaredKind) -> &'static str {
+    match kind {
+        DeclaredKind::KindUnspecified => "unspecified",
+        DeclaredKind::Person => "person",
+        DeclaredKind::Organization => "organization",
+        DeclaredKind::Agent => "agent",
+        DeclaredKind::Service => "service",
+    }
 }
 
-impl LedgerKind {
-    /// The lowercase name this kind carries in output and in artifacts.
-    pub const fn as_str(self) -> &'static str {
+/// The one cryptographic root a ledger's inception fixed (proposal 002
+/// section 2).
+///
+/// This, and not the declared kind, is what proposal 001 called the ledger
+/// kind. It decides where the first signing authority came from and nothing
+/// else.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LedgerRoot {
+    /// A self-keyed ledger. `active_key` is a permanent `CONTROLLER`
+    /// principal whose identity id is the ledger's own id, and it is not
+    /// removable in this POC: delegation must never become a way to take a
+    /// ledger from the identity it names.
+    Raw {
+        /// The key the inception recorded, authoritative for life (rotation is
+        /// out of scope, decision 008).
+        active_key: PublicKey,
+        /// `reserve_commit(reserve_key)`; the reserve key itself is never
+        /// recorded.
+        reserve_commit: [u8; ID_BYTES],
+    },
+    /// A ledger controlled by one founding identity and holding no key of its
+    /// own. The founder is an ordinary `CONTROLLER` principal and may be
+    /// removed once another controller exists.
+    Identity {
+        /// The founding identity.
+        founder: IdentityId,
+        /// That identity's active key, proven by the inception embedded
+        /// beside it.
+        founder_key: PublicKey,
+    },
+}
+
+impl LedgerRoot {
+    /// Whether this root keys the ledger itself.
+    pub const fn is_raw(&self) -> bool {
+        matches!(self, Self::Raw { .. })
+    }
+
+    /// The name this root carries in output.
+    pub const fn as_str(&self) -> &'static str {
         match self {
-            Self::Person => "person",
-            Self::Org => "org",
+            Self::Raw { .. } => "raw",
+            Self::Identity { .. } => "identity",
         }
     }
 }
 
-impl fmt::Display for LedgerKind {
+impl fmt::Display for LedgerRoot {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.as_str())
     }
@@ -81,23 +126,11 @@ pub struct Head {
     pub timestamp_ms: u64,
 }
 
-/// What a `PersonInception` fixed for life (rotation is out of scope, so the
-/// active key never changes).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct PersonState {
-    /// The key every event on this ledger is signed by.
-    pub active_key: PublicKey,
-    /// `reserve_commit(reserve_key)`; the reserve key itself is never
-    /// recorded.
-    pub reserve_commit: [u8; ID_BYTES],
-}
-
 /// An identity the ledger has recorded, and what it may do.
 ///
-/// Both kinds use this: a person ledger holds exactly one principal, itself,
-/// and an org ledger holds one per identity it has admitted. Authorization
-/// reads nothing else, so [`LedgerState::authorized_signer`] is the same
-/// function for both.
+/// Every ledger holds a principal set: the root principal its inception
+/// seeded, plus everyone an accepted invitation admitted. Authorization reads
+/// nothing else (proposal 002 section 1).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Principal {
     /// `CONTROLLER` may append to this ledger; `MEMBER` is recorded data only
@@ -108,42 +141,64 @@ pub struct Principal {
     pub active_key: PublicKey,
 }
 
-/// Where an `OrgInvite` stands (proposal 001 section 3.4).
+/// Who signed an event: the `author_key` and the principal it matched.
+///
+/// Verification output names this on every event and every trust answer, so a
+/// delegate's signature is never silently attributed to the ledger's subject
+/// (proposal 002 section 5).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum InviteStatus {
+pub struct SigningPrincipal {
+    /// The identity whose principal the `author_key` matched.
+    pub identity: IdentityId,
+    /// The key the event names in `author_key`.
+    pub key: PublicKey,
+}
+
+impl fmt::Display for SigningPrincipal {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} ({})", self.identity, self.key)
+    }
+}
+
+/// Where a `MembershipInvitation` stands (proposal 002 section 4).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InvitationStatus {
     /// Issued and neither accepted nor cancelled.
     Open,
-    /// An `OrgAcceptance` consumed it.
+    /// A `MembershipAcceptance` consumed it.
     Accepted,
-    /// An `OrgRemoval` cancelled it.
+    /// A `MembershipRemoval` cancelled it.
     Cancelled,
 }
 
-/// One `OrgInvite` and what became of it.
+impl InvitationStatus {
+    /// The lowercase name this status carries in output.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Open => "open",
+            Self::Accepted => "accepted",
+            Self::Cancelled => "cancelled",
+        }
+    }
+}
+
+impl fmt::Display for InvitationStatus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// One `MembershipInvitation` and what became of it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Invite {
+pub struct Invitation {
     /// The identity invited.
     pub invitee: IdentityId,
     /// That identity's active key.
     pub invitee_key: PublicKey,
-    /// The role the invite offers.
+    /// The role the invitation offers.
     pub role: Role,
-    /// Whether the invite is still open.
-    pub status: InviteStatus,
-}
-
-/// The org branch of the folded state.
-///
-/// Membership lives in the shared principal set, not here. Ticket 004 seeds
-/// the founder from `OrgInception` and stops there; ticket 005 fills in the
-/// invite lifecycle, acceptance and removal.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct OrgState {
-    /// The identity that founded the org, seeded as a `CONTROLLER`.
-    pub founder: IdentityId,
-    /// Every invite the ledger has issued, by the `event_id` of its
-    /// `OrgInvite`.
-    pub invites: BTreeMap<EventId, Invite>,
+    /// Whether the invitation is still open.
+    pub status: InvitationStatus,
 }
 
 /// One `TrustAttestation` and its revocation status.
@@ -154,6 +209,9 @@ pub struct OrgState {
 pub struct Attestation {
     /// The identity the attestation names.
     pub subject: IdentityId,
+    /// Who signed the attestation, which is not always the ledger's own
+    /// identity (proposal 002 section 5).
+    pub signing_principal: SigningPrincipal,
     /// The `event_id` of the `TrustRevocation` that revoked it, if one did.
     pub revoked_by: Option<EventId>,
 }
@@ -168,15 +226,15 @@ impl Attestation {
 /// The fold of a valid event prefix (proposal 001 section 3.6).
 ///
 /// A default `LedgerState` is the state before any event: no ledger id, no
-/// kind, no head.
+/// root, no head.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct LedgerState {
-    kind: Option<LedgerKind>,
+    declared_kind: Option<DeclaredKind>,
+    root: Option<LedgerRoot>,
     ledger: Option<LedgerId>,
     head: Option<Head>,
     principals: BTreeMap<IdentityId, Principal>,
-    person: Option<PersonState>,
-    org: Option<OrgState>,
+    invitations: BTreeMap<EventId, Invitation>,
     witnesses: Vec<EndpointId>,
     trust: BTreeMap<EventId, Attestation>,
 }
@@ -187,9 +245,27 @@ impl LedgerState {
         self.head.is_none()
     }
 
-    /// The ledger kind its seq-0 event set.
-    pub const fn kind(&self) -> Option<LedgerKind> {
-        self.kind
+    /// What the inception says this identity is. Advisory: it gates no rule in
+    /// this file (proposal 002 section 3).
+    pub const fn declared_kind(&self) -> Option<DeclaredKind> {
+        self.declared_kind
+    }
+
+    /// The root the seq-0 event fixed, which is where signing authority came
+    /// from.
+    pub const fn root(&self) -> Option<LedgerRoot> {
+        self.root
+    }
+
+    /// The identity of the root principal: the ledger itself under a raw root,
+    /// the founder under an identity root.
+    pub fn root_identity(&self) -> Option<IdentityId> {
+        match self.root? {
+            // `LedgerId` is an `IdentityId`: a self-keyed ledger is its own
+            // root principal.
+            LedgerRoot::Raw { .. } => self.ledger,
+            LedgerRoot::Identity { founder, .. } => Some(founder),
+        }
     }
 
     /// The ledger id, which is the `event_id` of its seq-0 event.
@@ -211,9 +287,6 @@ impl LedgerState {
     }
 
     /// Every identity this ledger records, with its role and active key.
-    ///
-    /// A person ledger holds exactly one entry, itself; an org ledger holds
-    /// its founder and everyone it has admitted.
     pub const fn principals(&self) -> &BTreeMap<IdentityId, Principal> {
         &self.principals
     }
@@ -223,14 +296,15 @@ impl LedgerState {
         self.principals.get(identity)
     }
 
-    /// The person branch of the state, present on a person ledger.
-    pub const fn person(&self) -> Option<&PersonState> {
-        self.person.as_ref()
+    /// Every invitation this ledger has issued, by invitation `event_id`,
+    /// whatever became of it.
+    pub const fn invitations(&self) -> &BTreeMap<EventId, Invitation> {
+        &self.invitations
     }
 
-    /// The org branch of the state, present on an org ledger.
-    pub const fn org(&self) -> Option<&OrgState> {
-        self.org.as_ref()
+    /// The invitation with this `event_id`, open or not.
+    pub fn invitation(&self, event: &EventId) -> Option<&Invitation> {
+        self.invitations.get(event)
     }
 
     /// The current witness set, in the order the last `WitnessConfig` listed.
@@ -255,17 +329,38 @@ impl LedgerState {
         self.unrevoked(subject).is_some()
     }
 
-    /// Whether `key` may sign the next event.
+    /// The principal `key` signs as, if any may sign the next event.
     ///
     /// This is the fold's only authorization question and the only place the
     /// answer is computed: a key is authorized when the principal set holds a
-    /// `CONTROLLER` with that active key. On a person ledger that set holds
-    /// the person alone, so this is "the active key" (proposal 001 section
-    /// 3.4).
-    pub fn authorized_signer(&self, key: &PublicKey) -> bool {
+    /// `CONTROLLER` with that active key. The rule is the same for every
+    /// ledger and every event (proposal 002 section 5).
+    pub fn signing_principal(&self, key: &PublicKey) -> Option<SigningPrincipal> {
         self.principals
-            .values()
-            .any(|principal| principal.role == Role::Controller && &principal.active_key == key)
+            .iter()
+            .find(|(_, principal)| {
+                principal.role == Role::Controller && &principal.active_key == key
+            })
+            .map(|(identity, _)| SigningPrincipal {
+                identity: *identity,
+                key: *key,
+            })
+    }
+
+    /// Whether `key` may sign the next event.
+    pub fn authorized_signer(&self, key: &PublicKey) -> bool {
+        self.signing_principal(key).is_some()
+    }
+
+    /// Every distinct key that may currently append.
+    pub fn controller_keys(&self) -> Vec<PublicKey> {
+        let mut keys: Vec<PublicKey> = Vec::new();
+        for principal in self.principals.values() {
+            if principal.role == Role::Controller && !keys.contains(&principal.active_key) {
+                keys.push(principal.active_key);
+            }
+        }
+        keys
     }
 
     /// Checks one received `SignedEvent` against this state and, if every
@@ -318,22 +413,28 @@ impl LedgerState {
             }
         }
 
-        // 3. The payload is one this ledger kind accepts.
-        self.check_kind(seq, payload)?;
+        // 3. The payload sits where it may.
+        check_position(seq, payload)?;
 
         // 4. Authorization against the state from `0..=i-1`. Seq 0 is
-        //    authorized by itself: the field table already tied `author_key`
-        //    to the inception's `active_key` or `founder_key`.
+        //    authorized by its own root: the field table already tied
+        //    `author_key` to `RawRoot.active_key` or
+        //    `IdentityRoot.founder_key`.
         let author_key = public_key(&body.author_key, "EventBody.author_key")?;
-        if seq > 0 && !self.authorized_signer(&author_key) {
-            return Err(Reason::UnauthorizedSigner { key: author_key });
-        }
+        let signer = if seq == 0 {
+            None
+        } else {
+            Some(
+                self.signing_principal(&author_key)
+                    .ok_or(Reason::UnauthorizedSigner { key: author_key })?,
+            )
+        };
 
         // 5. The signature, over the received body bytes.
-        verify(&author_key, &sign_input(&signed.body), &signed.sig)?;
+        verify(&author_key, &sign_input(&signed.body), &signed.signature)?;
 
         // 6. The semantic rules, then the payload.
-        let effect = self.check_semantics(id, payload)?;
+        let effect = self.check_semantics(id, payload, signer)?;
         self.commit(seq, id, body.timestamp_ms, effect);
         Ok(())
     }
@@ -346,69 +447,54 @@ impl LedgerState {
             .map(|(event, attestation)| (*event, attestation))
     }
 
-    /// The valid-payloads-by-kind table of proposal 001 section 3.4.
-    fn check_kind(&self, seq: u64, payload: &Payload) -> Result<(), Reason> {
-        match payload {
-            // An inception sets the kind; the field table already pinned it to
-            // seq 0, so the guards below only ever fire on a corrupt state.
-            Payload::PersonInception(_) | Payload::OrgInception(_) if seq == 0 => Ok(()),
-            Payload::PersonInception(_) | Payload::OrgInception(_) => {
-                Err(WireError::InceptionPastSeqZero.into())
-            }
-            // Every ledger kind holds these three.
-            Payload::WitnessConfig(_)
-            | Payload::TrustAttestation(_)
-            | Payload::TrustRevocation(_) => {
-                self.kind.ok_or(WireError::NonInceptionAtSeqZero)?;
-                Ok(())
-            }
-            // The rest are org-only.
-            _ => match self.kind.ok_or(WireError::NonInceptionAtSeqZero)? {
-                LedgerKind::Org => Ok(()),
-                kind => Err(Reason::PayloadNotAllowed {
-                    kind,
-                    payload: payload_name(payload),
-                }),
-            },
-        }
-    }
-
-    /// The one place a seq-0 payload becomes state: it names the kind, the
-    /// principal set and the kind-specific record.
-    fn seed_from_inception(&self, id: EventId, payload: &Payload) -> Result<Effect, Reason> {
-        let (kind, identity, active_key, person, org) = match payload {
-            Payload::PersonInception(inception) => {
-                let active_key = public_key(&inception.active_key, "PersonInception.active_key")?;
-                let person = PersonState {
+    /// The one place a seq-0 payload becomes state: it names the root, the
+    /// first principal and the advisory declared kind.
+    fn seed_from_inception(
+        &self,
+        id: EventId,
+        inception: &mabel_proto::v0::Inception,
+    ) -> Result<Effect, Reason> {
+        let declared_kind = DeclaredKind::try_from(inception.kind)
+            .expect("a validated inception carries a defined kind");
+        let (root, identity, active_key) = match inception.root.as_ref() {
+            Some(inception::Root::RawRoot(raw)) => {
+                let active_key = public_key(&raw.active_key, "RawRoot.active_key")?;
+                let root = LedgerRoot::Raw {
                     active_key,
-                    reserve_commit: inception
+                    reserve_commit: raw
                         .reserve_commit
                         .as_slice()
                         .try_into()
                         .expect("reserve_commit is 32 bytes"),
                 };
-                // A person's identity id is the id of this very event.
+                // A self-keyed ledger's root principal is the ledger itself,
+                // whose identity id is the id of this very event.
+                (root, IdentityId::from(id), active_key)
+            }
+            Some(inception::Root::IdentityRoot(identity_root)) => {
+                let founder = identity(&identity_root.founder);
+                let founder_key =
+                    public_key(&identity_root.founder_key, "IdentityRoot.founder_key")?;
+                // The field table proved the embedded inception hashes to
+                // `founder`, records `founder_key` and carries a raw root, so
+                // the founder becomes a controller with no cross-ledger
+                // lookup (proposal 002 section 8).
                 (
-                    LedgerKind::Person,
-                    IdentityId::from(id),
-                    active_key,
-                    Some(person),
-                    None,
+                    LedgerRoot::Identity {
+                        founder,
+                        founder_key,
+                    },
+                    founder,
+                    founder_key,
                 )
             }
-            Payload::OrgInception(inception) => {
-                let founder = identity(&inception.founder);
-                let active_key = public_key(&inception.founder_key, "OrgInception.founder_key")?;
-                // The field table proved the embedded inception hashes to
-                // `founder` and records `founder_key`, so the founder becomes
-                // a controller with no cross-ledger lookup (section 3.4).
-                let org = OrgState {
-                    founder,
-                    invites: BTreeMap::new(),
-                };
-                (LedgerKind::Org, founder, active_key, None, Some(org))
+            None => {
+                return Err(WireError::MissingOneof {
+                    message: "Inception",
+                    oneof: "root",
+                }
+                .into());
             }
-            _ => return Err(WireError::NonInceptionAtSeqZero.into()),
         };
         let mut principals = BTreeMap::new();
         principals.insert(
@@ -419,20 +505,26 @@ impl LedgerState {
             },
         );
         Ok(Effect::Seed(Box::new(Seed {
-            kind,
+            declared_kind,
+            root,
             principals,
-            person,
-            org,
         })))
     }
 
-    /// The semantic rules of proposal 001 section 3.4, run against the state
-    /// from `0..=i-1`. Returns what to apply; nothing is mutated here.
-    fn check_semantics(&self, id: EventId, payload: &Payload) -> Result<Effect, Reason> {
+    /// The semantic rules of proposal 001 section 3.4 and proposal 002
+    /// section 4, run against the state from `0..=i-1`. Returns what to apply;
+    /// nothing is mutated here.
+    ///
+    /// `signer` is the principal the `author_key` matched, absent only at
+    /// seq 0, where the root authorizes the event.
+    fn check_semantics(
+        &self,
+        id: EventId,
+        payload: &Payload,
+        signer: Option<SigningPrincipal>,
+    ) -> Result<Effect, Reason> {
         match payload {
-            Payload::PersonInception(_) | Payload::OrgInception(_) => {
-                self.seed_from_inception(id, payload)
-            }
+            Payload::Inception(inception) => self.seed_from_inception(id, inception),
             // A witness config replaces the whole set.
             Payload::WitnessConfig(config) => {
                 let mut witnesses = Vec::with_capacity(config.witnesses.len());
@@ -454,7 +546,10 @@ impl LedgerState {
                         attestation: event,
                     });
                 }
-                Ok(Effect::Attest(subject))
+                Ok(Effect::Attest {
+                    subject,
+                    signing_principal: signer.expect("an attestation sits past seq 0"),
+                })
             }
             // The target must be an unrevoked attestation earlier in this
             // ledger.
@@ -468,14 +563,164 @@ impl LedgerState {
                     },
                 }
             }
-            // Ticket 005 replaces this arm with the invite lifecycle,
-            // acceptance and removal semantics of sections 3.4 and 3.5.
-            Payload::OrgInvite(_) | Payload::OrgAcceptance(_) | Payload::OrgRemoval(_) => {
-                Err(Reason::OrgSemanticsPending {
-                    payload: payload_name(payload),
-                })
+            Payload::MembershipInvitation(invitation) => self.check_invitation(invitation),
+            Payload::MembershipAcceptance(acceptance) => self.check_acceptance(acceptance),
+            Payload::MembershipRemoval(removal) => self.check_removal(identity(&removal.target)),
+        }
+    }
+
+    /// The invitation rules of proposal 002 section 4.
+    ///
+    /// The field table already proved the embedded inception, the role and
+    /// that `invitee` differs from the ledger id, which is what stops an
+    /// ordinary principal from shadowing a raw root.
+    fn check_invitation(
+        &self,
+        invitation: &mabel_proto::v0::MembershipInvitation,
+    ) -> Result<Effect, Reason> {
+        let invitee = identity(&invitation.invitee);
+        let invitee_key = public_key(&invitation.invitee_key, "MembershipInvitation.invitee_key")?;
+        let role = Role::try_from(invitation.role).expect("a validated invitation names a role");
+
+        if let Some((event, _)) = self.open_invitation_of(invitee) {
+            return Err(Reason::DuplicateInvitation {
+                invitee,
+                invitation: event,
+            });
+        }
+        // Promotion is the one way to name an existing principal, and it must
+        // carry that principal's current key: a new key for a known identity
+        // would be a rotation, which is out of scope.
+        if let Some(principal) = self.principals.get(&invitee)
+            && principal.active_key != invitee_key
+        {
+            return Err(Reason::PrincipalKeyMismatch {
+                identity: invitee,
+                expected: principal.active_key,
+                found: invitee_key,
+            });
+        }
+        Ok(Effect::Invite(Invitation {
+            invitee,
+            invitee_key,
+            role,
+            status: InvitationStatus::Open,
+        }))
+    }
+
+    /// The admission rules of proposal 002 section 4.
+    ///
+    /// The admitted principal is read from the invitation the acceptance
+    /// names, never from the blob, which only has to match it. The blob's
+    /// signature was already checked under its own `invitee_key`, so the four
+    /// equality rules below are what stop a valid acceptance from being
+    /// transplanted onto another ledger, invitation, identity or key.
+    fn check_acceptance(
+        &self,
+        acceptance: &mabel_proto::v0::MembershipAcceptance,
+    ) -> Result<Effect, Reason> {
+        let blob =
+            Acceptance::decode(&acceptance.acceptance[..]).expect("a validated Acceptance decodes");
+        let ledger = self.ledger.ok_or(WireError::NonInceptionAtSeqZero)?;
+        let named_ledger = identity(&blob.ledger);
+        if named_ledger != ledger {
+            return Err(Reason::AcceptanceForAnotherLedger {
+                named: named_ledger,
+                expected: ledger,
+            });
+        }
+        let event = EventId::from_slice(&blob.invitation_event).expect("the event id is 32 bytes");
+        let invitation = self
+            .invitations
+            .get(&event)
+            .ok_or(Reason::UnknownInvitation(event))?;
+        if invitation.status != InvitationStatus::Open {
+            return Err(Reason::InvitationNotOpen {
+                invitation: event,
+                status: invitation.status,
+            });
+        }
+        let named_invitee = identity(&blob.invitee);
+        if named_invitee != invitation.invitee {
+            return Err(Reason::AcceptanceInviteeMismatch {
+                named: named_invitee,
+                invited: invitation.invitee,
+            });
+        }
+        let named_key = public_key(&blob.invitee_key, "Acceptance.invitee_key")?;
+        if named_key != invitation.invitee_key {
+            return Err(Reason::AcceptanceInviteeKeyMismatch {
+                named: named_key,
+                invited: invitation.invitee_key,
+            });
+        }
+        // Duplicate keys are rejected where the principal is added. A new
+        // identity presenting a key a principal already holds would be a
+        // second name for one signer; promotion of the same identity is the
+        // exception and keeps its key.
+        if let Some((held_by, _)) = self.principals.iter().find(|(id, principal)| {
+            principal.active_key == invitation.invitee_key && **id != invitation.invitee
+        }) {
+            return Err(Reason::DuplicatePrincipalKey {
+                key: invitation.invitee_key,
+                held_by: *held_by,
+            });
+        }
+        Ok(Effect::Admit {
+            invitation: event,
+            invitee: invitation.invitee,
+            principal: Principal {
+                role: invitation.role,
+                active_key: invitation.invitee_key,
+            },
+        })
+    }
+
+    /// The removal rules of proposal 002 section 4: cancel the target's open
+    /// invitation and remove its membership, whichever exist.
+    fn check_removal(&self, target: IdentityId) -> Result<Effect, Reason> {
+        // The raw root is never removable: a controller able to remove it
+        // could take the ledger from the identity it names.
+        if self.root.is_some_and(|root| root.is_raw()) && Some(target) == self.root_identity() {
+            return Err(Reason::RootNotRemovable(target));
+        }
+        let invitation = self.open_invitation_of(target).map(|(event, _)| event);
+        let principal = self.principals.get(&target).copied();
+        if invitation.is_none() && principal.is_none() {
+            return Err(Reason::UnknownRemovalTarget(target));
+        }
+        // A removal must leave at least one controller, counted over distinct
+        // keys. On a raw-rooted ledger the root counts toward that minimum, so
+        // this can only bite an identity-rooted ledger.
+        if principal.is_some_and(|principal| principal.role == Role::Controller) {
+            let mut remaining: Vec<PublicKey> = Vec::new();
+            for (id, principal) in &self.principals {
+                if *id != target
+                    && principal.role == Role::Controller
+                    && !remaining.contains(&principal.active_key)
+                {
+                    remaining.push(principal.active_key);
+                }
+            }
+            if remaining.is_empty() {
+                return Err(Reason::LastController(target));
             }
         }
+        Ok(Effect::Remove {
+            target,
+            invitation,
+            was_principal: principal.is_some(),
+        })
+    }
+
+    /// The open invitation naming `invitee`, if the ledger holds one.
+    fn open_invitation_of(&self, invitee: IdentityId) -> Option<(EventId, &Invitation)> {
+        self.invitations
+            .iter()
+            .find(|(_, invitation)| {
+                invitation.invitee == invitee && invitation.status == InvitationStatus::Open
+            })
+            .map(|(event, invitation)| (*event, invitation))
     }
 
     /// Applies a checked event. Every mutation the fold makes happens here,
@@ -484,23 +729,25 @@ impl LedgerState {
         match effect {
             Effect::Seed(seed) => {
                 let Seed {
-                    kind,
+                    declared_kind,
+                    root,
                     principals,
-                    person,
-                    org,
                 } = *seed;
-                self.kind = Some(kind);
+                self.declared_kind = Some(declared_kind);
+                self.root = Some(root);
                 self.ledger = Some(id.into());
                 self.principals = principals;
-                self.person = person;
-                self.org = org;
             }
             Effect::Witnesses(witnesses) => self.witnesses = witnesses,
-            Effect::Attest(subject) => {
+            Effect::Attest {
+                subject,
+                signing_principal,
+            } => {
                 self.trust.insert(
                     id,
                     Attestation {
                         subject,
+                        signing_principal,
                         revoked_by: None,
                     },
                 );
@@ -512,6 +759,35 @@ impl LedgerState {
                     .expect("the revocation check found the target");
                 attestation.revoked_by = Some(id);
             }
+            Effect::Invite(invitation) => {
+                self.invitations.insert(id, invitation);
+            }
+            Effect::Admit {
+                invitation,
+                invitee,
+                principal,
+            } => {
+                self.invitations
+                    .get_mut(&invitation)
+                    .expect("the acceptance check found the invitation")
+                    .status = InvitationStatus::Accepted;
+                self.principals.insert(invitee, principal);
+            }
+            Effect::Remove {
+                target,
+                invitation,
+                was_principal,
+            } => {
+                if let Some(invitation) = invitation {
+                    self.invitations
+                        .get_mut(&invitation)
+                        .expect("the removal check found the invitation")
+                        .status = InvitationStatus::Cancelled;
+                }
+                if was_principal {
+                    self.principals.remove(&target);
+                }
+            }
         }
         self.head = Some(Head {
             seq,
@@ -521,20 +797,49 @@ impl LedgerState {
     }
 }
 
+/// The position rule: seq 0 holds an inception and nothing else does.
+///
+/// A defensive guard. The field table pins an inception to a body with no
+/// `seq`, and the chain rule pins that body to position 0, so no received
+/// event reaches this.
+fn check_position(seq: u64, payload: &Payload) -> Result<(), Reason> {
+    let is_inception = matches!(payload, Payload::Inception(_));
+    if is_inception == (seq == 0) {
+        return Ok(());
+    }
+    Err(Reason::PayloadNotAllowed {
+        seq,
+        payload: payload_name(payload),
+    })
+}
+
 /// What a checked event changes, produced only once every check has passed.
 enum Effect {
     Seed(Box<Seed>),
     Witnesses(Vec<EndpointId>),
-    Attest(IdentityId),
+    Attest {
+        subject: IdentityId,
+        signing_principal: SigningPrincipal,
+    },
     Revoke(EventId),
+    Invite(Invitation),
+    Admit {
+        invitation: EventId,
+        invitee: IdentityId,
+        principal: Principal,
+    },
+    Remove {
+        target: IdentityId,
+        invitation: Option<EventId>,
+        was_principal: bool,
+    },
 }
 
 /// What a seq-0 payload seeds.
 struct Seed {
-    kind: LedgerKind,
+    declared_kind: DeclaredKind,
+    root: LedgerRoot,
     principals: BTreeMap<IdentityId, Principal>,
-    person: Option<PersonState>,
-    org: Option<OrgState>,
 }
 
 /// Why an event was rejected.
@@ -581,11 +886,12 @@ pub enum Reason {
         /// The `timestamp_ms` the event carries.
         found: u64,
     },
-    /// The payload is not one this ledger kind holds.
-    #[error("a {kind} ledger does not hold a {payload} payload")]
+    /// The payload does not belong at this position: only an inception sits at
+    /// seq 0, and only at seq 0.
+    #[error("a {payload} payload does not belong at seq {seq}")]
     PayloadNotAllowed {
-        /// The ledger's kind.
-        kind: LedgerKind,
+        /// The position the event claimed.
+        seq: u64,
         /// The payload's message name.
         payload: &'static str,
     },
@@ -596,14 +902,15 @@ pub enum Reason {
         /// The field, qualified by its message type.
         field: &'static str,
     },
-    /// `author_key` is not authorized by the state before this event.
+    /// `author_key` is not the key of a `CONTROLLER` principal in the state
+    /// before this event.
     #[error("author_key {key} may not sign this event")]
     UnauthorizedSigner {
         /// The key the event names.
         key: PublicKey,
     },
     /// The signature did not verify under `author_key`.
-    #[error("SignedEvent.sig does not verify under author_key")]
+    #[error("SignedEvent.signature does not verify under author_key")]
     BadSignature,
     /// An unrevoked attestation for the same subject already exists.
     #[error("{subject} already has an unrevoked attestation, {attestation}")]
@@ -627,13 +934,79 @@ pub enum Reason {
         /// The `event_id` of the revocation that got there first.
         revoked_by: EventId,
     },
-    /// An org membership payload reached the fold before ticket 005 gave it
-    /// semantics.
-    #[error("{payload} semantics are not implemented")]
-    OrgSemanticsPending {
-        /// The payload's message name.
-        payload: &'static str,
+    /// The invitee already has an open invitation on this ledger.
+    #[error("{invitee} already has an open invitation, {invitation}")]
+    DuplicateInvitation {
+        /// The identity invited twice.
+        invitee: IdentityId,
+        /// The `event_id` of the invitation still open.
+        invitation: EventId,
     },
+    /// An invitation naming an existing principal carried a key other than
+    /// that principal's, so it is a rotation rather than a promotion.
+    #[error("{identity} is a principal with key {expected}, not {found}")]
+    PrincipalKeyMismatch {
+        /// The identity the invitation names.
+        identity: IdentityId,
+        /// The key the principal set records.
+        expected: PublicKey,
+        /// The key the invitation carries.
+        found: PublicKey,
+    },
+    /// The acceptance blob named a ledger other than this one.
+    #[error("Acceptance.ledger names {named}, not this ledger {expected}")]
+    AcceptanceForAnotherLedger {
+        /// The ledger the blob names.
+        named: IdentityId,
+        /// This ledger's id.
+        expected: LedgerId,
+    },
+    /// `Acceptance.invitation_event` named no invitation in this ledger.
+    #[error("Acceptance.invitation_event {0} names no invitation in this ledger")]
+    UnknownInvitation(EventId),
+    /// The invitation the acceptance names was already accepted or cancelled,
+    /// which is what makes an invitation single use on this branch.
+    #[error("invitation {invitation} is {status}, not open")]
+    InvitationNotOpen {
+        /// The invitation the acceptance names.
+        invitation: EventId,
+        /// What became of it.
+        status: InvitationStatus,
+    },
+    /// The acceptance blob named an identity other than the invitee.
+    #[error("Acceptance.invitee names {named}, but the invitation invited {invited}")]
+    AcceptanceInviteeMismatch {
+        /// The identity the blob names.
+        named: IdentityId,
+        /// The identity the invitation invited.
+        invited: IdentityId,
+    },
+    /// The acceptance blob was signed by a key other than the invitee's.
+    #[error("Acceptance.invitee_key is {named}, but the invitation names {invited}")]
+    AcceptanceInviteeKeyMismatch {
+        /// The key the blob names, which signed it.
+        named: PublicKey,
+        /// The key the invitation records.
+        invited: PublicKey,
+    },
+    /// Admitting this principal would give one key two identities.
+    #[error("key {key} is already held by principal {held_by}")]
+    DuplicatePrincipalKey {
+        /// The key the invitation carries.
+        key: PublicKey,
+        /// The principal that already holds it.
+        held_by: IdentityId,
+    },
+    /// A removal named the raw root, which no controller may remove.
+    #[error("{0} is this ledger's raw root and is not removable")]
+    RootNotRemovable(IdentityId),
+    /// A removal named an identity this ledger neither records nor has
+    /// invited.
+    #[error("MembershipRemoval.target {0} is neither a principal nor an open invitee")]
+    UnknownRemovalTarget(IdentityId),
+    /// A removal would leave the ledger with no controller.
+    #[error("removing {0} would leave this ledger with no controller")]
+    LastController(IdentityId),
 }
 
 impl Reason {
@@ -655,7 +1028,17 @@ impl Reason {
             Self::SelfAttestation(_) => "self_attestation",
             Self::UnknownRevocationTarget(_) => "unknown_revocation_target",
             Self::AlreadyRevoked { .. } => "already_revoked",
-            Self::OrgSemanticsPending { .. } => "org_semantics_pending",
+            Self::DuplicateInvitation { .. } => "duplicate_invitation",
+            Self::PrincipalKeyMismatch { .. } => "principal_key_mismatch",
+            Self::AcceptanceForAnotherLedger { .. } => "acceptance_for_another_ledger",
+            Self::UnknownInvitation(_) => "unknown_invitation",
+            Self::InvitationNotOpen { .. } => "invitation_not_open",
+            Self::AcceptanceInviteeMismatch { .. } => "acceptance_invitee_mismatch",
+            Self::AcceptanceInviteeKeyMismatch { .. } => "acceptance_invitee_key_mismatch",
+            Self::DuplicatePrincipalKey { .. } => "duplicate_principal_key",
+            Self::RootNotRemovable(_) => "root_not_removable",
+            Self::UnknownRemovalTarget(_) => "unknown_removal_target",
+            Self::LastController(_) => "last_controller",
         }
     }
 }
@@ -702,14 +1085,13 @@ where
 /// The message name of a payload variant, for an error a person reads.
 const fn payload_name(payload: &Payload) -> &'static str {
     match payload {
-        Payload::PersonInception(_) => "PersonInception",
-        Payload::OrgInception(_) => "OrgInception",
+        Payload::Inception(_) => "Inception",
         Payload::WitnessConfig(_) => "WitnessConfig",
         Payload::TrustAttestation(_) => "TrustAttestation",
         Payload::TrustRevocation(_) => "TrustRevocation",
-        Payload::OrgInvite(_) => "OrgInvite",
-        Payload::OrgAcceptance(_) => "OrgAcceptance",
-        Payload::OrgRemoval(_) => "OrgRemoval",
+        Payload::MembershipInvitation(_) => "MembershipInvitation",
+        Payload::MembershipAcceptance(_) => "MembershipAcceptance",
+        Payload::MembershipRemoval(_) => "MembershipRemoval",
     }
 }
 
@@ -725,9 +1107,11 @@ fn public_key(bytes: &[u8], field: &'static str) -> Result<PublicKey, Reason> {
     PublicKey::from_bytes(&bytes).map_err(|_| Reason::InvalidPublicKey { field })
 }
 
-fn verify(key: &PublicKey, input: &[u8], sig: &[u8]) -> Result<(), Reason> {
-    let sig: [u8; SIG_BYTES] = sig.try_into().expect("a validated signature is 64 bytes");
-    key.verify(input, &Signature::from_bytes(&sig))
+fn verify(key: &PublicKey, input: &[u8], signature: &[u8]) -> Result<(), Reason> {
+    let signature: [u8; SIG_BYTES] = signature
+        .try_into()
+        .expect("a validated signature is 64 bytes");
+    key.verify(input, &Signature::from_bytes(&signature))
         .map_err(|_| Reason::BadSignature)
 }
 
@@ -736,8 +1120,8 @@ mod tests {
     use super::*;
     use crate::encoding::encode;
     use crate::sign::{
-        BuiltEvent, DetachedAcceptance, Position, build_acceptance, build_org_acceptance,
-        build_org_inception, build_org_invite, build_org_removal, build_person_inception,
+        BuiltEvent, DetachedAcceptance, Position, Root, build_acceptance, build_inception,
+        build_membership_acceptance, build_membership_invitation, build_membership_removal,
         build_trust_attestation, build_trust_revocation, build_witness_config,
     };
     use crate::{MAX_TIMESTAMP_MS, NONCE_BYTES};
@@ -751,48 +1135,164 @@ mod tests {
         SecretKey::from_bytes(&[seed; 32])
     }
 
-    /// The person ledger every test builds on: active key `secret(1)`.
-    fn inception() -> BuiltEvent {
-        build_person_inception(&secret(1), &secret(2).public(), [3u8; NONCE_BYTES], T0)
-            .expect("builds")
+    /// A raw-rooted inception signed by `secret(seed)`, so `seed` and `nonce`
+    /// together pick an identity.
+    fn raw_rooted(seed: u8, nonce: u8) -> BuiltEvent {
+        build_inception(
+            &secret(seed),
+            DeclaredKind::Person,
+            Root::Raw {
+                reserve_key: &secret(seed.wrapping_add(1)).public(),
+            },
+            [nonce; NONCE_BYTES],
+            T0,
+        )
+        .expect("builds")
     }
 
-    /// A second person, so an org payload has an invitee to name.
-    fn other_person() -> BuiltEvent {
-        build_person_inception(&secret(7), &secret(8).public(), [4u8; NONCE_BYTES], T0)
-            .expect("builds")
+    /// Alice, the raw-rooted ledger most tests build on.
+    fn alice() -> BuiltEvent {
+        raw_rooted(1, 3)
     }
 
-    /// The position right after `head`, at `seq`.
-    fn after(ledger: &BuiltEvent, head: &BuiltEvent, seq: u64) -> Position {
-        Position {
-            ledger: ledger.event_id.into(),
-            seq,
-            prev: head.event_id,
-            prev_timestamp_ms: T0,
+    /// Bob, a second identity to invite.
+    fn bob() -> BuiltEvent {
+        raw_rooted(7, 4)
+    }
+
+    /// Carol, a third identity for the cases that need two invitees.
+    fn carol() -> BuiltEvent {
+        raw_rooted(9, 5)
+    }
+
+    /// An identity-rooted ledger founded by `founder`, which holds no key of
+    /// its own.
+    fn founded_by(signer: &SecretKey, founder: &BuiltEvent) -> BuiltEvent {
+        build_inception(
+            signer,
+            DeclaredKind::Organization,
+            Root::Identity {
+                founder: founder.event_id.into(),
+                founder_inception: &founder.signed_event,
+            },
+            [0xc1; NONCE_BYTES],
+            T0,
+        )
+        .expect("builds")
+    }
+
+    /// A ledger under construction: the events so far and where the next one
+    /// goes.
+    struct Chain {
+        ledger: LedgerId,
+        events: Vec<Vec<u8>>,
+        prev: EventId,
+        seq: u64,
+        timestamp_ms: u64,
+    }
+
+    impl Chain {
+        fn start(inception: &BuiltEvent) -> Self {
+            Self {
+                ledger: inception.event_id.into(),
+                events: vec![inception.signed_event.clone()],
+                prev: inception.event_id,
+                seq: 1,
+                timestamp_ms: T0,
+            }
         }
+
+        /// Where the next event goes.
+        fn at(&self) -> Position {
+            Position {
+                ledger: self.ledger,
+                seq: self.seq,
+                prev: self.prev,
+                prev_timestamp_ms: self.timestamp_ms,
+            }
+        }
+
+        /// The timestamp the next event should carry.
+        fn now(&self) -> u64 {
+            T0 + self.seq * STEP
+        }
+
+        fn push(&mut self, built: BuiltEvent) -> EventId {
+            self.events.push(built.signed_event);
+            self.prev = built.event_id;
+            self.seq += 1;
+            self.timestamp_ms = T0 + (self.seq - 1) * STEP;
+            built.event_id
+        }
+
+        fn fold(&self) -> (LedgerState, Option<Violation>) {
+            fold(&self.events)
+        }
+
+        /// The state, asserting the whole chain is valid.
+        fn state(&self) -> LedgerState {
+            let (state, violation) = self.fold();
+            assert_eq!(violation, None, "the chain is valid");
+            state
+        }
+
+        /// The violation the chain reports.
+        fn violation(&self) -> Violation {
+            self.fold().1.expect("the fold reports a violation")
+        }
+    }
+
+    /// Invites `invitee` at the chain's next position, signed by `signer`.
+    fn invite(
+        chain: &Chain,
+        signer: &SecretKey,
+        invitee: &BuiltEvent,
+        invitee_key: &SecretKey,
+        role: Role,
+    ) -> BuiltEvent {
+        build_membership_invitation(
+            signer,
+            &chain.at(),
+            invitee.event_id.into(),
+            &invitee_key.public(),
+            role,
+            &invitee.signed_event,
+            chain.now(),
+        )
+        .expect("builds")
+    }
+
+    /// Admits the invitee of `invitation`, with the acceptance they signed.
+    fn admit(
+        chain: &Chain,
+        signer: &SecretKey,
+        invitee_key: &SecretKey,
+        invitee: IdentityId,
+        invitation: EventId,
+    ) -> BuiltEvent {
+        let accepted = build_acceptance(invitee_key, chain.ledger, invitation, invitee);
+        build_membership_acceptance(signer, &chain.at(), &accepted, chain.now()).expect("builds")
+    }
+
+    fn remove(chain: &Chain, signer: &SecretKey, target: IdentityId) -> BuiltEvent {
+        build_membership_removal(signer, &chain.at(), target, chain.now()).expect("builds")
+    }
+
+    fn attest(chain: &Chain, signer: &SecretKey, subject: IdentityId) -> BuiltEvent {
+        build_trust_attestation(signer, &chain.at(), subject, chain.now()).expect("builds")
     }
 
     fn subject(seed: u8) -> IdentityId {
         IdentityId::from_bytes([seed; ID_BYTES])
     }
 
-    /// A ledger of `events` as the fold takes them.
-    fn bytes(events: &[&BuiltEvent]) -> Vec<Vec<u8>> {
-        events.iter().map(|e| e.signed_event.clone()).collect()
-    }
-
-    fn violation(events: &[&BuiltEvent]) -> Violation {
-        fold(bytes(events)).1.expect("the fold reports a violation")
-    }
-
     /// Signs an arbitrary body, for the cases no builder will produce.
     fn seal(signer: &SecretKey, body: &EventBody) -> Vec<u8> {
         let body = encode(body);
-        let sig = signer.sign(&sign_input(&body));
+        let signature = signer.sign(&sign_input(&body));
         encode(&SignedEvent {
             body,
-            sig: sig.to_bytes().to_vec(),
+            signature: signature.to_bytes().to_vec(),
         })
     }
 
@@ -801,134 +1301,134 @@ mod tests {
         let (state, violation) = fold(Vec::<Vec<u8>>::new());
         assert!(state.is_empty());
         assert_eq!(state.next_seq(), 0);
-        assert_eq!(state.kind(), None);
+        assert_eq!(state.declared_kind(), None);
+        assert_eq!(state.root(), None);
         assert_eq!(state.ledger(), None);
         assert_eq!(violation, None);
     }
 
     #[test]
-    fn a_person_ledger_folds_inception_witnesses_attestation_and_revocation() {
-        let root = inception();
-        let witnesses = build_witness_config(
-            &secret(1),
-            &after(&root, &root, 1),
-            &[secret(4).public(), secret(5).public()],
-            T0 + STEP,
-        )
-        .expect("builds");
-        let attest = build_trust_attestation(
-            &secret(1),
-            &after(&root, &witnesses, 2),
-            subject(9),
-            T0 + 2 * STEP,
-        )
-        .expect("builds");
-        let revoke = build_trust_revocation(
-            &secret(1),
-            &after(&root, &attest, 3),
-            attest.event_id,
-            T0 + 3 * STEP,
-        )
-        .expect("builds");
+    fn a_raw_rooted_ledger_folds_inception_witnesses_attestation_and_revocation() {
+        let root = alice();
+        let mut chain = Chain::start(&root);
+        chain.push(
+            build_witness_config(
+                &secret(1),
+                &chain.at(),
+                &[secret(4).public(), secret(5).public()],
+                chain.now(),
+            )
+            .expect("builds"),
+        );
+        let attestation = chain.push(attest(&chain, &secret(1), subject(9)));
+        let revocation = chain.push(
+            build_trust_revocation(&secret(1), &chain.at(), attestation, chain.now())
+                .expect("builds"),
+        );
         // The same subject may be attested again once the first attestation is
         // revoked.
-        let again = build_trust_attestation(
-            &secret(1),
-            &after(&root, &revoke, 4),
-            subject(9),
-            T0 + 4 * STEP,
-        )
-        .expect("builds");
+        let again = chain.push(attest(&chain, &secret(1), subject(9)));
 
-        let (state, violation) = fold(bytes(&[&root, &witnesses, &attest, &revoke, &again]));
-        assert_eq!(violation, None);
-        assert_eq!(state.kind(), Some(LedgerKind::Person));
+        let state = chain.state();
+        assert_eq!(state.declared_kind(), Some(DeclaredKind::Person));
         assert_eq!(state.ledger(), Some(root.event_id.into()));
         let head = state.head().expect("a folded ledger has a head");
         assert_eq!(head.seq, 4);
-        assert_eq!(head.event_id, again.event_id);
+        assert_eq!(head.event_id, again);
         assert_eq!(head.timestamp_ms, T0 + 4 * STEP);
         assert_eq!(state.next_seq(), 5);
 
-        let person = state.person().expect("a person ledger has person state");
-        assert_eq!(person.active_key, secret(1).public());
         assert_eq!(
-            person.reserve_commit,
-            crate::digest::reserve_commit(&secret(2).public())
+            state.root(),
+            Some(LedgerRoot::Raw {
+                active_key: secret(1).public(),
+                reserve_commit: crate::digest::reserve_commit(&secret(2).public()),
+            })
         );
-        // A person ledger holds one principal, itself, and that is what
-        // authorizes the signer.
+        assert!(state.root().expect("a root").is_raw());
+        assert_eq!(state.root_identity(), Some(root.event_id.into()));
+
+        // A raw-rooted ledger starts with one principal, itself, and that is
+        // what authorizes the signer.
         assert_eq!(state.principals().len(), 1);
         let principal = state
             .principal(&IdentityId::from(root.event_id))
-            .expect("the person is its own principal");
+            .expect("the root is its own principal");
         assert_eq!(principal.role, Role::Controller);
         assert_eq!(principal.active_key, secret(1).public());
         assert!(state.authorized_signer(&secret(1).public()));
         assert!(!state.authorized_signer(&secret(6).public()));
+        assert_eq!(state.controller_keys(), [secret(1).public()]);
 
         assert_eq!(state.witnesses(), [secret(4).public(), secret(5).public()]);
 
         assert_eq!(state.trust().len(), 2);
-        let revoked = state.attestation(&attest.event_id).expect("recorded");
+        let revoked = state.attestation(&attestation).expect("recorded");
         assert_eq!(revoked.subject, subject(9));
-        assert_eq!(revoked.revoked_by, Some(revoke.event_id));
+        assert_eq!(revoked.revoked_by, Some(revocation));
         assert!(revoked.is_revoked());
-        let live = state.attestation(&again.event_id).expect("recorded");
+        let live = state.attestation(&again).expect("recorded");
         assert_eq!(live.revoked_by, None);
+        // Every attestation names who signed it.
+        assert_eq!(
+            live.signing_principal,
+            SigningPrincipal {
+                identity: root.event_id.into(),
+                key: secret(1).public(),
+            }
+        );
         assert!(state.trusts(subject(9)));
         assert!(!state.trusts(subject(8)));
-        assert!(state.org().is_none());
+        assert!(state.invitations().is_empty());
     }
 
     #[test]
     fn a_witness_config_replaces_the_whole_set() {
-        let root = inception();
-        let first = build_witness_config(
-            &secret(1),
-            &after(&root, &root, 1),
-            &[secret(4).public(), secret(5).public()],
-            T0,
-        )
-        .expect("builds");
-        let second = build_witness_config(
-            &secret(1),
-            &after(&root, &first, 2),
-            &[secret(6).public()],
-            T0,
-        )
-        .expect("builds");
-
-        let (state, violation) = fold(bytes(&[&root, &first, &second]));
-        assert_eq!(violation, None);
-        assert_eq!(state.witnesses(), [secret(6).public()]);
+        let root = alice();
+        let mut chain = Chain::start(&root);
+        chain.push(
+            build_witness_config(
+                &secret(1),
+                &chain.at(),
+                &[secret(4).public(), secret(5).public()],
+                chain.now(),
+            )
+            .expect("builds"),
+        );
+        chain.push(
+            build_witness_config(&secret(1), &chain.at(), &[secret(6).public()], chain.now())
+                .expect("builds"),
+        );
+        assert_eq!(chain.state().witnesses(), [secret(6).public()]);
     }
 
     #[test]
     fn position_zero_requires_an_inception() {
-        let root = inception();
-        let attest =
-            build_trust_attestation(&secret(1), &after(&root, &root, 1), subject(9), T0).unwrap();
+        let root = alice();
+        let chain = Chain::start(&root);
+        let attestation = attest(&chain, &secret(1), subject(9));
+        let (_, violation) = fold(vec![attestation.signed_event]);
         assert_eq!(
-            violation(&[&attest]),
-            Violation {
+            violation,
+            Some(Violation {
                 seq: 0,
                 reason: Reason::WrongSeq {
                     expected: 0,
                     found: 1,
                 },
-            }
+            })
         );
     }
 
     #[test]
     fn a_broken_prev_link_is_rejected() {
-        let root = inception();
-        let mut at = after(&root, &root, 1);
+        let root = alice();
+        let mut chain = Chain::start(&root);
+        let mut at = chain.at();
         at.prev = EventId::from_bytes([0xaa; ID_BYTES]);
-        let attest = build_trust_attestation(&secret(1), &at, subject(9), T0).unwrap();
+        chain.push(build_trust_attestation(&secret(1), &at, subject(9), T0).expect("builds"));
         assert_eq!(
-            violation(&[&root, &attest]),
+            chain.violation(),
             Violation {
                 seq: 1,
                 reason: Reason::BrokenPrevLink {
@@ -941,10 +1441,12 @@ mod tests {
 
     #[test]
     fn the_same_event_twice_is_rejected() {
-        let root = inception();
-        let attest =
-            build_trust_attestation(&secret(1), &after(&root, &root, 1), subject(9), T0).unwrap();
-        let found = violation(&[&root, &attest, &attest]);
+        let root = alice();
+        let mut chain = Chain::start(&root);
+        let attestation = attest(&chain, &secret(1), subject(9));
+        chain.events.push(attestation.signed_event.clone());
+        chain.events.push(attestation.signed_event);
+        let found = chain.violation();
         assert_eq!(
             found,
             Violation {
@@ -960,11 +1462,13 @@ mod tests {
 
     #[test]
     fn a_gap_in_the_sequence_is_rejected() {
-        let root = inception();
-        let attest =
-            build_trust_attestation(&secret(1), &after(&root, &root, 2), subject(9), T0).unwrap();
+        let root = alice();
+        let mut chain = Chain::start(&root);
+        let mut at = chain.at();
+        at.seq = 2;
+        chain.push(build_trust_attestation(&secret(1), &at, subject(9), T0).expect("builds"));
         assert_eq!(
-            violation(&[&root, &attest]),
+            chain.violation(),
             Violation {
                 seq: 1,
                 reason: Reason::WrongSeq {
@@ -977,12 +1481,13 @@ mod tests {
 
     #[test]
     fn a_wrong_ledger_id_is_rejected() {
-        let root = inception();
-        let mut at = after(&root, &root, 1);
+        let root = alice();
+        let mut chain = Chain::start(&root);
+        let mut at = chain.at();
         at.ledger = subject(0xbb);
-        let attest = build_trust_attestation(&secret(1), &at, subject(9), T0).unwrap();
+        chain.push(build_trust_attestation(&secret(1), &at, subject(9), T0).expect("builds"));
         assert_eq!(
-            violation(&[&root, &attest]),
+            chain.violation(),
             Violation {
                 seq: 1,
                 reason: Reason::WrongLedger {
@@ -995,14 +1500,15 @@ mod tests {
 
     #[test]
     fn a_backwards_timestamp_is_rejected() {
-        let root = inception();
+        let root = alice();
+        let mut chain = Chain::start(&root);
         // The builder clamps to `prev_timestamp_ms`, so the position has to
         // understate the head's timestamp for the event to go backwards.
-        let mut at = after(&root, &root, 1);
+        let mut at = chain.at();
         at.prev_timestamp_ms = 0;
-        let attest = build_trust_attestation(&secret(1), &at, subject(9), T0 - 1).unwrap();
+        chain.push(build_trust_attestation(&secret(1), &at, subject(9), T0 - 1).expect("builds"));
         assert_eq!(
-            violation(&[&root, &attest]),
+            chain.violation(),
             Violation {
                 seq: 1,
                 reason: Reason::BackwardsTimestamp {
@@ -1015,7 +1521,7 @@ mod tests {
 
     #[test]
     fn a_timestamp_past_the_year_2100_bound_is_rejected() {
-        let root = inception();
+        let root = alice();
         // No builder emits this, so the body is hand-built and signed.
         let body = EventBody {
             version: 0,
@@ -1038,12 +1544,12 @@ mod tests {
 
     #[test]
     fn an_unauthorized_signer_is_rejected() {
-        let root = inception();
+        let root = alice();
+        let mut chain = Chain::start(&root);
         // secret(6) is not this ledger's active key.
-        let attest =
-            build_trust_attestation(&secret(6), &after(&root, &root, 1), subject(9), T0).unwrap();
+        chain.push(attest(&chain, &secret(6), subject(9)));
         assert_eq!(
-            violation(&[&root, &attest]),
+            chain.violation(),
             Violation {
                 seq: 1,
                 reason: Reason::UnauthorizedSigner {
@@ -1055,18 +1561,19 @@ mod tests {
 
     #[test]
     fn a_signature_over_other_bytes_is_rejected() {
-        let root = inception();
-        let attest =
-            build_trust_attestation(&secret(1), &after(&root, &root, 1), subject(9), T0).unwrap();
+        let root = alice();
+        let chain = Chain::start(&root);
+        let attestation = attest(&chain, &secret(1), subject(9));
         // The body of one event carried with the signature of another: the
         // author is authorized, the signature is not over these bytes.
-        let other =
-            build_trust_attestation(&secret(1), &after(&root, &root, 1), subject(10), T0).unwrap();
+        let other = attest(&chain, &secret(1), subject(10));
         let mixed = encode(&SignedEvent {
-            body: attest.body.clone(),
-            sig: SignedEvent::decode(&other.signed_event[..]).unwrap().sig,
+            body: attestation.body,
+            signature: SignedEvent::decode(&other.signed_event[..])
+                .expect("decodes")
+                .signature,
         });
-        let (_, violation) = fold(vec![root.signed_event.clone(), mixed]);
+        let (_, violation) = fold(vec![root.signed_event, mixed]);
         assert_eq!(
             violation,
             Some(Violation {
@@ -1078,19 +1585,18 @@ mod tests {
 
     #[test]
     fn a_self_attestation_is_rejected() {
-        let root = inception();
-        let ledger: IdentityId = root.event_id.into();
-        let attest =
-            build_trust_attestation(&secret(1), &after(&root, &root, 1), ledger, T0).unwrap();
+        let root = alice();
+        let mut chain = Chain::start(&root);
+        chain.push(attest(&chain, &secret(1), root.event_id.into()));
         // The field table catches this statelessly, comparing `subject` with
         // the `ledger` the event names; the chain rule ties that to the real
         // ledger id.
-        assert_eq!(violation(&[&root, &attest]).code(), "fields_must_differ");
+        assert_eq!(chain.violation().code(), "fields_must_differ");
     }
 
     #[test]
     fn a_witness_that_is_not_a_public_key_is_rejected() {
-        let root = inception();
+        let root = alice();
         let body = EventBody {
             version: 0,
             ledger: root.event_id.to_vec(),
@@ -1104,7 +1610,7 @@ mod tests {
             })),
         };
         let event = seal(&secret(1), &body);
-        let (_, violation) = fold(vec![root.signed_event.clone(), event]);
+        let (_, violation) = fold(vec![root.signed_event, event]);
         assert_eq!(
             violation,
             Some(Violation {
@@ -1117,64 +1623,18 @@ mod tests {
     }
 
     #[test]
-    fn org_payloads_are_rejected_on_a_person_ledger() {
-        let root = inception();
-        let at = after(&root, &root, 1);
-        let invitee = other_person();
-        let invitee_id: IdentityId = invitee.event_id.into();
-
-        let invite = build_org_invite(
-            &secret(1),
-            &at,
-            invitee_id,
-            &secret(7).public(),
-            Role::Member,
-            &invitee.signed_event,
-            T0,
-        )
-        .expect("builds");
-        let accepted: DetachedAcceptance = build_acceptance(
-            &secret(7),
-            root.event_id.into(),
-            invite.event_id,
-            invitee_id,
-        );
-        let acceptance = build_org_acceptance(&secret(1), &at, &accepted, T0).expect("builds");
-        let removal = build_org_removal(&secret(1), &at, invitee_id, T0).expect("builds");
-
-        for (event, name) in [
-            (&invite, "OrgInvite"),
-            (&acceptance, "OrgAcceptance"),
-            (&removal, "OrgRemoval"),
-        ] {
-            assert_eq!(
-                violation(&[&root, event]),
-                Violation {
-                    seq: 1,
-                    reason: Reason::PayloadNotAllowed {
-                        kind: LedgerKind::Person,
-                        payload: name,
-                    },
-                },
-                "{name} must not fold onto a person ledger"
-            );
-        }
-    }
-
-    #[test]
     fn an_attestation_duplicating_an_unrevoked_subject_is_rejected() {
-        let root = inception();
-        let first =
-            build_trust_attestation(&secret(1), &after(&root, &root, 1), subject(9), T0).unwrap();
-        let second =
-            build_trust_attestation(&secret(1), &after(&root, &first, 2), subject(9), T0).unwrap();
+        let root = alice();
+        let mut chain = Chain::start(&root);
+        let first = chain.push(attest(&chain, &secret(1), subject(9)));
+        chain.push(attest(&chain, &secret(1), subject(9)));
         assert_eq!(
-            violation(&[&root, &first, &second]),
+            chain.violation(),
             Violation {
                 seq: 2,
                 reason: Reason::DuplicateAttestation {
                     subject: subject(9),
-                    attestation: first.event_id,
+                    attestation: first,
                 },
             }
         );
@@ -1182,12 +1642,14 @@ mod tests {
 
     #[test]
     fn revoking_an_unknown_attestation_is_rejected() {
-        let root = inception();
+        let root = alice();
+        let mut chain = Chain::start(&root);
         let unknown = EventId::from_bytes([0xcd; ID_BYTES]);
-        let revoke =
-            build_trust_revocation(&secret(1), &after(&root, &root, 1), unknown, T0).unwrap();
+        chain.push(
+            build_trust_revocation(&secret(1), &chain.at(), unknown, chain.now()).expect("builds"),
+        );
         assert_eq!(
-            violation(&[&root, &revoke]),
+            chain.violation(),
             Violation {
                 seq: 1,
                 reason: Reason::UnknownRevocationTarget(unknown),
@@ -1197,22 +1659,24 @@ mod tests {
 
     #[test]
     fn revoking_an_already_revoked_attestation_is_rejected() {
-        let root = inception();
-        let attest =
-            build_trust_attestation(&secret(1), &after(&root, &root, 1), subject(9), T0).unwrap();
-        let revoke =
-            build_trust_revocation(&secret(1), &after(&root, &attest, 2), attest.event_id, T0)
-                .unwrap();
-        let again =
-            build_trust_revocation(&secret(1), &after(&root, &revoke, 3), attest.event_id, T0)
-                .unwrap();
+        let root = alice();
+        let mut chain = Chain::start(&root);
+        let attestation = chain.push(attest(&chain, &secret(1), subject(9)));
+        let revocation = chain.push(
+            build_trust_revocation(&secret(1), &chain.at(), attestation, chain.now())
+                .expect("builds"),
+        );
+        chain.push(
+            build_trust_revocation(&secret(1), &chain.at(), attestation, chain.now())
+                .expect("builds"),
+        );
         assert_eq!(
-            violation(&[&root, &attest, &revoke, &again]),
+            chain.violation(),
             Violation {
                 seq: 3,
                 reason: Reason::AlreadyRevoked {
-                    target: attest.event_id,
-                    revoked_by: revoke.event_id,
+                    target: attestation,
+                    revoked_by: revocation,
                 },
             }
         );
@@ -1220,46 +1684,26 @@ mod tests {
 
     #[test]
     fn a_ledger_valid_to_n_folds_to_n_and_reports_the_failure_at_m() {
-        let root = inception();
-        let witnesses = build_witness_config(
-            &secret(1),
-            &after(&root, &root, 1),
-            &[secret(4).public()],
-            T0 + STEP,
-        )
-        .unwrap();
-        let attest = build_trust_attestation(
-            &secret(1),
-            &after(&root, &witnesses, 2),
-            subject(9),
-            T0 + 2 * STEP,
-        )
-        .unwrap();
+        let root = alice();
+        let mut chain = Chain::start(&root);
+        chain.push(
+            build_witness_config(&secret(1), &chain.at(), &[secret(4).public()], chain.now())
+                .expect("builds"),
+        );
+        let attestation = chain.push(attest(&chain, &secret(1), subject(9)));
         // Seq 3 is signed by a key this ledger never authorized.
-        let bad = build_trust_attestation(
-            &secret(6),
-            &after(&root, &attest, 3),
-            subject(10),
-            T0 + 3 * STEP,
-        )
-        .unwrap();
+        chain.push(attest(&chain, &secret(6), subject(10)));
         // Seq 4 would be valid on its own; the fold never reaches it.
-        let after_bad = build_trust_attestation(
-            &secret(1),
-            &after(&root, &bad, 4),
-            subject(11),
-            T0 + 4 * STEP,
-        )
-        .unwrap();
+        chain.push(attest(&chain, &secret(1), subject(11)));
 
-        let (state, violation) = fold(bytes(&[&root, &witnesses, &attest, &bad, &after_bad]));
+        let (state, violation) = chain.fold();
         let violation = violation.expect("the fold reports a violation");
         assert_eq!(violation.seq, 3);
         assert_eq!(violation.code(), "unauthorized_signer");
 
         let head = state.head().expect("the valid prefix has a head");
         assert_eq!(head.seq, 2);
-        assert_eq!(head.event_id, attest.event_id);
+        assert_eq!(head.event_id, attestation);
         assert_eq!(state.witnesses(), [secret(4).public()]);
         assert_eq!(state.trust().len(), 1);
         assert!(state.trusts(subject(9)));
@@ -1268,39 +1712,35 @@ mod tests {
 
     #[test]
     fn a_rejected_event_leaves_the_state_untouched() {
-        let root = inception();
-        let attest =
-            build_trust_attestation(&secret(1), &after(&root, &root, 1), subject(9), T0).unwrap();
-        let duplicate =
-            build_trust_attestation(&secret(1), &after(&root, &attest, 2), subject(9), T0).unwrap();
+        let root = alice();
+        let mut chain = Chain::start(&root);
+        chain.push(attest(&chain, &secret(1), subject(9)));
+        let duplicate = attest(&chain, &secret(1), subject(9));
 
-        let (mut state, violation) = fold(bytes(&[&root, &attest]));
-        assert_eq!(violation, None);
+        let mut state = chain.state();
         let before = state.clone();
         assert!(state.apply(&duplicate.signed_event).is_err());
         assert_eq!(state, before);
     }
 
     #[test]
-    fn an_org_inception_seeds_the_founder_as_a_controller() {
-        let founder = inception();
-        let org = build_org_inception(
-            &secret(1),
-            founder.event_id.into(),
-            &founder.signed_event,
-            [5u8; NONCE_BYTES],
-            T0,
-        )
-        .expect("builds");
+    fn an_identity_root_seeds_the_founder_as_a_controller() {
+        let founder = alice();
+        let organization = founded_by(&secret(1), &founder);
 
-        let (state, violation) = fold(bytes(&[&org]));
+        let (state, violation) = fold(vec![organization.signed_event.clone()]);
         assert_eq!(violation, None);
-        assert_eq!(state.kind(), Some(LedgerKind::Org));
-        assert_eq!(state.ledger(), Some(org.event_id.into()));
-        assert!(state.person().is_none());
-        let org_state = state.org().expect("an org ledger has org state");
-        assert_eq!(org_state.founder, founder.event_id.into());
-        assert!(org_state.invites.is_empty());
+        assert_eq!(state.declared_kind(), Some(DeclaredKind::Organization));
+        assert_eq!(state.ledger(), Some(organization.event_id.into()));
+        assert_eq!(
+            state.root(),
+            Some(LedgerRoot::Identity {
+                founder: founder.event_id.into(),
+                founder_key: secret(1).public(),
+            })
+        );
+        assert!(!state.root().expect("a root").is_raw());
+        assert_eq!(state.root_identity(), Some(founder.event_id.into()));
         assert_eq!(state.principals().len(), 1);
         let principal = state
             .principal(&IdentityId::from(founder.event_id))
@@ -1312,57 +1752,609 @@ mod tests {
     }
 
     #[test]
-    fn a_controller_may_attest_on_an_org_ledger() {
-        let founder = inception();
-        let org = build_org_inception(
-            &secret(1),
-            founder.event_id.into(),
-            &founder.signed_event,
-            [5u8; NONCE_BYTES],
-            T0,
-        )
-        .expect("builds");
-        let attest =
-            build_trust_attestation(&secret(1), &after(&org, &org, 1), subject(9), T0).unwrap();
+    fn a_controller_may_attest_on_an_identity_rooted_ledger() {
+        let founder = alice();
+        let organization = founded_by(&secret(1), &founder);
+        let mut chain = Chain::start(&organization);
+        let attestation = chain.push(attest(&chain, &secret(1), subject(9)));
 
-        let (state, violation) = fold(bytes(&[&org, &attest]));
-        assert_eq!(violation, None);
+        let state = chain.state();
+        assert!(state.trusts(subject(9)));
+        // The signer is the founder, not the ledger, and the state says so.
+        assert_eq!(
+            state
+                .attestation(&attestation)
+                .expect("recorded")
+                .signing_principal,
+            SigningPrincipal {
+                identity: founder.event_id.into(),
+                key: secret(1).public(),
+            }
+        );
+    }
+
+    // Membership on every ledger (proposal 002 section 4).
+
+    /// The delegation the unified ledger exists for: a raw-rooted ledger
+    /// admits a second controller, who then signs for it.
+    #[test]
+    fn a_raw_rooted_ledger_delegates_signing_to_a_second_controller() {
+        let root = alice();
+        let delegate = bob();
+        let delegate_id: IdentityId = delegate.event_id.into();
+        let mut chain = Chain::start(&root);
+
+        let invitation = chain.push(invite(
+            &chain,
+            &secret(1),
+            &delegate,
+            &secret(7),
+            Role::Controller,
+        ));
+        // The invitation alone admits nobody.
+        let offered = chain.state();
+        assert_eq!(offered.principals().len(), 1);
+        assert_eq!(
+            offered.invitation(&invitation).expect("recorded").status,
+            InvitationStatus::Open
+        );
+        assert!(!offered.authorized_signer(&secret(7).public()));
+
+        chain.push(admit(
+            &chain,
+            &secret(1),
+            &secret(7),
+            delegate_id,
+            invitation,
+        ));
+        let attestation = chain.push(attest(&chain, &secret(7), subject(9)));
+
+        let state = chain.state();
+        assert_eq!(
+            state.invitation(&invitation).expect("recorded").status,
+            InvitationStatus::Accepted
+        );
+        assert_eq!(state.principals().len(), 2);
+        assert_eq!(
+            state.principal(&delegate_id),
+            Some(&Principal {
+                role: Role::Controller,
+                active_key: secret(7).public(),
+            })
+        );
+        assert!(state.authorized_signer(&secret(7).public()));
+        assert_eq!(
+            state.controller_keys(),
+            [secret(1).public(), secret(7).public()]
+        );
+        // The delegate's signature is attributed to the delegate, never to the
+        // ledger's own identity.
+        assert_eq!(
+            state
+                .attestation(&attestation)
+                .expect("recorded")
+                .signing_principal,
+            SigningPrincipal {
+                identity: delegate_id,
+                key: secret(7).public(),
+            }
+        );
         assert!(state.trusts(subject(9)));
     }
 
     #[test]
-    fn org_membership_payloads_wait_for_ticket_005() {
-        let founder = inception();
-        let org = build_org_inception(
+    fn a_member_is_recorded_and_may_not_sign() {
+        let root = alice();
+        let member = bob();
+        let member_id: IdentityId = member.event_id.into();
+        let mut chain = Chain::start(&root);
+        let invitation = chain.push(invite(
+            &chain,
             &secret(1),
-            founder.event_id.into(),
-            &founder.signed_event,
-            [5u8; NONCE_BYTES],
-            T0,
-        )
-        .expect("builds");
-        let removal = build_org_removal(
-            &secret(1),
-            &after(&org, &org, 1),
-            founder.event_id.into(),
-            T0,
-        )
-        .expect("builds");
+            &member,
+            &secret(7),
+            Role::Member,
+        ));
+        chain.push(admit(&chain, &secret(1), &secret(7), member_id, invitation));
 
+        let state = chain.state();
         assert_eq!(
-            violation(&[&org, &removal]),
+            state.principal(&member_id).expect("recorded").role,
+            Role::Member
+        );
+        assert!(!state.authorized_signer(&secret(7).public()));
+
+        chain.push(attest(&chain, &secret(7), subject(9)));
+        assert_eq!(
+            chain.violation(),
             Violation {
-                seq: 1,
-                reason: Reason::OrgSemanticsPending {
-                    payload: "OrgRemoval",
+                seq: 3,
+                reason: Reason::UnauthorizedSigner {
+                    key: secret(7).public(),
+                },
+            }
+        );
+    }
+
+    /// Promotion: an invitation naming an existing principal keeps its key and
+    /// changes only the role.
+    #[test]
+    fn a_member_is_promoted_by_a_second_invitation_carrying_the_same_key() {
+        let root = alice();
+        let member = bob();
+        let member_id: IdentityId = member.event_id.into();
+        let mut chain = Chain::start(&root);
+        let first = chain.push(invite(
+            &chain,
+            &secret(1),
+            &member,
+            &secret(7),
+            Role::Member,
+        ));
+        chain.push(admit(&chain, &secret(1), &secret(7), member_id, first));
+        let second = chain.push(invite(
+            &chain,
+            &secret(1),
+            &member,
+            &secret(7),
+            Role::Controller,
+        ));
+        chain.push(admit(&chain, &secret(1), &secret(7), member_id, second));
+
+        let state = chain.state();
+        assert_eq!(state.principals().len(), 2);
+        assert_eq!(
+            state.principal(&member_id),
+            Some(&Principal {
+                role: Role::Controller,
+                active_key: secret(7).public(),
+            })
+        );
+        assert_eq!(state.invitations().len(), 2);
+    }
+
+    /// A key other than the principal's is a rotation, which is out of scope.
+    #[test]
+    fn an_invitation_naming_a_principal_with_another_key_is_rejected() {
+        let root = alice();
+        let member = bob();
+        let member_id: IdentityId = member.event_id.into();
+        // A second inception for the same identity id is impossible, so the
+        // mismatch is built by hand: the invitation embeds Bob's inception but
+        // records another key, which the field table catches first. The fold
+        // rule is reached through a principal whose key the ledger recorded
+        // from a different inception, so this case pins the field table.
+        let mut chain = Chain::start(&root);
+        let first = chain.push(invite(
+            &chain,
+            &secret(1),
+            &member,
+            &secret(7),
+            Role::Member,
+        ));
+        chain.push(admit(&chain, &secret(1), &secret(7), member_id, first));
+        chain.push(
+            build_membership_invitation(
+                &secret(1),
+                &chain.at(),
+                member_id,
+                &secret(9).public(),
+                Role::Controller,
+                &member.signed_event,
+                chain.now(),
+            )
+            .expect("builds"),
+        );
+        assert_eq!(chain.violation().code(), "inception_key_mismatch");
+    }
+
+    #[test]
+    fn a_second_open_invitation_for_the_same_invitee_is_rejected() {
+        let root = alice();
+        let invitee = bob();
+        let mut chain = Chain::start(&root);
+        let first = chain.push(invite(
+            &chain,
+            &secret(1),
+            &invitee,
+            &secret(7),
+            Role::Member,
+        ));
+        chain.push(invite(
+            &chain,
+            &secret(1),
+            &invitee,
+            &secret(7),
+            Role::Controller,
+        ));
+        assert_eq!(
+            chain.violation(),
+            Violation {
+                seq: 2,
+                reason: Reason::DuplicateInvitation {
+                    invitee: invitee.event_id.into(),
+                    invitation: first,
                 },
             }
         );
     }
 
     #[test]
+    fn an_invitation_naming_the_ledger_itself_is_rejected() {
+        let root = alice();
+        let mut chain = Chain::start(&root);
+        chain.push(invite(&chain, &secret(1), &root, &secret(1), Role::Member));
+        // The field table compares `invitee` with the `ledger` the event
+        // names, so no ordinary principal can shadow the root.
+        assert_eq!(chain.violation().code(), "fields_must_differ");
+    }
+
+    #[test]
+    fn an_invitation_is_single_use_on_this_branch() {
+        let root = alice();
+        let invitee = bob();
+        let invitee_id: IdentityId = invitee.event_id.into();
+        let mut chain = Chain::start(&root);
+        let invitation = chain.push(invite(
+            &chain,
+            &secret(1),
+            &invitee,
+            &secret(7),
+            Role::Member,
+        ));
+        chain.push(admit(
+            &chain,
+            &secret(1),
+            &secret(7),
+            invitee_id,
+            invitation,
+        ));
+        chain.push(admit(
+            &chain,
+            &secret(1),
+            &secret(7),
+            invitee_id,
+            invitation,
+        ));
+        assert_eq!(
+            chain.violation(),
+            Violation {
+                seq: 3,
+                reason: Reason::InvitationNotOpen {
+                    invitation,
+                    status: InvitationStatus::Accepted,
+                },
+            }
+        );
+    }
+
+    /// The four transplants of proposal 002 section 4: a valid acceptance
+    /// blob, presented where it does not belong.
+    #[test]
+    fn a_transplanted_acceptance_is_rejected() {
+        let root = alice();
+        let invitee = bob();
+        let invitee_id: IdentityId = invitee.event_id.into();
+        let other = carol();
+        let other_id: IdentityId = other.event_id.into();
+
+        let mut chain = Chain::start(&root);
+        let invitation = chain.push(invite(
+            &chain,
+            &secret(1),
+            &invitee,
+            &secret(7),
+            Role::Member,
+        ));
+        let at = chain.at();
+        let now = chain.now();
+        let ledger = chain.ledger;
+        let transplant = |accepted: DetachedAcceptance| {
+            let mut branch = Chain {
+                ledger,
+                events: chain.events.clone(),
+                prev: at.prev,
+                seq: at.seq,
+                timestamp_ms: at.prev_timestamp_ms,
+            };
+            branch.push(
+                build_membership_acceptance(&secret(1), &at, &accepted, now).expect("builds"),
+            );
+            branch.violation().reason
+        };
+
+        // Another ledger: the blob names an organization Bob was invited to.
+        let organization = founded_by(&secret(1), &root);
+        assert_eq!(
+            transplant(build_acceptance(
+                &secret(7),
+                organization.event_id.into(),
+                invitation,
+                invitee_id
+            )),
+            Reason::AcceptanceForAnotherLedger {
+                named: organization.event_id.into(),
+                expected: ledger,
+            }
+        );
+
+        // Another invitation: the blob names an event this ledger does not
+        // hold.
+        let unknown = EventId::from_bytes([0xee; ID_BYTES]);
+        assert_eq!(
+            transplant(build_acceptance(&secret(7), ledger, unknown, invitee_id)),
+            Reason::UnknownInvitation(unknown)
+        );
+
+        // Another identity: Carol signs for the invitation that named Bob.
+        assert_eq!(
+            transplant(build_acceptance(&secret(9), ledger, invitation, other_id)),
+            Reason::AcceptanceInviteeMismatch {
+                named: other_id,
+                invited: invitee_id,
+            }
+        );
+
+        // Another key: the blob names Bob but was signed by a key the
+        // invitation does not record.
+        assert_eq!(
+            transplant(build_acceptance(&secret(9), ledger, invitation, invitee_id)),
+            Reason::AcceptanceInviteeKeyMismatch {
+                named: secret(9).public(),
+                invited: secret(7).public(),
+            }
+        );
+    }
+
+    /// Two inceptions may record one key under two identity ids. Admitting the
+    /// second would give one signer two principals, so admission refuses it.
+    #[test]
+    fn a_second_identity_presenting_a_principal_key_is_rejected_at_admission() {
+        let root = alice();
+        let twin = raw_rooted(1, 0x5b);
+        let twin_id: IdentityId = twin.event_id.into();
+        assert_ne!(twin_id, IdentityId::from(root.event_id));
+
+        let mut chain = Chain::start(&root);
+        let invitation = chain.push(invite(&chain, &secret(1), &twin, &secret(1), Role::Member));
+        chain.push(admit(&chain, &secret(1), &secret(1), twin_id, invitation));
+        assert_eq!(
+            chain.violation(),
+            Violation {
+                seq: 2,
+                reason: Reason::DuplicatePrincipalKey {
+                    key: secret(1).public(),
+                    held_by: root.event_id.into(),
+                },
+            }
+        );
+    }
+
+    #[test]
+    fn a_removal_cancels_an_open_invitation() {
+        let root = alice();
+        let invitee = bob();
+        let invitee_id: IdentityId = invitee.event_id.into();
+        let mut chain = Chain::start(&root);
+        let invitation = chain.push(invite(
+            &chain,
+            &secret(1),
+            &invitee,
+            &secret(7),
+            Role::Member,
+        ));
+        chain.push(remove(&chain, &secret(1), invitee_id));
+
+        let state = chain.state();
+        assert_eq!(
+            state.invitation(&invitation).expect("recorded").status,
+            InvitationStatus::Cancelled
+        );
+        assert!(state.principal(&invitee_id).is_none());
+
+        // A cancelled invitation cannot then be accepted.
+        chain.push(admit(
+            &chain,
+            &secret(1),
+            &secret(7),
+            invitee_id,
+            invitation,
+        ));
+        assert_eq!(
+            chain.violation(),
+            Violation {
+                seq: 3,
+                reason: Reason::InvitationNotOpen {
+                    invitation,
+                    status: InvitationStatus::Cancelled,
+                },
+            }
+        );
+    }
+
+    #[test]
+    fn a_removal_removes_a_principal_and_its_authority() {
+        let root = alice();
+        let delegate = bob();
+        let delegate_id: IdentityId = delegate.event_id.into();
+        let mut chain = Chain::start(&root);
+        let invitation = chain.push(invite(
+            &chain,
+            &secret(1),
+            &delegate,
+            &secret(7),
+            Role::Controller,
+        ));
+        chain.push(admit(
+            &chain,
+            &secret(1),
+            &secret(7),
+            delegate_id,
+            invitation,
+        ));
+        chain.push(remove(&chain, &secret(1), delegate_id));
+
+        let state = chain.state();
+        assert_eq!(state.principals().len(), 1);
+        assert!(!state.authorized_signer(&secret(7).public()));
+
+        chain.push(attest(&chain, &secret(7), subject(9)));
+        assert_eq!(chain.violation().code(), "unauthorized_signer");
+    }
+
+    #[test]
+    fn a_removal_naming_nobody_is_rejected() {
+        let root = alice();
+        let mut chain = Chain::start(&root);
+        chain.push(remove(&chain, &secret(1), subject(0x42)));
+        assert_eq!(
+            chain.violation(),
+            Violation {
+                seq: 1,
+                reason: Reason::UnknownRemovalTarget(subject(0x42)),
+            }
+        );
+    }
+
+    #[test]
+    fn the_raw_root_is_never_removable() {
+        let root = alice();
+        let root_id: IdentityId = root.event_id.into();
+        let delegate = bob();
+        let delegate_id: IdentityId = delegate.event_id.into();
+        let mut chain = Chain::start(&root);
+
+        // Even with a second controller in place, the root stays.
+        let invitation = chain.push(invite(
+            &chain,
+            &secret(1),
+            &delegate,
+            &secret(7),
+            Role::Controller,
+        ));
+        chain.push(admit(
+            &chain,
+            &secret(1),
+            &secret(7),
+            delegate_id,
+            invitation,
+        ));
+        chain.push(remove(&chain, &secret(7), root_id));
+        assert_eq!(
+            chain.violation(),
+            Violation {
+                seq: 3,
+                reason: Reason::RootNotRemovable(root_id),
+            }
+        );
+    }
+
+    /// On a raw-rooted ledger the root counts toward the minimum, so removing
+    /// the only other controller is legal.
+    #[test]
+    fn a_raw_root_keeps_the_ledger_signable_after_every_other_removal() {
+        let root = alice();
+        let delegate = bob();
+        let delegate_id: IdentityId = delegate.event_id.into();
+        let mut chain = Chain::start(&root);
+        let invitation = chain.push(invite(
+            &chain,
+            &secret(1),
+            &delegate,
+            &secret(7),
+            Role::Controller,
+        ));
+        chain.push(admit(
+            &chain,
+            &secret(1),
+            &secret(7),
+            delegate_id,
+            invitation,
+        ));
+        // The delegate removes itself.
+        chain.push(remove(&chain, &secret(7), delegate_id));
+        let state = chain.state();
+        assert_eq!(state.controller_keys(), [secret(1).public()]);
+    }
+
+    #[test]
+    fn an_identity_rooted_ledger_refuses_to_lose_its_last_controller() {
+        let founder = alice();
+        let founder_id: IdentityId = founder.event_id.into();
+        let organization = founded_by(&secret(1), &founder);
+        let mut chain = Chain::start(&organization);
+        chain.push(remove(&chain, &secret(1), founder_id));
+        assert_eq!(
+            chain.violation(),
+            Violation {
+                seq: 1,
+                reason: Reason::LastController(founder_id),
+            }
+        );
+    }
+
+    /// Self-removal is legal once someone else can sign.
+    #[test]
+    fn a_founder_may_remove_itself_after_admitting_another_controller() {
+        let founder = alice();
+        let founder_id: IdentityId = founder.event_id.into();
+        let successor = bob();
+        let successor_id: IdentityId = successor.event_id.into();
+        let organization = founded_by(&secret(1), &founder);
+        let mut chain = Chain::start(&organization);
+
+        let invitation = chain.push(invite(
+            &chain,
+            &secret(1),
+            &successor,
+            &secret(7),
+            Role::Controller,
+        ));
+        chain.push(admit(
+            &chain,
+            &secret(1),
+            &secret(7),
+            successor_id,
+            invitation,
+        ));
+        chain.push(remove(&chain, &secret(1), founder_id));
+
+        let state = chain.state();
+        assert!(state.principal(&founder_id).is_none());
+        assert_eq!(state.controller_keys(), [secret(7).public()]);
+        // The founder is still the root of record; it is simply no longer a
+        // principal.
+        assert_eq!(state.root_identity(), Some(founder_id));
+        assert!(!state.authorized_signer(&secret(1).public()));
+    }
+
+    /// A `MEMBER` carries no authority, so removing one never threatens the
+    /// controller minimum.
+    #[test]
+    fn removing_a_member_never_trips_the_last_controller_rule() {
+        let founder = alice();
+        let organization = founded_by(&secret(1), &founder);
+        let member = bob();
+        let member_id: IdentityId = member.event_id.into();
+        let mut chain = Chain::start(&organization);
+        let invitation = chain.push(invite(
+            &chain,
+            &secret(1),
+            &member,
+            &secret(7),
+            Role::Member,
+        ));
+        chain.push(admit(&chain, &secret(1), &secret(7), member_id, invitation));
+        chain.push(remove(&chain, &secret(1), member_id));
+
+        let state = chain.state();
+        assert_eq!(state.principals().len(), 1);
+        assert_eq!(state.controller_keys(), [secret(1).public()]);
+    }
+
+    #[test]
     fn malformed_bytes_are_reported_as_a_wire_violation() {
-        let root = inception();
+        let root = alice();
         let mut truncated = root.signed_event.clone();
         truncated.truncate(root.signed_event.len() - 1);
         let (state, violation) = fold(vec![truncated]);
@@ -1374,6 +2366,9 @@ mod tests {
 
     #[test]
     fn violation_codes_are_stable() {
+        let key = secret(1).public();
+        let other_key = secret(7).public();
+        let event = |seed: u8| EventId::from_bytes([seed; ID_BYTES]);
         let cases = [
             (
                 Reason::Wire(WireError::InceptionPastSeqZero),
@@ -1395,8 +2390,8 @@ mod tests {
             ),
             (
                 Reason::BrokenPrevLink {
-                    expected: EventId::from_bytes([1; ID_BYTES]),
-                    found: EventId::from_bytes([2; ID_BYTES]),
+                    expected: event(1),
+                    found: event(2),
                 },
                 "broken_prev_link",
             ),
@@ -1409,8 +2404,8 @@ mod tests {
             ),
             (
                 Reason::PayloadNotAllowed {
-                    kind: LedgerKind::Person,
-                    payload: "OrgInvite",
+                    seq: 3,
+                    payload: "Inception",
                 },
                 "payload_not_allowed",
             ),
@@ -1420,38 +2415,84 @@ mod tests {
                 },
                 "invalid_public_key",
             ),
-            (
-                Reason::UnauthorizedSigner {
-                    key: secret(1).public(),
-                },
-                "unauthorized_signer",
-            ),
+            (Reason::UnauthorizedSigner { key }, "unauthorized_signer"),
             (Reason::BadSignature, "bad_signature"),
             (
                 Reason::DuplicateAttestation {
                     subject: subject(1),
-                    attestation: EventId::from_bytes([2; ID_BYTES]),
+                    attestation: event(2),
                 },
                 "duplicate_attestation",
             ),
             (Reason::SelfAttestation(subject(1)), "self_attestation"),
             (
-                Reason::UnknownRevocationTarget(EventId::from_bytes([1; ID_BYTES])),
+                Reason::UnknownRevocationTarget(event(1)),
                 "unknown_revocation_target",
             ),
             (
                 Reason::AlreadyRevoked {
-                    target: EventId::from_bytes([1; ID_BYTES]),
-                    revoked_by: EventId::from_bytes([2; ID_BYTES]),
+                    target: event(1),
+                    revoked_by: event(2),
                 },
                 "already_revoked",
             ),
             (
-                Reason::OrgSemanticsPending {
-                    payload: "OrgInvite",
+                Reason::DuplicateInvitation {
+                    invitee: subject(1),
+                    invitation: event(2),
                 },
-                "org_semantics_pending",
+                "duplicate_invitation",
             ),
+            (
+                Reason::PrincipalKeyMismatch {
+                    identity: subject(1),
+                    expected: key,
+                    found: other_key,
+                },
+                "principal_key_mismatch",
+            ),
+            (
+                Reason::AcceptanceForAnotherLedger {
+                    named: subject(1),
+                    expected: subject(2),
+                },
+                "acceptance_for_another_ledger",
+            ),
+            (Reason::UnknownInvitation(event(1)), "unknown_invitation"),
+            (
+                Reason::InvitationNotOpen {
+                    invitation: event(1),
+                    status: InvitationStatus::Accepted,
+                },
+                "invitation_not_open",
+            ),
+            (
+                Reason::AcceptanceInviteeMismatch {
+                    named: subject(1),
+                    invited: subject(2),
+                },
+                "acceptance_invitee_mismatch",
+            ),
+            (
+                Reason::AcceptanceInviteeKeyMismatch {
+                    named: key,
+                    invited: other_key,
+                },
+                "acceptance_invitee_key_mismatch",
+            ),
+            (
+                Reason::DuplicatePrincipalKey {
+                    key,
+                    held_by: subject(1),
+                },
+                "duplicate_principal_key",
+            ),
+            (Reason::RootNotRemovable(subject(1)), "root_not_removable"),
+            (
+                Reason::UnknownRemovalTarget(subject(1)),
+                "unknown_removal_target",
+            ),
+            (Reason::LastController(subject(1)), "last_controller"),
         ];
         for (reason, code) in cases {
             assert_eq!(reason.code(), code);
@@ -1459,5 +2500,54 @@ mod tests {
             assert_eq!(violation.code(), code);
             assert!(violation.to_string().starts_with("seq 3: "));
         }
+    }
+
+    #[test]
+    fn declared_kinds_render_in_full_words() {
+        assert_eq!(declared_kind_name(DeclaredKind::Person), "person");
+        assert_eq!(
+            declared_kind_name(DeclaredKind::Organization),
+            "organization"
+        );
+        assert_eq!(declared_kind_name(DeclaredKind::Agent), "agent");
+        assert_eq!(declared_kind_name(DeclaredKind::Service), "service");
+    }
+
+    /// Declared kind gates nothing: an `AGENT` ledger runs the same rules.
+    #[test]
+    fn declared_kind_gates_no_payload() {
+        let owner = alice();
+        let agent = build_inception(
+            &secret(1),
+            DeclaredKind::Agent,
+            Root::Identity {
+                founder: owner.event_id.into(),
+                founder_inception: &owner.signed_event,
+            },
+            [0xa9; NONCE_BYTES],
+            T0,
+        )
+        .expect("builds");
+        let invitee = bob();
+        let invitee_id: IdentityId = invitee.event_id.into();
+        let mut chain = Chain::start(&agent);
+        let invitation = chain.push(invite(
+            &chain,
+            &secret(1),
+            &invitee,
+            &secret(7),
+            Role::Controller,
+        ));
+        chain.push(admit(
+            &chain,
+            &secret(1),
+            &secret(7),
+            invitee_id,
+            invitation,
+        ));
+
+        let state = chain.state();
+        assert_eq!(state.declared_kind(), Some(DeclaredKind::Agent));
+        assert_eq!(state.principals().len(), 2);
     }
 }

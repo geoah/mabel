@@ -15,7 +15,7 @@ use std::future::Future;
 use std::pin::Pin;
 
 use iroh_base::EndpointId;
-use mabel_core::proto::{IdentityKind, RejectCode};
+use mabel_core::proto::{DeclaredKind, RejectCode};
 use mabel_core::{EventId, LedgerId};
 
 use crate::error::Rejection;
@@ -99,8 +99,9 @@ impl<T> Default for Page<T> {
 pub struct LedgerSummary {
     /// The ledger id.
     pub ledger: LedgerId,
-    /// Whether the ledger belongs to a person or an org.
-    pub kind: IdentityKind,
+    /// What the ledger's inception says it is. Advisory (proposal 002
+    /// section 3).
+    pub declared_kind: DeclaredKind,
     /// The sequence of the last stored event.
     pub head_seq: u64,
     /// The event id of the last stored event.

@@ -1,0 +1,10 @@
+{
+  "class": "field-table",
+  "code": "fields_must_differ",
+  "description": "A RawRoot committing to its own active key.",
+  "entry": "signed_event",
+  "file": "32-raw-root-commit-equals-key.json",
+  "input_hex": "0a85012880d095ffbc313220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c9778737525a08011210a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a152440a20d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c97787371220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c97787371240670abab177b08bf110ed43f49e4c7e6adba7b37817902bfde85f627022cb474b48371dc92ae3a676a5b3bdd0eb31f604b1fe0afad39e386d3dc1455092b9a603",
+  "reason": "RawRoot.active_key and RawRoot.reserve_commit must differ",
+  "rule": "002 section 8 active_key and reserve_commit differ"
+}

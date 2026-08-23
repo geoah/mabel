@@ -26,3 +26,7 @@ tracing.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+# `ServiceExt::oneshot` drives the routers in the contract tests without a
+# socket. Declared here rather than in the workspace table because it is the
+# only crate that needs it.
+tower = { version = "0.5.3", features = ["util"] }

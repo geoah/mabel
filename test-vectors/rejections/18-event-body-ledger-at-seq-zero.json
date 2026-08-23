@@ -1,0 +1,10 @@
+{
+  "class": "field-table",
+  "code": "set_at_seq_zero",
+  "description": "An inception that also names a ledger.",
+  "entry": "signed_event",
+  "file": "18-event-body-ledger-at-seq-zero.json",
+  "input_hex": "0aa70112208225a669a21ee244ba23bf4a1096ed5445a954ea01967150ccddee723635f1d12880d095ffbc313220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c9778737525a08011210a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a152440a20d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c97787371220e1ead60ce2981a689bc964158c97d173d1d1bbcb80c56dfc90747193ba06d3011240d55cf189bdd6d7d9475bfa2caedaee0be5d6c21ba49267c2c03b25cfa69a1a2b6c4ad26f01cba583de03659cf486c0a40b88bca01eb9b9e9ed724104e13d210e",
+  "reason": "EventBody.ledger must be absent at seq 0",
+  "rule": "3.4 EventBody.ledger is absent at seq 0"
+}

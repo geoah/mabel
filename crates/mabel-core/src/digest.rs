@@ -32,7 +32,7 @@ pub fn accept_input(acceptance_bytes: &[u8]) -> Vec<u8> {
     prefixed(ACCEPT_DOMAIN, acceptance_bytes)
 }
 
-/// The commitment a `PersonInception` records for its reserve key.
+/// The commitment a `RawRoot` records for its reserve key.
 pub fn reserve_commit(reserve_key: &PublicKey) -> [u8; ID_BYTES] {
     hash(RESERVE_DOMAIN, reserve_key.as_bytes())
 }

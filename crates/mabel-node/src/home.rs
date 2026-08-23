@@ -4,8 +4,8 @@
 //! ```text
 //! node.json                              role, http bind, witnesses, caps
 //! node.key                               0600, iroh endpoint secret key
-//! identities/<id>/meta.json              alias, kind, created_at_ms
-//! identities/<id>/{active,reserve}.key   0600, persons only
+//! identities/<id>/meta.json              alias, declared kind, controller, created_at_ms
+//! identities/<id>/{active,reserve}.key   0600, self-keyed identities only
 //! ledgers/<id>/000000000000.ev           encoded SignedEvent, one per event
 //! ledgers/<id>/head.json                 cache: seq, event id, updated_ms
 //! ledgers/<id>/meta.json                 provenance: source endpoint, first seen
@@ -53,14 +53,22 @@ pub const RESERVE_KEY_FILE: &str = "reserve.key";
 /// Name of the identity metadata file.
 pub const IDENTITY_META_FILE: &str = "meta.json";
 
-/// Whether an identity is a person or an org (proposal 001 section 3.3).
+/// What an identity says it is (proposal 002 section 3).
+///
+/// Advisory, exactly as on the wire: it never decides which keys a home holds
+/// or what an identity may do. Whether an identity keys itself is a fact about
+/// its inception root and, locally, about `controlled_by`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
-pub enum IdentityKind {
-    /// A person, which holds an active and a reserve key.
+pub enum DeclaredKind {
+    /// A person.
     Person,
-    /// An org, which holds no keys of its own; its controllers sign for it.
-    Org,
+    /// An organization.
+    Organization,
+    /// An agent acting for someone.
+    Agent,
+    /// A service.
+    Service,
 }
 
 /// `identities/<id>/meta.json`. Local labelling, never signed.
@@ -69,20 +77,38 @@ pub enum IdentityKind {
 pub struct IdentityMeta {
     /// Local alias. Ids are authoritative; an alias is a convenience.
     pub alias: String,
-    /// Person or org.
-    pub kind: IdentityKind,
+    /// What the identity declares itself to be, which nothing here checks.
+    pub declared_kind: DeclaredKind,
+    /// The local identity whose active key signs for this one.
+    ///
+    /// A ledger may hold no key of its own yet be controllable from this
+    /// home: an identity-rooted ledger is signed for by a principal's key
+    /// (proposal 002 section 10). `None` means this identity holds its own
+    /// keys.
+    #[serde(default)]
+    pub controlled_by: Option<IdentityId>,
     /// When this node created or imported the identity.
     pub created_at_ms: u64,
 }
 
 impl IdentityMeta {
-    /// Metadata stamped with the current time.
+    /// Metadata for a self-keyed identity, stamped with the current time.
     #[must_use]
-    pub fn now(alias: impl Into<String>, kind: IdentityKind) -> Self {
+    pub fn now(alias: impl Into<String>, declared_kind: DeclaredKind) -> Self {
         Self {
             alias: alias.into(),
-            kind,
+            declared_kind,
+            controlled_by: None,
             created_at_ms: now_ms(),
+        }
+    }
+
+    /// The same metadata, recording which local identity signs for this one.
+    #[must_use]
+    pub fn controlled_by(self, controller: IdentityId) -> Self {
+        Self {
+            controlled_by: Some(controller),
+            ..self
         }
     }
 }
@@ -297,7 +323,8 @@ impl NodeHome {
 
     /// Creates `identities/<id>/meta.json`.
     ///
-    /// Keys are written separately, since an org holds none.
+    /// Keys are written separately, since an identity-rooted ledger holds
+    /// none of its own.
     ///
     /// # Errors
     ///
@@ -341,7 +368,7 @@ impl NodeHome {
         serde_json::from_slice(&bytes).map_err(json_at(&path))
     }
 
-    /// Writes a person's active and reserve keys at mode 0600.
+    /// Writes a self-keyed identity's active and reserve keys at mode 0600.
     ///
     /// # Errors
     ///
@@ -360,13 +387,39 @@ impl NodeHome {
 
     /// Reads the key that signs this identity's events.
     ///
+    /// An identity that holds no key of its own is signed for by the local
+    /// identity its `controlled_by` link names, so this resolves through that
+    /// link rather than failing (proposal 002 section 10). The link is
+    /// followed once: proposal 002 section 9 caps identity principals at one
+    /// level.
+    ///
     /// # Errors
     ///
     /// Returns [`StorageError::InsecurePermissions`] (exit code 60) for a
-    /// group- or world-accessible file, and [`StorageError::Io`] if the key
-    /// is absent, which is the case for every org.
+    /// group- or world-accessible file, and [`StorageError::Io`] if neither
+    /// this identity nor the identity it names holds an active key.
     pub fn identity_active_key(&self, identity: IdentityId) -> Result<SecretKey> {
-        self.read_identity_key(identity, ACTIVE_KEY_FILE)
+        let signer = self.signing_identity(identity);
+        self.read_identity_key(signer, ACTIVE_KEY_FILE)
+    }
+
+    /// Which local identity's active key signs for `identity`.
+    ///
+    /// `identity` itself when it holds its own keys, when the home records no
+    /// metadata for it, or when the link points at itself.
+    #[must_use]
+    pub fn signing_identity(&self, identity: IdentityId) -> IdentityId {
+        if self.identity_dir(identity).join(ACTIVE_KEY_FILE).is_file() {
+            return identity;
+        }
+        match self
+            .identity_meta(identity)
+            .ok()
+            .and_then(|meta| meta.controlled_by)
+        {
+            Some(controller) if controller != identity => controller,
+            _ => identity,
+        }
     }
 
     /// Reads the key committed at inception and unused in the POC.
@@ -467,7 +520,7 @@ mod tests {
     use mabel_core::IdentityId;
 
     use super::{
-        ACTIVE_KEY_FILE, HomeOptions, IdentityKind, IdentityMeta, NodeHome, RESERVE_KEY_FILE,
+        ACTIVE_KEY_FILE, DeclaredKind, HomeOptions, IdentityMeta, NodeHome, RESERVE_KEY_FILE,
         resolve_home,
     };
     use crate::config::{NodeConfig, NodeRole, RelayMode};
@@ -549,14 +602,15 @@ mod tests {
         let active = crate::keys::generate_secret_key().unwrap();
         let reserve = crate::keys::generate_secret_key().unwrap();
 
-        home.create_identity(identity, &IdentityMeta::now("ada", IdentityKind::Person))
+        home.create_identity(identity, &IdentityMeta::now("ada", DeclaredKind::Person))
             .unwrap();
         home.write_identity_keys(identity, &active, &reserve)
             .unwrap();
 
         let meta = home.identity_meta(identity).unwrap();
         assert_eq!(meta.alias, "ada");
-        assert_eq!(meta.kind, IdentityKind::Person);
+        assert_eq!(meta.declared_kind, DeclaredKind::Person);
+        assert_eq!(meta.controlled_by, None);
         assert_eq!(
             home.identity_active_key(identity).unwrap().to_bytes(),
             active.to_bytes()
@@ -569,17 +623,94 @@ mod tests {
     }
 
     #[test]
-    fn an_org_identity_holds_metadata_and_no_keys() {
+    fn an_identity_with_no_keys_of_its_own_holds_metadata_alone() {
         let dir = tempfile::tempdir().unwrap();
         let home = home(dir.path());
-        let org = IdentityId::from_bytes([3u8; 32]);
-        home.create_identity(org, &IdentityMeta::now("acme", IdentityKind::Org))
-            .unwrap();
+        let organization = IdentityId::from_bytes([3u8; 32]);
+        home.create_identity(
+            organization,
+            &IdentityMeta::now("acme", DeclaredKind::Organization),
+        )
+        .unwrap();
 
-        assert_eq!(home.identity_meta(org).unwrap().kind, IdentityKind::Org);
-        assert!(home.identity_active_key(org).is_err());
-        assert!(!home.identity_dir(org).join(ACTIVE_KEY_FILE).exists());
-        assert!(!home.identity_dir(org).join(RESERVE_KEY_FILE).exists());
+        assert_eq!(
+            home.identity_meta(organization).unwrap().declared_kind,
+            DeclaredKind::Organization
+        );
+        assert!(home.identity_active_key(organization).is_err());
+        assert!(
+            !home
+                .identity_dir(organization)
+                .join(ACTIVE_KEY_FILE)
+                .exists()
+        );
+        assert!(
+            !home
+                .identity_dir(organization)
+                .join(RESERVE_KEY_FILE)
+                .exists()
+        );
+    }
+
+    /// A ledger that holds no key of its own is signed for by the local
+    /// identity its metadata names (proposal 002 section 10).
+    #[test]
+    fn a_controlled_identity_signs_with_its_controllers_key() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = home(dir.path());
+        let founder = IdentityId::from_bytes([2u8; 32]);
+        let organization = IdentityId::from_bytes([3u8; 32]);
+        let active = crate::keys::generate_secret_key().unwrap();
+        let reserve = crate::keys::generate_secret_key().unwrap();
+
+        home.create_identity(founder, &IdentityMeta::now("ada", DeclaredKind::Person))
+            .unwrap();
+        home.write_identity_keys(founder, &active, &reserve)
+            .unwrap();
+        home.create_identity(
+            organization,
+            &IdentityMeta::now("acme", DeclaredKind::Organization).controlled_by(founder),
+        )
+        .unwrap();
+
+        assert_eq!(home.signing_identity(organization), founder);
+        assert_eq!(
+            home.identity_active_key(organization).unwrap().to_bytes(),
+            active.to_bytes(),
+            "the link resolves to the controller's key"
+        );
+        assert!(
+            !home
+                .identity_dir(organization)
+                .join(ACTIVE_KEY_FILE)
+                .exists(),
+            "no key is copied into the controlled identity"
+        );
+        // An identity that holds its own key never follows a link.
+        assert_eq!(home.signing_identity(founder), founder);
+    }
+
+    /// A link naming an identity with no key of its own resolves to nothing,
+    /// which is an error rather than a second hop.
+    #[test]
+    fn a_link_is_followed_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = home(dir.path());
+        let keyless = IdentityId::from_bytes([4u8; 32]);
+        let organization = IdentityId::from_bytes([5u8; 32]);
+        home.create_identity(
+            keyless,
+            &IdentityMeta::now("middle", DeclaredKind::Organization),
+        )
+        .unwrap();
+        home.create_identity(
+            organization,
+            &IdentityMeta::now("acme", DeclaredKind::Organization).controlled_by(keyless),
+        )
+        .unwrap();
+
+        assert_eq!(home.signing_identity(organization), keyless);
+        assert!(home.identity_active_key(organization).is_err());
     }
 
     #[test]

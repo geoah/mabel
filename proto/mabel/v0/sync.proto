@@ -74,7 +74,7 @@ message AcceptedResp {
 
 message LedgerSummary {
   bytes ledger = 1;
-  IdentityKind kind = 2;
+  DeclaredKind declared_kind = 2; // advisory (proposal 002 section 3)
   uint64 head_seq = 3;
   bytes head_event = 4;
   uint64 event_count = 5;

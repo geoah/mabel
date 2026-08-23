@@ -1,6 +1,6 @@
 # 014: witness debug UI route
 
-- Status: open
+- Status: done
 - Depends on: 013
 
 ## Goal

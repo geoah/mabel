@@ -516,7 +516,7 @@ mod tests {
         let body = vec![seed; 24];
         let signed = SignedEvent {
             body: body.clone(),
-            sig: vec![seed; 64],
+            signature: vec![seed; 64],
         };
         (event_id(&body), signed.encode_to_vec())
     }

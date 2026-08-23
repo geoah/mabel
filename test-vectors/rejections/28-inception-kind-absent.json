@@ -1,0 +1,10 @@
+{
+  "class": "field-table",
+  "code": "unspecified_enum",
+  "description": "An Inception with no kind, which reads as KIND_UNSPECIFIED.",
+  "entry": "signed_event",
+  "file": "28-inception-kind-absent.json",
+  "input_hex": "0a83012880d095ffbc313220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c977873752581210a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a152440a20d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c97787371220e1ead60ce2981a689bc964158c97d173d1d1bbcb80c56dfc90747193ba06d3011240736c7d56b8f3f834bad9d147f4d3b3dc2031fdbadb990407fd9ddcddcd721f655cc06bc541591f05c50bdb4738cdd7b492a2dfad77365c109e45d84d476eb607",
+  "reason": "Inception.kind is unspecified",
+  "rule": "002 section 8 Inception.kind is a defined kind"
+}

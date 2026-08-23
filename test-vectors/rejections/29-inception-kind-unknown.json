@@ -1,0 +1,10 @@
+{
+  "class": "field-table",
+  "code": "enum_value",
+  "description": "An Inception whose kind is 5, past SERVICE, which v0 does not define.",
+  "entry": "signed_event",
+  "file": "29-inception-kind-unknown.json",
+  "input_hex": "0a85012880d095ffbc313220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c9778737525a08051210a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a152440a20d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c97787371220e1ead60ce2981a689bc964158c97d173d1d1bbcb80c56dfc90747193ba06d3011240e5ab7b14516fc76bd78ce258d081bec60251eb44251daff70d48e43be7cd6c7d16c47226e925d0790f07d51c0e7bb7c0847d1dcd6c35d94406fed4576fcc3208",
+  "reason": "Inception.kind holds 5, which is not a value it accepts",
+  "rule": "002 section 8 Inception.kind is a defined kind"
+}

@@ -1,6 +1,6 @@
 # 001: unified proto schemas, regenerated vectors and workspace checks
 
-- Status: open
+- Status: done
 - Depends on: none
 
 ## Goal
