@@ -66,3 +66,6 @@ milestone 10 and are deliberately not ticketed here.
 - [021-membership-http-routes.md](021-membership-http-routes.md): membership
   route fixtures, the node routes, and the wallet wiring. Depends on 012, 018,
   019.
+- [022-mobile-friendly-ui.md](022-mobile-friendly-ui.md): responsive wallet
+  and witness UI, identifier truncation, screenshot verification at three
+  widths. Depends on 013, 014.
