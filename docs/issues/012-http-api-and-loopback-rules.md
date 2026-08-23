@@ -1,51 +1,60 @@
-# 012: axum HTTP APIs, loopback rules and UI serving
+# 012: axum HTTP APIs over the contract fixtures, loopback rules and UI serving
 
 - Status: open
-- Depends on: 010, 011
+- Depends on: 020
 
 ## Goal
 
-Both node roles serve their JSON API on loopback with the three hardening rules
-of proposal 001 section 10, plus the static UI assets, so the browser app has a
-backend to call.
+Both node roles serve every route in `contracts/http/` on loopback with the
+three hardening rules of proposal 001 section 10, plus the static UI assets.
+Handlers call service traits and a stub implementation answers from the
+fixtures, so the UI has a real backend before the runtimes exist. Being
+implemented concurrently with tickets 010, 011 and 013.
 
 ## Scope
 
-- Wallet API under `/api`, exactly the routes section 10 lists: `GET /node`;
-  `GET|POST /identities`; `GET /identities/:id` and
-  `/identities/:id/ledger?since=`; `POST /identities/:id/witnesses`; `POST
-  /trust` and `/trust/:event_id/revoke`; `POST /orgs`, `/orgs/:id/invites`,
-  `/orgs/:id/acceptances`, `/orgs/:id/removals`; `POST /sync/push`; `POST
-  /verify`.
-- Witness API, read-only: `GET /node`, `/ledgers`, `/ledgers/:id`,
-  `/ledgers/:id/events?since=`, `/forks` (section 10).
-- Every `?since=` parameter is inclusive, matching `Get.since` (ticket 009).
+- Service traits in `crates/mabel-node/src/api/`, one per surface: node info,
+  wallet identity and trust, sync, verify, and the witness read side. The traits
+  take and return the document types of the fixtures; handlers hold no node
+  state and touch no storage directly. Tickets 010 and 011 implement them.
+- A stub implementation behind a flag, answering each route with its fixture
+  document, so ticket 013 can be built and tested against a running node.
+- Wallet API under `/api`, exactly the routes `contracts/README.md` indexes:
+  `GET /node`; `GET|POST /identities`; `GET /identities/:identity_id` and
+  `/identities/:identity_id/ledger?since=`; `POST
+  /identities/:identity_id/witnesses`; `POST /trust` and
+  `/trust/:event_id/revoke`; `POST /sync/push`; `POST /verify`. The `/orgs`
+  routes of proposal 001 section 10 are deleted (proposal 002 section 6).
+- Membership routes (`/identities/:identity_id/memberships/invitations`,
+  `/acceptances`, `/removals`) answer 501 with code 70 until ticket 021
+  freezes and implements them.
+- Witness API, read-only: `GET /node`, `/ledgers`, `/ledgers/:ledger_id`,
+  `/ledgers/:ledger_id/events?since=`, `/forks`. `LedgerSummary.kind` renders
+  as `declared_kind` (proposal 002 section 10).
+- Every `?since=` is inclusive; `offset`, `limit` and `more` are echoed back.
 - One axum middleware layer with the three rules of section 10: `Host` must be
   `127.0.0.1` or `localhost` with the expected port; a mutating request's
   `Origin` must match that host; mutating routes require `content-type:
-  application/json`.
+  application/json`. All three reject with code 2 and no layer prefix.
+- Errors use the shared envelope with the CLI exit code as `code` and the HTTP
+  status of the table in `contracts/README.md`.
 - Bind `127.0.0.1` by default in both roles and warn at startup when bound
-  elsewhere; no authentication (section 10).
-- Static assets embedded with `rust-embed`, served from disk with `--ui-dir`
-  (section 10).
-- `wallet serve [--http <addr>]` and the `--http` surface of `witness run`.
-- Verification responses use the same "as of seq N from source S" struct as the
-  CLI, carrying `source`, `head_seq`, `head_event`, `fetched_at` (sections 6
-  and 10).
+  elsewhere; no authentication. Static assets embedded with `rust-embed`,
+  served from disk with `--ui-dir`. `wallet serve [--http <addr>]` and the
+  `--http` surface of `witness run`.
 
 ## Acceptance criteria
 
-- [ ] The route lists match section 10 exactly: orgs appear in `GET
-      /identities` and there is no `GET /orgs`; the witness API is read-only.
-- [ ] Both roles default to `127.0.0.1` and print a warning when bound
-      elsewhere.
-- [ ] `--ui-dir` serves the bundle from disk; without it the embedded bundle is
-      served.
-- [ ] All logic stays in the node: the API returns rendered results and the UI
-      does no crypto (section 10).
+- [ ] Every `contracts/http/*.json` route exists, and its success and error
+      bodies match the fixture key for key.
+- [ ] No handler reads storage or signs; the traits are the only path to node
+      state (section 10).
+- [ ] The membership routes answer 501 with `code: 70`.
+- [ ] Both roles default to `127.0.0.1` and warn when bound elsewhere;
+      `--ui-dir` serves the bundle from disk, otherwise the embed serves it.
 - [ ] tests: the middleware rejects `Host: evil.example`, the right host on the
       wrong port, `localhost.example`, an absent and a mismatched `Origin` on a
-      mutating route, and a non-JSON content type, and accepts the correct
-      versions; a table test asserts every mutating route is covered.
-- [ ] tests: one happy-path test per wallet route group and per witness route
-      against an in-process server, including `?since=` at the head sequence.
+      mutating route, and a non-JSON content type; a table test asserts every
+      mutating route is covered.
+- [ ] tests: one test per fixture asserts the stub response equals the fixture,
+      including `?since=` at the head sequence.

@@ -11,11 +11,12 @@ CLI, so a reader sees mabel work without reading the tests.
 ## Scope
 
 - `docker/demo.sh` driving the running compose stack: two people create
-  identities in two wallets, configure the witness, push, one founds an org and
-  invites the other, the invitee accepts, the founder admits, the person and
-  the org each attest trust in a third identity, a stranger verifies from an
-  empty home, the issuer revokes, and the script prints the witness ledger list
-  and heads (section 11, e2e scenario, run through the CLI).
+  identities in two wallets, configure the witness, push, one creates a shared
+  ledger with `identity create --founder` and invites the other, the invitee
+  accepts, the founder admits, both ledgers attest trust in a third identity, a
+  stranger verifies from an empty home, the issuer revokes, and the script
+  prints the witness ledger list and heads (section 11, e2e scenario, run
+  through the CLI).
 - Each step prints the command it runs and the relevant output, including the
   verification lines with their source and head (section 6, flag R).
 - Root `README.md` gains a short section on running the demo.

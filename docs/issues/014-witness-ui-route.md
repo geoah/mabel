@@ -12,8 +12,9 @@ describe. It must land before the milestone 10 Playwright run, which drives it.
 ## Scope
 
 - Ledger list from `GET /ledgers`, showing the `LedgerSummary` fields of
-  section 5: ledger, kind, head sequence, head event, event count, first seen,
-  updated, fork count and `forks_truncated`.
+  section 5: `ledger_id`, `declared_kind`, head sequence, head event, event
+  count, first seen, updated, fork count and `forks_truncated`. The column is
+  labelled "declared", because the kind is advisory (proposal 002 section 3).
 - Ledger detail from `GET /ledgers/:id` and `/ledgers/:id/events?since=` with
   paging, using the inclusive `since` semantics of ticket 012.
 - Forks view from `GET /forks`, showing each `ForkRecord`'s sequence, both
@@ -25,7 +26,10 @@ describe. It must land before the milestone 10 Playwright run, which drives it.
 - `data-testid` attributes on ledger rows, fork rows and both event panes.
 
 Out of scope: Playwright specs, which belong to milestone 10 and are
-deliberately not ticketed here.
+deliberately not ticketed here. The route is built against the witness fixtures
+in `contracts/http/`, which the ticket 012 stub serves; real witness data
+arrives when ticket 010 implements the witness service trait behind those
+routes, with no change here.
 
 ## Acceptance criteria
 

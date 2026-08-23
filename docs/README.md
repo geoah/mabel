@@ -8,7 +8,7 @@
   Iroh research).
 - [templates/](templates/README.md): one template per artifact type.
 - [issues/](issues/README.md): implementation tickets for the accepted
-  architecture proposal.
+  architecture proposals, 001 as amended by 002.
 - stories/: end-to-end user stories (phase 5).
 - [../contracts/](../contracts/README.md): the frozen HTTP and `--json`
   fixtures the node, the CLI and the UIs are all built against.

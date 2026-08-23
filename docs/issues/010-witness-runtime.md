@@ -30,6 +30,10 @@ section 5, records forks and serves reads.
   `storage_cap` per witness (sections 5 and 8).
 - `LedgerSummary` assembly, paging for `List` and `Forks`, and `witness run
   [--http <addr>] [--iroh-port <n>]`; the HTTP surface is ticket 012.
+- The witness read service trait in `crates/mabel-node/src/api/`, implemented
+  over this store so ticket 012 drops its stub: ledger list, ledger detail,
+  events with an inclusive `since`, and forks, returning the documents the
+  `contracts/http/witness-*.json` fixtures pin.
 - The witness holds no identity keys and signs nothing (section 2).
 
 ## Acceptance criteria
@@ -49,4 +53,7 @@ section 5, records forks and serves reads.
 - [ ] tests: pushes crossing the 4096-event, 4 MiB, 10000-ledger and
       `storage_cap` limits are rejected.
 - [ ] tests: `List` paging is stable in ascending ledger id order across pages.
+- [ ] tests: the witness service trait, backed by this store, returns documents
+      matching every `contracts/http/witness-*.json` fixture, so ticket 012's
+      route tests pass against the real implementation.
 - [ ] The stored event bytes are the received bytes (section 3.1).
