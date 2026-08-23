@@ -1,0 +1,10 @@
+{
+  "class": "field-table",
+  "code": "invalid_display_name",
+  "description": "A display_name with a leading space.",
+  "entry": "signed_event",
+  "file": "74-profile-display-name-edge-whitespace.json",
+  "input_hex": "0a830112208225a669a21ee244ba23bf4a1096ed5445a954ea01967150ccddee723635f1d1180122208225a669a21ee244ba23bf4a1096ed5445a954ea01967150ccddee723635f1d128e0a499ffbc313220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c97787378a01110a0f20416c69636520417368776f727468124069834ff95a8e562877fea60d7d789ee9c444913140c55f5e5da9e8bd7cbe012ba9ee81a31965c1efef9dd9dbeaa4a5f75ae384e1d07146c8884b91fb17da6d0c",
+  "reason": "ProfileUpdate.display_name is not an acceptable display name: it has leading or trailing whitespace",
+  "rule": "003 section 1 no leading or trailing whitespace"
+}

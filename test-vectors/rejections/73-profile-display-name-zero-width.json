@@ -1,0 +1,10 @@
+{
+  "class": "field-table",
+  "code": "invalid_display_name",
+  "description": "A display_name holding U+200B, a zero-width space.",
+  "entry": "signed_event",
+  "file": "73-profile-display-name-zero-width.json",
+  "input_hex": "0a840112208225a669a21ee244ba23bf4a1096ed5445a954ea01967150ccddee723635f1d1180122208225a669a21ee244ba23bf4a1096ed5445a954ea01967150ccddee723635f1d128e0a499ffbc313220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c97787378a01120a10416c696365e2808b417368776f7274681240466e7eabe8eb7133e3bf9b585197bcfcf745f1685394dc0c81a168937ba026d5e2e4443d59272f1ecb5f129f8cedac61d74a99291c59c9bd49fbc48427369b03",
+  "reason": "ProfileUpdate.display_name is not an acceptable display name: it holds a zero-width or invisible format character",
+  "rule": "003 section 1 no zero-width or invisible format characters"
+}

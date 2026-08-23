@@ -1,0 +1,10 @@
+{
+  "class": "field-table",
+  "code": "field_too_long",
+  "description": "A display_name of 65 bytes.",
+  "entry": "signed_event",
+  "file": "76-profile-display-name-over-the-cap.json",
+  "input_hex": "0ab50112208225a669a21ee244ba23bf4a1096ed5445a954ea01967150ccddee723635f1d1180122208225a669a21ee244ba23bf4a1096ed5445a954ea01967150ccddee723635f1d128e0a499ffbc313220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c97787378a01430a41616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616112402ac13f69fe7f95a0cc69959f00e158a19edfc857a9e2dbce26e799834da4d3b3c8da6282bf9c19a28e85ce00e22fd594e78ea0817de0a8f284f03df0cbeffe05",
+  "reason": "ProfileUpdate.display_name is 65 bytes, over the 64-byte cap",
+  "rule": "003 section 1 display_name is at most 64 bytes"
+}

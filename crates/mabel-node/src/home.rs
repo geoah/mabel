@@ -83,8 +83,10 @@ pub struct IdentityMeta {
     ///
     /// A ledger may hold no key of its own yet be controllable from this
     /// home: an identity-rooted ledger is signed for by a principal's key
-    /// (proposal 002 section 10). `None` means this identity holds its own
-    /// keys.
+    /// (proposal 002 section 10). Two paths write the link, `identity create
+    /// --founder` and a fetch that finds a local key in the fetched ledger's
+    /// CONTROLLER set. `None` means this identity holds its own keys, or that
+    /// the home stores the ledger read-only.
     #[serde(default)]
     pub controlled_by: Option<IdentityId>,
     /// When this node created or imported the identity.
@@ -409,7 +411,7 @@ impl NodeHome {
     /// metadata for it, or when the link points at itself.
     #[must_use]
     pub fn signing_identity(&self, identity: IdentityId) -> IdentityId {
-        if self.identity_dir(identity).join(ACTIVE_KEY_FILE).is_file() {
+        if self.keys_itself(identity) {
             return identity;
         }
         match self
@@ -420,6 +422,41 @@ impl NodeHome {
             Some(controller) if controller != identity => controller,
             _ => identity,
         }
+    }
+
+    /// Whether `identities/<id>/active.key` is there: the identity signs under
+    /// a key of its own rather than through a `controlled_by` link.
+    #[must_use]
+    pub fn keys_itself(&self, identity: IdentityId) -> bool {
+        self.identity_dir(identity).join(ACTIVE_KEY_FILE).is_file()
+    }
+
+    /// Whether this home holds a key that may sign for `identity`.
+    ///
+    /// True for a self-keyed identity, and for a keyless one whose
+    /// `controlled_by` link names a local identity that holds an active key.
+    /// A ledger this home merely stores is read-only and answers `false`.
+    #[must_use]
+    pub fn can_sign_for(&self, identity: IdentityId) -> bool {
+        self.keys_itself(self.signing_identity(identity))
+    }
+
+    /// Every identity in this home that holds an active key of its own,
+    /// sorted.
+    ///
+    /// These are the identities a `controlled_by` link may name: proposal 002
+    /// section 9 caps identity principals at one level, so a link never points
+    /// at another link.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError::Io`] if `identities/` cannot be listed.
+    pub fn keyed_identities(&self) -> Result<Vec<IdentityId>> {
+        Ok(self
+            .identities()?
+            .into_iter()
+            .filter(|identity| self.keys_itself(*identity))
+            .collect())
     }
 
     /// Reads the key committed at inception and unused in the POC.
@@ -679,6 +716,13 @@ mod tests {
             active.to_bytes(),
             "the link resolves to the controller's key"
         );
+        assert!(home.can_sign_for(organization));
+        assert!(!home.keys_itself(organization));
+        assert_eq!(
+            home.keyed_identities().unwrap(),
+            vec![founder],
+            "a link may only name an identity that keys itself"
+        );
         assert!(
             !home
                 .identity_dir(organization)
@@ -711,6 +755,29 @@ mod tests {
 
         assert_eq!(home.signing_identity(organization), keyless);
         assert!(home.identity_active_key(organization).is_err());
+        assert!(
+            !home.can_sign_for(organization),
+            "a link to a keyless identity signs nothing"
+        );
+        assert!(home.keyed_identities().unwrap().is_empty());
+    }
+
+    /// A ledger this home stores without a `controlled_by` link is read-only:
+    /// nothing here may sign for it (ticket 031).
+    #[test]
+    fn a_ledger_with_no_link_and_no_key_signs_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = home(dir.path());
+        let fetched = IdentityId::from_bytes([9u8; 32]);
+        home.create_identity(
+            fetched,
+            &IdentityMeta::now("someone else", DeclaredKind::Organization),
+        )
+        .unwrap();
+
+        assert_eq!(home.signing_identity(fetched), fetched);
+        assert!(!home.can_sign_for(fetched));
+        assert!(!home.can_sign_for(IdentityId::from_bytes([10u8; 32])));
     }
 
     #[test]

@@ -1,6 +1,6 @@
 # 023: `ProfileUpdate` payload at tag 17
 
-- Status: open
+- Status: done
 - Depends on: none
 
 ## Goal

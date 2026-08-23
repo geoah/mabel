@@ -60,7 +60,10 @@ Alice (secret key `0x11` repeated) creates a raw-rooted ledger, configures two
 witnesses, attests trust in Bob (secret key `0x22` repeated) and revokes it,
 then invites Bob as a second controller of her own ledger and admits him:
 vectors 10 and 11 are the delegation a raw root allows (proposal 002
-section 4). She also founds an organization, an identity-rooted ledger whose
+section 4). Vectors 12 to 14 are the profile of proposal 003 section 1,
+replaced whole three times: both names, then a display name alone, which
+clears the hostname, then a zero-length payload body, which clears both. She
+also founds an organization, an identity-rooted ledger whose
 inception embeds her own, invites Bob as a controller there, admits him with
 the acceptance he signed, and removes him.
 `09-embedded-raw-root-inception.json` is Bob's own inception, which vectors

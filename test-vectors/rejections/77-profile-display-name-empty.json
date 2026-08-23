@@ -1,0 +1,10 @@
+{
+  "class": "field-table",
+  "code": "default_value_encoded",
+  "description": "A display_name encoded as an explicit empty string, which clearing must express by omitting the field.",
+  "entry": "signed_event",
+  "file": "77-profile-display-name-empty.json",
+  "input_hex": "0a7412208225a669a21ee244ba23bf4a1096ed5445a954ea01967150ccddee723635f1d1180122208225a669a21ee244ba23bf4a1096ed5445a954ea01967150ccddee723635f1d128e0a499ffbc313220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c97787378a01020a001240efe416d708c9e9d2fc4634e7df0038138d4c76a4254998b7168c07e1a124436931c3563f39c7ced3da3bf0bd0d552348efaf90eb888defddafb4fbbc9b3cc80c",
+  "reason": "ProfileUpdate.display_name holds its proto3 default, which the canonical encoding omits",
+  "rule": "003 section 1 empty means unset, expressed as absence"
+}

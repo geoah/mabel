@@ -223,6 +223,29 @@ impl Attestation {
     }
 }
 
+/// The ledger's current display name and hostname (proposal 003 section 1).
+///
+/// Each `ProfileUpdate` replaces this whole record, so an absent field is a
+/// name the last update cleared rather than one it left alone. The profile is
+/// legal on every ledger, and `signing_principal` records who set it, which is
+/// not always the ledger's own identity: any current `CONTROLLER` may rename
+/// the ledger (proposal 002 section 5).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Profile {
+    /// The name the ledger publishes, unset when the last update omitted it.
+    pub display_name: Option<String>,
+    /// The hostname the ledger claims, unset when the last update omitted it.
+    /// The claim is unverified here: DNS is proposal 003 section 2 and never
+    /// gates ledger validity.
+    pub hostname: Option<String>,
+    /// Who signed the `ProfileUpdate`.
+    pub signing_principal: SigningPrincipal,
+    /// The `event_id` of that `ProfileUpdate`.
+    pub event: EventId,
+    /// Its position in the ledger.
+    pub seq: u64,
+}
+
 /// The fold of a valid event prefix (proposal 001 section 3.6).
 ///
 /// A default `LedgerState` is the state before any event: no ledger id, no
@@ -237,6 +260,7 @@ pub struct LedgerState {
     invitations: BTreeMap<EventId, Invitation>,
     witnesses: Vec<EndpointId>,
     trust: BTreeMap<EventId, Attestation>,
+    profile: Option<Profile>,
 }
 
 impl LedgerState {
@@ -310,6 +334,12 @@ impl LedgerState {
     /// The current witness set, in the order the last `WitnessConfig` listed.
     pub fn witnesses(&self) -> &[EndpointId] {
         &self.witnesses
+    }
+
+    /// The profile the last `ProfileUpdate` left, or `None` on a ledger that
+    /// has never carried one (proposal 003 section 1).
+    pub fn profile(&self) -> Option<&Profile> {
+        self.profile.as_ref()
     }
 
     /// Every attestation this ledger has issued, by attestation `event_id`,
@@ -566,6 +596,17 @@ impl LedgerState {
             Payload::MembershipInvitation(invitation) => self.check_invitation(invitation),
             Payload::MembershipAcceptance(acceptance) => self.check_acceptance(acceptance),
             Payload::MembershipRemoval(removal) => self.check_removal(identity(&removal.target)),
+            // Latest wins, whole document: the update replaces the profile
+            // rather than patching it, and an omitted field clears that name
+            // (proposal 003 section 1). There is no rule to break here. An
+            // update whose effect equals the current profile is refused by the
+            // node before signing, never by the fold, which must accept
+            // whatever a valid chain holds.
+            Payload::ProfileUpdate(profile) => Ok(Effect::Profile {
+                display_name: set_name(&profile.display_name),
+                hostname: set_name(&profile.hostname),
+                signing_principal: signer.expect("a profile update sits past seq 0"),
+            }),
         }
     }
 
@@ -829,6 +870,19 @@ impl LedgerState {
                     self.principals.remove(&target);
                 }
             }
+            Effect::Profile {
+                display_name,
+                hostname,
+                signing_principal,
+            } => {
+                self.profile = Some(Profile {
+                    display_name,
+                    hostname,
+                    signing_principal,
+                    event: id,
+                    seq,
+                });
+            }
         }
         self.head = Some(Head {
             seq,
@@ -873,6 +927,11 @@ enum Effect {
         target: IdentityId,
         invitation: Option<EventId>,
         was_principal: bool,
+    },
+    Profile {
+        display_name: Option<String>,
+        hostname: Option<String>,
+        signing_principal: SigningPrincipal,
     },
 }
 
@@ -1143,10 +1202,18 @@ const fn payload_name(payload: &Payload) -> &'static str {
         Payload::MembershipInvitation(_) => "MembershipInvitation",
         Payload::MembershipAcceptance(_) => "MembershipAcceptance",
         Payload::MembershipRemoval(_) => "MembershipRemoval",
+        Payload::ProfileUpdate(_) => "ProfileUpdate",
     }
 }
 
 /// Reads a 32-byte identity id the field table already length-checked.
+/// A profile name as the fold reports it: the canonical encoding omits an
+/// unset string, so a decoded empty string is an absent field, which means
+/// the update cleared that name (proposal 003 section 1).
+fn set_name(value: &str) -> Option<String> {
+    (!value.is_empty()).then(|| value.to_owned())
+}
+
 fn identity(bytes: &[u8]) -> IdentityId {
     IdentityId::from_slice(bytes).expect("an identity id is 32 bytes")
 }
@@ -1173,7 +1240,8 @@ mod tests {
     use crate::sign::{
         BuiltEvent, DetachedAcceptance, Position, Root, build_acceptance, build_inception,
         build_membership_acceptance, build_membership_invitation, build_membership_removal,
-        build_trust_attestation, build_trust_revocation, build_witness_config,
+        build_profile_update, build_trust_attestation, build_trust_revocation,
+        build_witness_config,
     };
     use crate::{MAX_TIMESTAMP_MS, NONCE_BYTES};
     use iroh_base::SecretKey;
@@ -1331,6 +1399,17 @@ mod tests {
 
     fn attest(chain: &Chain, signer: &SecretKey, subject: IdentityId) -> BuiltEvent {
         build_trust_attestation(signer, &chain.at(), subject, chain.now()).expect("builds")
+    }
+
+    /// Replaces the chain's profile, signed by `signer`.
+    fn set_profile(
+        chain: &Chain,
+        signer: &SecretKey,
+        display_name: Option<&str>,
+        hostname: Option<&str>,
+    ) -> BuiltEvent {
+        build_profile_update(signer, &chain.at(), display_name, hostname, chain.now())
+            .expect("builds")
     }
 
     fn subject(seed: u8) -> IdentityId {
@@ -1891,6 +1970,140 @@ mod tests {
             }
         );
         assert!(state.trusts(subject(9)));
+    }
+
+    /// Latest wins, whole document: each update replaces both names, and an
+    /// omitted field clears that name (proposal 003 section 1).
+    #[test]
+    fn a_profile_update_replaces_the_whole_profile() {
+        let root = alice();
+        let root_id: IdentityId = root.event_id.into();
+        let mut chain = Chain::start(&root);
+        assert_eq!(chain.state().profile(), None, "no update, no profile");
+
+        let first = chain.push(set_profile(
+            &chain,
+            &secret(1),
+            Some("Alice Ashworth"),
+            Some("alice.example"),
+        ));
+        assert_eq!(
+            chain.state().profile(),
+            Some(&Profile {
+                display_name: Some("Alice Ashworth".to_owned()),
+                hostname: Some("alice.example".to_owned()),
+                signing_principal: SigningPrincipal {
+                    identity: root_id,
+                    key: secret(1).public(),
+                },
+                event: first,
+                seq: 1,
+            })
+        );
+
+        // A second update carrying only a hostname drops the display name: the
+        // payload is the whole document, not a patch.
+        let second = chain.push(set_profile(
+            &chain,
+            &secret(1),
+            None,
+            Some("ashworth.example"),
+        ));
+        let profile = chain.state().profile().expect("recorded").clone();
+        assert_eq!(profile.display_name, None);
+        assert_eq!(profile.hostname.as_deref(), Some("ashworth.example"));
+        assert_eq!(profile.event, second);
+        assert_eq!(profile.seq, 2);
+
+        // A zero-length payload clears both and still records who cleared them.
+        let third = chain.push(set_profile(&chain, &secret(1), None, None));
+        let profile = chain.state().profile().expect("recorded").clone();
+        assert_eq!(profile.display_name, None);
+        assert_eq!(profile.hostname, None);
+        assert_eq!(profile.event, third);
+        assert_eq!(profile.seq, 3);
+        assert_eq!(profile.signing_principal.identity, root_id);
+    }
+
+    /// A no-op update is a valid event: refusing one is a node-side guard, and
+    /// the fold takes whatever a valid chain holds (proposal 003 section 1).
+    #[test]
+    fn a_profile_update_repeating_the_current_profile_is_accepted() {
+        let root = alice();
+        let mut chain = Chain::start(&root);
+        chain.push(set_profile(&chain, &secret(1), Some("Alice"), None));
+        let repeat = chain.push(set_profile(&chain, &secret(1), Some("Alice"), None));
+
+        let profile = chain.state().profile().expect("recorded").clone();
+        assert_eq!(profile.display_name.as_deref(), Some("Alice"));
+        assert_eq!(profile.event, repeat, "the later event owns the profile");
+        assert_eq!(profile.seq, 2);
+    }
+
+    /// Any current `CONTROLLER` may rename the ledger, so the profile records
+    /// which principal did (proposal 003 section 1).
+    #[test]
+    fn a_delegate_controller_may_set_the_profile_of_an_identity_rooted_ledger() {
+        let founder = alice();
+        let founder_id: IdentityId = founder.event_id.into();
+        let delegate = bob();
+        let delegate_id: IdentityId = delegate.event_id.into();
+        let organization = founded_by(&secret(1), &founder);
+        let mut chain = Chain::start(&organization);
+
+        let invitation = chain.push(invite(
+            &chain,
+            &secret(1),
+            &delegate,
+            &secret(7),
+            Role::Controller,
+        ));
+        chain.push(admit(
+            &chain,
+            &secret(1),
+            &secret(7),
+            delegate_id,
+            invitation,
+        ));
+        let event = chain.push(set_profile(
+            &chain,
+            &secret(7),
+            Some("Ashworth Ltd"),
+            Some("ashworth.example"),
+        ));
+
+        let profile = chain.state().profile().expect("recorded").clone();
+        assert_eq!(profile.display_name.as_deref(), Some("Ashworth Ltd"));
+        assert_eq!(profile.event, event);
+        assert_eq!(
+            profile.signing_principal,
+            SigningPrincipal {
+                identity: delegate_id,
+                key: secret(7).public(),
+            },
+            "the delegate signed, not the founder"
+        );
+        assert_ne!(profile.signing_principal.identity, founder_id);
+    }
+
+    /// The profile is legal on a raw-rooted ledger too, and a non-controller
+    /// cannot set one.
+    #[test]
+    fn a_profile_update_from_an_unauthorized_key_is_rejected() {
+        let root = alice();
+        let mut chain = Chain::start(&root);
+        chain
+            .events
+            .push(set_profile(&chain, &secret(7), Some("Mallory"), None).signed_event);
+        assert_eq!(
+            chain.violation(),
+            Violation {
+                seq: 1,
+                reason: Reason::UnauthorizedSigner {
+                    key: secret(7).public(),
+                },
+            }
+        );
     }
 
     #[test]

@@ -11,7 +11,7 @@
 
 use std::collections::BTreeMap;
 
-use mabel_core::fold::{InvitationStatus, LedgerRoot, LedgerState, Violation};
+use mabel_core::fold::{InvitationStatus, LedgerRoot, LedgerState, Reason, Violation};
 use mabel_core::{EventId, LedgerId, event_id};
 use mabel_proto::prost::Message;
 use mabel_proto::v0::{EventBody, Role, SignedEvent};
@@ -125,6 +125,25 @@ impl LoadedLedger {
     #[must_use]
     pub fn valid_to_seq(&self) -> u64 {
         self.state.head().map_or(0, |head| head.seq)
+    }
+
+    /// The envelope for an event this fold refused to apply.
+    ///
+    /// A duplicate attestation carries the position of the attestation still
+    /// standing, which the fold knows by event id alone, so both surfaces
+    /// answer the one sentence `contracts/http/wallet-post-trust.json` and
+    /// `contracts/cli/errors.json` pin. Every other reason carries the
+    /// position the refused event would have taken.
+    #[must_use]
+    pub fn rejection(&self, reason: &Reason, at_seq: u64) -> ServiceError {
+        if let Reason::DuplicateAttestation { attestation, .. } = reason {
+            return crate::wallet::error::fold_error_at(
+                reason,
+                self.seq_of.get(attestation).copied(),
+            )
+            .with_detail("ledger_id", self.ledger.to_string());
+        }
+        crate::wallet::error::fold_error(reason).with_detail("at_seq", at_seq)
     }
 
     /// The sentence a partial chain reports (proposal 001 section 3.6).

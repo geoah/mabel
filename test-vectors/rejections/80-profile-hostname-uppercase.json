@@ -1,0 +1,10 @@
+{
+  "class": "field-table",
+  "code": "invalid_hostname",
+  "description": "A hostname spelled Alice.example.",
+  "entry": "signed_event",
+  "file": "80-profile-hostname-uppercase.json",
+  "input_hex": "0a810112208225a669a21ee244ba23bf4a1096ed5445a954ea01967150ccddee723635f1d1180122208225a669a21ee244ba23bf4a1096ed5445a954ea01967150ccddee723635f1d128e0a499ffbc313220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c97787378a010f120d416c6963652e6578616d706c651240727675874278a97030dcca6ea13082ce72951122bfbde557de8a11b2ab7cb06e5e2291c45e60368525744643a455aa6b87d310a2feac3a5fae6a267b99d9da0d",
+  "reason": "ProfileUpdate.hostname is not a valid hostname: it holds an uppercase letter",
+  "rule": "003 section 2 hostname holds no uppercase"
+}

@@ -59,8 +59,38 @@ pub fn storage_error(error: StorageError) -> ServiceError {
 
 /// A rejection from the fold, which is the authority on why an event is not
 /// allowed.
+///
+/// See [`fold_error_at`] for the one reason both surfaces respell.
 #[must_use]
 pub fn fold_error(reason: &Reason) -> ServiceError {
+    fold_error_at(reason, None)
+}
+
+/// [`fold_error`] for a caller that folded the ledger and knows where the
+/// attestation a duplicate collides with sits.
+///
+/// The fold names the standing attestation by event id and not by position, so
+/// a duplicate is respelled here: reason `duplicate_unrevoked_attestation` and
+/// the message `contracts/cli/errors.json` and
+/// `contracts/http/wallet-post-trust.json` both pin. `standing_seq` is `None`
+/// for a caller holding no fold of the ledger, which reads as seq 0, the same
+/// fallback `mabel-cli` uses.
+#[must_use]
+pub fn fold_error_at(reason: &Reason, standing_seq: Option<u64>) -> ServiceError {
+    if let Reason::DuplicateAttestation {
+        subject,
+        attestation,
+    } = reason
+    {
+        let at = standing_seq.unwrap_or_default();
+        return ServiceError::policy(
+            "duplicate_unrevoked_attestation",
+            format!("an unrevoked attestation for {subject} already exists at seq {at}"),
+        )
+        .with_detail("subject", subject.to_string())
+        .with_detail("attestation_event", attestation.to_string())
+        .with_detail("at_seq", at);
+    }
     let message = reason.to_string();
     match reason {
         Reason::Wire(_) => ServiceError::schema(reason.code(), message),

@@ -1,0 +1,10 @@
+{
+  "class": "field-table",
+  "code": "invalid_hostname",
+  "description": "A hostname of one label, localhost.",
+  "entry": "signed_event",
+  "file": "82-profile-hostname-no-dot.json",
+  "input_hex": "0a7d12208225a669a21ee244ba23bf4a1096ed5445a954ea01967150ccddee723635f1d1180122208225a669a21ee244ba23bf4a1096ed5445a954ea01967150ccddee723635f1d128e0a499ffbc313220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c97787378a010b12096c6f63616c686f7374124077678691abc1216e48f15990b6101916228a2b8d2357a153a51bcb0671390974d5cf631d1f076f9de892ded3da0f84bbaae224d780ad0ea44b7076a4674fb106",
+  "reason": "ProfileUpdate.hostname is not a valid hostname: it holds no dot",
+  "rule": "003 section 2 hostname holds at least one dot"
+}

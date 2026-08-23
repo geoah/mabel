@@ -1,0 +1,10 @@
+{
+  "class": "field-table",
+  "code": "invalid_display_name",
+  "description": "A display_name holding U+0085, the next-line control.",
+  "entry": "signed_event",
+  "file": "71-profile-display-name-c1-control.json",
+  "input_hex": "0a830112208225a669a21ee244ba23bf4a1096ed5445a954ea01967150ccddee723635f1d1180122208225a669a21ee244ba23bf4a1096ed5445a954ea01967150ccddee723635f1d128e0a499ffbc313220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c97787378a01110a0f416c696365c285417368776f7274681240f650a71e65d5a0ffe816574b1ac529161fa16c23f6743e587b9c1c8c55cc486372987955968de415d6c0bff5d55b47bafd2c7b2e5e0266ed35d6796a406b0102",
+  "reason": "ProfileUpdate.display_name is not an acceptable display name: it holds a C1 control character",
+  "rule": "003 section 1 no C1 controls"
+}

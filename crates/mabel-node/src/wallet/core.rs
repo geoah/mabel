@@ -782,7 +782,7 @@ impl WalletCore {
         loaded
             .state
             .apply(&built.signed_event)
-            .map_err(|reason| fold_error(&reason).with_detail("at_seq", at.seq))?;
+            .map_err(|reason| loaded.rejection(&reason, at.seq))?;
         self.store(loaded.ledger)
             .append(&[NewEvent {
                 seq: at.seq,
@@ -844,6 +844,96 @@ impl WalletCore {
             )
             .with_detail("identity", identity.to_string())
         })
+    }
+
+    /// Records whether a stored ledger is one this home may append to, and
+    /// returns the local identity whose key signs for it.
+    ///
+    /// A ledger whose folded CONTROLLER set holds a key of this home is
+    /// written as `identities/<ledger>/meta.json` with `controlled_by` naming
+    /// the local identity that key belongs to, and no key files of its own:
+    /// the signing key stays that identity's (proposal 002 section 10). A
+    /// ledger no local key controls keeps no link and stays read-only, and a
+    /// link this home used to hold is dropped as soon as the fold stops
+    /// naming that identity a controller.
+    ///
+    /// An identity that keys itself here is left alone: its metadata is the
+    /// home's own record of it, not a link.
+    ///
+    /// # Errors
+    ///
+    /// Returns the storage errors of listing `identities/` and writing the
+    /// metadata file.
+    pub fn link_local_control(
+        &self,
+        loaded: &LoadedLedger,
+    ) -> Result<Option<IdentityId>, ServiceError> {
+        let ledger = loaded.ledger;
+        if self.home.keys_itself(ledger) {
+            return Ok(None);
+        }
+        let controller = self.local_controller(ledger, &loaded.state)?;
+        let held = self.home.identity_meta(ledger).ok();
+        match (controller, held) {
+            (Some(controller), held) => {
+                let meta = IdentityMeta {
+                    alias: held
+                        .as_ref()
+                        .map_or_else(|| ledger.to_string(), |meta| meta.alias.clone()),
+                    declared_kind: stored_kind(loaded.declared_kind()),
+                    controlled_by: Some(controller),
+                    created_at_ms: held.as_ref().map_or_else(now_ms, |meta| meta.created_at_ms),
+                };
+                self.home
+                    .write_identity_meta(ledger, &meta)
+                    .map_err(storage_error)?;
+                Ok(Some(controller))
+            }
+            // The link outlived the controller role it stood for, so the
+            // ledger is read-only again from here on.
+            (None, Some(held)) if held.controlled_by.is_some() => {
+                self.home
+                    .write_identity_meta(
+                        ledger,
+                        &IdentityMeta {
+                            controlled_by: None,
+                            ..held
+                        },
+                    )
+                    .map_err(storage_error)?;
+                Ok(None)
+            }
+            (None, _) => Ok(None),
+        }
+    }
+
+    /// The local identity whose own active key the fold names a CONTROLLER of
+    /// `ledger`, if this home holds one.
+    ///
+    /// Only an identity that keys itself is a candidate: a link may not point
+    /// at another link (proposal 002 section 9). Ties go to the lowest id, so
+    /// two matching identities pick the same one on every fetch.
+    fn local_controller(
+        &self,
+        ledger: LedgerId,
+        state: &LedgerState,
+    ) -> Result<Option<IdentityId>, ServiceError> {
+        let controllers = state.controller_keys();
+        if controllers.is_empty() {
+            return Ok(None);
+        }
+        for identity in self.home.keyed_identities().map_err(storage_error)? {
+            if identity == ledger {
+                continue;
+            }
+            let Ok(secret) = self.home.identity_active_key(identity) else {
+                continue;
+            };
+            if controllers.contains(&secret.public()) {
+                return Ok(Some(identity));
+            }
+        }
+        Ok(None)
     }
 
     /// Whether this home holds the key of every controller of `state`, so no

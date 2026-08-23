@@ -1,0 +1,10 @@
+{
+  "class": "field-table",
+  "code": "invalid_display_name",
+  "description": "A display_name holding a tab.",
+  "entry": "signed_event",
+  "file": "70-profile-display-name-c0-control.json",
+  "input_hex": "0a820112208225a669a21ee244ba23bf4a1096ed5445a954ea01967150ccddee723635f1d1180122208225a669a21ee244ba23bf4a1096ed5445a954ea01967150ccddee723635f1d128e0a499ffbc313220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c97787378a01100a0e416c69636509417368776f7274681240f5470fe24a77d6f973d31909a804eaaa1389615022711f41be72006de4b033fde10c3f0449af7b1addaff905e061e3e2f15263eab928770a1e04206a3435cc0b",
+  "reason": "ProfileUpdate.display_name is not an acceptable display name: it holds a C0 control character",
+  "rule": "003 section 1 no C0 controls"
+}

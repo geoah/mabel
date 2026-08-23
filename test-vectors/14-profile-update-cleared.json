@@ -1,0 +1,33 @@
+{
+  "body": {
+    "author_key_hex": "d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c9778737",
+    "ledger_hex": "8225a669a21ee244ba23bf4a1096ed5445a954ea01967150ccddee723635f1d1",
+    "payload": {
+      "profile_update": {
+        "display_name": null,
+        "hostname": null
+      }
+    },
+    "prev_hex": "1ecd781be87d175c4b991c982cbc2185d01370d4891e87d0456811acfe81a261",
+    "seq": 8,
+    "timestamp_ms": 1700000720000,
+    "version": 0
+  },
+  "body_hex": "12208225a669a21ee244ba23bf4a1096ed5445a954ea01967150ccddee723635f1d1180822201ecd781be87d175c4b991c982cbc2185d01370d4891e87d0456811acfe81a2612880c9c1ffbc313220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c97787378a0100",
+  "description": "Alice clears both names: a zero-length payload body under a present oneof branch.",
+  "event_id": "e4sdgu5v75ttxz3n5ieprgcclqm3fkdoxpkrin7o2x2rsh66t2gq",
+  "event_id_hex": "27243353b5ff673be76dea08f898425c19b2a86ebbd51437eed5f5191fde9e8d",
+  "file": "14-profile-update-cleared.json",
+  "inputs": {
+    "display_name": null,
+    "hostname": null,
+    "ledger": "qis2m2ncd3rejordx5fbbfxnkrc2svhkaglhcugm3xxhenrv6hiq",
+    "now_ms": 1700000720000,
+    "prev": "d3gxqg7ipulvys4zdsmczpbbqxibg4gurepipucfnai2z7ubujqq",
+    "prev_timestamp_ms": 1700000660000,
+    "secret_key_hex": "1111111111111111111111111111111111111111111111111111111111111111",
+    "seq": 8
+  },
+  "signature_hex": "e0bbd05cccc1bfcf32f50c87bb923233c997878a755d581816038658ceff562782466d8ba1adec22c1c1e56ee1fc15dd35a939bdf11a1b8b4c0b0705f19ddd05",
+  "signed_event_hex": "0a7212208225a669a21ee244ba23bf4a1096ed5445a954ea01967150ccddee723635f1d1180822201ecd781be87d175c4b991c982cbc2185d01370d4891e87d0456811acfe81a2612880c9c1ffbc313220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c97787378a01001240e0bbd05cccc1bfcf32f50c87bb923233c997878a755d581816038658ceff562782466d8ba1adec22c1c1e56ee1fc15dd35a939bdf11a1b8b4c0b0705f19ddd05"
+}

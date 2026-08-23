@@ -1,0 +1,33 @@
+{
+  "body": {
+    "author_key_hex": "d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c9778737",
+    "ledger_hex": "8225a669a21ee244ba23bf4a1096ed5445a954ea01967150ccddee723635f1d1",
+    "payload": {
+      "profile_update": {
+        "display_name": "Alice Ashworth",
+        "hostname": null
+      }
+    },
+    "prev_hex": "bc2566bd61d006a84875e9ccfa9753437e0640b04d9b15fcbf9edcb4fa180e9e",
+    "seq": 7,
+    "timestamp_ms": 1700000660000,
+    "version": 0
+  },
+  "body_hex": "12208225a669a21ee244ba23bf4a1096ed5445a954ea01967150ccddee723635f1d118072220bc2566bd61d006a84875e9ccfa9753437e0640b04d9b15fcbf9edcb4fa180e9e28a0f4bdffbc313220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c97787378a01100a0e416c69636520417368776f727468",
+  "description": "Alice replaces the profile with a display name alone, which clears the hostname: the payload is the whole document.",
+  "event_id": "d3gxqg7ipulvys4zdsmczpbbqxibg4gurepipucfnai2z7ubujqq",
+  "event_id_hex": "1ecd781be87d175c4b991c982cbc2185d01370d4891e87d0456811acfe81a261",
+  "file": "13-profile-update-name-only.json",
+  "inputs": {
+    "display_name": "Alice Ashworth",
+    "hostname": null,
+    "ledger": "qis2m2ncd3rejordx5fbbfxnkrc2svhkaglhcugm3xxhenrv6hiq",
+    "now_ms": 1700000660000,
+    "prev": "xqswnplb2adkqsdv5hgpvf2tin7amqfqjwnrl7f7t3olj6qyb2pa",
+    "prev_timestamp_ms": 1700000600000,
+    "secret_key_hex": "1111111111111111111111111111111111111111111111111111111111111111",
+    "seq": 7
+  },
+  "signature_hex": "75ad27f83aa92cb38da19ab2e3513eb9b6e2ead10187feadd24ca1144e62dd6126a1185529324624abe161f050ee623f2a97dd804896a05a04b26eef03e4f604",
+  "signed_event_hex": "0a820112208225a669a21ee244ba23bf4a1096ed5445a954ea01967150ccddee723635f1d118072220bc2566bd61d006a84875e9ccfa9753437e0640b04d9b15fcbf9edcb4fa180e9e28a0f4bdffbc313220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c97787378a01100a0e416c69636520417368776f727468124075ad27f83aa92cb38da19ab2e3513eb9b6e2ead10187feadd24ca1144e62dd6126a1185529324624abe161f050ee623f2a97dd804896a05a04b26eef03e4f604"
+}

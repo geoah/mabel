@@ -169,12 +169,11 @@ render.
   --env MABEL_WAIT_FOR_TICKET=/shared/witness mabel:dev verify trust --issuer
   "$org_id" --subject "$bob_id" --from "$witness_id"` exits 0 with `trusted:
   true` and the same signing principal.
-- Known limit, asserted so it is not mistaken for a bug: bob is a controller on
-  the chain, but his home cannot append to the shared ledger. After
-  `dc exec -T bob sh -c 'mabel sync fetch '"$org_id"' --from '"$witness_id"'
-  --peer "$(cat /shared/witness.ticket)"'`, `dc exec -T bob mabel trust add
-  --issuer "$org_id" --subject "$alice_id"` exits 2 with `details.reason ==
-  "unknown_identity"`. Nothing writes the local `controlled_by` link except
-  `identity create --founder`. Ticket 031 closes this, and its first acceptance
-  criterion is this story continuing on bob's home; the assertion flips to a
-  successful append when it lands.
+- Bob acts from his own home (ticket 031): `dc exec -T bob sh -c 'mabel sync
+  fetch '"$org_id"' --from '"$witness_id"' --peer "$(cat
+  /shared/witness.ticket)"' --json` reports `controlled_by == "<bob_id>"`;
+  then `dc exec -T bob sh -c 'mabel trust add --issuer '"$org_id"' --subject
+  '"$alice_id"' --peer "$(cat /shared/witness.ticket)"'` exits 0 and `dc exec
+  -T bob sh -c 'mabel sync push --identity '"$org_id"' --peer "$(cat
+  /shared/witness.ticket)"'` is accepted; a fresh verifier of that
+  attestation names bob as the signing principal.

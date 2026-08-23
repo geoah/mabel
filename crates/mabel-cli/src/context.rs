@@ -74,22 +74,38 @@ impl Context {
         )
     }
 
-    /// Resolves a name that must be an identity this home holds.
+    /// Resolves a name that must be an identity this home can act as.
+    ///
+    /// Three kinds of ledger pass: one that holds its own keys, one founded
+    /// here, and one fetched whose CONTROLLER set named a local key, which
+    /// `sync fetch` linked with `controlled_by` (ticket 031). A ledger stored
+    /// with no such link is read-only and is refused by name.
     ///
     /// # Errors
     ///
-    /// Returns code 2 with reason `unknown_identity` for an id this home does
-    /// not hold, and the errors of [`Context::resolve`].
+    /// Returns code 2 with reason `not_locally_controlled` for a ledger this
+    /// home stores but holds no controlling key for, code 2 with reason
+    /// `unknown_identity` for an id this home does not hold at all, and the
+    /// errors of [`Context::resolve`].
     pub fn resolve_local(&self, name: &str) -> Result<IdentityId> {
         let identity = self.resolve(name)?;
-        if self.home.identity_dir(identity).is_dir() {
+        if self.home.can_sign_for(identity) {
             return Ok(identity);
+        }
+        if self.home.identity_dir(identity).is_dir() || self.holds(identity) {
+            return Err(not_locally_controlled(identity));
         }
         Err(CliError::usage(
             "unknown_identity",
             format!("identity {identity} is not in this home"),
         )
         .with_detail("identity", identity.to_string()))
+    }
+
+    /// Whether this home stores any event of `ledger`.
+    #[must_use]
+    pub fn holds(&self, ledger: LedgerId) -> bool {
+        self.store(ledger).head().is_ok_and(|head| head.is_some())
     }
 
     /// The alias recorded for an identity, or its id when the home records
@@ -154,4 +170,23 @@ impl Context {
     pub fn source(&self) -> Result<mabel_node::api::documents::Id> {
         Ok(ids::key(&self.endpoint_id()?))
     }
+}
+
+/// The refusal a ledger this home stores but cannot sign for answers.
+///
+/// A fetch stores any chain that verifies; only a chain naming a local key a
+/// controller is linked to a signing identity (ticket 031). Everything else is
+/// a read-only copy, and saying so names the ledger rather than pretending the
+/// home never heard of it.
+#[must_use]
+pub fn not_locally_controlled(ledger: LedgerId) -> CliError {
+    CliError::usage(
+        "not_locally_controlled",
+        format!(
+            "ledger {ledger} is stored here read-only: no identity in this home \
+             is one of its controllers"
+        ),
+    )
+    .with_detail("ledger_id", ledger.to_string())
+    .with_detail("identity", ledger.to_string())
 }

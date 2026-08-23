@@ -161,6 +161,10 @@ pub struct FetchedLedger {
     pub head_event: Id,
     /// When the source answered.
     pub fetched_at_ms: u64,
+    /// The local identity whose key signs for this ledger, when the fetched
+    /// chain names one of this home's keys a controller. `null` means the
+    /// ledger is stored read-only (ticket 031).
+    pub controlled_by: Option<Id>,
 }
 
 /// `mabel node id --json`.

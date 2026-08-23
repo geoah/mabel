@@ -1,0 +1,10 @@
+{
+  "class": "field-table",
+  "code": "invalid_hostname",
+  "description": "A hostname with two consecutive dots.",
+  "entry": "signed_event",
+  "file": "83-profile-hostname-empty-label.json",
+  "input_hex": "0a820112208225a669a21ee244ba23bf4a1096ed5445a954ea01967150ccddee723635f1d1180122208225a669a21ee244ba23bf4a1096ed5445a954ea01967150ccddee723635f1d128e0a499ffbc313220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c97787378a0110120e616c6963652e2e6578616d706c6512404450a89b7412531f8653c66ab87da7189e1af47056499cf3669c240f40efb7b7d8dd3ce1a9a278a302490fc74850cd4a07e1acfd5c37f0b0e05b567ddee26606",
+  "reason": "ProfileUpdate.hostname is not a valid hostname: it holds an empty label",
+  "rule": "003 section 2 every label is 1 to 63 bytes"
+}

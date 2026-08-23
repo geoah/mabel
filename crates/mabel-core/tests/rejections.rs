@@ -24,10 +24,11 @@ use iroh_base::{PublicKey, SecretKey};
 use mabel_core::fold::{Reason, Violation};
 use mabel_core::validate::{self, WireError};
 use mabel_core::{
-    BuiltEvent, ID_BYTES, IdentityId, LedgerId, MAX_ACCEPTANCE_BYTES, MAX_EMBEDDED_INCEPTION_BYTES,
-    MAX_EVENT_BYTES, MAX_TIMESTAMP_MS, MAX_WITNESSES, NONCE_BYTES, Position, Root, SIG_BYTES,
-    build_acceptance, build_inception, build_membership_acceptance, build_membership_invitation,
-    build_membership_removal, build_trust_attestation, build_witness_config, fold,
+    BuiltEvent, ID_BYTES, IdentityId, LedgerId, MAX_ACCEPTANCE_BYTES, MAX_DISPLAY_NAME_BYTES,
+    MAX_EMBEDDED_INCEPTION_BYTES, MAX_EVENT_BYTES, MAX_HOSTNAME_BYTES, MAX_TIMESTAMP_MS,
+    MAX_WITNESSES, NONCE_BYTES, Position, Root, SIG_BYTES, build_acceptance, build_inception,
+    build_membership_acceptance, build_membership_invitation, build_membership_removal,
+    build_trust_attestation, build_witness_config, fold,
     proto::{DeclaredKind, Role},
     reserve_commit, sign_input,
 };
@@ -44,6 +45,7 @@ const TRUST_REVOCATION: u32 = 13;
 const MEMBERSHIP_INVITATION: u32 = 14;
 const MEMBERSHIP_ACCEPTANCE: u32 = 15;
 const MEMBERSHIP_REMOVAL: u32 = 16;
+const PROFILE_UPDATE: u32 = 17;
 
 /// The `Inception.root` tags.
 const RAW_ROOT: u32 = 10;
@@ -589,19 +591,19 @@ fn rejections() -> Vec<Rejection> {
 
     let mut parts = attestation_parts();
     drop_part(&mut parts, TRUST_ATTESTATION);
-    parts.push(Part::L(17, encode(&[Part::L(1, s.bob_id.to_vec())])));
+    parts.push(Part::L(18, encode(&[Part::L(1, s.bob_id.to_vec())])));
     push(
         "unknown-oneof-variant",
         "wire-format",
         "3.1 unrecognised oneof variants",
-        "An EventBody whose payload uses tag 17, which v0 does not define.",
+        "An EventBody whose payload uses tag 18, which v0 does not define.",
         wire(
             Entry::SignedEvent,
             sign(&encode(&parts), &s.alice),
             WireError::UnknownOneofVariant {
                 message: "EventBody",
                 oneof: "payload",
-                number: 17,
+                number: 18,
             },
         ),
     );
@@ -2013,7 +2015,281 @@ fn rejections() -> Vec<Rejection> {
         },
     );
 
+    // ProfileUpdate: the codepoint policy of proposal 003 section 1 and the
+    // hostname syntax of section 2, one vector per rule.
+    let profile = |parts: &[Part]| {
+        sign(
+            &encode(&append_body(
+                s.alice_id,
+                1,
+                s.alice_inception.event_id.as_bytes(),
+                &s.alice.public(),
+                PROFILE_UPDATE,
+                parts,
+            )),
+            &s.alice,
+        )
+    };
+    let named = |bytes: Vec<u8>| vec![Part::L(1, bytes)];
+    let hosted = |text: String| vec![Part::L(2, text.into_bytes())];
+    let bad_name = |reason: &'static str| WireError::InvalidDisplayName {
+        message: "ProfileUpdate",
+        field: "display_name",
+        reason,
+    };
+    let bad_host = |reason: &'static str| WireError::InvalidHostname {
+        message: "ProfileUpdate",
+        field: "hostname",
+        reason,
+    };
+
+    push(
+        "profile-display-name-invalid-utf8",
+        "field-table",
+        "003 section 1 display_name is well-formed UTF-8",
+        "A display_name holding the byte 0xff, which starts no UTF-8 sequence.",
+        wire(
+            Entry::SignedEvent,
+            profile(&named(b"Alice\xff".to_vec())),
+            WireError::InvalidUtf8 {
+                message: "ProfileUpdate",
+                field: "display_name",
+            },
+        ),
+    );
+
+    push(
+        "profile-display-name-c0-control",
+        "field-table",
+        "003 section 1 no C0 controls",
+        "A display_name holding a tab.",
+        wire(
+            Entry::SignedEvent,
+            profile(&named("Alice\tAshworth".into())),
+            bad_name("it holds a C0 control character"),
+        ),
+    );
+
+    push(
+        "profile-display-name-c1-control",
+        "field-table",
+        "003 section 1 no C1 controls",
+        "A display_name holding U+0085, the next-line control.",
+        wire(
+            Entry::SignedEvent,
+            profile(&named("Alice\u{85}Ashworth".into())),
+            bad_name("it holds a C1 control character"),
+        ),
+    );
+
+    push(
+        "profile-display-name-bidi-control",
+        "field-table",
+        "003 section 1 no bidi controls U+202A..U+202E and U+2066..U+2069",
+        "A display_name holding U+202E, which reverses the rendered text.",
+        wire(
+            Entry::SignedEvent,
+            profile(&named("Alice\u{202e}Ashworth".into())),
+            bad_name("it holds a bidi control character"),
+        ),
+    );
+
+    push(
+        "profile-display-name-zero-width",
+        "field-table",
+        "003 section 1 no zero-width or invisible format characters",
+        "A display_name holding U+200B, a zero-width space.",
+        wire(
+            Entry::SignedEvent,
+            profile(&named("Alice\u{200b}Ashworth".into())),
+            bad_name("it holds a zero-width or invisible format character"),
+        ),
+    );
+
+    push(
+        "profile-display-name-edge-whitespace",
+        "field-table",
+        "003 section 1 no leading or trailing whitespace",
+        "A display_name with a leading space.",
+        wire(
+            Entry::SignedEvent,
+            profile(&named(" Alice Ashworth".into())),
+            bad_name("it has leading or trailing whitespace"),
+        ),
+    );
+
+    push(
+        "profile-display-name-is-an-identity-id",
+        "field-table",
+        "003 section 1 a display_name never parses as an identity id",
+        "A display_name holding Bob's identity id in base32.",
+        wire(
+            Entry::SignedEvent,
+            profile(&named(s.bob_id.to_string().into())),
+            bad_name("it parses as an identity id"),
+        ),
+    );
+
+    push(
+        "profile-display-name-over-the-cap",
+        "field-table",
+        "003 section 1 display_name is at most 64 bytes",
+        "A display_name of 65 bytes.",
+        wire(
+            Entry::SignedEvent,
+            profile(&named(vec![b'a'; MAX_DISPLAY_NAME_BYTES + 1])),
+            WireError::FieldTooLong {
+                message: "ProfileUpdate",
+                field: "display_name",
+                len: MAX_DISPLAY_NAME_BYTES + 1,
+                cap: MAX_DISPLAY_NAME_BYTES,
+            },
+        ),
+    );
+
+    push(
+        "profile-display-name-empty",
+        "field-table",
+        "003 section 1 empty means unset, expressed as absence",
+        "A display_name encoded as an explicit empty string, which clearing \
+         must express by omitting the field.",
+        wire(
+            Entry::SignedEvent,
+            profile(&named(Vec::new())),
+            WireError::DefaultValueEncoded {
+                message: "ProfileUpdate",
+                field: "display_name",
+            },
+        ),
+    );
+
+    push(
+        "profile-hostname-over-the-cap",
+        "field-table",
+        "003 section 2 hostname is at most 246 bytes",
+        "A hostname of 247 bytes.",
+        wire(
+            Entry::SignedEvent,
+            profile(&hosted(long_hostname(MAX_HOSTNAME_BYTES + 1))),
+            WireError::FieldTooLong {
+                message: "ProfileUpdate",
+                field: "hostname",
+                len: MAX_HOSTNAME_BYTES + 1,
+                cap: MAX_HOSTNAME_BYTES,
+            },
+        ),
+    );
+
+    push(
+        "profile-hostname-non-ascii",
+        "field-table",
+        "003 section 2 hostname is ASCII",
+        "A hostname holding a-umlaut, which must be punycoded before it is claimed.",
+        wire(
+            Entry::SignedEvent,
+            profile(&hosted("älice.example".into())),
+            bad_host("it holds a character outside ASCII"),
+        ),
+    );
+
+    push(
+        "profile-hostname-uppercase",
+        "field-table",
+        "003 section 2 hostname holds no uppercase",
+        "A hostname spelled Alice.example.",
+        wire(
+            Entry::SignedEvent,
+            profile(&hosted("Alice.example".into())),
+            bad_host("it holds an uppercase letter"),
+        ),
+    );
+
+    push(
+        "profile-hostname-trailing-dot",
+        "field-table",
+        "003 section 2 hostname has no trailing dot",
+        "A hostname written as the absolute name alice.example.",
+        wire(
+            Entry::SignedEvent,
+            profile(&hosted("alice.example.".into())),
+            bad_host("it ends with a dot"),
+        ),
+    );
+
+    push(
+        "profile-hostname-no-dot",
+        "field-table",
+        "003 section 2 hostname holds at least one dot",
+        "A hostname of one label, localhost.",
+        wire(
+            Entry::SignedEvent,
+            profile(&hosted("localhost".into())),
+            bad_host("it holds no dot"),
+        ),
+    );
+
+    push(
+        "profile-hostname-empty-label",
+        "field-table",
+        "003 section 2 every label is 1 to 63 bytes",
+        "A hostname with two consecutive dots.",
+        wire(
+            Entry::SignedEvent,
+            profile(&hosted("alice..example".into())),
+            bad_host("it holds an empty label"),
+        ),
+    );
+
+    push(
+        "profile-hostname-label-over-63",
+        "field-table",
+        "003 section 2 every label is 1 to 63 bytes",
+        "A hostname whose first label is 64 bytes.",
+        wire(
+            Entry::SignedEvent,
+            profile(&hosted(format!("{}.example", "a".repeat(64)))),
+            bad_host("it holds a label over 63 bytes"),
+        ),
+    );
+
+    push(
+        "profile-hostname-bad-edge-character",
+        "field-table",
+        "003 section 2 every label starts and ends alphanumeric",
+        "A hostname whose first label starts with a hyphen.",
+        wire(
+            Entry::SignedEvent,
+            profile(&hosted("-alice.example".into())),
+            bad_host("a label does not start and end with a letter or digit"),
+        ),
+    );
+
+    push(
+        "profile-hostname-interior-character",
+        "field-table",
+        "003 section 2 label interiors come from [a-z0-9-]",
+        "A hostname holding an underscore.",
+        wire(
+            Entry::SignedEvent,
+            profile(&hosted("ali_ce.example".into())),
+            bad_host("a label holds a character outside [a-z0-9-]"),
+        ),
+    );
+
     cases
+}
+
+/// A syntactically valid hostname of exactly `len` bytes, for the cap vector.
+fn long_hostname(len: usize) -> String {
+    let mut text = String::new();
+    while text.len() < len {
+        if !text.is_empty() {
+            text.push('.');
+        }
+        let room = len - text.len();
+        text.push_str(&"a".repeat(room.min(63)));
+    }
+    text
 }
 
 fn read_json(path: &Path) -> Value {
@@ -2128,7 +2404,10 @@ fn every_golden_vector_passes_the_validator() {
             .unwrap_or_else(|err| panic!("{} body is rejected: {err}", path.display()));
         seen += 1;
     }
-    assert!(seen >= 11, "expected the eleven golden vectors, saw {seen}");
+    assert!(
+        seen >= 14,
+        "expected the fourteen golden vectors, saw {seen}"
+    );
 }
 
 /// The events the signing path builds pass, including the acceptance blob it

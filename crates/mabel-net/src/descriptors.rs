@@ -12,6 +12,7 @@
 
 use mabel_core::validate::{
     Cardinality, EnumValue, FieldDescriptor, FieldKind, MessageDescriptor, Oneof, SIGNED_EVENT,
+    StringRule,
 };
 use mabel_core::{ID_BYTES, MAX_TIMESTAMP_MS};
 
@@ -393,6 +394,7 @@ pub static REJECTED_RESP: MessageDescriptor = MessageDescriptor {
             "msg",
             FieldKind::String {
                 max: MAX_REJECT_MSG_BYTES,
+                rule: StringRule::Utf8,
             },
         ),
     ],

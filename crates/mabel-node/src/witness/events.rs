@@ -92,6 +92,7 @@ fn payload_kind(payload: &event_body::Payload) -> &'static str {
         event_body::Payload::MembershipInvitation(_) => "membership_invitation",
         event_body::Payload::MembershipAcceptance(_) => "membership_acceptance",
         event_body::Payload::MembershipRemoval(_) => "membership_removal",
+        event_body::Payload::ProfileUpdate(_) => "profile_update",
     }
 }
 
@@ -129,7 +130,22 @@ fn payload_document(payload: &event_body::Payload) -> Value {
         event_body::Payload::MembershipRemoval(removal) => json!({
             "target": optional(id_field(&removal.target)),
         }),
+        // An absent field means unset, and the encoding cannot tell an absent
+        // string from an empty one, so both render as `null` (proposal 003
+        // section 1).
+        event_body::Payload::ProfileUpdate(profile) => json!({
+            "display_name": text(&profile.display_name),
+            "hostname": text(&profile.hostname),
+        }),
     }
+}
+
+/// A string field renders as `null` when it is unset, never as `""`.
+fn text(value: &str) -> Value {
+    if value.is_empty() {
+        return Value::Null;
+    }
+    Value::String(value.to_owned())
 }
 
 /// The root the inception fixed (proposal 002 section 2).

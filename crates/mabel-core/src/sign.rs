@@ -13,8 +13,8 @@
 use iroh_base::{EndpointId, PublicKey, SecretKey};
 use mabel_proto::v0::{
     Acceptance, DeclaredKind, EventBody, IdentityRoot, Inception, MembershipAcceptance,
-    MembershipInvitation, MembershipRemoval, RawRoot, Role, SignedEvent, TrustAttestation,
-    TrustRevocation, WitnessConfig, event_body::Payload, inception,
+    MembershipInvitation, MembershipRemoval, ProfileUpdate, RawRoot, Role, SignedEvent,
+    TrustAttestation, TrustRevocation, WitnessConfig, event_body::Payload, inception,
 };
 
 use crate::digest::{accept_input, event_id, reserve_commit, sign_input};
@@ -270,6 +270,31 @@ pub fn build_membership_removal(
 ) -> Result<BuiltEvent, BuildError> {
     let payload = Payload::MembershipRemoval(MembershipRemoval {
         target: target.to_vec(),
+    });
+    build_append(signer, at, now_ms, payload)
+}
+
+/// Builds an event replacing the ledger's whole profile (proposal 003
+/// section 1).
+///
+/// The operation is replacement, not patch: a `None` field clears that name,
+/// and both `None` encodes a zero-length payload that clears both. Any current
+/// `CONTROLLER` may append one.
+///
+/// The codepoint policy, the hostname syntax and the byte caps belong to the
+/// field table, which the validator runs over the encoded bytes; refusing an
+/// update whose effect equals the folded profile is a node-side guard
+/// (`no_op_profile_update`), never a rule of this crate.
+pub fn build_profile_update(
+    signer: &SecretKey,
+    at: &Position,
+    display_name: Option<&str>,
+    hostname: Option<&str>,
+    now_ms: u64,
+) -> Result<BuiltEvent, BuildError> {
+    let payload = Payload::ProfileUpdate(ProfileUpdate {
+        display_name: display_name.unwrap_or_default().to_owned(),
+        hostname: hostname.unwrap_or_default().to_owned(),
     });
     build_append(signer, at, now_ms, payload)
 }

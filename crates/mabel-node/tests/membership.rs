@@ -14,6 +14,8 @@ use std::sync::Arc;
 
 use data_encoding::BASE64;
 use mabel_core::artifacts::IdentityDescriptor;
+use mabel_core::sign::build_trust_attestation;
+use mabel_core::{IdentityId, LedgerId};
 use mabel_node::api::documents::{DeclaredKind, Id, RoleName, RootName, StatusName};
 use mabel_node::api::service::{
     AcceptInvitation, AddTrust, AdmitAcceptance, CreateIdentity, Invite, RemoveMembership,
@@ -455,4 +457,216 @@ async fn two_concurrent_appends_on_one_ledger_take_the_next_two_sequences() {
     assert!(loaded.violation.is_none(), "the chain still verifies");
     assert_eq!(loaded.head_seq, 2);
     assert_eq!(loaded.event_count(), 3);
+}
+
+/// Ticket 031: an admitted controller's home records the link that lets it
+/// append to the shared ledger, and drops it when the removal lands.
+///
+/// Nothing crosses the network here: the run of events a fetch would have
+/// served is copied between the two homes, which is the input
+/// [`WalletCore::link_local_control`] reads.
+#[tokio::test]
+async fn an_admitted_controller_links_the_shared_ledger_to_its_own_key() {
+    let inviter = Wallet::new().await;
+    let invitee = Wallet::new().await;
+    let alice = inviter.identity("alice").await;
+    let bob = invitee.identity("bob").await;
+    let org = inviter
+        .service
+        .create_identity(CreateIdentity {
+            alias: "acme".to_owned(),
+            declared_kind: DeclaredKind::Organization,
+            founder: Some(alice.clone()),
+        })
+        .await
+        .expect("the org is founded")
+        .identity
+        .identity_id;
+
+    let invited = inviter
+        .service
+        .invite(Invite {
+            ledger_id: org.clone(),
+            by: alice.clone(),
+            role: RoleName::Controller,
+            invitee_descriptor: invitee.descriptor(&bob),
+        })
+        .await
+        .expect("the invitation lands");
+    let accepted = invitee
+        .service
+        .accept_invitation(AcceptInvitation {
+            identity_id: bob.clone(),
+            invitation_bundle: decode(&invited.invitation_bundle_base64),
+        })
+        .await
+        .expect("bob signs the acceptance");
+    inviter
+        .service
+        .admit_acceptance(AdmitAcceptance {
+            ledger_id: org.clone(),
+            by: alice.clone(),
+            acceptance: decode(&accepted.acceptance_base64),
+        })
+        .await
+        .expect("alice admits it");
+
+    // Bob's home takes the run a fetch would have served.
+    let ledger: LedgerId = org.as_str().parse().expect("a rendered id parses");
+    let bob_id: IdentityId = bob.as_str().parse().expect("a rendered id parses");
+    let alice_id: IdentityId = alice.as_str().parse().expect("a rendered id parses");
+    copy(&inviter, &invitee, ledger).await;
+
+    let loaded = invitee.core.load(ledger).expect("the copied run folds");
+    let linked = invitee
+        .core
+        .link_local_control(&loaded)
+        .expect("the link is written");
+    assert_eq!(linked, Some(bob_id), "bob's key is one of the controllers");
+    let meta = invitee
+        .core
+        .home()
+        .identity_meta(ledger)
+        .expect("the metadata was written");
+    assert_eq!(meta.controlled_by, Some(bob_id));
+    assert_eq!(meta.declared_kind, mabel_node::DeclaredKind::Organization);
+    assert!(
+        !invitee.core.home().keys_itself(ledger),
+        "the shared ledger holds no key of its own here"
+    );
+    assert!(
+        invitee.core.home().can_sign_for(ledger),
+        "bob's own active key signs for it"
+    );
+    assert!(
+        !invitee.core.solely_controls(&loaded.state),
+        "alice holds a controller key too, so the append discipline applies"
+    );
+
+    // Bob appends to the shared ledger from his own home, signing as himself.
+    let lock = invitee.core.append_lock(ledger).await;
+    let appended = invitee
+        .core
+        .add_trust(&lock, ledger, alice_id)
+        .expect("bob may append to the ledger he controls");
+    drop(lock);
+    assert_eq!(appended.head_seq, 3);
+    let loaded = invitee.core.load(ledger).expect("the ledger folds");
+    let attestation = loaded
+        .state
+        .trust()
+        .values()
+        .next()
+        .expect("the attestation is folded");
+    assert_eq!(
+        attestation.signing_principal.identity, bob_id,
+        "the shared ledger holds no key, so bob is the signing principal"
+    );
+
+    // Alice catches up, takes the controller role away, and bob's home takes
+    // the chain that says so.
+    copy(&invitee, &inviter, ledger).await;
+    let lock = inviter.core.append_lock(ledger).await;
+    inviter
+        .core
+        .remove_membership(&lock, ledger, alice_id, bob_id)
+        .expect("alice removes bob");
+    drop(lock);
+    copy(&inviter, &invitee, ledger).await;
+
+    let mut loaded = invitee.core.load(ledger).expect("the ledger folds");
+    assert_eq!(
+        invitee
+            .core
+            .link_local_control(&loaded)
+            .expect("the link is rewritten"),
+        None,
+        "the removal downgrades the ledger to read-only"
+    );
+    assert_eq!(
+        invitee
+            .core
+            .home()
+            .identity_meta(ledger)
+            .expect("the metadata stays")
+            .controlled_by,
+        None
+    );
+    assert!(!invitee.core.home().can_sign_for(ledger));
+
+    // Even with bob's key in hand the fold refuses the append.
+    let lock = invitee.core.append_lock(ledger).await;
+    let error = invitee
+        .core
+        .append(&lock, bob_id, &mut loaded, |signer, at, timestamp_ms| {
+            build_trust_attestation(signer, at, alice_id, timestamp_ms)
+        })
+        .expect_err("bob is no longer a controller");
+    assert_eq!(error.code(), 20);
+    assert_eq!(error.reason(), "unauthorized_signer");
+}
+
+/// The run of events one home holds, stored into another, as a fetch would.
+async fn copy(from: &Wallet, to: &Wallet, ledger: LedgerId) {
+    let events: Vec<Vec<u8>> = from
+        .core
+        .store(ledger)
+        .read_all()
+        .expect("the stored run reads")
+        .into_iter()
+        .map(|stored| stored.bytes)
+        .collect();
+    let lock = to.core.append_lock(ledger).await;
+    to.core
+        .store_events(&lock, ledger, &events, None)
+        .expect("the run stores");
+}
+
+/// Both surfaces answer one reason and one sentence when a subject is attested
+/// twice: the fold names the standing attestation by event id, and each
+/// surface used to respell that differently.
+#[tokio::test]
+async fn a_duplicate_attestation_answers_the_reason_both_surfaces_pin() {
+    let wallet = Wallet::new().await;
+    let alice = wallet.identity("alice").await;
+    let bob = wallet.identity("bob").await;
+    let first = wallet
+        .service
+        .add_trust(AddTrust {
+            issuer: alice.clone(),
+            subject: bob.clone(),
+        })
+        .await
+        .expect("the first attestation lands");
+    assert_eq!(first.head_seq, 1);
+
+    let error = wallet
+        .service
+        .add_trust(AddTrust {
+            issuer: alice.clone(),
+            subject: bob.clone(),
+        })
+        .await
+        .expect_err("the second attestation is a duplicate");
+
+    assert_eq!(error.code(), 20);
+    assert_eq!(error.status(), axum::http::StatusCode::CONFLICT);
+    assert_eq!(
+        error.reason(),
+        "duplicate_unrevoked_attestation",
+        "not the fold's own duplicate_attestation"
+    );
+    assert_eq!(
+        error.message(),
+        format!("Policy error: an unrevoked attestation for {bob} already exists at seq 1")
+    );
+    let details = error.details();
+    assert_eq!(details["subject"], serde_json::json!(bob.as_str()));
+    assert_eq!(details["at_seq"], serde_json::json!(1));
+    assert_eq!(
+        details["attestation_event"],
+        serde_json::json!(first.head_event.as_str()),
+        "the standing attestation, not the refused one"
+    );
+    assert_eq!(details["ledger_id"], serde_json::json!(alice.as_str()));
 }

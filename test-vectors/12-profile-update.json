@@ -1,0 +1,33 @@
+{
+  "body": {
+    "author_key_hex": "d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c9778737",
+    "ledger_hex": "8225a669a21ee244ba23bf4a1096ed5445a954ea01967150ccddee723635f1d1",
+    "payload": {
+      "profile_update": {
+        "display_name": "Alice Ashworth",
+        "hostname": "alice.example"
+      }
+    },
+    "prev_hex": "91cd953ab6cbce35b2cca89af038a2fa9273330c40af60c276416c9853ef288f",
+    "seq": 6,
+    "timestamp_ms": 1700000600000,
+    "version": 0
+  },
+  "body_hex": "12208225a669a21ee244ba23bf4a1096ed5445a954ea01967150ccddee723635f1d11806222091cd953ab6cbce35b2cca89af038a2fa9273330c40af60c276416c9853ef288f28c09fbaffbc313220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c97787378a011f0a0e416c69636520417368776f727468120d616c6963652e6578616d706c65",
+  "description": "Alice publishes a display name and a hostname.",
+  "event_id": "xqswnplb2adkqsdv5hgpvf2tin7amqfqjwnrl7f7t3olj6qyb2pa",
+  "event_id_hex": "bc2566bd61d006a84875e9ccfa9753437e0640b04d9b15fcbf9edcb4fa180e9e",
+  "file": "12-profile-update.json",
+  "inputs": {
+    "display_name": "Alice Ashworth",
+    "hostname": "alice.example",
+    "ledger": "qis2m2ncd3rejordx5fbbfxnkrc2svhkaglhcugm3xxhenrv6hiq",
+    "now_ms": 1700000600000,
+    "prev": "shgzkovwzphdlmwmvcnpaofc7kjhgmymicxwbqtwifwjqu7pfchq",
+    "prev_timestamp_ms": 1700000540000,
+    "secret_key_hex": "1111111111111111111111111111111111111111111111111111111111111111",
+    "seq": 6
+  },
+  "signature_hex": "c8b09fff99a27ebe139174e65ae97645df65e2d5f583e4efa518be7fcfda820a2d5d1208f447c0b07987aca71274de200eedb6df10da35880d37d805d60d100f",
+  "signed_event_hex": "0a910112208225a669a21ee244ba23bf4a1096ed5445a954ea01967150ccddee723635f1d11806222091cd953ab6cbce35b2cca89af038a2fa9273330c40af60c276416c9853ef288f28c09fbaffbc313220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c97787378a011f0a0e416c69636520417368776f727468120d616c6963652e6578616d706c651240c8b09fff99a27ebe139174e65ae97645df65e2d5f583e4efa518be7fcfda820a2d5d1208f447c0b07987aca71274de200eedb6df10da35880d37d805d60d100f"
+}

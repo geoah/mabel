@@ -123,8 +123,9 @@ pub fn fetch(ctx: &Context, ledger_id: &str, from: &str, tickets: &[String]) -> 
         head_seq: fetched.head_seq,
         head_event: ids::event(fetched.head_event),
         fetched_at_ms: fetched.fetched_at_ms,
+        controlled_by: fetched.controlled_by.map(ids::identity),
     };
-    let text = format!(
+    let mut text = format!(
         "fetched {} events of {} from {}, stored {}\nhead seq {}, verified from nothing",
         document.event_count,
         document.ledger_id,
@@ -132,5 +133,13 @@ pub fn fetch(ctx: &Context, ledger_id: &str, from: &str, tickets: &[String]) -> 
         document.stored,
         document.head_seq
     );
+    // Whether this home may append to what it just stored is the one thing a
+    // fetch decides beyond the bytes (ticket 031).
+    match &document.controlled_by {
+        Some(controller) => text.push_str(&format!(
+            "\nthis home may append to it, signing as {controller}"
+        )),
+        None => text.push_str("\nstored read-only: no identity here controls it"),
+    }
     Outcome::new(&document, text)
 }

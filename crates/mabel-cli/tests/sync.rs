@@ -103,6 +103,45 @@ impl Home {
     fn create(&self, alias: &str) -> String {
         text(&self.json(&["identity", "create", "--alias", alias])["identity_id"])
     }
+
+    /// Founds an identity-rooted ledger under `founder` and returns its id.
+    fn found(&self, alias: &str, founder: &str) -> String {
+        text(
+            &self.json(&[
+                "identity",
+                "create",
+                "--alias",
+                alias,
+                "--kind",
+                "organization",
+                "--founder",
+                founder,
+            ])["identity_id"],
+        )
+    }
+
+    /// Writes an identity's descriptor file.
+    fn export(&self, identity: &str, out: &Path) {
+        self.json(&[
+            "identity",
+            "export",
+            identity,
+            "--out",
+            &out.display().to_string(),
+        ]);
+    }
+
+    /// `identities/<id>/meta.json`, or `None` when the home records none.
+    fn identity_meta(&self, identity: &str) -> Option<Value> {
+        let path = self
+            .path()
+            .join("identities")
+            .join(identity)
+            .join("meta.json");
+        std::fs::read(path)
+            .ok()
+            .map(|bytes| serde_json::from_slice(&bytes).expect("meta.json is JSON"))
+    }
 }
 
 fn parse(stdout: &str) -> Value {
@@ -415,6 +454,388 @@ fn sync_fetch_stores_a_ledger_this_home_never_held() {
         report["sources_queried"],
         Value::from(vec![witness.endpoint.as_str()])
     );
+
+    witness.stop();
+}
+
+/// Ticket 031: the story 002 flow continues on the invitee's home.
+///
+/// Alice founds a shared ledger and admits bob as a controller. Bob's home
+/// fetches that ledger from the witness, and because the folded CONTROLLER set
+/// names a key bob holds, the fetch records the `controlled_by` link that makes
+/// the ledger actionable. Bob then appends to it signing as himself, and a
+/// third home that has never met either of them reads bob as the principal who
+/// signed.
+#[test]
+fn an_admitted_controller_appends_to_the_shared_ledger_from_their_own_home() {
+    let witness = Witness::start();
+    let exchange = TempDir::new().expect("a temp directory");
+    let file = |name: &str| exchange.path().join(name);
+
+    // Alice founds the shared ledger, which holds no key of its own.
+    let alice_home = Home::new("wallet");
+    alice_home.create("alice");
+    let acme = alice_home.found("acme", "alice");
+
+    // Bob lives in another home and shares no disk with alice.
+    let bob_home = Home::new("wallet");
+    let bob = bob_home.create("bob");
+    let descriptor = file("bob.descriptor");
+    bob_home.export("bob", &descriptor);
+
+    // Invite, accept, admit: the three artifacts of story 002.
+    let bundle = file("acme.invitation");
+    alice_home.json(&[
+        "membership",
+        "invite",
+        "--ledger",
+        "acme",
+        "--by",
+        "alice",
+        "--invitee",
+        &descriptor.display().to_string(),
+        "--role",
+        "controller",
+        "--out",
+        &bundle.display().to_string(),
+    ]);
+    let acceptance = file("bob.acceptance");
+    bob_home.json(&[
+        "membership",
+        "accept",
+        &bundle.display().to_string(),
+        "--as",
+        "bob",
+        "--out",
+        &acceptance.display().to_string(),
+        "--yes",
+    ]);
+    let admitted = alice_home.json(&[
+        "membership",
+        "admit",
+        "--ledger",
+        "acme",
+        "--by",
+        "alice",
+        &acceptance.display().to_string(),
+    ]);
+    assert_eq!(admitted["invitee"], Value::from(bob.as_str()));
+    assert_eq!(admitted["acceptance_seq"], Value::from(2));
+
+    // The shared ledger names the witness and is pushed to it.
+    alice_home.json(&[
+        "witness",
+        "add",
+        "--identity",
+        "acme",
+        "--endpoint",
+        &witness.endpoint,
+    ]);
+    alice_home.json(&[
+        "sync",
+        "push",
+        "--identity",
+        "acme",
+        "--peer",
+        &witness.ticket,
+    ]);
+
+    // Bob fetches the shared ledger, which links to the identity that signs.
+    let fetched = bob_home.json(&[
+        "sync",
+        "fetch",
+        &acme,
+        "--from",
+        &witness.endpoint,
+        "--peer",
+        &witness.ticket,
+    ]);
+    assert_shape(
+        &fetched,
+        &fixture("sync-fetch", "locally-controlled"),
+        "sync-fetch",
+    );
+    assert_eq!(fetched["controlled_by"], Value::from(bob.as_str()));
+    assert_eq!(fetched["head_seq"], Value::from(3));
+
+    // The link is on disk, and it carries no key of its own: bob's own active
+    // key is what signs for the shared ledger.
+    let meta = bob_home.identity_meta(&acme).expect("the link was written");
+    assert_eq!(meta["controlled_by"], Value::from(bob.as_str()));
+    assert_eq!(meta["declared_kind"], Value::from("organization"));
+    let directory = bob_home.path().join("identities").join(&acme);
+    assert!(!directory.join("active.key").exists(), "no key was written");
+    assert!(
+        !directory.join("reserve.key").exists(),
+        "no key was written"
+    );
+
+    // Bob appends to it from his own home, signing as himself, and pushes.
+    let attested = bob_home.json(&[
+        "trust",
+        "add",
+        "--issuer",
+        &acme,
+        "--subject",
+        &bob,
+        "--peer",
+        &witness.ticket,
+    ]);
+    assert_eq!(attested["issuer"], Value::from(acme.as_str()));
+    assert_eq!(attested["attestation_seq"], Value::from(4));
+    bob_home.json(&[
+        "sync",
+        "push",
+        "--identity",
+        &acme,
+        "--peer",
+        &witness.ticket,
+    ]);
+
+    // A home that has met neither of them reads bob as the signing principal.
+    let stranger = Home::new("wallet");
+    let report = stranger.json(&[
+        "verify",
+        "trust",
+        "--issuer",
+        &acme,
+        "--subject",
+        &bob,
+        "--from",
+        &witness.endpoint,
+        "--peer",
+        &witness.ticket,
+    ]);
+    assert_eq!(report["trusted"], Value::Bool(true));
+    assert_eq!(
+        report["signing_principal"]["identity"],
+        Value::from(bob.as_str()),
+        "the shared ledger holds no key, so bob signed for it"
+    );
+
+    witness.stop();
+}
+
+/// Ticket 031: a fetched ledger no local key controls stays read-only, and the
+/// refusal names the ledger rather than claiming the home never heard of it.
+#[test]
+fn a_fetched_ledger_with_no_local_controller_key_is_refused_by_name() {
+    let witness = Witness::start();
+    let (publisher, alice) = wallet_with(&witness);
+    publisher.json(&[
+        "sync",
+        "push",
+        "--identity",
+        "alice",
+        "--peer",
+        &witness.ticket,
+    ]);
+
+    let reader = Home::new("wallet");
+    reader.create("carol");
+    let fetched = reader.json(&[
+        "sync",
+        "fetch",
+        &alice,
+        "--from",
+        &witness.endpoint,
+        "--peer",
+        &witness.ticket,
+    ]);
+    assert_eq!(fetched["controlled_by"], Value::Null);
+    assert!(reader.identity_meta(&alice).is_none(), "no link is written");
+    let (code, stdout, _) = reader.run(&[
+        "sync",
+        "fetch",
+        &alice,
+        "--from",
+        &witness.endpoint,
+        "--peer",
+        &witness.ticket,
+    ]);
+    assert_eq!(code, 0);
+    assert!(
+        stdout.contains("stored read-only: no identity here controls it"),
+        "{stdout}"
+    );
+
+    // Every command that resolves a ledger it must act as says the same thing.
+    for arguments in [
+        vec!["trust", "add", "--issuer", &alice, "--subject", "carol"],
+        vec![
+            "witness",
+            "add",
+            "--identity",
+            &alice,
+            "--endpoint",
+            NOWHERE,
+        ],
+        vec!["sync", "push", "--identity", &alice, "--to", NOWHERE],
+    ] {
+        let (code, document) = reader.failure(&arguments);
+        assert_eq!(code, 2, "{arguments:?}: {document}");
+        assert_eq!(
+            document["details"]["reason"],
+            Value::from("not_locally_controlled"),
+            "{arguments:?}: {document}"
+        );
+        assert_eq!(
+            document["details"]["ledger_id"],
+            Value::from(alice.as_str())
+        );
+        assert!(
+            text(&document["message"]).contains(&alice),
+            "{arguments:?}: {document}"
+        );
+    }
+
+    // An id nothing here holds is still unknown, not read-only.
+    let (code, document) =
+        reader.failure(&["trust", "add", "--issuer", NOWHERE, "--subject", "carol"]);
+    assert_eq!(code, 2);
+    assert_eq!(
+        document["details"]["reason"],
+        Value::from("unknown_identity")
+    );
+
+    witness.stop();
+}
+
+/// Ticket 031: losing the controller role downgrades the ledger to read-only
+/// at the next append, which runs the freshness query first.
+#[test]
+fn a_removed_controllers_append_is_refused_after_the_removal_lands() {
+    let witness = Witness::start();
+    let exchange = TempDir::new().expect("a temp directory");
+    let file = |name: &str| exchange.path().join(name);
+
+    let alice_home = Home::new("wallet");
+    alice_home.create("alice");
+    let acme = alice_home.found("acme", "alice");
+    let bob_home = Home::new("wallet");
+    let bob = bob_home.create("bob");
+    let descriptor = file("bob.descriptor");
+    bob_home.export("bob", &descriptor);
+    let bundle = file("acme.invitation");
+    alice_home.json(&[
+        "membership",
+        "invite",
+        "--ledger",
+        "acme",
+        "--by",
+        "alice",
+        "--invitee",
+        &descriptor.display().to_string(),
+        "--role",
+        "controller",
+        "--out",
+        &bundle.display().to_string(),
+    ]);
+    let acceptance = file("bob.acceptance");
+    bob_home.json(&[
+        "membership",
+        "accept",
+        &bundle.display().to_string(),
+        "--as",
+        "bob",
+        "--out",
+        &acceptance.display().to_string(),
+        "--yes",
+    ]);
+    alice_home.json(&[
+        "membership",
+        "admit",
+        "--ledger",
+        "acme",
+        "--by",
+        "alice",
+        &acceptance.display().to_string(),
+    ]);
+    alice_home.json(&[
+        "witness",
+        "add",
+        "--identity",
+        "acme",
+        "--endpoint",
+        &witness.endpoint,
+    ]);
+    alice_home.json(&[
+        "sync",
+        "push",
+        "--identity",
+        "acme",
+        "--peer",
+        &witness.ticket,
+    ]);
+    let fetched = bob_home.json(&[
+        "sync",
+        "fetch",
+        &acme,
+        "--from",
+        &witness.endpoint,
+        "--peer",
+        &witness.ticket,
+    ]);
+    assert_eq!(fetched["controlled_by"], Value::from(bob.as_str()));
+
+    // Alice takes the controller role away and pushes the removal.
+    let removed = alice_home.json(&[
+        "membership",
+        "remove",
+        "--ledger",
+        "acme",
+        "--by",
+        "alice",
+        "--member",
+        &bob,
+        "--peer",
+        &witness.ticket,
+    ]);
+    assert_eq!(removed["principal_removed"], Value::Bool(true));
+    alice_home.json(&[
+        "sync",
+        "push",
+        "--identity",
+        "acme",
+        "--peer",
+        &witness.ticket,
+    ]);
+
+    // Bob's append fast-forwards to the removal, which drops the link.
+    let (code, document) = bob_home.failure(&[
+        "trust",
+        "add",
+        "--issuer",
+        &acme,
+        "--subject",
+        &bob,
+        "--peer",
+        &witness.ticket,
+    ]);
+    assert_eq!(code, 2, "{document}");
+    assert_eq!(
+        document["details"]["reason"],
+        Value::from("not_locally_controlled")
+    );
+    assert_eq!(document["details"]["ledger_id"], Value::from(acme.as_str()));
+    assert_eq!(
+        bob_home.identity_meta(&acme).expect("the metadata stays")["controlled_by"],
+        Value::Null,
+        "the link is dropped, the ledger is not"
+    );
+
+    // The ledger itself is still readable, and a re-fetch keeps it read-only.
+    let refetched = bob_home.json(&[
+        "sync",
+        "fetch",
+        &acme,
+        "--from",
+        &witness.endpoint,
+        "--peer",
+        &witness.ticket,
+    ]);
+    assert_eq!(refetched["controlled_by"], Value::Null);
+    assert_eq!(refetched["head_seq"], Value::from(4));
 
     witness.stop();
 }

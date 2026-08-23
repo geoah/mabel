@@ -1,0 +1,10 @@
+{
+  "class": "field-table",
+  "code": "invalid_hostname",
+  "description": "A hostname holding an underscore.",
+  "entry": "signed_event",
+  "file": "86-profile-hostname-interior-character.json",
+  "input_hex": "0a820112208225a669a21ee244ba23bf4a1096ed5445a954ea01967150ccddee723635f1d1180122208225a669a21ee244ba23bf4a1096ed5445a954ea01967150ccddee723635f1d128e0a499ffbc313220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c97787378a0110120e616c695f63652e6578616d706c651240f50d3c7e237acc4960ff0b791c01e6ee18fde013e5e5bdce7e78cd2c94fe862d408f50dd5340a007239bba9898ef487899fb536a171bafa6e1238408f8676304",
+  "reason": "ProfileUpdate.hostname is not a valid hostname: a label holds a character outside [a-z0-9-]",
+  "rule": "003 section 2 label interiors come from [a-z0-9-]"
+}

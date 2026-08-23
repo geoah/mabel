@@ -74,16 +74,13 @@ repository root.
   alice_attestation`, `details.at_seq == 2`, and `message` exactly `Policy
   error: an unrevoked attestation for <bob_id> already exists at seq 2`, the
   `policy` case of `contracts/cli/errors.json`.
-- Step 3's UI attempt is refused too, and the two surfaces word it differently
-  today. `trust-error` is present with `error-code` reading `code 20`,
-  `error-status` reading `status 409` and `error-code-meaning` reading
-  `cryptographic, chain or policy failure`, but `error-reason` reads
-  `duplicate_attestation` and `error-message` reads `Policy error: <bob_id>
-  already has an unrevoked attestation, <alice_attestation>`: the HTTP path
-  passes the fold's own reason through, while the CLI re-spells it with the
-  standing attestation's sequence. `error-detail-at_seq` reads `3`, the
-  position the refused event would have taken. `identity-detail-head-seq` still
-  reads `2` on both paths.
+- Step 3's UI attempt is refused too, in the same words. `trust-error` is
+  present with `error-code` reading `code 20`, `error-status` reading `status
+  409`, `error-code-meaning` reading `cryptographic, chain or policy failure`,
+  `error-reason` reading `duplicate_unrevoked_attestation` and `error-message`
+  reading `Policy error: an unrevoked attestation for <bob_id> already exists
+  at seq 2`. `error-detail-at_seq` reads `2`, the position of the attestation
+  still standing. `identity-detail-head-seq` still reads `2` on both paths.
 - Step 4: `GET http://127.0.0.1:9081/api/identities/<alice_id>` answers
   `identity.trust[0].revoked == true`, `identity.trust[0].revocation_seq == 3`
   and `identity.trust[0].attestation_event == alice_attestation`.

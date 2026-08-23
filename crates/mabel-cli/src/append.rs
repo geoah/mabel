@@ -20,7 +20,7 @@ use mabel_node::wallet::{Freshness, WalletCore, WalletSync};
 use mabel_node::{NewEvent, now_ms};
 
 use crate::cli::AppendOptions;
-use crate::context::Context;
+use crate::context::{Context, not_locally_controlled};
 use crate::error::{CliError, Result};
 use crate::ledger::Loaded;
 use crate::network::on_network;
@@ -77,6 +77,11 @@ pub fn ensure_fresh(
             Ok(sync.ensure_fresh(&core, ledger, &witnesses).await?)
         },
     )?;
+    // The chain that just landed may have taken this home's controller role
+    // away, which drops the `controlled_by` link the fetch wrote (ticket 031).
+    if !ctx.home().can_sign_for(ledger) {
+        return Err(not_locally_controlled(ledger));
+    }
     Ok(Some(freshness))
 }
 

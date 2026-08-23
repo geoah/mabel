@@ -31,8 +31,9 @@ use iroh_base::{PublicKey, Signature};
 use crate::digest::{accept_input, event_id, sign_input};
 use crate::id::{EventId, IdentityId};
 use crate::{
-    ID_BYTES, MAX_ACCEPTANCE_BYTES, MAX_EMBEDDED_INCEPTION_BYTES, MAX_EVENT_BYTES,
-    MAX_TIMESTAMP_MS, MAX_WITNESSES, NONCE_BYTES, SIG_BYTES,
+    ID_BYTES, MAX_ACCEPTANCE_BYTES, MAX_DISPLAY_NAME_BYTES, MAX_EMBEDDED_INCEPTION_BYTES,
+    MAX_EVENT_BYTES, MAX_HOSTNAME_BYTES, MAX_HOSTNAME_LABEL_BYTES, MAX_TIMESTAMP_MS, MAX_WITNESSES,
+    NONCE_BYTES, SIG_BYTES,
 };
 
 /// How deep messages may nest before the scanner gives up.
@@ -48,6 +49,8 @@ const INCEPTION_TAG: u32 = 10;
 const TRUST_ATTESTATION_TAG: u32 = 12;
 /// The `oneof payload` tag of `MembershipInvitation`.
 const MEMBERSHIP_INVITATION_TAG: u32 = 14;
+/// The `oneof payload` tag of `ProfileUpdate`.
+const PROFILE_UPDATE_TAG: u32 = 17;
 /// The `oneof root` tag of `RawRoot`.
 const RAW_ROOT_TAG: u32 = 10;
 /// The `oneof root` tag of `IdentityRoot`.
@@ -227,6 +230,26 @@ pub enum WireError {
         /// The field name.
         field: &'static str,
     },
+    /// A display name broke the codepoint policy of proposal 003 section 1.
+    #[error("{message}.{field} is not an acceptable display name: {reason}")]
+    InvalidDisplayName {
+        /// The message type.
+        message: &'static str,
+        /// The field name.
+        field: &'static str,
+        /// Which rule the value broke.
+        reason: &'static str,
+    },
+    /// A hostname broke the syntax of proposal 003 section 2.
+    #[error("{message}.{field} is not a valid hostname: {reason}")]
+    InvalidHostname {
+        /// The message type.
+        message: &'static str,
+        /// The field name.
+        field: &'static str,
+        /// Which rule the value broke.
+        reason: &'static str,
+    },
     /// A numeric field fell outside the range the field table states.
     #[error("{message}.{field} holds {value}, outside {min}..={max}")]
     ValueOutOfRange {
@@ -360,6 +383,8 @@ impl WireError {
             Self::WrongLength { .. } => "wrong_length",
             Self::FieldTooLong { .. } => "field_too_long",
             Self::InvalidUtf8 { .. } => "invalid_utf8",
+            Self::InvalidDisplayName { .. } => "invalid_display_name",
+            Self::InvalidHostname { .. } => "invalid_hostname",
             Self::ValueOutOfRange { .. } => "value_out_of_range",
             Self::RepeatedCount { .. } => "repeated_count",
             Self::RepeatedDuplicate { .. } => "repeated_duplicate",
@@ -429,6 +454,25 @@ pub struct EnumValue {
     pub name: &'static str,
 }
 
+/// Which codepoint rule a `string` field carries beyond well-formed UTF-8.
+///
+/// Every rule starts from the shared policy of proposal 003 section 1 and
+/// adds what its field needs, so one field never inherits another's rejection
+/// code.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StringRule {
+    /// Well-formed UTF-8 under the byte cap and nothing more: what a free-text
+    /// protocol string carries, where no name is being published.
+    Utf8,
+    /// A human-facing name: the shared codepoint policy, plus a refusal of any
+    /// value that parses as an identity id, so a name never masquerades as an
+    /// identifier. Rejections are [`WireError::InvalidDisplayName`].
+    DisplayName,
+    /// A DNS name under the syntax of proposal 003 section 2. Rejections are
+    /// [`WireError::InvalidHostname`].
+    Hostname,
+}
+
 /// What a field holds and what the field table says about it.
 #[derive(Debug)]
 pub enum FieldKind {
@@ -451,14 +495,13 @@ pub enum FieldKind {
         /// The cap on the length.
         max: usize,
     },
-    /// A `string` field: at most `max` bytes of well-formed UTF-8.
-    ///
-    /// Length and encoding are all this checks. A codepoint policy
-    /// (normalisation, confusables, control characters) is proposal 003's and
-    /// is not decided here.
+    /// A `string` field: at most `max` bytes of well-formed UTF-8, then the
+    /// per-field rule of [`StringRule`].
     String {
         /// The cap on the encoded length in bytes.
         max: usize,
+        /// What the field table says about the characters, beyond UTF-8.
+        rule: StringRule,
     },
     /// A `bytes` field carrying another message's encoded bytes verbatim,
     /// validated with `descriptor`.
@@ -797,6 +840,37 @@ pub static MEMBERSHIP_REMOVAL: MessageDescriptor = MessageDescriptor {
     check: None,
 };
 
+/// `ProfileUpdate` (proposal 003 section 1).
+///
+/// Both fields are optional and a zero-length payload is legal: it clears
+/// both. An empty string never reaches these rows, because the canonical
+/// encoding omits a proto3 default and an explicitly encoded one is
+/// [`WireError::DefaultValueEncoded`].
+pub static PROFILE_UPDATE: MessageDescriptor = MessageDescriptor {
+    name: "ProfileUpdate",
+    max_bytes: MAX_EVENT_BYTES,
+    fields: &[
+        optional(
+            1,
+            "display_name",
+            FieldKind::String {
+                max: MAX_DISPLAY_NAME_BYTES,
+                rule: StringRule::DisplayName,
+            },
+        ),
+        optional(
+            2,
+            "hostname",
+            FieldKind::String {
+                max: MAX_HOSTNAME_BYTES,
+                rule: StringRule::Hostname,
+            },
+        ),
+    ],
+    oneof: None,
+    check: None,
+};
+
 /// `EventBody`, the message that is hashed and signed (proposal 001
 /// section 3.2).
 pub static EVENT_BODY: MessageDescriptor = MessageDescriptor {
@@ -838,6 +912,7 @@ pub static EVENT_BODY: MessageDescriptor = MessageDescriptor {
         ),
         variant(15, "membership_acceptance", &MEMBERSHIP_ACCEPTANCE),
         variant(16, "membership_removal", &MEMBERSHIP_REMOVAL),
+        variant(PROFILE_UPDATE_TAG, "profile_update", &PROFILE_UPDATE),
     ],
     oneof: Some(Oneof {
         name: "payload",
@@ -1324,7 +1399,7 @@ fn check_bytes(
             }
             Ok(())
         }
-        FieldKind::String { max } => {
+        FieldKind::String { max, rule } => {
             if slice.is_empty() {
                 return Err(WireError::DefaultValueEncoded {
                     message,
@@ -1339,13 +1414,29 @@ fn check_bytes(
                     cap: max,
                 });
             }
-            if std::str::from_utf8(slice).is_err() {
-                return Err(WireError::InvalidUtf8 {
-                    message,
-                    field: field.name,
-                });
+            // Borrowed from the scanned slice: nothing is copied or allocated
+            // to read the characters.
+            let text = std::str::from_utf8(slice).map_err(|_| WireError::InvalidUtf8 {
+                message,
+                field: field.name,
+            })?;
+            match rule {
+                StringRule::Utf8 => Ok(()),
+                StringRule::DisplayName => {
+                    check_display_name(text).map_err(|reason| WireError::InvalidDisplayName {
+                        message,
+                        field: field.name,
+                        reason,
+                    })
+                }
+                StringRule::Hostname => {
+                    check_hostname(text).map_err(|reason| WireError::InvalidHostname {
+                        message,
+                        field: field.name,
+                        reason,
+                    })
+                }
             }
-            Ok(())
         }
         FieldKind::Nested { descriptor, max } => {
             if slice.is_empty() {
@@ -1372,6 +1463,72 @@ fn check_bytes(
         FieldKind::Detached { descriptor } => validate(descriptor, slice, 0).map(|_| ()),
         _ => unreachable!("only length-delimited fields reach check_bytes"),
     }
+}
+
+/// The codepoint policy of proposal 003 section 1, plus the rule that a
+/// display name may not parse as an identity id.
+fn check_display_name(text: &str) -> Result<(), &'static str> {
+    for character in text.chars() {
+        match character {
+            '\u{0}'..='\u{1f}' | '\u{7f}' => return Err("it holds a C0 control character"),
+            '\u{80}'..='\u{9f}' => return Err("it holds a C1 control character"),
+            // Bidi embeddings, overrides and isolates reorder the rendered
+            // text without changing the bytes.
+            '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}' => {
+                return Err("it holds a bidi control character");
+            }
+            '\u{200b}'..='\u{200f}' | '\u{2060}'..='\u{2064}' | '\u{feff}' => {
+                return Err("it holds a zero-width or invisible format character");
+            }
+            _ => {}
+        }
+    }
+    if text.trim() != text {
+        return Err("it has leading or trailing whitespace");
+    }
+    // A name that reads as an identifier is the confusion this rule exists to
+    // stop: every surface prints both.
+    if text.parse::<IdentityId>().is_ok() {
+        return Err("it parses as an identity id");
+    }
+    Ok(())
+}
+
+/// The hostname syntax of proposal 003 section 2: ASCII lowercase LDH labels
+/// of 1 to 63 bytes with alphanumeric edges, at least one dot and no trailing
+/// dot. The 246-byte cap is the field's, checked before this runs.
+fn check_hostname(text: &str) -> Result<(), &'static str> {
+    if !text.is_ascii() {
+        return Err("it holds a character outside ASCII");
+    }
+    if text.bytes().any(|byte| byte.is_ascii_uppercase()) {
+        return Err("it holds an uppercase letter");
+    }
+    if text.ends_with('.') {
+        return Err("it ends with a dot");
+    }
+    if !text.contains('.') {
+        return Err("it holds no dot");
+    }
+    for label in text.split('.') {
+        let bytes = label.as_bytes();
+        let (Some(first), Some(last)) = (bytes.first(), bytes.last()) else {
+            return Err("it holds an empty label");
+        };
+        if bytes.len() > MAX_HOSTNAME_LABEL_BYTES {
+            return Err("it holds a label over 63 bytes");
+        }
+        if !first.is_ascii_alphanumeric() || !last.is_ascii_alphanumeric() {
+            return Err("a label does not start and end with a letter or digit");
+        }
+        if !bytes
+            .iter()
+            .all(|byte| byte.is_ascii_alphanumeric() || *byte == b'-')
+        {
+            return Err("a label holds a character outside [a-z0-9-]");
+        }
+    }
+    Ok(())
 }
 
 fn check_cardinality(scanned: &Scanned<'_>) -> Result<(), WireError> {
@@ -1607,6 +1764,7 @@ fn verify(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::id::ID_STR_LEN;
     use crate::sign::{
         BuiltEvent, Position, Root, build_inception, build_trust_attestation, build_witness_config,
     };
@@ -1837,14 +1995,16 @@ mod tests {
 
     #[test]
     fn unrecognised_oneof_variants_are_rejected() {
+        // Tags 18 and 19 sit past the last assigned payload and below the
+        // reserved block, so a later version may take them.
         let mut bytes = body();
-        bytes.extend_from_slice(&len_field(17, &[]));
+        bytes.extend_from_slice(&len_field(18, &[]));
         assert_eq!(
             event_body(&bytes),
             Err(WireError::UnknownOneofVariant {
                 message: "EventBody",
                 oneof: "payload",
-                number: 17,
+                number: 18,
             })
         );
     }
@@ -2349,5 +2509,245 @@ mod tests {
             WireError::EmbeddedInceptionNotRawRooted.code(),
             "embedded_inception_not_raw_rooted"
         );
+        assert_eq!(
+            WireError::InvalidDisplayName {
+                message: "ProfileUpdate",
+                field: "display_name",
+                reason: "it parses as an identity id",
+            }
+            .code(),
+            "invalid_display_name"
+        );
+        assert_eq!(
+            WireError::InvalidHostname {
+                message: "ProfileUpdate",
+                field: "hostname",
+                reason: "it holds no dot",
+            }
+            .code(),
+            "invalid_hostname"
+        );
+    }
+
+    /// An encoded `ProfileUpdate`. An empty argument is an absent field, which
+    /// is how the canonical encoding spells "unset".
+    fn profile_update(display_name: &[u8], hostname: &[u8]) -> Vec<u8> {
+        let mut out = Vec::new();
+        if !display_name.is_empty() {
+            out.extend_from_slice(&len_field(1, display_name));
+        }
+        if !hostname.is_empty() {
+            out.extend_from_slice(&len_field(2, hostname));
+        }
+        out
+    }
+
+    fn profile(display_name: &str, hostname: &str) -> Result<(), WireError> {
+        message(
+            &PROFILE_UPDATE,
+            &profile_update(display_name.as_bytes(), hostname.as_bytes()),
+        )
+    }
+
+    #[test]
+    fn a_profile_update_takes_both_names_either_one_or_neither() {
+        profile("Alice Ashworth", "alice.example").expect("both names pass");
+        profile("Alice Ashworth", "").expect("a display name alone passes");
+        profile("", "alice.example").expect("a hostname alone passes");
+        // Clearing both is a zero-length payload, which is legal protobuf and
+        // means "unset both" (proposal 003 section 1).
+        profile("", "").expect("an empty payload passes");
+    }
+
+    #[test]
+    fn a_display_name_holding_a_forbidden_codepoint_is_refused() {
+        for (name, reason) in [
+            ("Alice\tAshworth", "it holds a C0 control character"),
+            ("Alice\u{7f}Ashworth", "it holds a C0 control character"),
+            ("Alice\u{85}Ashworth", "it holds a C1 control character"),
+            ("Alice\u{202a}Ashworth", "it holds a bidi control character"),
+            ("Alice\u{202e}Ashworth", "it holds a bidi control character"),
+            ("Alice\u{2066}Ashworth", "it holds a bidi control character"),
+            ("Alice\u{2069}Ashworth", "it holds a bidi control character"),
+            (
+                "Alice\u{200b}Ashworth",
+                "it holds a zero-width or invisible format character",
+            ),
+            (
+                "Alice\u{200f}Ashworth",
+                "it holds a zero-width or invisible format character",
+            ),
+            (
+                "Alice\u{2060}Ashworth",
+                "it holds a zero-width or invisible format character",
+            ),
+            (
+                "Alice\u{feff}Ashworth",
+                "it holds a zero-width or invisible format character",
+            ),
+            (" Alice", "it has leading or trailing whitespace"),
+            ("Alice ", "it has leading or trailing whitespace"),
+        ] {
+            assert_eq!(
+                profile(name, ""),
+                Err(WireError::InvalidDisplayName {
+                    message: "ProfileUpdate",
+                    field: "display_name",
+                    reason,
+                }),
+                "{name:?} must be refused"
+            );
+        }
+        // An interior space is a name, not a rule break.
+        profile("Alice Ashworth", "").expect("an interior space passes");
+    }
+
+    #[test]
+    fn a_display_name_that_parses_as_an_identity_id_is_refused() {
+        let id = IdentityId::from_bytes([0x42; ID_BYTES]).to_string();
+        for spelling in [id.clone(), id.to_ascii_uppercase()] {
+            assert_eq!(
+                profile(&spelling, ""),
+                Err(WireError::InvalidDisplayName {
+                    message: "ProfileUpdate",
+                    field: "display_name",
+                    reason: "it parses as an identity id",
+                })
+            );
+        }
+        // 52 characters that are not base32 are an ordinary name.
+        profile(&"z".repeat(ID_STR_LEN), "").expect("not an id");
+    }
+
+    #[test]
+    fn a_display_name_is_utf8_and_at_most_64_bytes() {
+        assert_eq!(
+            message(&PROFILE_UPDATE, &profile_update(b"Alice\xff", b"")),
+            Err(WireError::InvalidUtf8 {
+                message: "ProfileUpdate",
+                field: "display_name",
+            })
+        );
+        profile(&"a".repeat(MAX_DISPLAY_NAME_BYTES), "").expect("64 bytes pass");
+        assert_eq!(
+            profile(&"a".repeat(MAX_DISPLAY_NAME_BYTES + 1), ""),
+            Err(WireError::FieldTooLong {
+                message: "ProfileUpdate",
+                field: "display_name",
+                len: MAX_DISPLAY_NAME_BYTES + 1,
+                cap: MAX_DISPLAY_NAME_BYTES,
+            })
+        );
+        // A 64-byte cap counts bytes, not characters.
+        assert!(matches!(
+            profile(&"é".repeat(33), ""),
+            Err(WireError::FieldTooLong { len: 66, .. })
+        ));
+    }
+
+    #[test]
+    fn an_explicitly_encoded_empty_name_is_refused() {
+        for (number, field) in [(1, "display_name"), (2, "hostname")] {
+            assert_eq!(
+                message(&PROFILE_UPDATE, &len_field(number, b"")),
+                Err(WireError::DefaultValueEncoded {
+                    message: "ProfileUpdate",
+                    field,
+                })
+            );
+        }
+    }
+
+    #[test]
+    fn a_hostname_follows_the_syntax_of_proposal_003_section_2() {
+        for host in [
+            "alice.example",
+            "a.b",
+            "alice.example.com",
+            "a-b.c-d.example",
+            "0.1.example",
+            &format!("{}.example", "a".repeat(63)),
+        ] {
+            profile("", host).unwrap_or_else(|err| panic!("{host} must pass: {err}"));
+        }
+
+        for (host, reason) in [
+            ("älice.example", "it holds a character outside ASCII"),
+            ("Alice.example", "it holds an uppercase letter"),
+            ("alice.EXAMPLE", "it holds an uppercase letter"),
+            ("alice.example.", "it ends with a dot"),
+            ("localhost", "it holds no dot"),
+            ("alice..example", "it holds an empty label"),
+            (".alice.example", "it holds an empty label"),
+            (
+                "-alice.example",
+                "a label does not start and end with a letter or digit",
+            ),
+            (
+                "alice-.example",
+                "a label does not start and end with a letter or digit",
+            ),
+            (
+                "ali_ce.example",
+                "a label holds a character outside [a-z0-9-]",
+            ),
+        ] {
+            assert_eq!(
+                profile("", host),
+                Err(WireError::InvalidHostname {
+                    message: "ProfileUpdate",
+                    field: "hostname",
+                    reason,
+                }),
+                "{host} must be refused"
+            );
+        }
+
+        let long_label = format!("{}.example", "a".repeat(64));
+        assert_eq!(
+            profile("", &long_label),
+            Err(WireError::InvalidHostname {
+                message: "ProfileUpdate",
+                field: "hostname",
+                reason: "it holds a label over 63 bytes",
+            })
+        );
+    }
+
+    #[test]
+    fn a_hostname_is_at_most_246_bytes() {
+        let label = "a".repeat(63);
+        let under = format!("{label}.{label}.{label}.{}", "a".repeat(54));
+        assert_eq!(under.len(), MAX_HOSTNAME_BYTES);
+        profile("", &under).expect("246 bytes pass");
+
+        let over = format!("{under}a");
+        assert_eq!(
+            profile("", &over),
+            Err(WireError::FieldTooLong {
+                message: "ProfileUpdate",
+                field: "hostname",
+                len: MAX_HOSTNAME_BYTES + 1,
+                cap: MAX_HOSTNAME_BYTES,
+            })
+        );
+    }
+
+    /// The payload is reachable through `EventBody`, at tag 17 and nowhere
+    /// else: tags 18 and 19 stay unassigned and 20 to 29 stay reserved.
+    #[test]
+    fn the_profile_payload_sits_at_tag_17() {
+        let field = EVENT_BODY
+            .field(PROFILE_UPDATE_TAG)
+            .expect("EventBody declares tag 17");
+        assert_eq!(field.name, "profile_update");
+        assert_eq!(field.cardinality, Cardinality::Variant);
+        for number in [18, 19, 20, 29] {
+            assert_eq!(
+                EVENT_BODY.field(number).map(|field| field.name),
+                None,
+                "tag {number} must stay unassigned"
+            );
+        }
     }
 }

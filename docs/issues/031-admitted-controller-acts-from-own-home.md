@@ -1,6 +1,6 @@
 # 031: admitted controller acts from their own home
 
-- Status: open
+- Status: done
 - Depends on: none
 
 ## Goal

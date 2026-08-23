@@ -47,6 +47,10 @@ pub struct Fetched {
     pub head_event: mabel_core::EventId,
     /// When the source answered.
     pub fetched_at_ms: u64,
+    /// The local identity whose key signs for this ledger, when the fetched
+    /// chain names one of this home's keys a controller. `None` means the
+    /// ledger is stored read-only.
+    pub controlled_by: Option<mabel_core::IdentityId>,
 }
 
 /// What checking a ledger against its witnesses found.
@@ -279,6 +283,10 @@ impl WalletSync {
         // between the divergence check inside `store_events` and its write.
         let lock = core.append_lock(ledger).await;
         let stored = core.store_events(&lock, ledger, &candidate.events, Some(source))?;
+        // What was fetched decides whether this home may append to it: a
+        // chain naming a local key a controller is linked, one that does not
+        // is stored read-only (ticket 031).
+        let controlled_by = core.link_local_control(&candidate)?;
         Ok(Fetched {
             ledger,
             source,
@@ -287,6 +295,7 @@ impl WalletSync {
             head_seq: candidate.head_seq,
             head_event: candidate.head_event,
             fetched_at_ms,
+            controlled_by,
         })
     }
 
@@ -358,6 +367,10 @@ impl WalletSync {
             if shared == local.events.len() {
                 // The local copy is a prefix of the witness's: fast-forward.
                 let stored = core.store_events(lock, ledger, &candidate.events, Some(*witness))?;
+                // A fast-forward may have admitted or removed a controller, so
+                // the local link is rewritten against the chain that just
+                // landed (ticket 031).
+                core.link_local_control(&candidate)?;
                 if stored > 0 {
                     freshness = Freshness::FastForwarded {
                         head_seq: candidate.head_seq,
@@ -371,6 +384,7 @@ impl WalletSync {
             // head.
             core.truncate(lock, ledger, shared.saturating_sub(1) as u64)?;
             core.store_events(lock, ledger, &candidate.events, Some(*witness))?;
+            core.link_local_control(&candidate)?;
             return Err(stale_head(ledger, local.head_seq, &head, *witness));
         }
         Ok(freshness)

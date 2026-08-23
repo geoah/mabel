@@ -1,0 +1,10 @@
+{
+  "class": "field-table",
+  "code": "invalid_display_name",
+  "description": "A display_name holding Bob's identity id in base32.",
+  "entry": "signed_event",
+  "file": "75-profile-display-name-is-an-identity-id.json",
+  "input_hex": "0aa80112208225a669a21ee244ba23bf4a1096ed5445a954ea01967150ccddee723635f1d1180122208225a669a21ee244ba23bf4a1096ed5445a954ea01967150ccddee723635f1d128e0a499ffbc313220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c97787378a01360a346b7a757177693632377a6c6e346974726b676e746b7961326a6e68753476676f6b66627a736d6770746774746469666c726f6c61124052ff253b0b2707b110263556d51d888eedd18d089917724fc4ff4e185c533e147bb0225dcff0336652da8498041be81f3adb7560f2b79f0c9e6c2d54ca80f10e",
+  "reason": "ProfileUpdate.display_name is not an acceptable display name: it parses as an identity id",
+  "rule": "003 section 1 a display_name never parses as an identity id"
+}
