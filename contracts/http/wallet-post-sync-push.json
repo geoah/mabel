@@ -1,0 +1,89 @@
+{
+  "route": "/api/sync/push",
+  "method": "POST",
+  "request": {
+    "identity_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+    "to": null
+  },
+  "response": {
+    "ok": true,
+    "ledger_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+    "head_seq": 3,
+    "head_event": "ewckxhi7cixugkyrql6eqnncbgxqtnrho3rpsp6plhhh7yr6rosq",
+    "results": [
+      {
+        "endpoint": "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq",
+        "status": "accepted",
+        "head_seq": 3,
+        "stored": 4,
+        "reject_code": null,
+        "at_seq": null,
+        "message": null
+      },
+      {
+        "endpoint": "5yy7qpeiu4jbtjx47g7obwu3yitcaweplik2mfcvknie36letzoa",
+        "status": "unreachable",
+        "head_seq": null,
+        "stored": 0,
+        "reject_code": null,
+        "at_seq": null,
+        "message": "Network error: no route to 5yy7qpeiu4jbtjx47g7obwu3yitcaweplik2mfcvknie36letzoa after 10s"
+      }
+    ]
+  },
+  "errors": [
+    {
+      "status": 502,
+      "body": {
+        "ok": false,
+        "code": 30,
+        "message": "Network error: no configured witness accepted the push for sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+        "details": {
+          "reason": "all_witnesses_failed",
+          "ledger_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+          "results": [
+            {
+              "endpoint": "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq",
+              "status": "unreachable",
+              "head_seq": null,
+              "stored": 0,
+              "reject_code": null,
+              "at_seq": null,
+              "message": "Network error: no route to zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq after 10s"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "status": 409,
+      "body": {
+        "ok": false,
+        "code": 50,
+        "message": "State error: witness zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq reports head seq 4, this node holds seq 3",
+        "details": {
+          "reason": "stale_head",
+          "ledger_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+          "local_head_seq": 3,
+          "observed_head_seq": 4,
+          "source": "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq"
+        }
+      }
+    },
+    {
+      "status": 409,
+      "body": {
+        "ok": false,
+        "code": 20,
+        "message": "Ledger error: witness zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq rejected the push at seq 3",
+        "details": {
+          "reason": "push_rejected",
+          "reject_code": "INVALID",
+          "at_seq": 3,
+          "endpoint": "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq",
+          "stored": 3
+        }
+      }
+    }
+  ]
+}

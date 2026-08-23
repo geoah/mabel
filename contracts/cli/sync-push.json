@@ -1,0 +1,69 @@
+{
+  "command": "mabel sync push --identity alice --json",
+  "cases": [
+    {
+      "case": "every-witness-accepted",
+      "command": "mabel sync push --identity alice --json",
+      "exit_code": 0,
+      "document": {
+        "ok": true,
+        "identity_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+        "ledger_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+        "head_seq": 3,
+        "head_event": "ewckxhi7cixugkyrql6eqnncbgxqtnrho3rpsp6plhhh7yr6rosq",
+        "results": [
+          {
+            "endpoint": "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq",
+            "status": "accepted",
+            "head_seq": 3,
+            "stored": 4,
+            "reject_code": null,
+            "at_seq": null,
+            "message": null
+          },
+          {
+            "endpoint": "5yy7qpeiu4jbtjx47g7obwu3yitcaweplik2mfcvknie36letzoa",
+            "status": "accepted",
+            "head_seq": 3,
+            "stored": 0,
+            "reject_code": null,
+            "at_seq": null,
+            "message": null
+          }
+        ]
+      }
+    },
+    {
+      "case": "one-witness-unreachable",
+      "command": "mabel sync push --identity alice --json",
+      "exit_code": 0,
+      "document": {
+        "ok": true,
+        "identity_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+        "ledger_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+        "head_seq": 3,
+        "head_event": "ewckxhi7cixugkyrql6eqnncbgxqtnrho3rpsp6plhhh7yr6rosq",
+        "results": [
+          {
+            "endpoint": "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq",
+            "status": "accepted",
+            "head_seq": 3,
+            "stored": 4,
+            "reject_code": null,
+            "at_seq": null,
+            "message": null
+          },
+          {
+            "endpoint": "5yy7qpeiu4jbtjx47g7obwu3yitcaweplik2mfcvknie36letzoa",
+            "status": "unreachable",
+            "head_seq": null,
+            "stored": 0,
+            "reject_code": null,
+            "at_seq": null,
+            "message": "Network error: no route to 5yy7qpeiu4jbtjx47g7obwu3yitcaweplik2mfcvknie36letzoa after 10s"
+          }
+        ]
+      }
+    }
+  ]
+}

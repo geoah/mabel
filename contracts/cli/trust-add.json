@@ -1,0 +1,21 @@
+{
+  "command": "mabel trust add --issuer alice --subject jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq --json",
+  "cases": [
+    {
+      "case": "attested",
+      "command": "mabel trust add --issuer alice --subject jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq --json",
+      "exit_code": 0,
+      "document": {
+        "ok": true,
+        "issuer": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+        "subject": "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq",
+        "attestation_event": "65cssg5tnr3gyxe2rwhsgqc3nct3pwg2bqxr2oxpelejuoorlsnq",
+        "attestation_seq": 2,
+        "timestamp_ms": 1700000120000,
+        "head_seq": 2,
+        "head_event": "65cssg5tnr3gyxe2rwhsgqc3nct3pwg2bqxr2oxpelejuoorlsnq",
+        "pushed": false
+      }
+    }
+  ]
+}

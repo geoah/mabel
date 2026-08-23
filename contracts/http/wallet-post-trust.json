@@ -1,0 +1,67 @@
+{
+  "route": "/api/trust",
+  "method": "POST",
+  "request": {
+    "issuer": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+    "subject": "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq"
+  },
+  "response": {
+    "ok": true,
+    "ledger_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+    "head_seq": 2,
+    "head_event": "65cssg5tnr3gyxe2rwhsgqc3nct3pwg2bqxr2oxpelejuoorlsnq",
+    "event": {
+      "event_id": "65cssg5tnr3gyxe2rwhsgqc3nct3pwg2bqxr2oxpelejuoorlsnq",
+      "seq": 2,
+      "ledger_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+      "prev": "ksp5tvlygiuoldlrp2v57pfrnp76iqa23w7tlwuouq7wiwyzsm4q",
+      "timestamp_ms": 1700000120000,
+      "author_key": "2bflemtufo2kwoqtnc6umfpe43icesvxdiawxl4fecrtfslxq43q",
+      "payload_kind": "trust_attestation",
+      "payload": {
+        "subject": "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq"
+      }
+    }
+  },
+  "errors": [
+    {
+      "status": 400,
+      "body": {
+        "ok": false,
+        "code": 10,
+        "message": "Schema error: subject must differ from the issuer ledger id",
+        "details": {
+          "reason": "subject_equals_ledger",
+          "field": "subject",
+          "value": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq"
+        }
+      }
+    },
+    {
+      "status": 409,
+      "body": {
+        "ok": false,
+        "code": 20,
+        "message": "Policy error: an unrevoked attestation for jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq already exists at seq 2",
+        "details": {
+          "reason": "duplicate_unrevoked_attestation",
+          "subject": "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq",
+          "attestation_event": "65cssg5tnr3gyxe2rwhsgqc3nct3pwg2bqxr2oxpelejuoorlsnq",
+          "at_seq": 2
+        }
+      }
+    },
+    {
+      "status": 404,
+      "body": {
+        "ok": false,
+        "code": 2,
+        "message": "no identity 2okqwhextnpkpmydrgrkk563vbehcklffwfzidxlh5dslawjmn6a in this node home",
+        "details": {
+          "reason": "identity_not_found",
+          "identity_id": "2okqwhextnpkpmydrgrkk563vbehcklffwfzidxlh5dslawjmn6a"
+        }
+      }
+    }
+  ]
+}

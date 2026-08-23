@@ -1,0 +1,61 @@
+{
+  "route": "/api/identities/:identity_id/witnesses",
+  "method": "POST",
+  "request": {
+    "witnesses": [
+      "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq",
+      "5yy7qpeiu4jbtjx47g7obwu3yitcaweplik2mfcvknie36letzoa"
+    ]
+  },
+  "response": {
+    "ok": true,
+    "ledger_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+    "head_seq": 1,
+    "head_event": "ksp5tvlygiuoldlrp2v57pfrnp76iqa23w7tlwuouq7wiwyzsm4q",
+    "event": {
+      "event_id": "ksp5tvlygiuoldlrp2v57pfrnp76iqa23w7tlwuouq7wiwyzsm4q",
+      "seq": 1,
+      "ledger_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+      "prev": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+      "timestamp_ms": 1700000060000,
+      "author_key": "2bflemtufo2kwoqtnc6umfpe43icesvxdiawxl4fecrtfslxq43q",
+      "payload_kind": "witness_config",
+      "payload": {
+        "witnesses": [
+          "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq",
+          "5yy7qpeiu4jbtjx47g7obwu3yitcaweplik2mfcvknie36letzoa"
+        ]
+      }
+    }
+  },
+  "errors": [
+    {
+      "status": 400,
+      "body": {
+        "ok": false,
+        "code": 10,
+        "message": "Schema error: witnesses must hold 1 to 16 distinct endpoint ids",
+        "details": {
+          "reason": "duplicate_witness",
+          "field": "witnesses",
+          "value": "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq"
+        }
+      }
+    },
+    {
+      "status": 409,
+      "body": {
+        "ok": false,
+        "code": 50,
+        "message": "State error: a witness reports head seq 4 for sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq, this node holds seq 3",
+        "details": {
+          "reason": "stale_head",
+          "ledger_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+          "local_head_seq": 3,
+          "observed_head_seq": 4,
+          "source": "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq"
+        }
+      }
+    }
+  ]
+}

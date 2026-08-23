@@ -1,0 +1,52 @@
+{
+  "route": "/api/ledgers?offset=0&limit=256",
+  "method": "GET",
+  "request": null,
+  "response": {
+    "ok": true,
+    "offset": 0,
+    "limit": 256,
+    "more": false,
+    "entries": [
+      {
+        "ledger_id": "2okqwhextnpkpmydrgrkk563vbehcklffwfzidxlh5dslawjmn6a",
+        "declared_kind": "organization",
+        "head_seq": 3,
+        "head_event": "zouk2anjwjry3k7lwi47yc3uauzsva25xmobabgx65xbd2mg63va",
+        "event_count": 4,
+        "first_seen_ms": 1700000440000,
+        "updated_ms": 1700000440000,
+        "fork_count": 0,
+        "forks_truncated": false,
+        "source_endpoint": "fd2ijzgxe3qk64jeqbgwjgqcg2cnmyyrfwghb6oar2wbg5ddxvla"
+      },
+      {
+        "ledger_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+        "declared_kind": "person",
+        "head_seq": 3,
+        "head_event": "ewckxhi7cixugkyrql6eqnncbgxqtnrho3rpsp6plhhh7yr6rosq",
+        "event_count": 4,
+        "first_seen_ms": 1700000200000,
+        "updated_ms": 1700000480000,
+        "fork_count": 1,
+        "forks_truncated": false,
+        "source_endpoint": "fd2ijzgxe3qk64jeqbgwjgqcg2cnmyyrfwghb6oar2wbg5ddxvla"
+      }
+    ]
+  },
+  "errors": [
+    {
+      "status": 400,
+      "body": {
+        "ok": false,
+        "code": 2,
+        "message": "limit must be a positive integer, clamped to 256",
+        "details": {
+          "reason": "malformed_query_parameter",
+          "parameter": "limit",
+          "value": "all"
+        }
+      }
+    }
+  ]
+}

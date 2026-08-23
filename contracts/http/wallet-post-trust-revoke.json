@@ -1,0 +1,56 @@
+{
+  "route": "/api/trust/:event_id/revoke",
+  "method": "POST",
+  "request": {
+    "issuer": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq"
+  },
+  "response": {
+    "ok": true,
+    "ledger_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+    "head_seq": 3,
+    "head_event": "ewckxhi7cixugkyrql6eqnncbgxqtnrho3rpsp6plhhh7yr6rosq",
+    "revoked_attestation": "65cssg5tnr3gyxe2rwhsgqc3nct3pwg2bqxr2oxpelejuoorlsnq",
+    "revoked_attestation_seq": 2,
+    "event": {
+      "event_id": "ewckxhi7cixugkyrql6eqnncbgxqtnrho3rpsp6plhhh7yr6rosq",
+      "seq": 3,
+      "ledger_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+      "prev": "65cssg5tnr3gyxe2rwhsgqc3nct3pwg2bqxr2oxpelejuoorlsnq",
+      "timestamp_ms": 1700000180000,
+      "author_key": "2bflemtufo2kwoqtnc6umfpe43icesvxdiawxl4fecrtfslxq43q",
+      "payload_kind": "trust_revocation",
+      "payload": {
+        "target": "65cssg5tnr3gyxe2rwhsgqc3nct3pwg2bqxr2oxpelejuoorlsnq"
+      }
+    }
+  },
+  "errors": [
+    {
+      "status": 404,
+      "body": {
+        "ok": false,
+        "code": 20,
+        "message": "Policy error: 3inplmxflxlqgc2fyq3uipmpesgeju5m4u76sxngaj2tl7qoxlva names no attestation in ledger sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+        "details": {
+          "reason": "unknown_attestation",
+          "ledger_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+          "event_id": "3inplmxflxlqgc2fyq3uipmpesgeju5m4u76sxngaj2tl7qoxlva"
+        }
+      }
+    },
+    {
+      "status": 409,
+      "body": {
+        "ok": false,
+        "code": 20,
+        "message": "Policy error: attestation 65cssg5tnr3gyxe2rwhsgqc3nct3pwg2bqxr2oxpelejuoorlsnq is already revoked at seq 3",
+        "details": {
+          "reason": "attestation_already_revoked",
+          "attestation_event": "65cssg5tnr3gyxe2rwhsgqc3nct3pwg2bqxr2oxpelejuoorlsnq",
+          "revocation_event": "ewckxhi7cixugkyrql6eqnncbgxqtnrho3rpsp6plhhh7yr6rosq",
+          "at_seq": 3
+        }
+      }
+    }
+  ]
+}

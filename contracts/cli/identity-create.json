@@ -1,0 +1,23 @@
+{
+  "command": "mabel identity create --alias alice --json",
+  "cases": [
+    {
+      "case": "created",
+      "command": "mabel identity create --alias alice --json",
+      "exit_code": 0,
+      "document": {
+        "ok": true,
+        "identity_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+        "declared_kind": "person",
+        "alias": "alice",
+        "active_key": "2bflemtufo2kwoqtnc6umfpe43icesvxdiawxl4fecrtfslxq43q",
+        "reserve_commit": "4hvnmdhctangrg6jmqkyzf6ropi5do6lqdcw37eqoryzhoqg2maq",
+        "created_at_ms": 1700000000000,
+        "inception_event": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+        "head_seq": 0,
+        "head_event": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+        "witnesses": []
+      }
+    }
+  ]
+}

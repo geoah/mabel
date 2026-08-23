@@ -1,0 +1,50 @@
+{
+  "route": "/api/ledgers/:ledger_id",
+  "method": "GET",
+  "request": null,
+  "response": {
+    "ok": true,
+    "entry": {
+      "ledger_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+      "declared_kind": "person",
+      "head_seq": 3,
+      "head_event": "ewckxhi7cixugkyrql6eqnncbgxqtnrho3rpsp6plhhh7yr6rosq",
+      "event_count": 4,
+      "first_seen_ms": 1700000200000,
+      "updated_ms": 1700000480000,
+      "fork_count": 1,
+      "forks_truncated": false,
+      "source_endpoint": "fd2ijzgxe3qk64jeqbgwjgqcg2cnmyyrfwghb6oar2wbg5ddxvla"
+    },
+    "witnesses": [
+      "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq",
+      "5yy7qpeiu4jbtjx47g7obwu3yitcaweplik2mfcvknie36letzoa"
+    ]
+  },
+  "errors": [
+    {
+      "status": 400,
+      "body": {
+        "ok": false,
+        "code": 10,
+        "message": "Schema error: ledger id must be 52 base32 characters",
+        "details": {
+          "reason": "malformed_ledger_id",
+          "value": "sfttwjzd"
+        }
+      }
+    },
+    {
+      "status": 404,
+      "body": {
+        "ok": false,
+        "code": 2,
+        "message": "this witness does not hold jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq",
+        "details": {
+          "reason": "ledger_not_held",
+          "ledger_id": "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq"
+        }
+      }
+    }
+  ]
+}

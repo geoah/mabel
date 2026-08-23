@@ -1,0 +1,59 @@
+{
+  "route": "/api/identities/:identity_id",
+  "method": "GET",
+  "request": null,
+  "response": {
+    "ok": true,
+    "identity": {
+      "identity_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+      "declared_kind": "person",
+      "alias": "alice",
+      "created_at_ms": 1700000000000,
+      "head_seq": 3,
+      "head_event": "ewckxhi7cixugkyrql6eqnncbgxqtnrho3rpsp6plhhh7yr6rosq",
+      "event_count": 4,
+      "witnesses": [
+        "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq",
+        "5yy7qpeiu4jbtjx47g7obwu3yitcaweplik2mfcvknie36letzoa"
+      ],
+      "trust": [
+        {
+          "attestation_event": "65cssg5tnr3gyxe2rwhsgqc3nct3pwg2bqxr2oxpelejuoorlsnq",
+          "attestation_seq": 2,
+          "subject": "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq",
+          "revoked": true,
+          "revocation_event": "ewckxhi7cixugkyrql6eqnncbgxqtnrho3rpsp6plhhh7yr6rosq",
+          "revocation_seq": 3
+        }
+      ],
+      "active_key": "2bflemtufo2kwoqtnc6umfpe43icesvxdiawxl4fecrtfslxq43q",
+      "reserve_commit": "4hvnmdhctangrg6jmqkyzf6ropi5do6lqdcw37eqoryzhoqg2maq"
+    }
+  },
+  "errors": [
+    {
+      "status": 400,
+      "body": {
+        "ok": false,
+        "code": 10,
+        "message": "Schema error: identity id must be 52 base32 characters",
+        "details": {
+          "reason": "malformed_identity_id",
+          "value": "alice"
+        }
+      }
+    },
+    {
+      "status": 404,
+      "body": {
+        "ok": false,
+        "code": 2,
+        "message": "no identity jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq in this node home",
+        "details": {
+          "reason": "identity_not_found",
+          "identity_id": "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq"
+        }
+      }
+    }
+  ]
+}

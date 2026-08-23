@@ -1,0 +1,60 @@
+{
+  "command": "mabel identity list --json",
+  "cases": [
+    {
+      "case": "one-person-and-one-organization",
+      "command": "mabel identity list --json",
+      "exit_code": 0,
+      "document": {
+        "ok": true,
+        "identities": [
+          {
+            "identity_id": "2okqwhextnpkpmydrgrkk563vbehcklffwfzidxlh5dslawjmn6a",
+            "declared_kind": "organization",
+            "alias": "acme",
+            "created_at_ms": 1700000240000,
+            "head_seq": 3,
+            "head_event": "zouk2anjwjry3k7lwi47yc3uauzsva25xmobabgx65xbd2mg63va",
+            "event_count": 4,
+            "witnesses": [],
+            "trust": []
+          },
+          {
+            "identity_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+            "declared_kind": "person",
+            "alias": "alice",
+            "created_at_ms": 1700000000000,
+            "head_seq": 3,
+            "head_event": "ewckxhi7cixugkyrql6eqnncbgxqtnrho3rpsp6plhhh7yr6rosq",
+            "event_count": 4,
+            "witnesses": [
+              "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq",
+              "5yy7qpeiu4jbtjx47g7obwu3yitcaweplik2mfcvknie36letzoa"
+            ],
+            "trust": [
+              {
+                "attestation_event": "65cssg5tnr3gyxe2rwhsgqc3nct3pwg2bqxr2oxpelejuoorlsnq",
+                "attestation_seq": 2,
+                "subject": "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq",
+                "revoked": true,
+                "revocation_event": "ewckxhi7cixugkyrql6eqnncbgxqtnrho3rpsp6plhhh7yr6rosq",
+                "revocation_seq": 3
+              }
+            ],
+            "active_key": "2bflemtufo2kwoqtnc6umfpe43icesvxdiawxl4fecrtfslxq43q",
+            "reserve_commit": "4hvnmdhctangrg6jmqkyzf6ropi5do6lqdcw37eqoryzhoqg2maq"
+          }
+        ]
+      }
+    },
+    {
+      "case": "empty-home",
+      "command": "mabel identity list --json",
+      "exit_code": 0,
+      "document": {
+        "ok": true,
+        "identities": []
+      }
+    }
+  ]
+}

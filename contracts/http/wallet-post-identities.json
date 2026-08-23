@@ -1,0 +1,89 @@
+{
+  "route": "/api/identities",
+  "method": "POST",
+  "request": {
+    "alias": "alice",
+    "declared_kind": "person"
+  },
+  "response": {
+    "ok": true,
+    "identity": {
+      "identity_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+      "declared_kind": "person",
+      "alias": "alice",
+      "created_at_ms": 1700000000000,
+      "head_seq": 0,
+      "head_event": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+      "event_count": 1,
+      "witnesses": [],
+      "trust": [],
+      "active_key": "2bflemtufo2kwoqtnc6umfpe43icesvxdiawxl4fecrtfslxq43q",
+      "reserve_commit": "4hvnmdhctangrg6jmqkyzf6ropi5do6lqdcw37eqoryzhoqg2maq"
+    },
+    "inception_event": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq"
+  },
+  "errors": [
+    {
+      "status": 400,
+      "body": {
+        "ok": false,
+        "code": 2,
+        "message": "alias is required",
+        "details": {
+          "reason": "missing_field",
+          "field": "alias"
+        }
+      }
+    },
+    {
+      "status": 400,
+      "body": {
+        "ok": false,
+        "code": 10,
+        "message": "Schema error: declared_kind must be one of person, organization, agent, service",
+        "details": {
+          "reason": "unknown_enum_value",
+          "field": "declared_kind",
+          "value": "human"
+        }
+      }
+    },
+    {
+      "status": 403,
+      "body": {
+        "ok": false,
+        "code": 2,
+        "message": "request rejected: Origin must be http://127.0.0.1:9080 or http://localhost:9080 on a mutating route",
+        "details": {
+          "reason": "origin_mismatch",
+          "origin": "https://attacker.example"
+        }
+      }
+    },
+    {
+      "status": 415,
+      "body": {
+        "ok": false,
+        "code": 2,
+        "message": "request rejected: mutating routes require content-type: application/json",
+        "details": {
+          "reason": "content_type_not_json",
+          "content_type": "application/x-www-form-urlencoded"
+        }
+      }
+    },
+    {
+      "status": 501,
+      "body": {
+        "ok": false,
+        "code": 70,
+        "message": "declared_kind agent is not implemented",
+        "details": {
+          "reason": "unsupported_declared_kind",
+          "field": "declared_kind",
+          "value": "agent"
+        }
+      }
+    }
+  ]
+}

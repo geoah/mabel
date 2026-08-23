@@ -1,0 +1,73 @@
+{
+  "route": "/api/identities",
+  "method": "GET",
+  "request": null,
+  "response": {
+    "ok": true,
+    "identities": [
+      {
+        "identity_id": "2okqwhextnpkpmydrgrkk563vbehcklffwfzidxlh5dslawjmn6a",
+        "declared_kind": "organization",
+        "alias": "acme",
+        "created_at_ms": 1700000240000,
+        "head_seq": 3,
+        "head_event": "zouk2anjwjry3k7lwi47yc3uauzsva25xmobabgx65xbd2mg63va",
+        "event_count": 4,
+        "witnesses": [],
+        "trust": []
+      },
+      {
+        "identity_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+        "declared_kind": "person",
+        "alias": "alice",
+        "created_at_ms": 1700000000000,
+        "head_seq": 3,
+        "head_event": "ewckxhi7cixugkyrql6eqnncbgxqtnrho3rpsp6plhhh7yr6rosq",
+        "event_count": 4,
+        "witnesses": [
+          "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq",
+          "5yy7qpeiu4jbtjx47g7obwu3yitcaweplik2mfcvknie36letzoa"
+        ],
+        "trust": [
+          {
+            "attestation_event": "65cssg5tnr3gyxe2rwhsgqc3nct3pwg2bqxr2oxpelejuoorlsnq",
+            "attestation_seq": 2,
+            "subject": "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq",
+            "revoked": true,
+            "revocation_event": "ewckxhi7cixugkyrql6eqnncbgxqtnrho3rpsp6plhhh7yr6rosq",
+            "revocation_seq": 3
+          }
+        ],
+        "active_key": "2bflemtufo2kwoqtnc6umfpe43icesvxdiawxl4fecrtfslxq43q",
+        "reserve_commit": "4hvnmdhctangrg6jmqkyzf6ropi5do6lqdcw37eqoryzhoqg2maq"
+      }
+    ]
+  },
+  "errors": [
+    {
+      "status": 403,
+      "body": {
+        "ok": false,
+        "code": 2,
+        "message": "request rejected: Host header must be 127.0.0.1:9080 or localhost:9080",
+        "details": {
+          "reason": "host_not_loopback",
+          "host": "localhost.example"
+        }
+      }
+    },
+    {
+      "status": 500,
+      "body": {
+        "ok": false,
+        "code": 60,
+        "message": "key file has insecure permissions: identities/sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq/active.key is mode 0644",
+        "details": {
+          "reason": "insecure_key_permissions",
+          "path": "identities/sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq/active.key",
+          "mode": "0644"
+        }
+      }
+    }
+  ]
+}

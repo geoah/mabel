@@ -1,0 +1,34 @@
+{
+  "route": "/api/node",
+  "method": "GET",
+  "request": null,
+  "response": {
+    "ok": true,
+    "role": "wallet",
+    "endpoint_id": "fd2ijzgxe3qk64jeqbgwjgqcg2cnmyyrfwghb6oar2wbg5ddxvla",
+    "http_bind": "127.0.0.1:9080",
+    "relay": "n0",
+    "witnesses": [
+      "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq",
+      "5yy7qpeiu4jbtjx47g7obwu3yitcaweplik2mfcvknie36letzoa"
+    ],
+    "storage_capacity": 2147483648,
+    "storage_used": 18432,
+    "identity_count": 2,
+    "version": "0.1.0"
+  },
+  "errors": [
+    {
+      "status": 403,
+      "body": {
+        "ok": false,
+        "code": 2,
+        "message": "request rejected: Host header must be 127.0.0.1:9080 or localhost:9080",
+        "details": {
+          "reason": "host_not_loopback",
+          "host": "evil.example"
+        }
+      }
+    }
+  ]
+}

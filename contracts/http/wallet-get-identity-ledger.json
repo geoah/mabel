@@ -1,0 +1,69 @@
+{
+  "route": "/api/identities/:identity_id/ledger?since=2&limit=512",
+  "method": "GET",
+  "request": null,
+  "response": {
+    "ok": true,
+    "ledger_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+    "declared_kind": "person",
+    "since": 2,
+    "limit": 512,
+    "head_seq": 3,
+    "head_event": "ewckxhi7cixugkyrql6eqnncbgxqtnrho3rpsp6plhhh7yr6rosq",
+    "event_count": 4,
+    "more": false,
+    "events": [
+      {
+        "event_id": "65cssg5tnr3gyxe2rwhsgqc3nct3pwg2bqxr2oxpelejuoorlsnq",
+        "seq": 2,
+        "ledger_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+        "prev": "ksp5tvlygiuoldlrp2v57pfrnp76iqa23w7tlwuouq7wiwyzsm4q",
+        "timestamp_ms": 1700000120000,
+        "author_key": "2bflemtufo2kwoqtnc6umfpe43icesvxdiawxl4fecrtfslxq43q",
+        "payload_kind": "trust_attestation",
+        "payload": {
+          "subject": "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq"
+        }
+      },
+      {
+        "event_id": "ewckxhi7cixugkyrql6eqnncbgxqtnrho3rpsp6plhhh7yr6rosq",
+        "seq": 3,
+        "ledger_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+        "prev": "65cssg5tnr3gyxe2rwhsgqc3nct3pwg2bqxr2oxpelejuoorlsnq",
+        "timestamp_ms": 1700000180000,
+        "author_key": "2bflemtufo2kwoqtnc6umfpe43icesvxdiawxl4fecrtfslxq43q",
+        "payload_kind": "trust_revocation",
+        "payload": {
+          "target": "65cssg5tnr3gyxe2rwhsgqc3nct3pwg2bqxr2oxpelejuoorlsnq"
+        }
+      }
+    ]
+  },
+  "errors": [
+    {
+      "status": 400,
+      "body": {
+        "ok": false,
+        "code": 2,
+        "message": "since must be a non-negative integer",
+        "details": {
+          "reason": "malformed_query_parameter",
+          "parameter": "since",
+          "value": "-1"
+        }
+      }
+    },
+    {
+      "status": 404,
+      "body": {
+        "ok": false,
+        "code": 2,
+        "message": "no identity jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq in this node home",
+        "details": {
+          "reason": "identity_not_found",
+          "identity_id": "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq"
+        }
+      }
+    }
+  ]
+}

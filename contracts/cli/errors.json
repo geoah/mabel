@@ -1,0 +1,163 @@
+{
+  "envelope": {
+    "ok": "always false on an error document",
+    "code": "the process exit code, one of 2, 10, 20, 30, 50, 60, 70",
+    "message": "one line, prefixed with the layer name for codes 10, 20, 30 and 50",
+    "details": "an object; details.reason is a stable snake_case class name, the rest is code-specific"
+  },
+  "cases": [
+    {
+      "case": "usage",
+      "command": "mabel trust add --issuer alice --json",
+      "exit_code": 2,
+      "document": {
+        "ok": false,
+        "code": 2,
+        "message": "missing required argument --subject",
+        "details": {
+          "reason": "missing_argument",
+          "argument": "--subject"
+        }
+      }
+    },
+    {
+      "case": "schema",
+      "command": "mabel org accept ./acme.invite --as bob --out ./acme.acceptance --json",
+      "exit_code": 10,
+      "document": {
+        "ok": false,
+        "code": 10,
+        "message": "Schema error: unknown field number 9 in EventBody at byte offset 42",
+        "details": {
+          "reason": "unknown_field_number",
+          "path": "./acme.invite",
+          "field_number": 9,
+          "offset": 42
+        }
+      }
+    },
+    {
+      "case": "ledger",
+      "command": "mabel verify ledger sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq --json",
+      "exit_code": 20,
+      "document": {
+        "ok": false,
+        "code": 20,
+        "message": "Ledger error: valid to seq 1, failed at seq 2: prev does not match the previous event id",
+        "details": {
+          "reason": "prev_mismatch",
+          "ledger_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+          "valid_to_seq": 1,
+          "failed_at_seq": 2,
+          "expected": "ksp5tvlygiuoldlrp2v57pfrnp76iqa23w7tlwuouq7wiwyzsm4q",
+          "found": "3inplmxflxlqgc2fyq3uipmpesgeju5m4u76sxngaj2tl7qoxlva",
+          "source": "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq",
+          "head_seq": 2,
+          "head_event": "3inplmxflxlqgc2fyq3uipmpesgeju5m4u76sxngaj2tl7qoxlva",
+          "fetched_at_ms": 1700000500000
+        }
+      }
+    },
+    {
+      "case": "policy",
+      "command": "mabel trust add --issuer alice --subject jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq --json",
+      "exit_code": 20,
+      "document": {
+        "ok": false,
+        "code": 20,
+        "message": "Policy error: an unrevoked attestation for jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq already exists at seq 2",
+        "details": {
+          "reason": "duplicate_unrevoked_attestation",
+          "ledger_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+          "subject": "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq",
+          "attestation_event": "65cssg5tnr3gyxe2rwhsgqc3nct3pwg2bqxr2oxpelejuoorlsnq",
+          "at_seq": 2
+        }
+      }
+    },
+    {
+      "case": "network",
+      "command": "mabel verify trust --issuer sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq --subject jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq --json",
+      "exit_code": 30,
+      "document": {
+        "ok": false,
+        "code": 30,
+        "message": "Network error: no source answered for sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+        "details": {
+          "reason": "no_source_available",
+          "ledger_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+          "sources_queried": [
+            "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq",
+            "5yy7qpeiu4jbtjx47g7obwu3yitcaweplik2mfcvknie36letzoa"
+          ]
+        }
+      }
+    },
+    {
+      "case": "state",
+      "command": "mabel trust add --issuer acme --subject jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq --json",
+      "exit_code": 50,
+      "document": {
+        "ok": false,
+        "code": 50,
+        "message": "State error: witness zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq reports head seq 4, this node holds seq 3",
+        "details": {
+          "reason": "stale_head",
+          "ledger_id": "2okqwhextnpkpmydrgrkk563vbehcklffwfzidxlh5dslawjmn6a",
+          "local_head_seq": 3,
+          "observed_head_seq": 4,
+          "source": "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq"
+        }
+      }
+    },
+    {
+      "case": "replay",
+      "command": "mabel org admit --org 2okqwhextnpkpmydrgrkk563vbehcklffwfzidxlh5dslawjmn6a --by alice ./acme.acceptance --json",
+      "exit_code": 50,
+      "document": {
+        "ok": false,
+        "code": 50,
+        "message": "Replay error: this acceptance was already admitted at seq 2 of 2okqwhextnpkpmydrgrkk563vbehcklffwfzidxlh5dslawjmn6a",
+        "details": {
+          "reason": "acceptance_already_used",
+          "ledger_id": "2okqwhextnpkpmydrgrkk563vbehcklffwfzidxlh5dslawjmn6a",
+          "invite_event": "nuya6dronjln22kfnl2sadekxc43vf4azhp6elszzf3m3jsvvxfa",
+          "at_seq": 2,
+          "path": "./acme.acceptance"
+        }
+      }
+    },
+    {
+      "case": "insecure-permissions",
+      "command": "mabel trust add --issuer alice --subject jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq --json",
+      "exit_code": 60,
+      "document": {
+        "ok": false,
+        "code": 60,
+        "message": "key file has insecure permissions: identities/sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq/active.key is mode 0644, pass --allow-insecure-permissions to continue",
+        "details": {
+          "reason": "insecure_key_permissions",
+          "path": "identities/sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq/active.key",
+          "mode": "0644",
+          "expected_mode": "0600"
+        }
+      }
+    },
+    {
+      "case": "unsupported",
+      "command": "mabel verify ledger sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq --json",
+      "exit_code": 70,
+      "document": {
+        "ok": false,
+        "code": 70,
+        "message": "event version 1 is not supported by this build, which speaks v0 only",
+        "details": {
+          "reason": "unsupported_version",
+          "ledger_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+          "at_seq": 4,
+          "version": 1
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,60 @@
+{
+  "command": "mabel verify ledger sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq --json",
+  "cases": [
+    {
+      "case": "valid",
+      "command": "mabel verify ledger sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq --json",
+      "exit_code": 0,
+      "document": {
+        "ok": true,
+        "kind": "ledger",
+        "ledger_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+        "declared_kind": "person",
+        "valid": true,
+        "valid_to_seq": 3,
+        "failed_at_seq": null,
+        "event_count": 4,
+        "source": "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq",
+        "sources_queried": [
+          "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq",
+          "5yy7qpeiu4jbtjx47g7obwu3yitcaweplik2mfcvknie36letzoa"
+        ],
+        "head_seq": 3,
+        "head_event": "ewckxhi7cixugkyrql6eqnncbgxqtnrho3rpsp6plhhh7yr6rosq",
+        "fetched_at_ms": 1700000500000,
+        "statement": "valid as of seq 3 of sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq, fetched from zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq at 2023-11-14T22:21:40Z",
+        "verified_means": "Verified means this identity signed this statement at this position in its chain. It is not proof that the statement is true, not proof of legal identity, and not proof of unique humanity."
+      }
+    },
+    {
+      "case": "partial-validity",
+      "command": "mabel verify ledger sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq --json",
+      "exit_code": 20,
+      "document": {
+        "ok": false,
+        "code": 20,
+        "message": "Ledger error: valid to seq 2, failed at seq 3: signature does not verify under the authorized key",
+        "details": {
+          "reason": "invalid_signature",
+          "kind": "ledger",
+          "ledger_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+          "declared_kind": "person",
+          "valid": false,
+          "valid_to_seq": 2,
+          "failed_at_seq": 3,
+          "failed_event": "3inplmxflxlqgc2fyq3uipmpesgeju5m4u76sxngaj2tl7qoxlva",
+          "event_count": 4,
+          "source": "5yy7qpeiu4jbtjx47g7obwu3yitcaweplik2mfcvknie36letzoa",
+          "sources_queried": [
+            "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq",
+            "5yy7qpeiu4jbtjx47g7obwu3yitcaweplik2mfcvknie36letzoa"
+          ],
+          "head_seq": 3,
+          "head_event": "3inplmxflxlqgc2fyq3uipmpesgeju5m4u76sxngaj2tl7qoxlva",
+          "fetched_at_ms": 1700000560000,
+          "statement": "valid to seq 2 of sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq, fetched from 5yy7qpeiu4jbtjx47g7obwu3yitcaweplik2mfcvknie36letzoa at 2023-11-14T22:22:40Z; failed at seq 3: signature does not verify under the authorized key"
+        }
+      }
+    }
+  ]
+}
