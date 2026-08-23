@@ -29,6 +29,9 @@ tracing.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+# `start_paused` runs the graph crawler's whole-run budget on a test clock, so
+# the time cap is exercised without a real sleep (ticket 025).
+tokio = { workspace = true, features = ["test-util"] }
 # `ServiceExt::oneshot` drives the routers in the contract tests without a
 # socket. Declared here rather than in the workspace table because it is the
 # only crate that needs it.

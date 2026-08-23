@@ -1,6 +1,6 @@
 # 025: trust graph crawler and generation store
 
-- Status: open
+- Status: done
 - Depends on: 023, 011
 
 ## Goal
