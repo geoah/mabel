@@ -227,10 +227,143 @@ pub struct TrustEntry {
     pub revocation_seq: Option<u64>,
 }
 
+/// Where a ledger's signing authority came from (proposal 002 section 2).
+///
+/// This is what proposal 001 called the ledger kind. The declared kind is a
+/// separate, advisory field and gates nothing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RootName {
+    /// The ledger keys itself.
+    Raw,
+    /// One founding identity keys it.
+    Identity,
+}
+
+impl RootName {
+    /// The JSON spelling.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Raw => "raw",
+            Self::Identity => "identity",
+        }
+    }
+}
+
+impl fmt::Display for RootName {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
+/// What a principal or an invitation may do (proposal 002 section 1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RoleName {
+    /// Recorded data with no signing authority.
+    Member,
+    /// May append to the ledger.
+    Controller,
+}
+
+impl RoleName {
+    /// Both values, in the order an error message lists them.
+    pub const ALL: [Self; 2] = [Self::Member, Self::Controller];
+
+    /// Parses the JSON spelling.
+    #[must_use]
+    pub fn parse(raw: &str) -> Option<Self> {
+        match raw {
+            "member" => Some(Self::Member),
+            "controller" => Some(Self::Controller),
+            _ => None,
+        }
+    }
+
+    /// The JSON spelling.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Member => "member",
+            Self::Controller => "controller",
+        }
+    }
+}
+
+impl fmt::Display for RoleName {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
+/// What became of an invitation (proposal 002 section 4).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum StatusName {
+    /// Issued and neither accepted nor cancelled.
+    Open,
+    /// An acceptance consumed it.
+    Accepted,
+    /// A removal cancelled it.
+    Cancelled,
+}
+
+impl StatusName {
+    /// The JSON spelling.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Open => "open",
+            Self::Accepted => "accepted",
+            Self::Cancelled => "cancelled",
+        }
+    }
+}
+
+impl fmt::Display for StatusName {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
+/// One entry of a ledger's `principals` array.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PrincipalEntry {
+    /// The identity the ledger records.
+    pub identity: Id,
+    /// The key that identity signs under here.
+    pub active_key: Id,
+    /// What it may do.
+    pub role: RoleName,
+    /// Whether this is the principal the inception seeded, which no removal
+    /// may take off a raw-rooted ledger.
+    pub is_root: bool,
+}
+
+/// One entry of a ledger's `invitations` array.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct InvitationEntry {
+    /// The invitation event, which an acceptance names.
+    pub invitation_event: Id,
+    /// Its position.
+    pub invitation_seq: u64,
+    /// The identity invited.
+    pub invitee: Id,
+    /// That identity's active key.
+    pub invitee_key: Id,
+    /// The role offered.
+    pub role: RoleName,
+    /// Whether it is still open.
+    pub status: StatusName,
+}
+
 /// The identity document (`contracts/README.md`, "Shared documents").
 ///
 /// `active_key` and `reserve_commit` are absent, not null, on an identity that
-/// is not a person: the fixtures show an organization without them.
+/// holds no key of its own: the fixtures show an organization without them.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Identity {
@@ -252,7 +385,12 @@ pub struct Identity {
     pub witnesses: Vec<Id>,
     /// Attestations this identity issued, revoked ones included.
     pub trust: Vec<TrustEntry>,
-    /// The signing key, on a person only.
+    /// The folded principal set, by ascending identity id (proposal 002
+    /// section 1). Every ledger has one, raw-rooted or identity-rooted.
+    pub principals: Vec<PrincipalEntry>,
+    /// Invitations this ledger issued that are still `open`.
+    pub open_invitation_count: u64,
+    /// The signing key, on a raw root only.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub active_key: Option<Id>,
     /// The reserve-key commitment, on a person only.
@@ -262,9 +400,9 @@ pub struct Identity {
 
 /// The event document (`contracts/README.md`, "Shared documents").
 ///
-/// `payload_kind` stays a string and `payload` a JSON object because the
-/// membership and inception payload names are not frozen yet
-/// (`contracts/http/PENDING-membership.md`).
+/// `payload_kind` stays a string and `payload` a JSON object: the seven names
+/// and their keys are frozen in `contracts/README.md`, but one Rust enum per
+/// payload would duplicate `ledger.proto` in a layer that only renders.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Event {
@@ -367,6 +505,154 @@ pub struct Revoked {
     /// Where that attestation sits in the chain.
     pub revoked_attestation_seq: u64,
     /// The revocation event.
+    pub event: Event,
+}
+
+/// `GET /api/identities/{identity_id}/memberships`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MembershipView {
+    /// The ledger that was read.
+    pub ledger_id: Id,
+    /// What it declares itself to be. Advisory.
+    pub declared_kind: DeclaredKind,
+    /// Where its signing authority came from.
+    pub root: RootName,
+    /// Sequence number of its head event.
+    pub head_seq: u64,
+    /// Its head event.
+    pub head_event: Id,
+    /// Every identity it records, by ascending id.
+    pub principals: Vec<PrincipalEntry>,
+    /// Every invitation it issued, by ascending position, accepted and
+    /// cancelled ones included.
+    pub invitations: Vec<InvitationEntry>,
+}
+
+/// `POST /api/identities/{identity_id}/memberships/invitations`.
+///
+/// `invitation_bundle_base64` is the artifact the invitee needs: the ledger's
+/// events `0..=invitation`, base64 of the same bytes `mabel membership invite
+/// --out` writes (`contracts/README.md`, "Artifacts over JSON").
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Invited {
+    /// The ledger the invitation was appended to.
+    pub ledger_id: Id,
+    /// The identity that signed it.
+    pub by: Id,
+    /// The identity invited.
+    pub invitee: Id,
+    /// That identity's active key, from its descriptor.
+    pub invitee_key: Id,
+    /// The role offered.
+    pub role: RoleName,
+    /// The invitation event, which the acceptance names.
+    pub invitation_event: Id,
+    /// Its position.
+    pub invitation_seq: u64,
+    /// The `timestamp_ms` it carries.
+    pub timestamp_ms: u64,
+    /// The new head sequence number.
+    pub head_seq: u64,
+    /// The new head event.
+    pub head_event: Id,
+    /// The invitation event that was appended.
+    pub event: Event,
+    /// The `InvitationBundle` to hand the invitee.
+    pub invitation_bundle_base64: String,
+    /// Events in that bundle, which are the ledger's `0..=invitation`.
+    pub event_count: u64,
+}
+
+/// `POST /api/identities/{identity_id}/memberships/acceptances`: the accept
+/// surface the node signed under, and the file it signed.
+///
+/// The surface is what proposal 002 section 4 requires a person to see before
+/// anything is signed. The browser holds no keys, so the node signs and
+/// answers with both (proposal 001 section 10).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Accepted {
+    /// The ledger the invitation admits into.
+    pub ledger_id: Id,
+    /// What that ledger declares itself to be. Advisory.
+    pub declared_kind: DeclaredKind,
+    /// Where its signing authority came from.
+    pub root: RootName,
+    /// Every identity that may currently append to it.
+    pub controllers: Vec<PrincipalEntry>,
+    /// The invitation event.
+    pub invitation_event: Id,
+    /// The identity invited, which is the path parameter.
+    pub invitee: Id,
+    /// That identity's active key.
+    pub invitee_key: Id,
+    /// The role offered.
+    pub role: RoleName,
+    /// Whether accepting means signing as the ledger's own identity.
+    pub controller_on_raw_root: bool,
+    /// The warning that flag carries, `null` when it is false.
+    pub warning: Option<String>,
+    /// The `AcceptanceFile` to hand a controller of the ledger.
+    pub acceptance_base64: String,
+}
+
+/// `POST /api/identities/{identity_id}/memberships/admissions`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Admitted {
+    /// The ledger the acceptance was appended to.
+    pub ledger_id: Id,
+    /// The identity that signed the acceptance event.
+    pub by: Id,
+    /// The identity admitted.
+    pub invitee: Id,
+    /// The key it signs under here.
+    pub invitee_key: Id,
+    /// The role it now holds.
+    pub role: RoleName,
+    /// The invitation the acceptance consumed.
+    pub invitation_event: Id,
+    /// The acceptance event.
+    pub acceptance_event: Id,
+    /// Its position.
+    pub acceptance_seq: u64,
+    /// The `timestamp_ms` it carries.
+    pub timestamp_ms: u64,
+    /// The new head sequence number.
+    pub head_seq: u64,
+    /// The new head event.
+    pub head_event: Id,
+    /// The acceptance event that was appended.
+    pub event: Event,
+}
+
+/// `POST /api/identities/{identity_id}/memberships/removals`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Removed {
+    /// The ledger the removal was appended to.
+    pub ledger_id: Id,
+    /// The identity that signed it.
+    pub by: Id,
+    /// The identity removed.
+    pub target: Id,
+    /// Whether the target held a principal that the removal took away.
+    pub principal_removed: bool,
+    /// The open invitation the removal cancelled, `null` if there was none.
+    pub invitation_cancelled: Option<Id>,
+    /// The removal event.
+    pub removal_event: Id,
+    /// Its position.
+    pub removal_seq: u64,
+    /// The `timestamp_ms` it carries.
+    pub timestamp_ms: u64,
+    /// The new head sequence number.
+    pub head_seq: u64,
+    /// The new head event.
+    pub head_event: Id,
+    /// The removal event that was appended.
     pub event: Event,
 }
 

@@ -31,9 +31,9 @@ use mabel_proto::prost::Message;
 use mabel_proto::v0 as pb;
 use mabel_proto::v0::event_body::Payload;
 
-use crate::append::append;
+use crate::append::{append, ensure_fresh};
 use crate::artifacts;
-use crate::cli::RoleArg;
+use crate::cli::{AppendOptions, RoleArg};
 use crate::context::Context;
 use crate::documents::{
     AcceptSurface, Accepted, Admitted, InvitationEntry, Invited, Membership, PrincipalEntry,
@@ -58,6 +58,7 @@ pub fn invite(
     invitee: &Path,
     role: RoleArg,
     out: &Path,
+    options: &AppendOptions,
 ) -> Result<Outcome> {
     let ledger = ctx.resolve_local(ledger)?;
     let signer = ctx.resolve_local(by)?;
@@ -75,6 +76,7 @@ pub fn invite(
     })?;
     let invited = descriptor.identity();
 
+    ensure_fresh(ctx, ledger, options)?;
     let mut loaded = ctx.load(ledger)?;
     let appended = append(ctx, signer, &mut loaded, |key, at, timestamp_ms| {
         build_membership_invitation(
@@ -207,10 +209,17 @@ pub fn accept(
 }
 
 /// `mabel membership admit --ledger <l> --by <c> <acceptance-file>`.
-pub fn admit(ctx: &Context, ledger: &str, by: &str, path: &Path) -> Result<Outcome> {
+pub fn admit(
+    ctx: &Context,
+    ledger: &str,
+    by: &str,
+    path: &Path,
+    options: &AppendOptions,
+) -> Result<Outcome> {
     let ledger = ctx.resolve_local(ledger)?;
     let signer = ctx.resolve_local(by)?;
     let file = artifacts::read_acceptance_file(path)?;
+    ensure_fresh(ctx, ledger, options)?;
     let mut loaded = ctx.load(ledger)?;
     refuse_replay(ctx, &loaded, file.invitation_event(), path)?;
 
@@ -263,10 +272,17 @@ pub fn admit(ctx: &Context, ledger: &str, by: &str, path: &Path) -> Result<Outco
 /// One removal cancels an open invitation and takes away a principal,
 /// whichever exist. The raw root and the last controller are the fold's to
 /// refuse.
-pub fn remove(ctx: &Context, ledger: &str, by: &str, member: &str) -> Result<Outcome> {
+pub fn remove(
+    ctx: &Context,
+    ledger: &str,
+    by: &str,
+    member: &str,
+    options: &AppendOptions,
+) -> Result<Outcome> {
     let ledger = ctx.resolve_local(ledger)?;
     let signer = ctx.resolve_local(by)?;
     let target = ctx.resolve(member)?;
+    ensure_fresh(ctx, ledger, options)?;
     let mut loaded = ctx.load(ledger)?;
     let principal_removed = loaded.state.principal(&target).is_some();
     let cancelled = open_invitation(&loaded.state, target);

@@ -51,7 +51,7 @@ impl Wallet {
     fn identity(&self, alias: &str) -> IdentityId {
         let created = self
             .core
-            .create_identity(alias, DeclaredKind::Person)
+            .create_identity(alias, DeclaredKind::Person, None)
             .expect("the identity is created");
         created
             .identity

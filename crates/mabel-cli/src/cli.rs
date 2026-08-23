@@ -8,7 +8,7 @@
 use std::net::SocketAddr;
 use std::path::PathBuf;
 
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 use mabel_node::DeclaredKind as StoredKind;
 use mabel_proto::v0::DeclaredKind as ProtoKind;
 use mabel_proto::v0::Role as ProtoRole;
@@ -87,6 +87,23 @@ pub enum Command {
     },
 }
 
+/// The append discipline of proposal 001 section 5, on every command that
+/// appends.
+///
+/// Before appending to a ledger this wallet does not solely control, the
+/// witnesses the ledger names are asked where it ends. Reaching them needs the
+/// same `--peer` address hints a `sync` command takes, and an offline caller
+/// needs a way out, which is `--no-sync`.
+#[derive(Debug, Args)]
+pub struct AppendOptions {
+    /// Append without asking the ledger's witnesses where it ends.
+    #[arg(long)]
+    pub no_sync: bool,
+    /// Endpoint ticket to seed into address lookup. Repeatable.
+    #[arg(long, value_name = "TICKET")]
+    pub peer: Vec<String>,
+}
+
 /// `mabel identity ...`.
 #[derive(Debug, Subcommand)]
 pub enum IdentityCommand {
@@ -148,6 +165,8 @@ pub enum MembershipCommand {
         /// Where to write the `InvitationBundle` for the invitee.
         #[arg(long, value_name = "PATH")]
         out: PathBuf,
+        #[command(flatten)]
+        append: AppendOptions,
     },
     /// Sign an acceptance of an invitation, after showing what it admits to.
     Accept {
@@ -175,6 +194,8 @@ pub enum MembershipCommand {
         /// The `AcceptanceFile` the invitee sent.
         #[arg(value_name = "ACCEPTANCE_FILE")]
         acceptance: PathBuf,
+        #[command(flatten)]
+        append: AppendOptions,
     },
     /// Remove a principal and cancel its open invitation, whichever exist.
     Remove {
@@ -188,6 +209,8 @@ pub enum MembershipCommand {
         /// the same flag, since the event field is `target`.
         #[arg(long, alias = "target", value_name = "ALIAS_OR_ID")]
         member: String,
+        #[command(flatten)]
+        append: AppendOptions,
     },
     /// Show a ledger's principals and its invitations.
     List {
@@ -229,6 +252,8 @@ pub enum TrustCommand {
         /// The identity the attestation names, by alias or id.
         #[arg(long)]
         subject: String,
+        #[command(flatten)]
+        append: AppendOptions,
     },
     /// Revoke an attestation earlier in --issuer's ledger.
     Revoke {
@@ -238,6 +263,8 @@ pub enum TrustCommand {
         /// The attestation's event id.
         #[arg(long)]
         attestation: String,
+        #[command(flatten)]
+        append: AppendOptions,
     },
     /// List the attestations one ledger has issued.
     List {
@@ -258,6 +285,8 @@ pub enum WitnessCommand {
         /// The witness endpoint id, base32 or hex.
         #[arg(long)]
         endpoint: String,
+        #[command(flatten)]
+        append: AppendOptions,
     },
     /// Serve this home as a witness until ctrl-c.
     Run {

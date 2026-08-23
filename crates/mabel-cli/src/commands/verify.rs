@@ -41,7 +41,7 @@ pub fn ledger(
     tickets: &[String],
 ) -> Result<Outcome> {
     let ledger = ctx.resolve(name)?;
-    match plan(ctx, ledger, from)? {
+    match plan(ctx, ledger, from, tickets)? {
         Sources::Local(_) => local_ledger(ctx, ledger),
         remote => {
             let report = on_network(
@@ -75,7 +75,7 @@ pub fn trust(
 ) -> Result<Outcome> {
     let issuer = ctx.resolve(issuer)?;
     let subject = ctx.resolve(subject)?;
-    match plan(ctx, issuer, from)? {
+    match plan(ctx, issuer, from, tickets)? {
         Sources::Local(_) => local_trust(ctx, issuer, subject),
         remote => {
             let report = on_network(
@@ -96,10 +96,32 @@ pub fn trust(
 }
 
 /// Which sources answer for this ledger, decided before an endpoint is bound.
-fn plan(ctx: &Context, ledger: IdentityId, from: Option<&str>) -> Result<Sources> {
+///
+/// A home that holds nothing knows no witness for a ledger it has never seen,
+/// so the endpoints of the `--peer` tickets stand in as the sources to ask.
+/// This is the fresh-verifier case of proposal 001 section 11: the only thing
+/// such a home was told is where to look. It changes no answer, since every
+/// candidate a peer serves is still folded from nothing and its ledger id is
+/// still required to equal the one that was asked for.
+fn plan(
+    ctx: &Context,
+    ledger: IdentityId,
+    from: Option<&str>,
+    tickets: &[String],
+) -> Result<Sources> {
     let from = from.map(ids::parse_endpoint).transpose()?;
     let core = WalletCore::new(ctx.home().clone());
-    Ok(mabel_node::wallet::sources(&core, ledger, from)?)
+    match mabel_node::wallet::sources(&core, ledger, from) {
+        Ok(sources) => Ok(sources),
+        Err(error) if error.reason() == "no_source_available" && !tickets.is_empty() => {
+            let peers: Vec<_> = crate::network::parse_peers(tickets)?
+                .into_iter()
+                .map(|peer| peer.id)
+                .collect();
+            Ok(Sources::Witnesses(peers))
+        }
+        Err(error) => Err(error.into()),
+    }
 }
 
 /// `mabel verify ledger` against this home's own copy.

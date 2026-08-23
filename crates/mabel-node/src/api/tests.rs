@@ -14,7 +14,7 @@ use axum::http::{Request, StatusCode, header};
 use serde_json::{Value, json};
 use tower::ServiceExt;
 
-use super::documents::DeclaredKind;
+use super::documents::{DeclaredKind, RoleName};
 use super::error::{ErrorLayer, ServiceError};
 use super::service::{EventPageRequest, ForkQuery, PageRequest, PushRequest, VerifyRequest};
 use super::stub::{
@@ -37,7 +37,7 @@ const ORIGIN: &str = "http://127.0.0.1:9080";
 /// The reasons this module produces itself, before any service is called.
 /// Every other reason in a fixture's `errors` array comes from a service, and
 /// the round-trip test below drives those through the stub.
-const API_OWNED_REASONS: [&str; 10] = [
+const API_OWNED_REASONS: [&str; 11] = [
     "host_not_loopback",
     "origin_mismatch",
     "content_type_not_json",
@@ -47,6 +47,7 @@ const API_OWNED_REASONS: [&str; 10] = [
     "malformed_identity_id",
     "malformed_ledger_id",
     "malformed_query_parameter",
+    "malformed_base64",
     "duplicate_witness",
 ];
 
@@ -287,6 +288,106 @@ async fn wallet_post_identity_witnesses_matches_the_fixture() {
         stub.call(),
         WalletCall::SetWitnesses(id(ALICE), vec![id(WITNESS_ONE), id(WITNESS_TWO)])
     );
+}
+
+#[tokio::test]
+async fn wallet_get_identity_memberships_matches_the_fixture() {
+    let name = "wallet-get-identity-memberships.json";
+    let stub = Arc::new(StubWalletService::new());
+    let (status, body) = run_wallet(name, &stub).await;
+    expect_response(name, status, &body);
+    assert_eq!(stub.call(), WalletCall::Memberships(id(ALICE)));
+    // Every ledger carries a principal set, raw-rooted or identity-rooted
+    // (proposal 002 section 1).
+    assert_eq!(body["root"], json!("raw"));
+    assert_eq!(body["principals"][0]["is_root"], json!(true));
+    assert_eq!(body["invitations"][0]["status"], json!("open"));
+}
+
+#[tokio::test]
+async fn wallet_post_membership_invitations_matches_the_fixture() {
+    let name = "wallet-post-membership-invitations.json";
+    let stub = Arc::new(StubWalletService::new());
+    let (status, body) = run_wallet(name, &stub).await;
+    expect_response(name, status, &body);
+    match stub.call() {
+        WalletCall::Invite(request) => {
+            assert_eq!(request.ledger_id, id(ALICE));
+            assert_eq!(request.by, id(ALICE));
+            assert_eq!(request.role, RoleName::Controller);
+            // The descriptor reaches the service decoded, never as base64.
+            assert_eq!(request.invitee_descriptor.len(), 72);
+        }
+        call => panic!("{call:?}"),
+    }
+    assert_eq!(
+        body["event"]["payload_kind"],
+        json!("membership_invitation")
+    );
+}
+
+#[tokio::test]
+async fn wallet_post_membership_acceptances_matches_the_fixture_and_warns_on_a_raw_root() {
+    let name = "wallet-post-membership-acceptances.json";
+    let stub = Arc::new(StubWalletService::new());
+    let (status, body) = run_wallet(name, &stub).await;
+    expect_response(name, status, &body);
+    match stub.call() {
+        WalletCall::AcceptInvitation(request) => {
+            assert_eq!(request.identity_id, id(ALICE));
+            assert_eq!(request.invitation_bundle.len(), 96);
+        }
+        call => panic!("{call:?}"),
+    }
+    // Accepting a controller role on a raw-rooted ledger means signing as
+    // that identity, and the surface says so (proposal 002 section 4).
+    assert_eq!(body["controller_on_raw_root"], json!(true));
+    assert!(
+        body["warning"]
+            .as_str()
+            .expect("a warning beside the flag")
+            .contains("signing as")
+    );
+}
+
+#[tokio::test]
+async fn wallet_post_membership_admissions_matches_the_fixture() {
+    let name = "wallet-post-membership-admissions.json";
+    let stub = Arc::new(StubWalletService::new());
+    let (status, body) = run_wallet(name, &stub).await;
+    expect_response(name, status, &body);
+    match stub.call() {
+        WalletCall::AdmitAcceptance(request) => {
+            assert_eq!(request.ledger_id, id(ALICE));
+            assert_eq!(request.by, id(ALICE));
+            assert_eq!(request.acceptance.len(), 72);
+        }
+        call => panic!("{call:?}"),
+    }
+    assert_eq!(
+        body["event"]["payload_kind"],
+        json!("membership_acceptance")
+    );
+}
+
+#[tokio::test]
+async fn wallet_post_membership_removals_matches_the_fixture() {
+    let name = "wallet-post-membership-removals.json";
+    let stub = Arc::new(StubWalletService::new());
+    let (status, body) = run_wallet(name, &stub).await;
+    expect_response(name, status, &body);
+    match stub.call() {
+        WalletCall::RemoveMembership(request) => {
+            assert_eq!(request.ledger_id, id(ALICE));
+            assert_eq!(request.by, id(ALICE));
+            assert_eq!(request.target, id(BOB));
+        }
+        call => panic!("{call:?}"),
+    }
+    assert_eq!(body["event"]["payload_kind"], json!("membership_removal"));
+    // A removal that cancels no open invitation says so with null, not by
+    // dropping the key (`contracts/README.md`, "Nullability").
+    assert!(body["invitation_cancelled"].is_null());
 }
 
 #[tokio::test]
@@ -608,6 +709,7 @@ async fn every_mutating_route_enforces_the_origin_and_content_type_rules() {
         &format!("/api/identities/{ALICE}/witnesses"),
         &format!("/api/identities/{ALICE}/memberships/invitations"),
         &format!("/api/identities/{ALICE}/memberships/acceptances"),
+        &format!("/api/identities/{ALICE}/memberships/admissions"),
         &format!("/api/identities/{ALICE}/memberships/removals"),
         "/api/trust",
         &format!("/api/trust/{ATTESTATION}/revoke"),
@@ -782,7 +884,11 @@ async fn a_malformed_query_parameter_answers_the_fixture_rejection() {
 
 #[tokio::test]
 async fn a_body_the_fixture_refuses_answers_the_fixture_rejection() {
-    let cases: [(&str, &str, &str, Value); 5] = [
+    let invitations = format!("/api/identities/{ALICE}/memberships/invitations");
+    let acceptances = format!("/api/identities/{ALICE}/memberships/acceptances");
+    let admissions = format!("/api/identities/{ALICE}/memberships/admissions");
+    let removals = format!("/api/identities/{ALICE}/memberships/removals");
+    let cases: [(&str, &str, &str, Value); 9] = [
         (
             "wallet-post-identities.json",
             "missing_field",
@@ -812,6 +918,30 @@ async fn a_body_the_fixture_refuses_answers_the_fixture_rejection() {
             "unknown_enum_value",
             "/api/verify",
             json!({"kind": "identity", "issuer": ALICE, "subject": BOB}),
+        ),
+        (
+            "wallet-post-membership-invitations.json",
+            "missing_field",
+            &invitations,
+            json!({"role": "controller", "invitee_descriptor_base64": "AAAA"}),
+        ),
+        (
+            "wallet-post-membership-acceptances.json",
+            "missing_field",
+            &acceptances,
+            json!({}),
+        ),
+        (
+            "wallet-post-membership-admissions.json",
+            "missing_field",
+            &admissions,
+            json!({"by": ALICE}),
+        ),
+        (
+            "wallet-post-membership-removals.json",
+            "missing_field",
+            &removals,
+            json!({"by": ALICE}),
         ),
     ];
     for (fixture, reason, route, body) in cases {
@@ -857,23 +987,69 @@ async fn there_is_no_orgs_collection() {
 }
 
 #[tokio::test]
-async fn the_membership_routes_answer_501_with_code_70() {
-    for route in [
-        "memberships/invitations",
-        "memberships/acceptances",
-        "memberships/removals",
+async fn the_membership_routes_spell_memberships_and_answer_the_frozen_documents() {
+    // The four verbs live under one path segment, and nothing under `/orgs`
+    // or `/organizations` answers (proposal 002 section 6).
+    for (route, fixture) in [
+        (
+            "memberships/invitations",
+            "wallet-post-membership-invitations.json",
+        ),
+        (
+            "memberships/acceptances",
+            "wallet-post-membership-acceptances.json",
+        ),
+        (
+            "memberships/admissions",
+            "wallet-post-membership-admissions.json",
+        ),
+        (
+            "memberships/removals",
+            "wallet-post-membership-removals.json",
+        ),
     ] {
         let stub = Arc::new(StubWalletService::new());
         let uri = format!("/api/identities/{ALICE}/{route}");
-        let (status, body) = send(wallet(&stub), request("POST", &uri, &json!({}))).await;
-        assert_eq!(status, StatusCode::NOT_IMPLEMENTED, "{route}");
-        assert_eq!(body["code"], json!(70), "{route}");
-        assert_eq!(
-            body["details"]["reason"],
-            json!("unsupported_membership_route"),
-            "{route}"
-        );
+        let body = Fixture::named(fixture).request();
+        let (status, answered) = send(wallet(&stub), request("POST", &uri, &body)).await;
+        assert_eq!(status, StatusCode::OK, "{route}: {answered}");
+        assert_eq!(answered, Fixture::named(fixture).response(), "{route}");
+        assert_eq!(stub.calls().len(), 1, "{route}");
     }
+}
+
+#[tokio::test]
+async fn a_membership_artifact_that_is_not_base64_answers_the_fixture_rejection() {
+    let (expected_status, expected) = fixture_error(
+        "wallet-post-membership-invitations.json",
+        "malformed_base64",
+    );
+    let stub = Arc::new(StubWalletService::new());
+    let uri = format!("/api/identities/{ALICE}/memberships/invitations");
+    let body = json!({
+        "by": ALICE,
+        "role": "controller",
+        "invitee_descriptor_base64": "not base64!"
+    });
+    let (status, answered) = send(wallet(&stub), request("POST", &uri, &body)).await;
+    assert_eq!(status, expected_status);
+    assert_eq!(answered, expected);
+    assert!(stub.calls().is_empty(), "the service must not be reached");
+}
+
+#[tokio::test]
+async fn a_membership_artifact_over_its_cap_is_refused_before_it_is_decoded() {
+    let stub = Arc::new(StubWalletService::new());
+    let uri = format!("/api/identities/{ALICE}/memberships/admissions");
+    // An `AcceptanceFile` is capped at 4 KiB (proposal 001 section 3.8).
+    let oversize = "A".repeat(4 * 4096 / 3 + 8);
+    let body = json!({"by": ALICE, "acceptance_base64": oversize});
+    let (status, answered) = send(wallet(&stub), request("POST", &uri, &body)).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(answered["code"], json!(10));
+    assert_eq!(answered["details"]["reason"], json!("message_too_large"));
+    assert_eq!(answered["details"]["artifact"], json!("AcceptanceFile"));
+    assert!(stub.calls().is_empty());
 }
 
 #[tokio::test]

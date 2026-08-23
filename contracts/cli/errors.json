@@ -121,7 +121,7 @@
         "details": {
           "reason": "acceptance_already_used",
           "ledger_id": "2okqwhextnpkpmydrgrkk563vbehcklffwfzidxlh5dslawjmn6a",
-          "invite_event": "nuya6dronjln22kfnl2sadekxc43vf4azhp6elszzf3m3jsvvxfa",
+          "invitation_event": "nuya6dronjln22kfnl2sadekxc43vf4azhp6elszzf3m3jsvvxfa",
           "at_seq": 2,
           "path": "./acme.acceptance"
         }

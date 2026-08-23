@@ -1,0 +1,89 @@
+{
+  "route": "/api/identities/:identity_id/memberships/invitations",
+  "method": "POST",
+  "request": {
+    "by": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+    "role": "controller",
+    "invitee_descriptor_base64": "fMrDkIJbF37ZqVYra/YFQvyl839/Q21kntH/Z6QQtvhkvHEC4lr0oi6VIhOhTinhH4nMuILV5T3Rw/R5q6mYEhOudTtTz37F"
+  },
+  "response": {
+    "ok": true,
+    "ledger_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+    "by": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+    "invitee": "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq",
+    "invitee_key": "mpvsw45ffkwexrnkxubkqqwgdg5mwopl5qoeaimfyw27cm42ttiq",
+    "role": "controller",
+    "invitation_event": "zx7msbfj3lbmwq3d2aybjddujknuwsyxdqczvxgs55kvn56iwo7q",
+    "invitation_seq": 4,
+    "timestamp_ms": 1700000600000,
+    "head_seq": 4,
+    "head_event": "zx7msbfj3lbmwq3d2aybjddujknuwsyxdqczvxgs55kvn56iwo7q",
+    "event": {
+      "event_id": "zx7msbfj3lbmwq3d2aybjddujknuwsyxdqczvxgs55kvn56iwo7q",
+      "seq": 4,
+      "ledger_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+      "prev": "ewckxhi7cixugkyrql6eqnncbgxqtnrho3rpsp6plhhh7yr6rosq",
+      "timestamp_ms": 1700000600000,
+      "author_key": "2bflemtufo2kwoqtnc6umfpe43icesvxdiawxl4fecrtfslxq43q",
+      "payload_kind": "membership_invitation",
+      "payload": {
+        "invitee": "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq",
+        "invitee_key": "mpvsw45ffkwexrnkxubkqqwgdg5mwopl5qoeaimfyw27cm42ttiq",
+        "role": "controller",
+        "invitee_inception": "tzdbhe47xjgosrs4mo2mkpw2v6vpk6yadd5diywkdy6dsl33hn6fqaeqoc52376h"
+      }
+    },
+    "invitation_bundle_base64": "vnlXPxrDNFgU2P0Sy7yVhOsOVrdRD4E1anrpnB93w7Qinji1srfZNCwWxeutG84apFt7KnrIutaA1Oomw4aKPSby9x1+n8pNCJX6RYd+NQaqSEMrfvaxdnTyk9osbI9c",
+    "event_count": 5
+  },
+  "errors": [
+    {
+      "status": 400,
+      "body": {
+        "ok": false,
+        "code": 2,
+        "message": "by is required",
+        "details": {
+          "reason": "missing_field",
+          "field": "by"
+        }
+      }
+    },
+    {
+      "status": 400,
+      "body": {
+        "ok": false,
+        "code": 10,
+        "message": "Schema error: invitee_descriptor_base64 is not base64",
+        "details": {
+          "reason": "malformed_base64",
+          "field": "invitee_descriptor_base64"
+        }
+      }
+    },
+    {
+      "status": 409,
+      "body": {
+        "ok": false,
+        "code": 20,
+        "message": "Policy error: jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq already has an open invitation, zx7msbfj3lbmwq3d2aybjddujknuwsyxdqczvxgs55kvn56iwo7q",
+        "details": {
+          "reason": "duplicate_invitation",
+          "at_seq": 5
+        }
+      }
+    },
+    {
+      "status": 404,
+      "body": {
+        "ok": false,
+        "code": 2,
+        "message": "this home holds no ledger 2okqwhextnpkpmydrgrkk563vbehcklffwfzidxlh5dslawjmn6a",
+        "details": {
+          "reason": "unknown_ledger",
+          "ledger_id": "2okqwhextnpkpmydrgrkk563vbehcklffwfzidxlh5dslawjmn6a"
+        }
+      }
+    }
+  ]
+}

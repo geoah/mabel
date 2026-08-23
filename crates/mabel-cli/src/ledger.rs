@@ -14,7 +14,9 @@ use std::collections::BTreeMap;
 use mabel_core::fold::{LedgerRoot, LedgerState, Reason, Violation};
 use mabel_core::{EventId, LedgerId, event_id};
 use mabel_node::LedgerStore;
-use mabel_node::api::documents::{DeclaredKind, Id, Identity, TrustEntry};
+use mabel_node::api::documents::{
+    DeclaredKind, Id, Identity, PrincipalEntry, RoleName, TrustEntry,
+};
 use mabel_proto::prost::Message;
 use mabel_proto::v0::{EventBody, SignedEvent};
 
@@ -236,7 +238,41 @@ impl Loaded {
             trust: self.trust(),
             active_key,
             reserve_commit,
+            principals: self.principal_entries(),
+            open_invitation_count: self.open_invitation_count(),
         }
+    }
+
+    /// The `principals` array of the identity document, root first by the
+    /// fold's ordering, skipping any principal without a recorded role.
+    fn principal_entries(&self) -> Vec<PrincipalEntry> {
+        let root = self.state.root_identity();
+        self.state
+            .principals()
+            .iter()
+            .filter_map(|(identity, principal)| {
+                let role = match principal.role {
+                    mabel_core::proto::Role::Member => RoleName::Member,
+                    mabel_core::proto::Role::Controller => RoleName::Controller,
+                    mabel_core::proto::Role::Unspecified => return None,
+                };
+                Some(PrincipalEntry {
+                    identity: ids::identity(*identity),
+                    active_key: ids::key(&principal.active_key),
+                    role,
+                    is_root: Some(*identity) == root,
+                })
+            })
+            .collect()
+    }
+
+    /// Invitations still open, the count the identity document carries.
+    fn open_invitation_count(&self) -> u64 {
+        self.state
+            .invitations()
+            .values()
+            .filter(|invitation| invitation.status == mabel_core::fold::InvitationStatus::Open)
+            .count() as u64
     }
 }
 

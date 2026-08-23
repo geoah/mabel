@@ -10,8 +10,7 @@ use axum::Router;
 use axum::body::Bytes;
 use axum::extract::rejection::QueryRejection;
 use axum::extract::{Path, Query as AxumQuery, State};
-use axum::http::Uri;
-use axum::response::{IntoResponse, Response};
+use axum::response::Response;
 use axum::routing::{get, post};
 
 use super::documents::{IdentityList, IdentityView};
@@ -30,17 +29,22 @@ pub(super) fn router(service: Service) -> Router {
         .route("/identities/{identity_id}", get(identity))
         .route("/identities/{identity_id}/ledger", get(identity_ledger))
         .route("/identities/{identity_id}/witnesses", post(set_witnesses))
+        .route("/identities/{identity_id}/memberships", get(memberships))
         .route(
             "/identities/{identity_id}/memberships/invitations",
-            post(membership),
+            post(invite),
         )
         .route(
             "/identities/{identity_id}/memberships/acceptances",
-            post(membership),
+            post(accept_invitation),
+        )
+        .route(
+            "/identities/{identity_id}/memberships/admissions",
+            post(admit_acceptance),
         )
         .route(
             "/identities/{identity_id}/memberships/removals",
-            post(membership),
+            post(remove_membership),
         )
         .route("/trust", post(add_trust))
         .route("/trust/{event_id}/revoke", post(revoke_trust))
@@ -97,6 +101,54 @@ async fn set_witnesses(
     ))
 }
 
+async fn memberships(
+    State(service): State<Service>,
+    Path(identity_id): Path<String>,
+) -> Result<Response, ServiceError> {
+    let identity_id = parse::id(IdKind::Identity, &identity_id)?;
+    Ok(success(service.memberships(identity_id).await?))
+}
+
+async fn invite(
+    State(service): State<Service>,
+    Path(identity_id): Path<String>,
+    body: Bytes,
+) -> Result<Response, ServiceError> {
+    let ledger_id = parse::id(IdKind::Identity, &identity_id)?;
+    let request = parse::invite(ledger_id, &body)?;
+    Ok(success(service.invite(request).await?))
+}
+
+async fn accept_invitation(
+    State(service): State<Service>,
+    Path(identity_id): Path<String>,
+    body: Bytes,
+) -> Result<Response, ServiceError> {
+    let identity_id = parse::id(IdKind::Identity, &identity_id)?;
+    let request = parse::accept_invitation(identity_id, &body)?;
+    Ok(success(service.accept_invitation(request).await?))
+}
+
+async fn admit_acceptance(
+    State(service): State<Service>,
+    Path(identity_id): Path<String>,
+    body: Bytes,
+) -> Result<Response, ServiceError> {
+    let ledger_id = parse::id(IdKind::Identity, &identity_id)?;
+    let request = parse::admit_acceptance(ledger_id, &body)?;
+    Ok(success(service.admit_acceptance(request).await?))
+}
+
+async fn remove_membership(
+    State(service): State<Service>,
+    Path(identity_id): Path<String>,
+    body: Bytes,
+) -> Result<Response, ServiceError> {
+    let ledger_id = parse::id(IdKind::Identity, &identity_id)?;
+    let request = parse::remove_membership(ledger_id, &body)?;
+    Ok(success(service.remove_membership(request).await?))
+}
+
 async fn add_trust(State(service): State<Service>, body: Bytes) -> Result<Response, ServiceError> {
     let request = parse::add_trust(&body)?;
     Ok(success(service.add_trust(request).await?))
@@ -120,9 +172,4 @@ async fn push(State(service): State<Service>, body: Bytes) -> Result<Response, S
 async fn verify(State(service): State<Service>, body: Bytes) -> Result<Response, ServiceError> {
     let request = parse::verify(&body)?;
     Ok(success(service.verify(request).await?))
-}
-
-/// The three membership routes, until proposal 002 freezes them.
-async fn membership(uri: Uri) -> Response {
-    parse::pending_membership(uri.path()).into_response()
 }

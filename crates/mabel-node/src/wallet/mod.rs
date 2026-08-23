@@ -48,8 +48,8 @@ mod verify;
 
 pub use core::{AppendedEvent, WalletCore, unknown_ledger};
 pub use error::{
-    build_error, equivocation, fold_error, no_source_available, peer_message, stale_head,
-    storage_error, unreachable,
+    artifact_error, build_error, equivocation, fold_error, no_source_available, peer_message,
+    stale_head, storage_error, unreachable,
 };
 pub use ledger::LoadedLedger;
 pub use runtime::{WalletOptions, WalletRuntime};

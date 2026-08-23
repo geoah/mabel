@@ -26,6 +26,15 @@
           "revocation_seq": 3
         }
       ],
+      "principals": [
+        {
+          "identity": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+          "active_key": "2bflemtufo2kwoqtnc6umfpe43icesvxdiawxl4fecrtfslxq43q",
+          "role": "controller",
+          "is_root": true
+        }
+      ],
+      "open_invitation_count": 0,
       "active_key": "2bflemtufo2kwoqtnc6umfpe43icesvxdiawxl4fecrtfslxq43q",
       "reserve_commit": "4hvnmdhctangrg6jmqkyzf6ropi5do6lqdcw37eqoryzhoqg2maq"
     }

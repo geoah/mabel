@@ -569,13 +569,17 @@ fn wallet_serve_answers_the_node_route_and_stops_on_sigint() {
     assert_eq!(held[0]["identity_id"], Value::from(alice.as_str()));
     assert_eq!(held[0]["alias"], Value::from("alice"));
 
-    // Membership stays 501 until ticket 021 freezes its bodies.
+    // The membership routes of ticket 021 are served by the same wallet
+    // process, and validate their bodies rather than answering 501.
     let (status, body) = request(
         address,
         &format!("POST /api/identities/{alice}/memberships/invitations HTTP/1.1"),
         Some("{}"),
     );
-    assert_eq!(status, 501, "{body}");
+    assert_eq!(status, 400, "{body}");
+    let answer = parse(&body);
+    assert_eq!(answer["details"]["reason"], Value::from("missing_field"));
+    assert_eq!(answer["details"]["field"], Value::from("by"));
 
     assert_eq!(daemon.interrupt(), 0, "the wallet stops cleanly");
 }

@@ -6,7 +6,8 @@
 
 use mabel_core::sign::build_witness_config;
 
-use crate::append::append;
+use crate::append::{append, ensure_fresh};
+use crate::cli::AppendOptions;
 use crate::context::Context;
 use crate::documents::AddedWitness;
 use crate::error::Result;
@@ -14,9 +15,15 @@ use crate::ids;
 use crate::render::Outcome;
 
 /// `mabel witness add --identity <alias|id> --endpoint <endpoint id>`.
-pub fn add(ctx: &Context, identity: &str, endpoint: &str) -> Result<Outcome> {
+pub fn add(
+    ctx: &Context,
+    identity: &str,
+    endpoint: &str,
+    options: &AppendOptions,
+) -> Result<Outcome> {
     let identity = ctx.resolve_local(identity)?;
     let endpoint = ids::parse_endpoint(endpoint)?;
+    ensure_fresh(ctx, identity, options)?;
     let mut loaded = ctx.load(identity)?;
 
     let mut witnesses = loaded.state.witnesses().to_vec();

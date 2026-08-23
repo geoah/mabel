@@ -49,7 +49,8 @@ fn dispatch(ctx: &Context, cli: &Cli) -> Result<Outcome> {
                 invitee,
                 role,
                 out,
-            } => membership::invite(ctx, ledger, by, invitee, *role, out),
+                append,
+            } => membership::invite(ctx, ledger, by, invitee, *role, out, append),
             MembershipCommand::Accept {
                 bundle,
                 identity,
@@ -60,22 +61,35 @@ fn dispatch(ctx: &Context, cli: &Cli) -> Result<Outcome> {
                 ledger,
                 by,
                 acceptance,
-            } => membership::admit(ctx, ledger, by, acceptance),
-            MembershipCommand::Remove { ledger, by, member } => {
-                membership::remove(ctx, ledger, by, member)
-            }
+                append,
+            } => membership::admit(ctx, ledger, by, acceptance, append),
+            MembershipCommand::Remove {
+                ledger,
+                by,
+                member,
+                append,
+            } => membership::remove(ctx, ledger, by, member, append),
             MembershipCommand::List { ledger } => membership::list(ctx, ledger),
         },
         Command::Trust { command } => match command {
-            TrustCommand::Add { issuer, subject } => trust::add(ctx, issuer, subject),
+            TrustCommand::Add {
+                issuer,
+                subject,
+                append,
+            } => trust::add(ctx, issuer, subject, append),
             TrustCommand::Revoke {
                 issuer,
                 attestation,
-            } => trust::revoke(ctx, issuer, attestation),
+                append,
+            } => trust::revoke(ctx, issuer, attestation, append),
             TrustCommand::List { issuer } => trust::list(ctx, issuer),
         },
         Command::Witness { command } => match command {
-            WitnessCommand::Add { identity, endpoint } => witness::add(ctx, identity, endpoint),
+            WitnessCommand::Add {
+                identity,
+                endpoint,
+                append,
+            } => witness::add(ctx, identity, endpoint, append),
             WitnessCommand::Run {
                 http,
                 iroh_port,

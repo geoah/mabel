@@ -16,13 +16,15 @@ use serde::de::DeserializeOwned;
 use serde_json::Value;
 
 use super::documents::{
-    Appended, CreatedIdentity, ForkList, Id, Identity, IdentityList, IdentityView, LedgerList,
-    LedgerPage, LedgerView, Pushed, Revoked, VerificationReport, WalletNode, WitnessNode,
+    Accepted, Admitted, Appended, CreatedIdentity, ForkList, Id, Identity, IdentityList,
+    IdentityView, Invited, LedgerList, LedgerPage, LedgerView, MembershipView, Pushed, Removed,
+    Revoked, VerificationReport, WalletNode, WitnessNode,
 };
 use super::error::ServiceError;
 use super::service::{
-    AddTrust, CreateIdentity, EventPageRequest, ForkQuery, PageRequest, PushRequest, ServiceFuture,
-    VerifyRequest, WalletService, WitnessService,
+    AcceptInvitation, AddTrust, AdmitAcceptance, CreateIdentity, EventPageRequest, ForkQuery,
+    Invite, PageRequest, PushRequest, RemoveMembership, ServiceFuture, VerifyRequest,
+    WalletService, WitnessService,
 };
 
 /// One file under `contracts/http/`.
@@ -44,13 +46,18 @@ macro_rules! fixture {
 }
 
 /// Every frozen HTTP fixture, in the order `contracts/README.md` indexes them.
-pub const FIXTURES: [Fixture; 15] = [
+pub const FIXTURES: [Fixture; 20] = [
     fixture!("wallet-get-node"),
     fixture!("wallet-get-identities"),
     fixture!("wallet-post-identities"),
     fixture!("wallet-get-identity"),
     fixture!("wallet-get-identity-ledger"),
     fixture!("wallet-post-identity-witnesses"),
+    fixture!("wallet-get-identity-memberships"),
+    fixture!("wallet-post-membership-invitations"),
+    fixture!("wallet-post-membership-acceptances"),
+    fixture!("wallet-post-membership-admissions"),
+    fixture!("wallet-post-membership-removals"),
     fixture!("wallet-post-trust"),
     fixture!("wallet-post-trust-revoke"),
     fixture!("wallet-post-sync-push"),
@@ -201,6 +208,16 @@ pub enum WalletCall {
     IdentityLedger(Id, EventPageRequest),
     /// `POST /api/identities/{identity_id}/witnesses`.
     SetWitnesses(Id, Vec<Id>),
+    /// `GET /api/identities/{identity_id}/memberships`.
+    Memberships(Id),
+    /// `POST /api/identities/{identity_id}/memberships/invitations`.
+    Invite(Invite),
+    /// `POST /api/identities/{identity_id}/memberships/acceptances`.
+    AcceptInvitation(AcceptInvitation),
+    /// `POST /api/identities/{identity_id}/memberships/admissions`.
+    AdmitAcceptance(AdmitAcceptance),
+    /// `POST /api/identities/{identity_id}/memberships/removals`.
+    RemoveMembership(RemoveMembership),
     /// `POST /api/trust`.
     AddTrust(AddTrust),
     /// `POST /api/trust/{event_id}/revoke`.
@@ -229,6 +246,16 @@ pub struct StubWalletService {
     pub identity_ledger: LedgerPage,
     /// `POST /api/identities/{identity_id}/witnesses`.
     pub witnesses_appended: Appended,
+    /// `GET /api/identities/{identity_id}/memberships`.
+    pub memberships: MembershipView,
+    /// `POST /api/identities/{identity_id}/memberships/invitations`.
+    pub invited: Invited,
+    /// `POST /api/identities/{identity_id}/memberships/acceptances`.
+    pub accepted: Accepted,
+    /// `POST /api/identities/{identity_id}/memberships/admissions`.
+    pub admitted: Admitted,
+    /// `POST /api/identities/{identity_id}/memberships/removals`.
+    pub removed: Removed,
     /// `POST /api/trust`.
     pub trust_appended: Appended,
     /// `POST /api/trust/{event_id}/revoke`.
@@ -267,6 +294,11 @@ impl StubWalletService {
             identity_ledger: Fixture::named("wallet-get-identity-ledger.json").parse_response(),
             witnesses_appended: Fixture::named("wallet-post-identity-witnesses.json")
                 .parse_response(),
+            memberships: Fixture::named("wallet-get-identity-memberships.json").parse_response(),
+            invited: Fixture::named("wallet-post-membership-invitations.json").parse_response(),
+            accepted: Fixture::named("wallet-post-membership-acceptances.json").parse_response(),
+            admitted: Fixture::named("wallet-post-membership-admissions.json").parse_response(),
+            removed: Fixture::named("wallet-post-membership-removals.json").parse_response(),
             trust_appended: Fixture::named("wallet-post-trust.json").parse_response(),
             revoked: Fixture::named("wallet-post-trust-revoke.json").parse_response(),
             pushed: Fixture::named("wallet-post-sync-push.json").parse_response(),
@@ -345,6 +377,29 @@ impl WalletService for StubWalletService {
             WalletCall::SetWitnesses(identity_id, witnesses),
             self.witnesses_appended.clone(),
         )
+    }
+
+    fn memberships(&self, identity_id: Id) -> ServiceFuture<'_, MembershipView> {
+        self.answer(
+            WalletCall::Memberships(identity_id),
+            self.memberships.clone(),
+        )
+    }
+
+    fn invite(&self, request: Invite) -> ServiceFuture<'_, Invited> {
+        self.answer(WalletCall::Invite(request), self.invited.clone())
+    }
+
+    fn accept_invitation(&self, request: AcceptInvitation) -> ServiceFuture<'_, Accepted> {
+        self.answer(WalletCall::AcceptInvitation(request), self.accepted.clone())
+    }
+
+    fn admit_acceptance(&self, request: AdmitAcceptance) -> ServiceFuture<'_, Admitted> {
+        self.answer(WalletCall::AdmitAcceptance(request), self.admitted.clone())
+    }
+
+    fn remove_membership(&self, request: RemoveMembership) -> ServiceFuture<'_, Removed> {
+        self.answer(WalletCall::RemoveMembership(request), self.removed.clone())
     }
 
     fn add_trust(&self, request: AddTrust) -> ServiceFuture<'_, Appended> {

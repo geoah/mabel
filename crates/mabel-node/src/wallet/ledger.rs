@@ -11,12 +11,15 @@
 
 use std::collections::BTreeMap;
 
-use mabel_core::fold::{LedgerRoot, LedgerState, Violation};
+use mabel_core::fold::{InvitationStatus, LedgerRoot, LedgerState, Violation};
 use mabel_core::{EventId, LedgerId, event_id};
 use mabel_proto::prost::Message;
-use mabel_proto::v0::{EventBody, SignedEvent};
+use mabel_proto::v0::{EventBody, Role, SignedEvent};
 
-use crate::api::documents::{DeclaredKind, Id, Identity, TrustEntry};
+use crate::api::documents::{
+    DeclaredKind, Id, Identity, InvitationEntry, MembershipView, PrincipalEntry, RoleName,
+    RootName, StatusName, TrustEntry,
+};
 use crate::api::error::ServiceError;
 use crate::ledger::LedgerStore;
 use crate::wallet::ids;
@@ -173,6 +176,87 @@ impl LoadedLedger {
         entries
     }
 
+    /// Where this ledger's signing authority came from, `raw` on a ledger the
+    /// fold has not seeded yet.
+    #[must_use]
+    pub fn root(&self) -> RootName {
+        match self.state.root() {
+            Some(LedgerRoot::Identity { .. }) => RootName::Identity,
+            _ => RootName::Raw,
+        }
+    }
+
+    /// Every principal the ledger records, by ascending identity id
+    /// (proposal 002 section 1).
+    ///
+    /// A principal whose role the fold never records, `ROLE_UNSPECIFIED`, is
+    /// skipped rather than given a name it does not have.
+    #[must_use]
+    pub fn principals(&self) -> Vec<PrincipalEntry> {
+        let root = self.state.root_identity();
+        self.state
+            .principals()
+            .iter()
+            .filter_map(|(identity, principal)| {
+                Some(PrincipalEntry {
+                    identity: ids::identity(*identity),
+                    active_key: ids::key(&principal.active_key),
+                    role: role_name(principal.role)?,
+                    is_root: Some(*identity) == root,
+                })
+            })
+            .collect()
+    }
+
+    /// Every invitation the ledger issued, by ascending position, accepted and
+    /// cancelled ones included.
+    #[must_use]
+    pub fn invitations(&self) -> Vec<InvitationEntry> {
+        let mut entries: Vec<InvitationEntry> = self
+            .state
+            .invitations()
+            .iter()
+            .filter_map(|(event, invitation)| {
+                Some(InvitationEntry {
+                    invitation_event: ids::event(*event),
+                    invitation_seq: self.seq_of.get(event).copied().unwrap_or_default(),
+                    invitee: ids::identity(invitation.invitee),
+                    invitee_key: ids::key(&invitation.invitee_key),
+                    role: role_name(invitation.role)?,
+                    status: status_name(invitation.status),
+                })
+            })
+            .collect();
+        entries.sort_by_key(|entry| entry.invitation_seq);
+        entries
+    }
+
+    /// Invitations still open, which is the count the identity document
+    /// carries.
+    #[must_use]
+    pub fn open_invitation_count(&self) -> u64 {
+        self.state
+            .invitations()
+            .values()
+            .filter(|invitation| invitation.status == InvitationStatus::Open)
+            .count() as u64
+    }
+
+    /// The membership document of `GET
+    /// /api/identities/{identity_id}/memberships`.
+    #[must_use]
+    pub fn membership_document(&self) -> MembershipView {
+        MembershipView {
+            ledger_id: ids::identity(self.ledger),
+            declared_kind: self.declared_kind(),
+            root: self.root(),
+            head_seq: self.head_seq,
+            head_event: ids::event(self.head_event),
+            principals: self.principals(),
+            invitations: self.invitations(),
+        }
+    }
+
     /// The identity document `contracts/README.md` shares between the HTTP
     /// routes and `mabel identity list`.
     #[must_use]
@@ -197,9 +281,32 @@ impl LoadedLedger {
             event_count: self.event_count(),
             witnesses: self.witnesses(),
             trust: self.trust(),
+            principals: self.principals(),
+            open_invitation_count: self.open_invitation_count(),
             active_key,
             reserve_commit,
         }
+    }
+}
+
+/// The name of a role the fold recorded.
+///
+/// The fold never records `ROLE_UNSPECIFIED`, which the field table rejects,
+/// so this is `None` only on a value this build does not know.
+fn role_name(role: Role) -> Option<RoleName> {
+    match role {
+        Role::Member => Some(RoleName::Member),
+        Role::Controller => Some(RoleName::Controller),
+        Role::Unspecified => None,
+    }
+}
+
+/// The name of an invitation status the fold recorded.
+const fn status_name(status: InvitationStatus) -> StatusName {
+    match status {
+        InvitationStatus::Open => StatusName::Open,
+        InvitationStatus::Accepted => StatusName::Accepted,
+        InvitationStatus::Cancelled => StatusName::Cancelled,
     }
 }
 

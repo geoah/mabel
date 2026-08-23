@@ -12,13 +12,13 @@ use axum::http::StatusCode;
 use iroh_base::EndpointId;
 
 use crate::api::documents::{
-    Appended, CreatedIdentity, Id, Identity, LedgerPage, Pushed, Relay, Revoked, Role,
-    VerificationReport, WalletNode,
+    Accepted, Admitted, Appended, CreatedIdentity, Id, Identity, Invited, LedgerPage,
+    MembershipView, Pushed, Relay, Removed, Revoked, Role, VerificationReport, WalletNode,
 };
 use crate::api::error::ServiceError;
 use crate::api::service::{
-    AddTrust, CreateIdentity, EventPageRequest, PushRequest, ServiceFuture, VerifyRequest,
-    WalletService,
+    AcceptInvitation, AddTrust, AdmitAcceptance, CreateIdentity, EventPageRequest, Invite,
+    PushRequest, RemoveMembership, ServiceFuture, VerifyRequest, WalletService,
 };
 use crate::config::RelayMode;
 use crate::wallet::core::WalletCore;
@@ -103,7 +103,14 @@ impl WalletService for WalletApiService {
     }
 
     fn create_identity(&self, request: CreateIdentity) -> ServiceFuture<'_, CreatedIdentity> {
-        self.blocking(move |core| core.create_identity(&request.alias, request.declared_kind))
+        self.blocking(move |core| {
+            let founder = request
+                .founder
+                .as_ref()
+                .map(ids::parse_identity)
+                .transpose()?;
+            core.create_identity(&request.alias, request.declared_kind, founder)
+        })
     }
 
     fn identity(&self, identity_id: Id) -> ServiceFuture<'_, Identity> {
@@ -128,6 +135,52 @@ impl WalletService for WalletApiService {
             self.fresh(identity).await?;
             let core = self.core.clone();
             spawn(move || core.set_witnesses(identity, &endpoints)).await
+        })
+    }
+
+    fn memberships(&self, identity_id: Id) -> ServiceFuture<'_, MembershipView> {
+        self.blocking(move |core| core.memberships(ids::parse_ledger(&identity_id)?))
+    }
+
+    fn invite(&self, request: Invite) -> ServiceFuture<'_, Invited> {
+        Box::pin(async move {
+            let ledger = ids::parse_ledger(&request.ledger_id)?;
+            let by = ids::parse_identity(&request.by)?;
+            self.fresh(ledger).await?;
+            let core = self.core.clone();
+            spawn(move || core.invite(ledger, by, request.role, &request.invitee_descriptor)).await
+        })
+    }
+
+    /// Signing an acceptance appends nothing, so the append discipline does
+    /// not apply: no ledger moves here.
+    fn accept_invitation(&self, request: AcceptInvitation) -> ServiceFuture<'_, Accepted> {
+        self.blocking(move |core| {
+            core.accept_invitation(
+                ids::parse_identity(&request.identity_id)?,
+                &request.invitation_bundle,
+            )
+        })
+    }
+
+    fn admit_acceptance(&self, request: AdmitAcceptance) -> ServiceFuture<'_, Admitted> {
+        Box::pin(async move {
+            let ledger = ids::parse_ledger(&request.ledger_id)?;
+            let by = ids::parse_identity(&request.by)?;
+            self.fresh(ledger).await?;
+            let core = self.core.clone();
+            spawn(move || core.admit_acceptance(ledger, by, &request.acceptance)).await
+        })
+    }
+
+    fn remove_membership(&self, request: RemoveMembership) -> ServiceFuture<'_, Removed> {
+        Box::pin(async move {
+            let ledger = ids::parse_ledger(&request.ledger_id)?;
+            let by = ids::parse_identity(&request.by)?;
+            let target = ids::parse_identity(&request.target)?;
+            self.fresh(ledger).await?;
+            let core = self.core.clone();
+            spawn(move || core.remove_membership(ledger, by, target)).await
         })
     }
 

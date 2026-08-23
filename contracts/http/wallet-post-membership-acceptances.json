@@ -1,0 +1,79 @@
+{
+  "route": "/api/identities/:identity_id/memberships/acceptances",
+  "method": "POST",
+  "request": {
+    "invitation_bundle_base64": "Vhd55ndoGsU84W7TzizUfkfo/4cWmAOWirFSg7ZnOu6nlBBcCm7StvQzC8MC11gcKvIpEg+KLTOZHVJ9CCwpooCRljk1aDIh/2Ly4Ni/I/19uU+zMjv1XrVB8FOxohlH"
+  },
+  "response": {
+    "ok": true,
+    "ledger_id": "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq",
+    "declared_kind": "person",
+    "root": "raw",
+    "controllers": [
+      {
+        "identity": "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq",
+        "active_key": "mpvsw45ffkwexrnkxubkqqwgdg5mwopl5qoeaimfyw27cm42ttiq",
+        "role": "controller",
+        "is_root": true
+      }
+    ],
+    "invitation_event": "rqz2wivauyw2u3edzs43m5fimsd2yf7cxmno2l6psyqtpurhdhha",
+    "invitee": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+    "invitee_key": "2bflemtufo2kwoqtnc6umfpe43icesvxdiawxl4fecrtfslxq43q",
+    "role": "controller",
+    "controller_on_raw_root": true,
+    "warning": "accepting a controller role on a raw-rooted ledger means signing as jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq: every event you append to it is that identity's own event",
+    "acceptance_base64": "m9hvFtScb+qyaYTkiFTQssPsYm0uuEE9iNtlNBUe1Wqc1Dg4gtgGVzQmRoRjpj1B8CTey3t22U/UYVewXT3eUextTwJzQutc"
+  },
+  "errors": [
+    {
+      "status": 400,
+      "body": {
+        "ok": false,
+        "code": 2,
+        "message": "invitation_bundle_base64 is required",
+        "details": {
+          "reason": "missing_field",
+          "field": "invitation_bundle_base64"
+        }
+      }
+    },
+    {
+      "status": 400,
+      "body": {
+        "ok": false,
+        "code": 2,
+        "message": "this invitation invites jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq, not sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+        "details": {
+          "reason": "not_the_invitee",
+          "ledger_id": "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq",
+          "invitee": "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq"
+        }
+      }
+    },
+    {
+      "status": 409,
+      "body": {
+        "ok": false,
+        "code": 20,
+        "message": "Policy error: the invitation records key mpvsw45ffkwexrnkxubkqqwgdg5mwopl5qoeaimfyw27cm42ttiq for sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq, and this home signs with 2bflemtufo2kwoqtnc6umfpe43icesvxdiawxl4fecrtfslxq43q",
+        "details": {
+          "reason": "acceptance_invitee_key_mismatch",
+          "ledger_id": "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq"
+        }
+      }
+    },
+    {
+      "status": 400,
+      "body": {
+        "ok": false,
+        "code": 10,
+        "message": "Schema error: the last event of InvitationBundle.ledger_prefix is not a MembershipInvitation",
+        "details": {
+          "reason": "invitation_not_last",
+          "artifact": "InvitationBundle"
+        }
+      }
+    }
+  ]
+}

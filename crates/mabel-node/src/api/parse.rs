@@ -7,13 +7,15 @@
 use std::collections::HashMap;
 
 use axum::http::StatusCode;
+use data_encoding::BASE64;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 
-use super::documents::{DeclaredKind, ID_LENGTH, Id, VerifyKind};
+use super::documents::{DeclaredKind, ID_LENGTH, Id, RoleName, VerifyKind};
 use super::error::ServiceError;
 use super::service::{
-    AddTrust, CreateIdentity, EventPageRequest, ForkQuery, PageRequest, PushRequest, VerifyRequest,
+    AcceptInvitation, AddTrust, AdmitAcceptance, CreateIdentity, EventPageRequest, ForkQuery,
+    Invite, PageRequest, PushRequest, RemoveMembership, VerifyRequest,
 };
 
 /// The query string, one value per name.
@@ -199,12 +201,13 @@ fn body<T: DeserializeOwned>(bytes: &[u8]) -> Result<T, ServiceError> {
 struct CreateIdentityBody {
     alias: Option<String>,
     declared_kind: Option<String>,
+    founder: Option<String>,
 }
 
 /// `POST /api/identities`.
 ///
-/// An absent `declared_kind` means `person`, the only kind this route mints
-/// (`contracts/http/PENDING-membership.md`).
+/// An absent `declared_kind` means `person`. An absent `founder` means a raw
+/// root: the new ledger keys itself (proposal 002 section 2).
 pub(super) fn create_identity(bytes: &[u8]) -> Result<CreateIdentity, ServiceError> {
     let parsed: CreateIdentityBody = body(bytes)?;
     let alias = required("alias", parsed.alias.as_ref())?.to_owned();
@@ -212,9 +215,14 @@ pub(super) fn create_identity(bytes: &[u8]) -> Result<CreateIdentity, ServiceErr
         None | Some("") => DeclaredKind::Person,
         Some(raw) => declared_kind(raw)?,
     };
+    let founder = match parsed.founder.as_deref().map(str::trim) {
+        None | Some("") => None,
+        Some(raw) => Some(id_field(IdKind::Identity, "founder", raw)?),
+    };
     Ok(CreateIdentity {
         alias,
         declared_kind,
+        founder,
     })
 }
 
@@ -274,6 +282,146 @@ pub(super) fn witnesses(bytes: &[u8]) -> Result<Vec<Id>, ServiceError> {
         witnesses.push(endpoint);
     }
     Ok(witnesses)
+}
+
+/// Reads a `*_base64` artifact field (`contracts/README.md`, "Artifacts over
+/// JSON").
+///
+/// The cap is checked on the encoded length first, so an oversize body is
+/// refused before anything allocates in proportion to it (pitfall 7).
+fn artifact(
+    field: &str,
+    name: &str,
+    cap: usize,
+    value: Option<&String>,
+) -> Result<Vec<u8>, ServiceError> {
+    let raw = required(field, value)?;
+    let too_large = |len: usize| {
+        ServiceError::schema(
+            "message_too_large",
+            format!("{name} is {len} bytes, over the {cap}-byte cap"),
+        )
+        .with_detail("field", field)
+        .with_detail("artifact", name)
+        .with_detail("cap", cap)
+    };
+    // Four characters carry three bytes.
+    if raw.len() > 4 * cap.div_ceil(3) {
+        return Err(too_large(raw.len() / 4 * 3));
+    }
+    let decoded = BASE64.decode(raw.as_bytes()).map_err(|_| {
+        ServiceError::schema("malformed_base64", format!("{field} is not base64"))
+            .with_detail("field", field)
+    })?;
+    if decoded.len() > cap {
+        return Err(too_large(decoded.len()));
+    }
+    Ok(decoded)
+}
+
+fn role(raw: &str) -> Result<RoleName, ServiceError> {
+    RoleName::parse(raw).ok_or_else(|| {
+        let names = RoleName::ALL.map(RoleName::as_str).join(", ");
+        ServiceError::schema("unknown_enum_value", format!("role must be one of {names}"))
+            .with_detail("field", "role")
+            .with_detail("value", raw)
+    })
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct InviteBody {
+    by: Option<String>,
+    role: Option<String>,
+    invitee_descriptor_base64: Option<String>,
+}
+
+/// `POST /api/identities/{identity_id}/memberships/invitations`.
+pub(super) fn invite(ledger_id: Id, bytes: &[u8]) -> Result<Invite, ServiceError> {
+    let parsed: InviteBody = body(bytes)?;
+    Ok(Invite {
+        ledger_id,
+        by: id_field(IdKind::Identity, "by", required("by", parsed.by.as_ref())?)?,
+        role: role(required("role", parsed.role.as_ref())?)?,
+        invitee_descriptor: artifact(
+            "invitee_descriptor_base64",
+            "IdentityDescriptor",
+            mabel_core::MAX_IDENTITY_DESCRIPTOR_BYTES,
+            parsed.invitee_descriptor_base64.as_ref(),
+        )?,
+    })
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AcceptBody {
+    invitation_bundle_base64: Option<String>,
+}
+
+/// `POST /api/identities/{identity_id}/memberships/acceptances`.
+pub(super) fn accept_invitation(
+    identity_id: Id,
+    bytes: &[u8],
+) -> Result<AcceptInvitation, ServiceError> {
+    let parsed: AcceptBody = body(bytes)?;
+    Ok(AcceptInvitation {
+        identity_id,
+        invitation_bundle: artifact(
+            "invitation_bundle_base64",
+            "InvitationBundle",
+            mabel_core::MAX_INVITATION_BUNDLE_BYTES,
+            parsed.invitation_bundle_base64.as_ref(),
+        )?,
+    })
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AdmitBody {
+    by: Option<String>,
+    acceptance_base64: Option<String>,
+}
+
+/// `POST /api/identities/{identity_id}/memberships/admissions`.
+pub(super) fn admit_acceptance(
+    ledger_id: Id,
+    bytes: &[u8],
+) -> Result<AdmitAcceptance, ServiceError> {
+    let parsed: AdmitBody = body(bytes)?;
+    Ok(AdmitAcceptance {
+        ledger_id,
+        by: id_field(IdKind::Identity, "by", required("by", parsed.by.as_ref())?)?,
+        acceptance: artifact(
+            "acceptance_base64",
+            "AcceptanceFile",
+            mabel_core::MAX_ACCEPTANCE_FILE_BYTES,
+            parsed.acceptance_base64.as_ref(),
+        )?,
+    })
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RemoveBody {
+    by: Option<String>,
+    target: Option<String>,
+}
+
+/// `POST /api/identities/{identity_id}/memberships/removals`.
+pub(super) fn remove_membership(
+    ledger_id: Id,
+    bytes: &[u8],
+) -> Result<RemoveMembership, ServiceError> {
+    let parsed: RemoveBody = body(bytes)?;
+    Ok(RemoveMembership {
+        ledger_id,
+        by: id_field(IdKind::Identity, "by", required("by", parsed.by.as_ref())?)?,
+        target: id_field(
+            IdKind::Identity,
+            "target",
+            required("target", parsed.target.as_ref())?,
+        )?,
+    })
 }
 
 #[derive(Debug, Deserialize)]
@@ -419,20 +567,6 @@ pub(super) fn method_not_allowed(method: &str, path: &str) -> ServiceError {
     .with_detail("method", method)
     .with_detail("path", path)
     .with_status(StatusCode::METHOD_NOT_ALLOWED)
-}
-
-/// The 501 for the membership routes, which are not frozen yet
-/// (`contracts/http/PENDING-membership.md`).
-//
-// TODO(ticket 021): implement these once proposal 002 freezes the membership
-// payload names and the fixtures land in `contracts/http/`. Do not guess the
-// request or response shapes here.
-pub(super) fn pending_membership(path: &str) -> ServiceError {
-    ServiceError::unsupported(
-        "unsupported_membership_route",
-        format!("{path} is not implemented: the membership surface is not frozen yet"),
-    )
-    .with_detail("path", path)
 }
 
 #[cfg(test)]

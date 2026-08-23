@@ -20,12 +20,16 @@
         "prev": null,
         "timestamp_ms": 1700000000000,
         "author_key": "2bflemtufo2kwoqtnc6umfpe43icesvxdiawxl4fecrtfslxq43q",
-        "payload_kind": "person_inception",
+        "payload_kind": "inception",
         "payload": {
           "declared_kind": "person",
-          "active_key": "2bflemtufo2kwoqtnc6umfpe43icesvxdiawxl4fecrtfslxq43q",
-          "reserve_commit": "4hvnmdhctangrg6jmqkyzf6ropi5do6lqdcw37eqoryzhoqg2maq",
-          "nonce": "ugq2dinbugq2dinbugq2dinbue"
+          "nonce": "ugq2dinbugq2dinbugq2dinbue",
+          "root": {
+            "raw_root": {
+              "active_key": "2bflemtufo2kwoqtnc6umfpe43icesvxdiawxl4fecrtfslxq43q",
+              "reserve_commit": "4hvnmdhctangrg6jmqkyzf6ropi5do6lqdcw37eqoryzhoqg2maq"
+            }
+          }
         }
       },
       {

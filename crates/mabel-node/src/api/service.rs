@@ -15,8 +15,9 @@ use std::future::Future;
 use std::pin::Pin;
 
 use super::documents::{
-    Appended, CreatedIdentity, DeclaredKind, ForkList, Id, Identity, LedgerList, LedgerPage,
-    LedgerView, Pushed, Revoked, VerificationReport, WalletNode, WitnessNode,
+    Accepted, Admitted, Appended, CreatedIdentity, DeclaredKind, ForkList, Id, Identity, Invited,
+    LedgerList, LedgerPage, LedgerView, MembershipView, Pushed, Removed, Revoked, RoleName,
+    VerificationReport, WalletNode, WitnessNode,
 };
 use super::error::ServiceError;
 
@@ -33,6 +34,57 @@ pub struct CreateIdentity {
     /// [`DeclaredKind::Organization`] reach the service; `agent` and `service`
     /// are turned away with code 70 in the handler.
     pub declared_kind: DeclaredKind,
+    /// The one founding principal of an identity root, or `None` for a raw
+    /// root the new ledger keys itself with (proposal 002 section 2).
+    pub founder: Option<Id>,
+}
+
+/// `POST /api/identities/{identity_id}/memberships/invitations`, after
+/// validation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Invite {
+    /// The ledger the invitation is appended to, from the path.
+    pub ledger_id: Id,
+    /// The controller that signs it.
+    pub by: Id,
+    /// The role offered.
+    pub role: RoleName,
+    /// The decoded `IdentityDescriptor` of the invitee.
+    pub invitee_descriptor: Vec<u8>,
+}
+
+/// `POST /api/identities/{identity_id}/memberships/acceptances`, after
+/// validation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AcceptInvitation {
+    /// The identity accepting, from the path. This wallet holds its key.
+    pub identity_id: Id,
+    /// The decoded `InvitationBundle` the inviter handed over.
+    pub invitation_bundle: Vec<u8>,
+}
+
+/// `POST /api/identities/{identity_id}/memberships/admissions`, after
+/// validation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AdmitAcceptance {
+    /// The ledger the acceptance is appended to, from the path.
+    pub ledger_id: Id,
+    /// The controller that signs the acceptance event.
+    pub by: Id,
+    /// The decoded `AcceptanceFile` the invitee signed.
+    pub acceptance: Vec<u8>,
+}
+
+/// `POST /api/identities/{identity_id}/memberships/removals`, after
+/// validation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RemoveMembership {
+    /// The ledger the removal is appended to, from the path.
+    pub ledger_id: Id,
+    /// The controller that signs it.
+    pub by: Id,
+    /// The identity to remove, whose principal and open invitation both go.
+    pub target: Id,
 }
 
 /// One page of events, from `?since=` and `?limit=`.
@@ -128,6 +180,22 @@ pub trait WalletService: Send + Sync + 'static {
 
     /// `POST /api/identities/{identity_id}/witnesses`.
     fn set_witnesses(&self, identity_id: Id, witnesses: Vec<Id>) -> ServiceFuture<'_, Appended>;
+
+    /// `GET /api/identities/{identity_id}/memberships`.
+    fn memberships(&self, identity_id: Id) -> ServiceFuture<'_, MembershipView>;
+
+    /// `POST /api/identities/{identity_id}/memberships/invitations`.
+    fn invite(&self, request: Invite) -> ServiceFuture<'_, Invited>;
+
+    /// `POST /api/identities/{identity_id}/memberships/acceptances`, which
+    /// signs a detached acceptance and appends nothing.
+    fn accept_invitation(&self, request: AcceptInvitation) -> ServiceFuture<'_, Accepted>;
+
+    /// `POST /api/identities/{identity_id}/memberships/admissions`.
+    fn admit_acceptance(&self, request: AdmitAcceptance) -> ServiceFuture<'_, Admitted>;
+
+    /// `POST /api/identities/{identity_id}/memberships/removals`.
+    fn remove_membership(&self, request: RemoveMembership) -> ServiceFuture<'_, Removed>;
 
     /// `POST /api/trust`.
     fn add_trust(&self, request: AddTrust) -> ServiceFuture<'_, Appended>;

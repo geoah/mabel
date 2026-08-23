@@ -1,6 +1,6 @@
 # 021: membership HTTP routes, fixtures and the wallet wiring
 
-- Status: open
+- Status: done
 - Depends on: 012, 018, 019
 
 ## Goal

@@ -8,15 +8,22 @@
 //! The timestamp is `max(now, prev.timestamp_ms)`, the clamp rule of section
 //! 3.2, computed here so the value a command reports is the value the event
 //! carries.
+//!
+//! [`ensure_fresh`] is the other half: the append discipline of section 5,
+//! which every appending command runs before it signs, so no command line can
+//! append to a shared ledger on a head another wallet already moved.
 
 use iroh_base::SecretKey;
 use mabel_core::sign::{BuildError, BuiltEvent, Position, ledger_timestamp_ms};
-use mabel_core::{EventId, IdentityId};
+use mabel_core::{EventId, IdentityId, LedgerId};
+use mabel_node::wallet::{Freshness, WalletCore, WalletSync};
 use mabel_node::{NewEvent, now_ms};
 
+use crate::cli::AppendOptions;
 use crate::context::Context;
 use crate::error::{CliError, Result};
 use crate::ledger::Loaded;
+use crate::network::on_network;
 
 /// What an append produced.
 #[derive(Debug, Clone, Copy)]
@@ -27,6 +34,50 @@ pub struct Appended {
     pub seq: u64,
     /// The `timestamp_ms` it carries.
     pub timestamp_ms: u64,
+}
+
+/// Asks a shared ledger's witnesses where it ends, before anything is signed
+/// on top of it (proposal 001 section 5).
+///
+/// Two ledgers need no query and get none, so the common command line binds no
+/// endpoint: one that names no witness, and one whose every controller key
+/// lives in this home, since nobody else can have moved it. For the rest, a
+/// witness that is ahead on a chain extending this copy is fast-forwarded from,
+/// and a local unpushed event that lost the race is discarded and reported as
+/// exit code 50, `stale_head`, for the caller to re-run.
+///
+/// `--no-sync` skips the query, which is what an offline append needs; the
+/// event it writes may lose the race later.
+///
+/// # Errors
+///
+/// Returns code 50 when a local event lost the race, code 30 when a witness
+/// cannot be reached, and code 20 when a witness serves a chain that does not
+/// verify.
+pub fn ensure_fresh(
+    ctx: &Context,
+    ledger: LedgerId,
+    options: &AppendOptions,
+) -> Result<Option<Freshness>> {
+    if options.no_sync {
+        return Ok(None);
+    }
+    let core = WalletCore::new(ctx.home().clone());
+    let witnesses = core.witnesses_of(ledger)?;
+    if witnesses.is_empty() {
+        return Ok(None);
+    }
+    if core.solely_controls(&core.load(ledger)?.state) {
+        return Ok(None);
+    }
+    let freshness = on_network(
+        ctx,
+        &options.peer,
+        |core: WalletCore, sync: WalletSync| async move {
+            Ok(sync.ensure_fresh(&core, ledger, &witnesses).await?)
+        },
+    )?;
+    Ok(Some(freshness))
 }
 
 /// Signs one event for `identity` and appends it to `loaded`.

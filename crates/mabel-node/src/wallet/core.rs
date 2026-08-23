@@ -12,16 +12,23 @@
 
 use std::fs;
 
+use data_encoding::BASE64;
 use iroh_base::{EndpointId, SecretKey};
-use mabel_core::fold::LedgerState;
+use mabel_core::artifacts::{AcceptanceFile, IdentityDescriptor, InvitationBundle};
+use mabel_core::fold::{InvitationStatus, LedgerState};
 use mabel_core::sign::{
-    BuildError, BuiltEvent, Position, Root, build_inception, build_trust_attestation,
-    build_trust_revocation, build_witness_config, ledger_timestamp_ms,
+    BuildError, BuiltEvent, Position, Root, build_acceptance, build_inception,
+    build_membership_acceptance, build_membership_invitation, build_membership_removal,
+    build_trust_attestation, build_trust_revocation, build_witness_config, ledger_timestamp_ms,
 };
 use mabel_core::{EventId, IdentityId, LedgerId, NONCE_BYTES};
+use mabel_proto::prost::Message;
+use mabel_proto::v0 as pb;
+use mabel_proto::v0::event_body::Payload;
 
 use crate::api::documents::{
-    Appended, CreatedIdentity, DeclaredKind as DocumentKind, Identity, LedgerPage, Revoked,
+    Accepted, Admitted, Appended, CreatedIdentity, DeclaredKind as DocumentKind, Identity, Invited,
+    LedgerPage, MembershipView, PrincipalEntry, Removed, Revoked, RoleName, RootName,
 };
 use crate::api::error::ServiceError;
 use crate::api::service::EventPageRequest;
@@ -29,7 +36,7 @@ use crate::config::NodeConfig;
 use crate::home::{DeclaredKind, IdentityMeta, NodeHome};
 use crate::ledger::{LedgerMeta, LedgerStore, NewEvent};
 use crate::now_ms;
-use crate::wallet::error::{build_error, fold_error, storage_error};
+use crate::wallet::error::{artifact_error, build_error, fold_error, storage_error};
 use crate::wallet::ids;
 use crate::wallet::ledger::LoadedLedger;
 use crate::witness::events::event_document;
@@ -193,8 +200,13 @@ impl WalletCore {
         })
     }
 
-    /// Mints a raw-rooted identity: a fresh active key, a reserve commitment
-    /// and a seq-0 event (proposal 002 section 2).
+    /// Mints an identity: a seq-0 event under a raw root, keyed by a fresh
+    /// active key and a reserve commitment, or under an identity root founded
+    /// by `founder` (proposal 002 section 2).
+    ///
+    /// With a founder the new ledger holds no key of its own: the founder's
+    /// key signs the inception, and `controlled_by` records which local
+    /// identity signs for it later.
     ///
     /// # Errors
     ///
@@ -205,6 +217,7 @@ impl WalletCore {
         &self,
         alias: &str,
         declared_kind: DocumentKind,
+        founder: Option<IdentityId>,
     ) -> Result<CreatedIdentity, ServiceError> {
         self.refuse_reused_alias(alias)?;
         let mut nonce = [0u8; NONCE_BYTES];
@@ -214,18 +227,42 @@ impl WalletCore {
         })?;
         let created_at_ms = now_ms();
 
-        let active = crate::keys::generate_secret_key().map_err(storage_error)?;
-        let reserve = crate::keys::generate_secret_key().map_err(storage_error)?;
-        let built = build_inception(
-            &active,
-            proto_kind(declared_kind),
-            Root::Raw {
-                reserve_key: &reserve.public(),
-            },
-            nonce,
-            created_at_ms,
-        )
-        .map_err(|error| build_error(&error))?;
+        let (built, keys) = match founder {
+            Some(founder) => {
+                let signer = self.signing_key(founder)?;
+                let inception = self
+                    .store(founder)
+                    .read_event(0)
+                    .map_err(|_| unknown_ledger(founder))?;
+                let built = build_inception(
+                    &signer,
+                    proto_kind(declared_kind),
+                    Root::Identity {
+                        founder,
+                        founder_inception: &inception,
+                    },
+                    nonce,
+                    created_at_ms,
+                )
+                .map_err(|error| build_error(&error))?;
+                (built, None)
+            }
+            None => {
+                let active = crate::keys::generate_secret_key().map_err(storage_error)?;
+                let reserve = crate::keys::generate_secret_key().map_err(storage_error)?;
+                let built = build_inception(
+                    &active,
+                    proto_kind(declared_kind),
+                    Root::Raw {
+                        reserve_key: &reserve.public(),
+                    },
+                    nonce,
+                    created_at_ms,
+                )
+                .map_err(|error| build_error(&error))?;
+                (built, Some((active, reserve)))
+            }
+        };
 
         // The fold decides whether these bytes are a ledger before they land.
         let mut state = LedgerState::default();
@@ -234,9 +271,11 @@ impl WalletCore {
             .map_err(|reason| fold_error(&reason))?;
         let identity = IdentityId::from(built.event_id);
 
-        self.home
-            .write_identity_keys(identity, &active, &reserve)
-            .map_err(storage_error)?;
+        if let Some((active, reserve)) = &keys {
+            self.home
+                .write_identity_keys(identity, active, reserve)
+                .map_err(storage_error)?;
+        }
         let store = self.store(identity);
         store
             .append(&[NewEvent {
@@ -257,7 +296,7 @@ impl WalletCore {
                 &IdentityMeta {
                     alias: alias.to_owned(),
                     declared_kind: stored_kind(declared_kind),
-                    controlled_by: None,
+                    controlled_by: founder,
                     created_at_ms,
                 },
             )
@@ -336,6 +375,311 @@ impl WalletCore {
             revoked_attestation_seq: attestation_seq,
             event: event_document(&appended.bytes)?,
         })
+    }
+
+    /// The principals and invitations of one stored ledger.
+    ///
+    /// # Errors
+    ///
+    /// As [`WalletCore::load`].
+    pub fn memberships(&self, ledger: LedgerId) -> Result<MembershipView, ServiceError> {
+        Ok(self.load(ledger)?.membership_document())
+    }
+
+    /// Appends a `MembershipInvitation` naming the identity `descriptor`
+    /// describes, and returns the bundle the invitee needs to accept it.
+    ///
+    /// The invitation embeds the inception the descriptor carries, byte for
+    /// byte, which is what proves the invitee's id and key belong together
+    /// (proposal 002 section 8). The bundle is built after the event lands, so
+    /// it holds the ledger the invitee will fold.
+    ///
+    /// # Errors
+    ///
+    /// Returns code 10 for a descriptor that is not one, code 20 for an
+    /// invitee that holds no key of its own or a rule the fold refuses, and
+    /// the errors of [`WalletCore::append`].
+    pub fn invite(
+        &self,
+        ledger: LedgerId,
+        by: IdentityId,
+        role: RoleName,
+        descriptor: &[u8],
+    ) -> Result<Invited, ServiceError> {
+        let descriptor = IdentityDescriptor::read(descriptor)
+            .map_err(|error| artifact_error("IdentityDescriptor", &error))?;
+        let invitee = descriptor.identity();
+        let invitee_key = descriptor.active_key().ok_or_else(|| {
+            ServiceError::policy(
+                "invitee_holds_no_key",
+                format!(
+                    "{invitee} is an identity-rooted ledger and holds no key of its own, \
+                     so it cannot be invited"
+                ),
+            )
+            .with_detail("invitee", invitee.to_string())
+        })?;
+
+        let mut loaded = self.load(ledger)?;
+        let appended = self.append(by, &mut loaded, |signer, at, timestamp_ms| {
+            build_membership_invitation(
+                signer,
+                at,
+                invitee,
+                &invitee_key,
+                proto_role(role),
+                descriptor.inception(),
+                timestamp_ms,
+            )
+        })?;
+
+        let bundle = InvitationBundle::new(loaded.events.clone())
+            .map_err(|error| artifact_error("InvitationBundle", &error))?;
+        Ok(Invited {
+            ledger_id: ids::identity(ledger),
+            by: ids::identity(by),
+            invitee: ids::identity(invitee),
+            invitee_key: ids::key(&invitee_key),
+            role,
+            invitation_event: ids::event(appended.event_id),
+            invitation_seq: appended.seq,
+            timestamp_ms: appended.timestamp_ms,
+            head_seq: appended.seq,
+            head_event: ids::event(appended.event_id),
+            event: event_document(&appended.bytes)?,
+            invitation_bundle_base64: BASE64.encode(&bundle.write()),
+            event_count: bundle.events().len() as u64,
+        })
+    }
+
+    /// Signs the invitee's acceptance of the invitation `bundle` carries, and
+    /// returns the accept surface it was signed under.
+    ///
+    /// Nothing is appended here: the acceptance is a detached file a
+    /// controller of the invited ledger admits later. The bundle is folded
+    /// from its inception before anything is signed, so the surface is the
+    /// fold's answer and not the file's claim (proposal 002 section 4).
+    ///
+    /// # Errors
+    ///
+    /// Returns code 10 for a bundle that is not one, code 2 when the
+    /// invitation names another identity, code 20 when this home signs under
+    /// another key, and code 60 for an insecure key file.
+    pub fn accept_invitation(
+        &self,
+        identity: IdentityId,
+        bundle: &[u8],
+    ) -> Result<Accepted, ServiceError> {
+        let bundle = InvitationBundle::read(bundle)
+            .map_err(|error| artifact_error("InvitationBundle", &error))?;
+        let summary = bundle
+            .summary()
+            .map_err(|error| artifact_error("InvitationBundle", &error))?;
+
+        if summary.invitee != identity {
+            return Err(ServiceError::usage(
+                "not_the_invitee",
+                format!(
+                    "this invitation invites {}, not {identity}",
+                    summary.invitee
+                ),
+            )
+            .with_detail("ledger_id", summary.ledger.to_string())
+            .with_detail("invitee", summary.invitee.to_string()));
+        }
+        let key = self.signing_key(identity)?;
+        if key.public() != summary.invitee_key {
+            return Err(ServiceError::policy(
+                "acceptance_invitee_key_mismatch",
+                format!(
+                    "the invitation records key {} for {identity}, and this home signs with {}",
+                    summary.invitee_key,
+                    key.public()
+                ),
+            )
+            .with_detail("ledger_id", summary.ledger.to_string()));
+        }
+
+        let signed = build_acceptance(&key, summary.ledger, summary.invitation_event, identity);
+        let file = AcceptanceFile::new(&signed)
+            .map_err(|error| artifact_error("AcceptanceFile", &error))?;
+
+        let root_identity = match summary.root {
+            mabel_core::fold::LedgerRoot::Raw { .. } => summary.ledger,
+            mabel_core::fold::LedgerRoot::Identity { founder, .. } => founder,
+        };
+        let controllers = summary
+            .controllers
+            .iter()
+            .map(|principal| PrincipalEntry {
+                identity: ids::identity(principal.identity),
+                active_key: ids::key(&principal.key),
+                role: RoleName::Controller,
+                is_root: principal.identity == root_identity,
+            })
+            .collect();
+        let role = role_name(summary.role)?;
+        let controller_on_raw_root = summary.controller_on_raw_root();
+        Ok(Accepted {
+            ledger_id: ids::identity(summary.ledger),
+            declared_kind: crate::witness::events::declared_kind(summary.declared_kind),
+            root: root_name(summary.root),
+            controllers,
+            invitation_event: ids::event(summary.invitation_event),
+            invitee: ids::identity(summary.invitee),
+            invitee_key: ids::key(&summary.invitee_key),
+            role,
+            controller_on_raw_root,
+            warning: controller_on_raw_root.then(|| raw_root_warning(summary.ledger)),
+            acceptance_base64: BASE64.encode(&file.write()),
+        })
+    }
+
+    /// Appends a `MembershipAcceptance` carrying `acceptance`, which admits
+    /// the principal the invitation it names records.
+    ///
+    /// # Errors
+    ///
+    /// Returns code 10 for a file that is not an acceptance, code 50 with
+    /// reason `acceptance_already_used` when this ledger already admitted it,
+    /// and the errors of [`WalletCore::append`].
+    pub fn admit_acceptance(
+        &self,
+        ledger: LedgerId,
+        by: IdentityId,
+        acceptance: &[u8],
+    ) -> Result<Admitted, ServiceError> {
+        let file = AcceptanceFile::read(acceptance)
+            .map_err(|error| artifact_error("AcceptanceFile", &error))?;
+        let mut loaded = self.load(ledger)?;
+        self.refuse_replay(&loaded, file.invitation_event())?;
+
+        // The invitation is what the acceptance admits (proposal 002
+        // section 4), so the role and key reported below are read from it,
+        // before the append marks it accepted.
+        let invitation = loaded.state.invitation(&file.invitation_event()).copied();
+        let detached = file.detached();
+        let appended = self.append(by, &mut loaded, |signer, at, timestamp_ms| {
+            build_membership_acceptance(signer, at, &detached, timestamp_ms)
+        })?;
+        let Some(invitation) = invitation else {
+            // The fold rejects an acceptance naming no invitation, so this is
+            // unreachable.
+            return Err(ServiceError::ledger(
+                "invitation_not_folded",
+                format!(
+                    "invitation {} is not in ledger {ledger}",
+                    file.invitation_event()
+                ),
+            ));
+        };
+
+        Ok(Admitted {
+            ledger_id: ids::identity(ledger),
+            by: ids::identity(by),
+            invitee: ids::identity(invitation.invitee),
+            invitee_key: ids::key(&invitation.invitee_key),
+            role: role_name(invitation.role)?,
+            invitation_event: ids::event(file.invitation_event()),
+            acceptance_event: ids::event(appended.event_id),
+            acceptance_seq: appended.seq,
+            timestamp_ms: appended.timestamp_ms,
+            head_seq: appended.seq,
+            head_event: ids::event(appended.event_id),
+            event: event_document(&appended.bytes)?,
+        })
+    }
+
+    /// Appends a `MembershipRemoval` naming `target`.
+    ///
+    /// One removal cancels an open invitation and takes away a principal,
+    /// whichever exist. The raw root and the last controller are the fold's to
+    /// refuse.
+    ///
+    /// # Errors
+    ///
+    /// As [`WalletCore::append`].
+    pub fn remove_membership(
+        &self,
+        ledger: LedgerId,
+        by: IdentityId,
+        target: IdentityId,
+    ) -> Result<Removed, ServiceError> {
+        let mut loaded = self.load(ledger)?;
+        let principal_removed = loaded.state.principal(&target).is_some();
+        let cancelled = open_invitation(&loaded.state, target);
+        let appended = self.append(by, &mut loaded, |signer, at, timestamp_ms| {
+            build_membership_removal(signer, at, target, timestamp_ms)
+        })?;
+        Ok(Removed {
+            ledger_id: ids::identity(ledger),
+            by: ids::identity(by),
+            target: ids::identity(target),
+            principal_removed,
+            invitation_cancelled: cancelled.map(ids::event),
+            removal_event: ids::event(appended.event_id),
+            removal_seq: appended.seq,
+            timestamp_ms: appended.timestamp_ms,
+            head_seq: appended.seq,
+            head_event: ids::event(appended.event_id),
+            event: event_document(&appended.bytes)?,
+        })
+    }
+
+    /// Refuses an acceptance this ledger already admitted (pitfall 4).
+    ///
+    /// The fold calls that state `invitation_not_open`, which is true but says
+    /// nothing about the file the caller passed, so this is reported as the
+    /// replay of a single-use artifact instead: code 50, `Replay error:`
+    /// (`contracts/cli/errors.json`).
+    fn refuse_replay(
+        &self,
+        loaded: &LoadedLedger,
+        invitation: EventId,
+    ) -> Result<(), ServiceError> {
+        let Some(held) = loaded.state.invitation(&invitation) else {
+            return Ok(());
+        };
+        if held.status != InvitationStatus::Accepted {
+            return Ok(());
+        }
+        let at_seq = self
+            .admitted_at(loaded.ledger, invitation)?
+            .unwrap_or_default();
+        Err(ServiceError::replay(
+            "acceptance_already_used",
+            format!(
+                "this acceptance was already admitted at seq {at_seq} of {}",
+                loaded.ledger
+            ),
+        )
+        .with_detail("ledger_id", loaded.ledger.to_string())
+        .with_detail("invitation_event", invitation.to_string())
+        .with_detail("at_seq", at_seq))
+    }
+
+    /// The position of the acceptance that consumed `invitation`.
+    ///
+    /// The fold records that an invitation was accepted but not which event
+    /// accepted it, so the stored events are scanned for the acceptance whose
+    /// blob names it.
+    fn admitted_at(
+        &self,
+        ledger: LedgerId,
+        invitation: EventId,
+    ) -> Result<Option<u64>, ServiceError> {
+        for stored in self.store(ledger).read_all().map_err(storage_error)? {
+            let Some(Payload::MembershipAcceptance(acceptance)) = payload_of(&stored.bytes) else {
+                continue;
+            };
+            let Ok(blob) = pb::Acceptance::decode(&acceptance.acceptance[..]) else {
+                continue;
+            };
+            if EventId::from_slice(&blob.invitation_event) == Ok(invitation) {
+                return Ok(Some(stored.seq));
+            }
+        }
+        Ok(None)
     }
 
     /// Signs one event for `identity` and appends it to `loaded`.
@@ -638,6 +982,67 @@ fn remove(path: &std::path::Path) -> Result<(), ServiceError> {
             format!("{} could not be removed: {error}", path.display()),
         )
         .with_status(axum::http::StatusCode::INTERNAL_SERVER_ERROR)),
+    }
+}
+
+/// The sentence the accept surface carries when accepting means signing as
+/// the ledger's own identity (proposal 002 section 4).
+///
+/// `mabel membership accept` prints this same sentence, so a person reads one
+/// wording on both surfaces.
+fn raw_root_warning(ledger: LedgerId) -> String {
+    format!(
+        "accepting a controller role on a raw-rooted ledger means signing as {ledger}: \
+         every event you append to it is that identity's own event"
+    )
+}
+
+/// The open invitation of `target`, if the ledger holds one.
+fn open_invitation(state: &LedgerState, target: IdentityId) -> Option<EventId> {
+    state
+        .invitations()
+        .iter()
+        .find(|(_, invitation)| {
+            invitation.invitee == target && invitation.status == InvitationStatus::Open
+        })
+        .map(|(event, _)| *event)
+}
+
+/// The payload of stored event bytes the fold has already accepted.
+fn payload_of(bytes: &[u8]) -> Option<Payload> {
+    pb::SignedEvent::decode(bytes)
+        .ok()
+        .and_then(|signed| pb::EventBody::decode(&signed.body[..]).ok())
+        .and_then(|body| body.payload)
+}
+
+/// Where a folded root came from, as every document names it.
+const fn root_name(root: mabel_core::fold::LedgerRoot) -> RootName {
+    match root {
+        mabel_core::fold::LedgerRoot::Raw { .. } => RootName::Raw,
+        mabel_core::fold::LedgerRoot::Identity { .. } => RootName::Identity,
+    }
+}
+
+/// The name of a role the fold recorded.
+///
+/// The fold never records `ROLE_UNSPECIFIED`, which the field table rejects,
+/// so this cannot fail on a stored ledger.
+fn role_name(role: pb::Role) -> Result<RoleName, ServiceError> {
+    match role {
+        pb::Role::Member => Ok(RoleName::Member),
+        pb::Role::Controller => Ok(RoleName::Controller),
+        pb::Role::Unspecified => Err(ServiceError::schema(
+            "unspecified_role",
+            "a membership event carries no recognised role",
+        )),
+    }
+}
+
+const fn proto_role(role: RoleName) -> pb::Role {
+    match role {
+        RoleName::Member => pb::Role::Member,
+        RoleName::Controller => pb::Role::Controller,
     }
 }
 

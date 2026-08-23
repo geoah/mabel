@@ -1,0 +1,75 @@
+{
+  "route": "/api/identities/:identity_id/memberships/admissions",
+  "method": "POST",
+  "request": {
+    "by": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+    "acceptance_base64": "dNk7XOhK6YKkRG+Ub+wBC6F0kyBLPn9IyHijl6MyPS8vALlZz9ZyL+Ed3zZAbSsTe7Zszw4ilfQKdCPPMcgaTmpDrW2/JewU"
+  },
+  "response": {
+    "ok": true,
+    "ledger_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+    "by": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+    "invitee": "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq",
+    "invitee_key": "mpvsw45ffkwexrnkxubkqqwgdg5mwopl5qoeaimfyw27cm42ttiq",
+    "role": "controller",
+    "invitation_event": "zx7msbfj3lbmwq3d2aybjddujknuwsyxdqczvxgs55kvn56iwo7q",
+    "acceptance_event": "vq5lohqdyrkxvx56hg3l3q5kvpq2hjn4i6dnhmedhi5kij7nfobq",
+    "acceptance_seq": 5,
+    "timestamp_ms": 1700000660000,
+    "head_seq": 5,
+    "head_event": "vq5lohqdyrkxvx56hg3l3q5kvpq2hjn4i6dnhmedhi5kij7nfobq",
+    "event": {
+      "event_id": "vq5lohqdyrkxvx56hg3l3q5kvpq2hjn4i6dnhmedhi5kij7nfobq",
+      "seq": 5,
+      "ledger_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+      "prev": "zx7msbfj3lbmwq3d2aybjddujknuwsyxdqczvxgs55kvn56iwo7q",
+      "timestamp_ms": 1700000660000,
+      "author_key": "2bflemtufo2kwoqtnc6umfpe43icesvxdiawxl4fecrtfslxq43q",
+      "payload_kind": "membership_acceptance",
+      "payload": {
+        "acceptance": "uw4ixykjqyo23vbti44g3qmc6pdw4vhjwp42m2spreb5rajritdc4byeay",
+        "signature": "hymdk3t6cjw4a3joqisqimdeft3aj4jrs7akwr46nxjfoor7baru4li76jindfj62z334lajrzdmldkbdocxzxxtoickg6wfkcbwxqi"
+      }
+    }
+  },
+  "errors": [
+    {
+      "status": 400,
+      "body": {
+        "ok": false,
+        "code": 2,
+        "message": "acceptance_base64 is required",
+        "details": {
+          "reason": "missing_field",
+          "field": "acceptance_base64"
+        }
+      }
+    },
+    {
+      "status": 409,
+      "body": {
+        "ok": false,
+        "code": 50,
+        "message": "Replay error: this acceptance was already admitted at seq 5 of sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+        "details": {
+          "reason": "acceptance_already_used",
+          "ledger_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+          "invitation_event": "zx7msbfj3lbmwq3d2aybjddujknuwsyxdqczvxgs55kvn56iwo7q",
+          "at_seq": 5
+        }
+      }
+    },
+    {
+      "status": 409,
+      "body": {
+        "ok": false,
+        "code": 20,
+        "message": "Policy error: Acceptance.invitation_event rqz2wivauyw2u3edzs43m5fimsd2yf7cxmno2l6psyqtpurhdhha names no invitation in this ledger",
+        "details": {
+          "reason": "unknown_invitation",
+          "at_seq": 6
+        }
+      }
+    }
+  ]
+}

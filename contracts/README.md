@@ -25,6 +25,11 @@ do not settle, the decision is listed under "Decisions taken here".
 | `http/wallet-get-identity.json` | `GET /api/identities/:identity_id` |
 | `http/wallet-get-identity-ledger.json` | `GET /api/identities/:identity_id/ledger?since=` |
 | `http/wallet-post-identity-witnesses.json` | `POST /api/identities/:identity_id/witnesses` |
+| `http/wallet-get-identity-memberships.json` | `GET /api/identities/:identity_id/memberships` |
+| `http/wallet-post-membership-invitations.json` | `POST /api/identities/:identity_id/memberships/invitations` |
+| `http/wallet-post-membership-acceptances.json` | `POST /api/identities/:identity_id/memberships/acceptances` |
+| `http/wallet-post-membership-admissions.json` | `POST /api/identities/:identity_id/memberships/admissions` |
+| `http/wallet-post-membership-removals.json` | `POST /api/identities/:identity_id/memberships/removals` |
 | `http/wallet-post-trust.json` | `POST /api/trust` |
 | `http/wallet-post-trust-revoke.json` | `POST /api/trust/:event_id/revoke` |
 | `http/wallet-post-sync-push.json` | `POST /api/sync/push` |
@@ -34,7 +39,6 @@ do not settle, the decision is listed under "Decisions taken here".
 | `http/witness-get-ledger.json` | `GET /api/ledgers/:ledger_id` |
 | `http/witness-get-ledger-events.json` | `GET /api/ledgers/:ledger_id/events?since=` |
 | `http/witness-get-forks.json` | `GET /api/forks` |
-| `http/PENDING-membership.md` | the four membership routes, not frozen yet |
 | `cli/identity-create.json` | `mabel identity create --json` |
 | `cli/identity-list.json` | `mabel identity list --json` |
 | `cli/trust-add.json` | `mabel trust add --json` |
@@ -63,6 +67,18 @@ base32 without padding: 32-byte values (identity ids, ledger ids, event ids,
 public keys, endpoint ids) are 52 characters, a 16-byte nonce is 26. Parsing
 is case-insensitive. `node.json` on disk is the exception, because
 `iroh_base::EndpointId` serializes as hex there.
+
+**Artifacts over JSON.** The three file artifacts of proposal 001 section 3.8
+(`IdentityDescriptor`, `InvitationBundle`, `AcceptanceFile`) cross the HTTP
+surface as standard RFC 4648 base64 with padding, in a field whose name ends
+`_base64`: `invitee_descriptor_base64`, `invitation_bundle_base64`,
+`acceptance_base64`. Base32 spells ids because they are read aloud and
+compared by eye; a bundle carries up to 1 MiB, where base32 would cost 60% and
+base64 costs 33%. The bytes are the same bytes the file on disk holds, so
+`mabel membership invite --out acme.invitation` and the HTTP route hand out the
+same artifact. Byte fields *inside* an event payload stay base32 like every
+other byte field. The base64 values in the fixtures are placeholders: a real
+artifact depends on keys the fixtures do not hold.
 
 **Numbers.** Sequences (`seq`, `head_seq`, `since`, `at_seq`) are JSON
 numbers, 0-based, never strings. Counts (`event_count`, `stored`,
@@ -166,33 +182,121 @@ fields including `valid_to_seq` and `failed_at_seq` live in `details`.
 **Identity document**, returned by `GET /api/identities`, `GET
 /api/identities/:identity_id`, `POST /api/identities` and `mabel identity
 list`: `identity_id`, `declared_kind`, `alias`, `created_at_ms`, `head_seq`,
-`head_event`, `event_count`, `witnesses`, `trust`. A person adds
-`active_key` and `reserve_commit`. The list route returns the same document
-as the show route, not a truncated one. The membership view of an identity
-is not frozen; see below.
+`head_event`, `event_count`, `witnesses`, `trust`, `principals`,
+`open_invitation_count`. A raw-rooted identity adds `active_key` and
+`reserve_commit`; an identity-rooted one holds no key of its own and omits
+both. The list route returns the same document as the show route, not a
+truncated one.
 
-**Event document**, returned by both ledger routes and nested in fork
-records: `event_id`, `seq`, `ledger_id`, `prev`, `timestamp_ms`,
-`author_key`, `payload_kind`, `payload`. `payload_kind` is the `oneof` tag
-name from `ledger.proto` in snake_case, and `payload` holds that variant's
-fields with the same names. The node decodes; the UI holds no keys and does
-no crypto (proposal 001 section 10), so no raw event bytes are served over
-HTTP. Raw bytes cross machines over Iroh and through the file artifacts.
+`principals` is the folded principal set of proposal 002 section 1, on every
+ledger, raw-rooted or identity-rooted, sorted by ascending `identity`. Each
+entry carries `identity`, `active_key`, `role` (`member` or `controller`) and
+`is_root`, which is true for the principal the inception seeded.
+`open_invitation_count` counts the invitations still `open`; the invitations
+themselves are on `GET /api/identities/:identity_id/memberships`.
+
+**Event document**, returned by both ledger routes, nested in fork records and
+returned beside every append: `event_id`, `seq`, `ledger_id`, `prev`,
+`timestamp_ms`, `author_key`, `payload_kind`, `payload`. `payload_kind` is the
+`oneof` tag name from `ledger.proto` in snake_case, and `payload` holds that
+variant's fields with the same names. The node decodes; the UI holds no keys
+and does no crypto (proposal 001 section 10), so no raw event bytes are served
+over HTTP. Raw bytes cross machines over Iroh and through the file artifacts.
+
+The payload subtree is frozen. Seven `payload_kind` values exist, and each
+`payload` holds exactly these keys:
+
+| `payload_kind` | `payload` keys |
+|---|---|
+| `inception` | `declared_kind`, `nonce`, `root` |
+| `witness_config` | `witnesses` |
+| `trust_attestation` | `subject` |
+| `trust_revocation` | `target` |
+| `membership_invitation` | `invitee`, `invitee_key`, `role`, `invitee_inception` |
+| `membership_acceptance` | `acceptance`, `signature` |
+| `membership_removal` | `target` |
+
+`root` is the inception's root `oneof` (proposal 002 section 2), one key of
+`raw_root` (`active_key`, `reserve_commit`) or `identity_root` (`founder`,
+`founder_key`, `founder_inception`). The blobs an event embeds verbatim,
+`founder_inception`, `invitee_inception`, `acceptance` and its `signature`,
+render as base32 of those bytes and not as decoded messages: they are signed
+objects, and a reader that wants their contents asks for the ledger they came
+from.
 
 Fixtures use the identities and event ids from `test-vectors/`, so a fixture
 and a golden vector name the same event: Alice is
 `sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq`, Bob is
 `jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq`, the organization is
-`2okqwhextnpkpmydrgrkk563vbehcklffwfzidxlh5dslawjmn6a`. Endpoint ids and the
-one conflicting fork event are fabricated but consistent across files.
+`2okqwhextnpkpmydrgrkk563vbehcklffwfzidxlh5dslawjmn6a`. Endpoint ids, Bob's
+active key, the one conflicting fork event and the membership events are
+fabricated but consistent across files.
 
-## Not frozen
+Each fixture is one moment, not one snapshot of a single node: `wallet-post-
+trust.json` answers at seq 2 of Alice's ledger and the identity documents read
+it at seq 3. The five membership fixtures run one story past that head, Alice
+delegating to Bob on her own raw-rooted ledger: the invitation lands at seq 4,
+the acceptance at seq 5 and the removal at seq 6. The acceptance fixture is
+the mirror image, Alice's wallet accepting an invitation to Bob's ledger,
+because a wallet only signs an acceptance for an identity whose key it holds.
 
-The four membership routes (`POST /api/orgs`, `/orgs/:id/invites`,
-`/orgs/:id/acceptances`, `/orgs/:id/removals`), the membership fields of the
-identity document, and the `payload_kind` names of membership and inception
-events all wait on proposal 002. See
-[http/PENDING-membership.md](http/PENDING-membership.md).
+## Membership
+
+Membership is legal on every ledger (proposal 002 section 4), so the routes
+hang off an identity and no `/orgs` or `/organizations` route exists. The path
+parameter is the ledger the event lands in, except on `/acceptances`, where it
+is the invitee signing on their own wallet.
+
+| Method | Route | Who runs it | Body |
+|---|---|---|---|
+| GET | `/api/identities/:identity_id/memberships` | anyone holding the ledger | none |
+| POST | `/api/identities/:identity_id/memberships/invitations` | a controller of the ledger | `by`, `role`, `invitee_descriptor_base64` |
+| POST | `/api/identities/:identity_id/memberships/acceptances` | the invitee | `invitation_bundle_base64` |
+| POST | `/api/identities/:identity_id/memberships/admissions` | a controller of the ledger | `by`, `acceptance_base64` |
+| POST | `/api/identities/:identity_id/memberships/removals` | a controller of the ledger | `by`, `target` |
+
+One admission crosses two wallets and three routes. A controller posts an
+invitation and gets back `invitation_bundle_base64`, the ledger's events
+`0..=invitation`. The invitee posts that bundle to `/acceptances` on their own
+wallet: the node folds it, answers the accept surface below, signs the
+acceptance and returns it as `acceptance_base64`. A controller posts that to
+`/admissions`, which appends it and adds the principal. Nobody is added
+without their own signature (decision 004), and the node signs, never the
+browser (proposal 001 section 10).
+
+`/acceptances` and `/admissions` are different actions on different wallets:
+accepting an invitation you received signs a detached file and appends
+nothing, while admitting someone's acceptance appends to your ledger. Naming
+both `/acceptances` would hide that difference behind one path.
+
+**Accept surface** (proposal 002 section 4), the response of `/acceptances`
+beside `acceptance_base64`: `ledger_id`, `declared_kind`, `root` (`raw` or
+`identity`), `controllers`, `invitation_event`, `invitee`, `invitee_key`,
+`role`, `controller_on_raw_root` and `warning`. `controller_on_raw_root` is
+the flag a screen branches on; `warning` is the sentence a person reads, and
+is `null` exactly when the flag is false. Accepting a `controller` role on a
+raw-rooted ledger means signing as that identity, which is what the sentence
+says.
+
+**Membership document**, returned by `GET
+/api/identities/:identity_id/memberships` and by `mabel membership list
+--json`: `ledger_id`, `declared_kind`, `root`, `head_seq`, `head_event`,
+`principals` and `invitations`. Each invitation carries `invitation_event`,
+`invitation_seq`, `invitee`, `invitee_key`, `role` and `status` (`open`,
+`accepted` or `cancelled`); accepted and cancelled invitations stay in the
+list, sorted by ascending `invitation_seq`.
+
+`POST /api/identities` takes an optional `founder`. Present, it names the one
+founding principal of an identity root and the new ledger holds no key of its
+own; absent or `null`, the ledger keys itself with a raw root (proposal 002
+section 2). The request keeps the frozen `declared_kind` spelling, which
+proposal 002 section 6 writes as `kind`: the fixture name wins.
+
+Replaying an acceptance the ledger already admitted answers 409 with `code:
+50`, `Replay error:` and `reason: acceptance_already_used`, the case
+`contracts/cli/errors.json` pins for the CLI. The fold calls that state
+`invitation_not_open`, which is true but says nothing about the file the
+caller passed.
 
 ## Decisions taken here
 
@@ -227,3 +331,17 @@ reviewer can overrule them cheaply, before consumers are written.
   lists map onto 10, 20, 30 and 50.
 - `details.reason` is a stable snake_case class name, matching how
   `test-vectors/rejections/` already treats `code`.
+- File artifacts cross JSON as base64 in a `*_base64` field, while every other
+  byte field stays base32. Two spellings, one rule: base32 for the 32-byte
+  values a person compares, base64 for the blobs a person never reads.
+- The membership routes name the ledger in the path and never repeat it in the
+  body, as `POST /api/identities/:identity_id/witnesses` already does.
+- `by` is required on every membership route that appends. A raw-rooted ledger
+  has an obvious signer, an identity-rooted one does not, and one shape covers
+  both.
+- Admitting an acceptance is `POST .../memberships/admissions`, not a second
+  meaning for `/acceptances`. Proposal 002 section 6 lists three routes and
+  leaves the fourth verb unnamed.
+- The replay case in `contracts/cli/errors.json` spells its detail key
+  `invitation_event`, not `invite_event`: decision 012 forbids the
+  abbreviation and proposal 002 spells the event `invitation` everywhere.

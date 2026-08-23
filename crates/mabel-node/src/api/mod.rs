@@ -26,12 +26,12 @@
 //!
 //! # Deviations from the fixtures
 //!
-//! - The membership routes answer 501 with code 70. Proposal 002 section 6
-//!   replaces the `/orgs` routes of proposal 001 with
-//!   `POST /api/identities/{identity_id}/memberships/invitations`,
-//!   `/acceptances` and `/removals`, and their bodies are not frozen
-//!   (`contracts/http/PENDING-membership.md`), so this layer routes the three
-//!   paths and refuses them rather than guessing a shape.
+//! - Admitting an acceptance is `POST
+//!   /api/identities/{identity_id}/memberships/admissions`. Proposal 002
+//!   section 6 names three membership routes and leaves the fourth verb
+//!   unnamed; accepting an invitation you received and admitting someone
+//!   else's acceptance run on different wallets and get different paths
+//!   (`contracts/README.md`, "Membership").
 //! - `POST /api/verify` with `kind: "ledger"` names its ledger in `ledger_id`.
 //!   The fixture pins the `trust` body only, where the ledger is the `issuer`.
 //! - An unknown query parameter is refused with code 2, matching the

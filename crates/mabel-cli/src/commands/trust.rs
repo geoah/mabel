@@ -8,7 +8,8 @@
 use mabel_core::sign::{build_trust_attestation, build_trust_revocation};
 use mabel_node::api::documents::SUBJECT_CONTROL_SENTENCE;
 
-use crate::append::append;
+use crate::append::{append, ensure_fresh};
+use crate::cli::AppendOptions;
 use crate::context::Context;
 use crate::documents::{AddedTrust, RevokedTrust, TrustList};
 use crate::error::{CliError, Result};
@@ -16,9 +17,10 @@ use crate::ids;
 use crate::render::Outcome;
 
 /// `mabel trust add --issuer <alias|id> --subject <alias|id>`.
-pub fn add(ctx: &Context, issuer: &str, subject: &str) -> Result<Outcome> {
+pub fn add(ctx: &Context, issuer: &str, subject: &str, options: &AppendOptions) -> Result<Outcome> {
     let issuer = ctx.resolve_local(issuer)?;
     let subject = ctx.resolve(subject)?;
+    ensure_fresh(ctx, issuer, options)?;
     let mut loaded = ctx.load(issuer)?;
     let appended = append(ctx, issuer, &mut loaded, |signer, at, timestamp_ms| {
         build_trust_attestation(signer, at, subject, timestamp_ms)
@@ -42,9 +44,15 @@ pub fn add(ctx: &Context, issuer: &str, subject: &str) -> Result<Outcome> {
 }
 
 /// `mabel trust revoke --issuer <alias|id> --attestation <event id>`.
-pub fn revoke(ctx: &Context, issuer: &str, attestation: &str) -> Result<Outcome> {
+pub fn revoke(
+    ctx: &Context,
+    issuer: &str,
+    attestation: &str,
+    options: &AppendOptions,
+) -> Result<Outcome> {
     let issuer = ctx.resolve_local(issuer)?;
     let target = ids::parse_event(attestation)?;
+    ensure_fresh(ctx, issuer, options)?;
     let mut loaded = ctx.load(issuer)?;
     let attestation_seq = loaded.seq_of.get(&target).copied();
     let subject = loaded.state.attestation(&target).map(|held| held.subject);

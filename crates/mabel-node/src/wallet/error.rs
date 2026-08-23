@@ -8,6 +8,7 @@
 use axum::http::StatusCode;
 use iroh_base::EndpointId;
 use mabel_core::LedgerId;
+use mabel_core::artifacts::ArtifactError;
 use mabel_core::fold::Reason;
 use mabel_core::sign::BuildError;
 use mabel_net::Error as NetError;
@@ -73,6 +74,24 @@ pub fn fold_error(reason: &Reason) -> ServiceError {
         | Reason::BadSignature => ServiceError::ledger(reason.code(), message),
         _ => ServiceError::policy(reason.code(), message),
     }
+}
+
+/// A file artifact a caller handed over that is not what it claims to be.
+///
+/// A prefix or an inception that does not fold carries the fold's own reason
+/// and code 20, because the bytes are an artifact and the ledger inside it is
+/// the thing that is wrong; everything else is a malformed artifact and code
+/// 10. This is the mapping `mabel-cli` uses for the same files, so one file
+/// fails the same way on both surfaces.
+#[must_use]
+pub fn artifact_error(name: &'static str, error: &ArtifactError) -> ServiceError {
+    let failure = match error {
+        ArtifactError::Prefix(violation) | ArtifactError::Inception(violation) => {
+            fold_error(&violation.reason).with_detail("failed_at_seq", violation.seq)
+        }
+        _ => ServiceError::schema(error.code(), error.to_string()),
+    };
+    failure.with_detail("artifact", name)
 }
 
 /// A refusal from the signing path, which checks the byte-layout caps.
