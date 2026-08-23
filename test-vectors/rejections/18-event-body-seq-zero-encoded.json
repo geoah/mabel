@@ -1,0 +1,10 @@
+{
+  "class": "field-table",
+  "code": "default_value_encoded",
+  "description": "An inception that writes seq 0 instead of omitting it.",
+  "entry": "signed_event",
+  "file": "18-event-body-seq-zero-encoded.json",
+  "input_hex": "0a850118002880d095ffbc313220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c9778737525808011220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c97787371a20e1ead60ce2981a689bc964158c97d173d1d1bbcb80c56dfc90747193ba06d3012210a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a11240db6af2255368d3a6d21d9aa6e2cdadf6b68e5c0a5c3ff19b561da0131629a04bd078ce69bd65060deab94ff846798e0a67fa82292638880f959f80d0e8320a0b",
+  "reason": "EventBody.seq holds its proto3 default, which the canonical encoding omits",
+  "rule": "3.1 no proto3 default is serialized"
+}

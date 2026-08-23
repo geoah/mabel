@@ -1,0 +1,10 @@
+{
+  "class": "field-table",
+  "code": "inception_past_seq_zero",
+  "description": "A PersonInception payload at seq 1.",
+  "entry": "signed_event",
+  "file": "25-inception-past-seq-zero.json",
+  "input_hex": "0ac901122091673b2723ff7a44e7206cca4c616e6f7278fea984538b468ba85d2ffde2ad311801222091673b2723ff7a44e7206cca4c616e6f7278fea984538b468ba85d2ffde2ad3128e0a499ffbc313220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c9778737525808011220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c97787371a20e1ead60ce2981a689bc964158c97d173d1d1bbcb80c56dfc90747193ba06d3012210a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a11240f41ddcdec58297352fcf8cf48ff74df0018dc4feb6bc235bb5627a69f833a822e2ca26df4325392c75ae275443d1c037231d25f20754899b46b293cc5fd41f0e",
+  "reason": "an inception payload requires seq 0",
+  "rule": "3.4 an inception sits at seq 0"
+}

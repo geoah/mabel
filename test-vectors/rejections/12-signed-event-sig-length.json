@@ -1,0 +1,10 @@
+{
+  "class": "field-table",
+  "code": "wrong_length",
+  "description": "A SignedEvent whose signature is 63 bytes.",
+  "entry": "signed_event",
+  "file": "12-signed-event-sig-length.json",
+  "input_hex": "0a9301122091673b2723ff7a44e7206cca4c616e6f7278fea984538b468ba85d2ffde2ad311801222091673b2723ff7a44e7206cca4c616e6f7278fea984538b468ba85d2ffde2ad3128e0a499ffbc313220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c97787376a220a204da1f46c97d331f94f0f22e8416142734444f30fb418144ab7686879d25f4a97123f0188d0442f442b8a6773c7cb043b23e33b61bd40aa2c4e1812de605b603914d8b79c3311d33f96e72bd4ed6fc510b94a062c59cee7ed395679a395cf285ae9",
+  "reason": "SignedEvent.sig is 63 bytes, expected exactly 64",
+  "rule": "3.4 SignedEvent.sig is 64 bytes"
+}

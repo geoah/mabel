@@ -1,0 +1,10 @@
+{
+  "class": "wire-format",
+  "code": "duplicate_field",
+  "description": "An EventBody carrying author_key twice.",
+  "entry": "signed_event",
+  "file": "02-duplicate-field.json",
+  "input_hex": "0ab501122091673b2723ff7a44e7206cca4c616e6f7278fea984538b468ba85d2ffde2ad311801222091673b2723ff7a44e7206cca4c616e6f7278fea984538b468ba85d2ffde2ad3128e0a499ffbc313220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c97787373220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c97787376a220a204da1f46c97d331f94f0f22e8416142734444f30fb418144ab7686879d25f4a9712401630343158c28a06232804a1d1e9eb7580d02c11727af79e4783f612d98fa40f0e7ddd76994b9f96471734b41a49276927b3fb0a6f4b9b35ab4dbe1cf90e750e",
+  "reason": "EventBody.author_key appears more than once",
+  "rule": "3.1 duplicate non-repeated fields"
+}

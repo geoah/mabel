@@ -1,0 +1,10 @@
+{
+  "class": "field-table",
+  "code": "inception_key_mismatch",
+  "description": "An OrgInception whose founder_key is not the embedded inception's active_key.",
+  "entry": "signed_event",
+  "file": "32-org-inception-founder-key-mismatch.json",
+  "input_hex": "0acf022880d095ffbc313220a09aa5f47a6759802ff955f8dc2d2a14a5c99d23be97f864127ff9383455a4f05aa3020802122091673b2723ff7a44e7206cca4c616e6f7278fea984538b468ba85d2ffde2ad311a20a09aa5f47a6759802ff955f8dc2d2a14a5c99d23be97f864127ff9383455a4f022c8010a83012880d095ffbc313220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c9778737525808011220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c97787371a20e1ead60ce2981a689bc964158c97d173d1d1bbcb80c56dfc90747193ba06d3012210a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a112409cf1dda4c53d2345ff8464da301789d0eb961e61722a9e50443cca9e4c29c4d8c447512ca7b68937d0ca375b214024f1bb110c9e66cfde723c9b62360b2ba10f2a10c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c11240b5a773ee035e8d528f418c0864d9678c0e7c6bbf2dbc9bf59a0ec535bbf737e602df04992c38b9eec34088eb3dd297d7066fd693fed9939ad7b7d000e7ff6c06",
+  "reason": "OrgInception.founder_key does not equal the active key of the inception embedded beside it",
+  "rule": "3.4 the embedded inception records the recorded key"
+}

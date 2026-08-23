@@ -7,6 +7,7 @@ pub mod digest;
 pub mod encoding;
 pub mod id;
 pub mod sign;
+pub mod validate;
 
 pub use digest::{accept_input, event_id, reserve_commit, sign_input};
 pub use id::{EventId, IdentityId, LedgerId, ParseIdError};
@@ -15,6 +16,9 @@ pub use sign::{
     BuildError, BuiltEvent, DetachedAcceptance, Position, build_acceptance, build_org_acceptance,
     build_org_inception, build_org_invite, build_org_removal, build_person_inception,
     build_trust_attestation, build_trust_revocation, build_witness_config, ledger_timestamp_ms,
+};
+pub use validate::{
+    MessageDescriptor, StandaloneInception, WireError, verify_inception_standalone,
 };
 
 pub const EVENT_ID_DOMAIN: &[u8] = b"mabel/event/v0\n";
@@ -37,6 +41,9 @@ pub const MAX_ACCEPTANCE_BYTES: usize = 1024;
 
 /// Length of an identity id, ledger id, event id and public key.
 pub const ID_BYTES: usize = 32;
+
+/// Length of an ed25519 signature.
+pub const SIG_BYTES: usize = 64;
 
 /// Length of an inception `nonce` (proposal 001 section 3.3).
 pub const NONCE_BYTES: usize = 16;

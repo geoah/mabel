@@ -1,0 +1,10 @@
+{
+  "class": "wire-format",
+  "code": "unspecified_enum",
+  "description": "A PersonInception whose kind is IDENTITY_KIND_UNSPECIFIED.",
+  "entry": "signed_event",
+  "file": "08-unspecified-enum.json",
+  "input_hex": "0a83012880d095ffbc313220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c9778737525808001220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c97787371a20e1ead60ce2981a689bc964158c97d173d1d1bbcb80c56dfc90747193ba06d3012210a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1124071ea197d3a48c9ec1331267e1027b88d5e21cbfc3025a3928fd9e5805973cfc2c0e9ec2a11eee3162ab3086230a8d48390ecdc4fdbb4ba4836baa5bb065ca101",
+  "reason": "PersonInception.kind is unspecified",
+  "rule": "3.1 *_UNSPECIFIED enum values"
+}

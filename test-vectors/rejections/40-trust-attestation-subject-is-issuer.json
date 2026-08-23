@@ -1,0 +1,10 @@
+{
+  "class": "field-table",
+  "code": "fields_must_differ",
+  "description": "An attestation whose subject is the issuing ledger.",
+  "entry": "signed_event",
+  "file": "40-trust-attestation-subject-is-issuer.json",
+  "input_hex": "0a9301122091673b2723ff7a44e7206cca4c616e6f7278fea984538b468ba85d2ffde2ad311801222091673b2723ff7a44e7206cca4c616e6f7278fea984538b468ba85d2ffde2ad3128e0a499ffbc313220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c97787376a220a2091673b2723ff7a44e7206cca4c616e6f7278fea984538b468ba85d2ffde2ad311240fd00d94a08a7e51bd042208235a7a5c7f81c2bfef3326b909e00b1a3869d9412a3cb2a4f53f8ef44cac23214b27b62aab7342feae382cb2e4b17138fc5fb230f",
+  "reason": "TrustAttestation.subject and EventBody.ledger must differ",
+  "rule": "3.4 TrustAttestation.subject differs from ledger_id"
+}

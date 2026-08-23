@@ -1,0 +1,10 @@
+{
+  "class": "field-table",
+  "code": "missing_oneof",
+  "description": "An event with no payload.",
+  "entry": "signed_event",
+  "file": "23-event-body-payload-missing.json",
+  "input_hex": "0a6f122091673b2723ff7a44e7206cca4c616e6f7278fea984538b468ba85d2ffde2ad311801222091673b2723ff7a44e7206cca4c616e6f7278fea984538b468ba85d2ffde2ad3128e0a499ffbc313220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c977873712401f6d9eac192afa04cee65db8476fb3cff0df30122b28d63a0f8057674a95b1101a0721ea99d3f6ae66de7e422e47f57c028c4ef4c1c23f72a8bcf4b93409d907",
+  "reason": "EventBody.payload names no variant",
+  "rule": "3.4 EventBody.payload is exactly one recognised variant"
+}

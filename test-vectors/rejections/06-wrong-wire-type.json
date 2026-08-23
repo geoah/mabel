@@ -1,0 +1,10 @@
+{
+  "class": "wire-format",
+  "code": "wrong_wire_type",
+  "description": "An EventBody whose author_key arrives as a varint.",
+  "entry": "signed_event",
+  "file": "06-wrong-wire-type.json",
+  "input_hex": "0a73122091673b2723ff7a44e7206cca4c616e6f7278fea984538b468ba85d2ffde2ad311801222091673b2723ff7a44e7206cca4c616e6f7278fea984538b468ba85d2ffde2ad3128e0a499ffbc3130016a220a204da1f46c97d331f94f0f22e8416142734444f30fb418144ab7686879d25f4a971240aa3874ac6345054c51e0266aad2b815b04fea15252c96cdadf9e9dd85bad72bad2de575f2ebe802cb4db63ed80bfe42d245f750d09a4a91b61aa469582a93f03",
+  "reason": "EventBody.author_key has wire type 0, expected 2",
+  "rule": "3.1 wrong wire types"
+}

@@ -1,6 +1,6 @@
 # 003: wire-format validator, field table and rejection vectors
 
-- Status: open
+- Status: done
 - Depends on: 002
 
 ## Goal

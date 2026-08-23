@@ -1,0 +1,10 @@
+{
+  "class": "field-table",
+  "code": "repeated_duplicate",
+  "description": "A WitnessConfig naming the same endpoint twice.",
+  "entry": "signed_event",
+  "file": "38-witness-config-duplicate.json",
+  "input_hex": "0ab501122091673b2723ff7a44e7206cca4c616e6f7278fea984538b468ba85d2ffde2ad311801222091673b2723ff7a44e7206cca4c616e6f7278fea984538b468ba85d2ffde2ad3128e0a499ffbc313220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c977873762440a20c853ad0f0cd2b619aea92ceec4fd56a24d6499d584ce79257e45cfd8139b60a70a20c853ad0f0cd2b619aea92ceec4fd56a24d6499d584ce79257e45cfd8139b60a712407139791c6e2f200e61441fccda604a767d1df4f1eb48a59e4db01f708ddfede50e19eddcc87bbd7ae05c559ea466b49f2f454bd8bdb406e8f8e7e7bd0c7ad30e",
+  "reason": "WitnessConfig.witnesses repeats an entry",
+  "rule": "3.4 witnesses are distinct"
+}

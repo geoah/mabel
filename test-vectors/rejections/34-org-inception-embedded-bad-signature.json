@@ -1,0 +1,10 @@
+{
+  "class": "field-table",
+  "code": "bad_signature",
+  "description": "An OrgInception whose embedded inception has one signature bit flipped.",
+  "entry": "signed_event",
+  "file": "34-org-inception-embedded-bad-signature.json",
+  "input_hex": "0acf022880d095ffbc313220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c97787375aa3020802122091673b2723ff7a44e7206cca4c616e6f7278fea984538b468ba85d2ffde2ad311a20d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c977873722c8010a83012880d095ffbc313220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c9778737525808011220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c97787371a20e1ead60ce2981a689bc964158c97d173d1d1bbcb80c56dfc90747193ba06d3012210a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a112409cf1dda4c53d2345ff8464da301789d0eb961e61722a9e50443cca9e4c29c4d8c447512ca7b68937d0ca375b214024f1bb110c9e66cfde723c9b62360b2ba10e2a10c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c112409ea22761bfc47e8108bd0ee4c82ea1df4e42be3449fcba3bd4afd0a7321c5f771284fc8e6592dd9455c93a1ad7014ab12707b1def1c4bf21e92f0e1ecac5dc03",
+  "reason": "SignedEvent.sig does not verify",
+  "rule": "3.4 the embedded inception verifies standalone"
+}

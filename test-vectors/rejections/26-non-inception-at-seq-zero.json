@@ -1,0 +1,10 @@
+{
+  "class": "field-table",
+  "code": "non_inception_at_seq_zero",
+  "description": "A TrustAttestation payload at seq 0.",
+  "entry": "signed_event",
+  "file": "26-non-inception-at-seq-zero.json",
+  "input_hex": "0a4d2880d095ffbc313220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c97787376a220a204da1f46c97d331f94f0f22e8416142734444f30fb418144ab7686879d25f4a971240b606d919670b98a5fb8222abf9012f98e251cff05c6558a72e8d7781a070c8a70e1aaaa6bf9db8af54c92b71358659bc53abcd75de2acdc7f4d468abfdcb2f0e",
+  "reason": "seq 0 requires an inception payload",
+  "rule": "3.4 an inception sits at seq 0"
+}

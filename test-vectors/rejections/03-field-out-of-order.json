@@ -1,0 +1,10 @@
+{
+  "class": "wire-format",
+  "code": "field_out_of_order",
+  "description": "An EventBody whose timestamp_ms follows author_key.",
+  "entry": "signed_event",
+  "file": "03-field-out-of-order.json",
+  "input_hex": "0a9301122091673b2723ff7a44e7206cca4c616e6f7278fea984538b468ba85d2ffde2ad311801222091673b2723ff7a44e7206cca4c616e6f7278fea984538b468ba85d2ffde2ad313220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c977873728e0a499ffbc316a220a204da1f46c97d331f94f0f22e8416142734444f30fb418144ab7686879d25f4a9712401c12210d27fb00e2d511016235c0ff2196a70bba605704e0030a4a6eca7b2f4dd300c77011b0f6fe41ccb41032f119b67888fda6a7a7ec5c04a2f4dea8fea604",
+  "reason": "EventBody field number 5 is out of ascending order",
+  "rule": "3.1 out-of-order fields"
+}

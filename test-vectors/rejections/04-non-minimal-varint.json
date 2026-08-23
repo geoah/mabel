@@ -1,0 +1,10 @@
+{
+  "class": "wire-format",
+  "code": "non_minimal_varint",
+  "description": "An EventBody whose seq is written as a padded two-byte varint.",
+  "entry": "signed_event",
+  "file": "04-non-minimal-varint.json",
+  "input_hex": "0a9401122091673b2723ff7a44e7206cca4c616e6f7278fea984538b468ba85d2ffde2ad31188100222091673b2723ff7a44e7206cca4c616e6f7278fea984538b468ba85d2ffde2ad3128e0a499ffbc313220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c97787376a220a204da1f46c97d331f94f0f22e8416142734444f30fb418144ab7686879d25f4a9712409a61cc35c74eb232758239819d56266af24df283015acbad75b3c4b9c3e27af9103bf842c2d6f7f69df02c0251eb53b75cdd5f0eff527d8fc7599993ee61b403",
+  "reason": "EventBody holds a varint with a non-minimal encoding",
+  "rule": "3.1 non-minimal varints"
+}

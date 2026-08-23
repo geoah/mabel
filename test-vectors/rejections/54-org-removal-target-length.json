@@ -1,0 +1,10 @@
+{
+  "class": "field-table",
+  "code": "wrong_length",
+  "description": "A removal whose target is 33 bytes.",
+  "entry": "signed_event",
+  "file": "54-org-removal-target-length.json",
+  "input_hex": "0a95011220d3950b1c979b5ea7b30389a2a577dba8487129652d8b940eeb3f472582c9637c18032220bab367a9ef950ed5be01810dd0eb8b4252794bf88a853c40d729ce2f4345821928a0cea0ffbc313220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c97787378a01230a212222222222222222222222222222222222222222222222222222222222222222221240e788694b0ac4a464db45675f4384f598ae15afab228ba86f608faefb2e32da92e9ab9e3cc0a1b9b5a109214f3c692f534d2bc978bf61f0d7acb5f6c080626f0a",
+  "reason": "OrgRemoval.target is 33 bytes, expected exactly 32",
+  "rule": "3.4 OrgRemoval.target is 32 bytes"
+}

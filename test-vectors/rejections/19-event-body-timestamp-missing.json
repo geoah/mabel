@@ -1,0 +1,10 @@
+{
+  "class": "field-table",
+  "code": "missing_field",
+  "description": "An event with no timestamp_ms.",
+  "entry": "signed_event",
+  "file": "19-event-body-timestamp-missing.json",
+  "input_hex": "0a8c01122091673b2723ff7a44e7206cca4c616e6f7278fea984538b468ba85d2ffde2ad311801222091673b2723ff7a44e7206cca4c616e6f7278fea984538b468ba85d2ffde2ad313220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c97787376a220a204da1f46c97d331f94f0f22e8416142734444f30fb418144ab7686879d25f4a971240a581c6197691f070bde8042ba9b00ddb98bd21b1a54810e2ab8529a66136d84b1d68ac51eda4af93f6733cd03b00767913a131defe42203c09504ad4c568030e",
+  "reason": "EventBody.timestamp_ms is required",
+  "rule": "3.4 EventBody.timestamp_ms is required"
+}

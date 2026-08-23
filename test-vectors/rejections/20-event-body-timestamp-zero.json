@@ -1,0 +1,10 @@
+{
+  "class": "field-table",
+  "code": "default_value_encoded",
+  "description": "An event whose timestamp_ms is 0, the proto3 default.",
+  "entry": "signed_event",
+  "file": "20-event-body-timestamp-zero.json",
+  "input_hex": "0a8e01122091673b2723ff7a44e7206cca4c616e6f7278fea984538b468ba85d2ffde2ad311801222091673b2723ff7a44e7206cca4c616e6f7278fea984538b468ba85d2ffde2ad3128003220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c97787376a220a204da1f46c97d331f94f0f22e8416142734444f30fb418144ab7686879d25f4a9712403b55ab89d89c75f372ad45755fbdd55bbe48e25e7568f70a0bcf18aeba28c76c4989f4ec82e32acd652ecdf561cd558cd10f0bfff67fe4c56a21ed7a7bdc9003",
+  "reason": "EventBody.timestamp_ms holds its proto3 default, which the canonical encoding omits",
+  "rule": "3.4 timestamp_ms in 1..=4102444800000"
+}

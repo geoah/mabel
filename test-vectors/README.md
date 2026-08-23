@@ -23,6 +23,29 @@ no test writes them.
 `body_hex` and `signed_event_hex` are authoritative; every other field is
 derived from them.
 
+## Rejection vectors
+
+`rejections/` holds one byte string per wire-format class (proposal 001
+section 3.1) and per stateless field-table rule (section 3.4), each with the
+rejection the validator must produce. A client that accepts any of them is
+wrong.
+
+| Field | Meaning |
+|---|---|
+| `class` | `wire-format` or `field-table` |
+| `rule` | the proposal section and rule the vector pins |
+| `entry` | the validator entry point that reads the bytes: `signed_event` or `acceptance` |
+| `input_hex` | the bytes to feed that entry point |
+| `code` | the stable snake-case name of the rejection class |
+| `reason` | the message `mabel-core` returns, for human review |
+
+`code` is the contract; `reason` is English and may be reworded. The
+generator is an ignored test in `crates/mabel-core/tests/rejections.rs`:
+
+```sh
+cargo test -p mabel-core --features gen-vectors -- --ignored gen_rejections
+```
+
 ## The scenario
 
 Alice (secret key `0x11` repeated) creates a person ledger, configures two

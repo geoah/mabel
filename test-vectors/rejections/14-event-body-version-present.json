@@ -1,0 +1,10 @@
+{
+  "class": "field-table",
+  "code": "field_forbidden",
+  "description": "An EventBody declaring version 1, which v0 rejects.",
+  "entry": "signed_event",
+  "file": "14-event-body-version-present.json",
+  "input_hex": "0a95010801122091673b2723ff7a44e7206cca4c616e6f7278fea984538b468ba85d2ffde2ad311801222091673b2723ff7a44e7206cca4c616e6f7278fea984538b468ba85d2ffde2ad3128e0a499ffbc313220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c97787376a220a204da1f46c97d331f94f0f22e8416142734444f30fb418144ab7686879d25f4a971240e868ffb2a308ea2d5091ecb225b336f0ceb83e9e2d331583cbb8d07a92959a71b959dd60ed9cf39c1fcbc7698a46c4f329adec8f8e7e66685b572991652c7c01",
+  "reason": "EventBody.version must be absent",
+  "rule": "3.4 EventBody.version is absent"
+}

@@ -1,0 +1,10 @@
+{
+  "class": "field-table",
+  "code": "value_out_of_range",
+  "description": "An event one millisecond past the year-2100 bound.",
+  "entry": "signed_event",
+  "file": "21-event-body-timestamp-past-2100.json",
+  "input_hex": "0a9301122091673b2723ff7a44e7206cca4c616e6f7278fea984538b468ba85d2ffde2ad311801222091673b2723ff7a44e7206cca4c616e6f7278fea984538b468ba85d2ffde2ad312881b08fe6b2773220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c97787376a220a204da1f46c97d331f94f0f22e8416142734444f30fb418144ab7686879d25f4a97124085ed8d9125a4a234198b7b1cb33438b6b540919505af9b0778584b6728e4c3adc8a3050f57fa1b40958f2c5e897659e71b82915ace9b02c652f5e3d4f303db0a",
+  "reason": "EventBody.timestamp_ms holds 4102444800001, outside 1..=4102444800000",
+  "rule": "3.4 timestamp_ms in 1..=4102444800000"
+}
