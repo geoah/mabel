@@ -1,6 +1,6 @@
 # 017: demo script over the compose topology
 
-- Status: open
+- Status: done
 - Depends on: 015
 
 ## Goal

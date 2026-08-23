@@ -18,6 +18,10 @@ docker compose -f docker/compose.yaml down -v             # -v drops the homes
 alice, names the witness in her ledger, pushes, reads the ledger back from the
 witness API and has bob verify it through the witness.
 
+`demo/run-demo.sh` walks the same topology through the whole product story with
+the CLI in about 17 seconds: identities, membership, trust, revocation and a
+stranger verifying from an empty home. See [demo/README.md](../demo/README.md).
+
 The image is one build, three stages: `node:22-bookworm` builds `ui/` into
 `ui/dist`, `rust:1.98-bookworm` builds the release binary with `ui/dist` in
 place so `rust-embed` compiles the bundle in, and `debian:bookworm-slim` carries
