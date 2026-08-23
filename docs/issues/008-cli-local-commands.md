@@ -1,6 +1,6 @@
 # 008: CLI skeleton, output framework and identity, trust and node commands
 
-- Status: open
+- Status: done
 - Depends on: 001, 007
 
 ## Goal
