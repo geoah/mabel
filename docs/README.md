@@ -9,7 +9,8 @@
 - [templates/](templates/README.md): one template per artifact type.
 - [issues/](issues/README.md): implementation tickets for the accepted
   architecture proposals, 001 as amended by 002.
-- stories/: end-to-end user stories (phase 5).
+- [stories/](stories/README.md): end-to-end user stories over the compose
+  topology, the scenarios the Playwright suite implements.
 - [../contracts/](../contracts/README.md): the frozen HTTP and `--json`
   fixtures the node, the CLI and the UIs are all built against.
 
