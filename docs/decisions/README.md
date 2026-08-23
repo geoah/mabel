@@ -25,3 +25,5 @@ without KERI.
   the dual (Opus plus Codex) review rule.
 - [011-git-conventions.md](011-git-conventions.md): conventional commits,
   semver, frequent pushes.
+- [012-naming-full-words.md](012-naming-full-words.md): full words in
+  identifiers, `organization` not `org`.
