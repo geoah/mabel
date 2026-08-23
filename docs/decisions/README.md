@@ -23,3 +23,5 @@ without KERI.
   README indexes.
 - [010-delivery-process.md](010-delivery-process.md): the seven phases and
   the dual (Opus plus Codex) review rule.
+- [011-git-conventions.md](011-git-conventions.md): conventional commits,
+  semver, frequent pushes.
