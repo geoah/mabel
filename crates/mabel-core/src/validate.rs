@@ -955,6 +955,45 @@ pub fn message(descriptor: &'static MessageDescriptor, bytes: &[u8]) -> Result<(
     validate(descriptor, bytes, 0).map(|_| ())
 }
 
+/// Validates `bytes` and hands back the fields it scanned.
+///
+/// The slices in the result borrow `bytes`, so a caller takes an embedded
+/// message's bytes verbatim instead of re-encoding a decoded one (proposal 001
+/// section 3.1, pitfall 1). The file artifacts of section 3.8 read their
+/// embedded events this way.
+pub(crate) fn message_fields<'a>(
+    descriptor: &'static MessageDescriptor,
+    bytes: &'a [u8],
+) -> Result<Scanned<'a>, WireError> {
+    validate(descriptor, bytes, 0)
+}
+
+/// Verifies an invitee's signature over a detached `Acceptance` blob.
+///
+/// `MembershipAcceptance` and the `AcceptanceFile` of section 3.8 carry the
+/// same pair of fields under the same rule, so both run this (proposal 002
+/// section 7). `blob` has already passed the `Acceptance` field table, which
+/// is what makes reading `invitee_key` back out of it safe.
+pub(crate) fn detached_acceptance(
+    blob: &[u8],
+    signature: &[u8],
+    message: &'static str,
+) -> Result<(), WireError> {
+    let fields = scan(&ACCEPTANCE, blob, 0)?;
+    let invitee_key = public_key(
+        "Acceptance",
+        "invitee_key",
+        fields.bytes(5).expect("invitee_key is required"),
+    )?;
+    verify(
+        &invitee_key,
+        &accept_input(blob),
+        signature,
+        message,
+        "signature",
+    )
+}
+
 /// What an embedded inception proves about the identity it names.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StandaloneInception {
@@ -1463,19 +1502,7 @@ fn check_embedded_inception(
 fn check_membership_acceptance(scanned: &Scanned<'_>) -> Result<(), WireError> {
     let blob = scanned.bytes(1).expect("acceptance is required");
     let signature = scanned.bytes(2).expect("signature is required");
-    let fields = scanned.subfields(&ACCEPTANCE, blob)?;
-    let invitee_key = public_key(
-        "Acceptance",
-        "invitee_key",
-        fields.bytes(5).expect("invitee_key is required"),
-    )?;
-    verify(
-        &invitee_key,
-        &accept_input(blob),
-        signature,
-        "MembershipAcceptance",
-        "signature",
-    )
+    detached_acceptance(blob, signature, "MembershipAcceptance")
 }
 
 fn public_key(

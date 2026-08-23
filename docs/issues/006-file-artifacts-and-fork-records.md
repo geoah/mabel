@@ -1,6 +1,6 @@
 # 006: file artifacts, caps and fork-record validation
 
-- Status: open
+- Status: done
 - Depends on: 005
 
 ## Goal

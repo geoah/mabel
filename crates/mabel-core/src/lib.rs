@@ -3,18 +3,24 @@
 //! This crate is IO-free and async-free: it exposes pure functions over
 //! bytes so cold verification is a real code path (hearsay pitfall 5).
 
+pub mod artifacts;
 pub mod digest;
 pub mod encoding;
 pub mod fold;
+pub mod fork;
 pub mod id;
 pub mod sign;
 pub mod validate;
 
+pub use artifacts::{
+    AcceptanceFile, ArtifactError, IdentityDescriptor, InvitationBundle, InvitationSummary,
+};
 pub use digest::{accept_input, event_id, reserve_commit, sign_input};
 pub use fold::{
     Attestation, Head, Invitation, InvitationStatus, LedgerRoot, LedgerState, Principal, Reason,
     SigningPrincipal, Violation, declared_kind_name, fold,
 };
+pub use fork::{Fork, ForkError, validate_fork_record};
 pub use id::{EventId, IdentityId, LedgerId, ParseIdError};
 pub use mabel_proto::v0 as proto;
 pub use sign::{
@@ -43,6 +49,22 @@ pub const MAX_EMBEDDED_INCEPTION_BYTES: usize = 1024;
 
 /// Maximum encoded size of an `Acceptance` blob (proposal 001 section 3.4).
 pub const MAX_ACCEPTANCE_BYTES: usize = 1024;
+
+/// Maximum encoded size of an `InvitationBundle` file (proposal 001
+/// section 3.8).
+pub const MAX_INVITATION_BUNDLE_BYTES: usize = 1024 * 1024;
+
+/// Maximum encoded size of an `AcceptanceFile` (proposal 001 section 3.8).
+pub const MAX_ACCEPTANCE_FILE_BYTES: usize = 4096;
+
+/// Maximum encoded size of an `IdentityDescriptor` file (proposal 001
+/// section 3.8).
+pub const MAX_IDENTITY_DESCRIPTOR_BYTES: usize = 64 * 1024;
+
+/// Most events an `InvitationBundle` may carry, which is the per-ledger event
+/// cap of proposal 001 section 5. The 1 MiB file cap binds first for any
+/// realistic prefix.
+pub const MAX_BUNDLE_EVENTS: usize = 4096;
 
 /// Length of an identity id, ledger id, event id and public key.
 pub const ID_BYTES: usize = 32;

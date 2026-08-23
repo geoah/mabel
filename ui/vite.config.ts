@@ -25,6 +25,11 @@ export default defineConfig({
     outDir: "dist",
     emptyOutDir: true,
   },
+  preview: {
+    port: 4173,
+    // Demo access over tailscale serve, as above.
+    allowedHosts: [".ts.net"],
+  },
   test: {
     globals: true,
     environment: "jsdom",

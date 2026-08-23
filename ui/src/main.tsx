@@ -6,19 +6,26 @@ import { App } from "./App";
 import "./index.css";
 
 /**
- * Development serves the wallet against the frozen fixtures through the mock
- * service worker, so no node has to be running. A production build never
- * registers it and talks to the node's own /api.
+ * Development and demo builds serve the wallet against the frozen fixtures
+ * through the mock service worker, so no node has to be running. A regular
+ * production build never registers it and talks to the node's own /api.
+ *
+ * Rendering never waits on the worker outcome: a failed registration logs
+ * and the app still mounts, surfacing API errors instead of a blank page.
  */
 async function startMocks() {
-  if (!import.meta.env.DEV) {
+  if (!import.meta.env.DEV && import.meta.env.VITE_DEMO !== "1") {
     return;
   }
-  const { worker } = await import("./mocks/browser");
-  await worker.start({ onUnhandledRequest: "bypass" });
+  try {
+    const { worker } = await import("./mocks/browser");
+    await worker.start({ onUnhandledRequest: "bypass" });
+  } catch (error) {
+    console.error("mock service worker failed to start", error);
+  }
 }
 
-startMocks().then(() => {
+function render() {
   createRoot(document.getElementById("root")!).render(
     <StrictMode>
       <BrowserRouter>
@@ -26,4 +33,6 @@ startMocks().then(() => {
       </BrowserRouter>
     </StrictMode>,
   );
-});
+}
+
+startMocks().finally(render);
