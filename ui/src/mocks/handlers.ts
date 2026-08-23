@@ -1,6 +1,5 @@
 import { HttpResponse, http } from "msw";
 
-import { walletNode } from "./fixtures";
 import { MockFailure } from "./store";
 import * as store from "./store";
 
@@ -28,7 +27,7 @@ function number(url: URL, name: string): number | undefined {
 }
 
 export const handlers = [
-  http.get("/api/node", () => HttpResponse.json(walletNode)),
+  http.get("/api/node", () => answer(() => store.nodeInfo())),
 
   http.get("/api/identities", () => answer(() => store.listIdentities())),
 
@@ -105,6 +104,41 @@ export const handlers = [
         details: { reason: "unknown_enum_value", field: "kind", value: String(body.kind) },
       },
       { status: 400 },
+    );
+  }),
+
+  // The witness routes, all of them reads.
+
+  http.get("/api/ledgers", ({ request }) => {
+    const url = new URL(request.url);
+    return answer(() =>
+      store.listLedgers({ offset: number(url, "offset"), limit: number(url, "limit") }),
+    );
+  }),
+
+  http.get("/api/ledgers/:ledgerId", ({ params }) =>
+    answer(() => store.getLedgerEntry(String(params.ledgerId))),
+  ),
+
+  http.get("/api/ledgers/:ledgerId/events", ({ params, request }) => {
+    const url = new URL(request.url);
+    return answer(() =>
+      store.getLedgerEvents(String(params.ledgerId), {
+        since: number(url, "since"),
+        limit: number(url, "limit"),
+      }),
+    );
+  }),
+
+  http.get("/api/forks", ({ request }) => {
+    const url = new URL(request.url);
+    const ledgerId = url.searchParams.get("ledger_id");
+    return answer(() =>
+      store.listForks({
+        ledger_id: ledgerId ?? undefined,
+        offset: number(url, "offset"),
+        limit: number(url, "limit"),
+      }),
     );
   }),
 ];

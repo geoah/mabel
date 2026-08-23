@@ -13,6 +13,9 @@ import syncPushFixture from "@contracts/http/wallet-post-sync-push.json";
 import verifyFixture from "@contracts/http/wallet-post-verify.json";
 import witnessNodeFixture from "@contracts/http/witness-get-node.json";
 import ledgerEventsFixture from "@contracts/http/witness-get-ledger-events.json";
+import ledgersFixture from "@contracts/http/witness-get-ledgers.json";
+import ledgerEntryFixture from "@contracts/http/witness-get-ledger.json";
+import forksFixture from "@contracts/http/witness-get-forks.json";
 import verifyTrustCases from "@contracts/cli/verify-trust.json";
 import verifyLedgerCases from "@contracts/cli/verify-ledger.json";
 import cliErrors from "@contracts/cli/errors.json";
@@ -20,10 +23,13 @@ import cliErrors from "@contracts/cli/errors.json";
 import type {
   AppendResponse,
   CreateIdentityResponse,
+  DeclaredKind,
   ErrorEnvelope,
+  ForkRecord,
   Identity,
   LedgerEvent,
   LedgerPageResponse,
+  LedgerSummary,
   RevokeTrustResponse,
   SyncPushResponse,
   VerifyLedgerReport,
@@ -106,4 +112,154 @@ export const cliErrorCases = cliErrors.cases as {
 /** Alice's four-event chain, the only seeded ledger. */
 export function seedEvents(): LedgerEvent[] {
   return seedLedgerEvents.events.map((event) => ({ ...event }));
+}
+
+// The witness side: what one witness holds. The two frozen entries page in one
+// request, so the mock adds four more ledgers to give the list a second page,
+// and one of them stopped recording forks (forks_truncated).
+
+export const witnessLedgerEntries = ledgersFixture.response.entries as LedgerSummary[];
+export const witnessLedgerWitnesses = ledgerEntryFixture.response.witnesses as string[];
+export const witnessForkFixture = forksFixture.response.entries[0] as ForkRecord;
+
+/** One ledger a witness holds: the summary it serves, its witnesses and its chain. */
+export interface HeldLedger {
+  entry: LedgerSummary;
+  witnesses: string[];
+  events: LedgerEvent[];
+}
+
+/** The base32 id of a minted event, distinct per ledger and per position. */
+function syntheticEventId(tag: string, marker: string): string {
+  return `${tag}${marker}`.repeat(18).slice(0, 52);
+}
+
+const POSITION_MARKERS = "abcdefghijklmnop";
+const AUTHOR_KEY = seedLedgerEvents.events[0].author_key;
+
+/**
+ * A chain shaped like the frozen one for a ledger the fixtures do not carry:
+ * seq 0 is the inception whose event id is the ledger id, and the last event id
+ * is the summary's head_event, so the summary and the chain agree.
+ */
+function syntheticEvents(entry: LedgerSummary): LedgerEvent[] {
+  const tag = entry.ledger_id.slice(0, 2);
+  const events: LedgerEvent[] = [];
+  for (let seq = 0; seq <= entry.head_seq; seq += 1) {
+    const eventId =
+      seq === 0
+        ? entry.ledger_id
+        : seq === entry.head_seq
+          ? entry.head_event
+          : syntheticEventId(tag, POSITION_MARKERS[seq]);
+    events.push({
+      event_id: eventId,
+      seq,
+      ledger_id: seq === 0 ? null : entry.ledger_id,
+      prev: seq === 0 ? null : events[seq - 1].event_id,
+      timestamp_ms: entry.first_seen_ms + seq * 60000,
+      author_key: AUTHOR_KEY,
+      // person_inception is the only frozen inception payload_kind; the identity
+      // root spelling waits on proposal 002, so a non-person root is labelled
+      // inception and the UI prints whatever string arrives.
+      payload_kind:
+        seq === 0
+          ? entry.declared_kind === "person"
+            ? "person_inception"
+            : "inception"
+          : seq === 1
+            ? "witness_config"
+            : "trust_attestation",
+      payload:
+        seq === 0
+          ? { declared_kind: entry.declared_kind }
+          : seq === 1
+            ? { witnesses: [witnessLedgerWitnesses[0]] }
+            : { subject: ACME },
+    });
+  }
+  return events;
+}
+
+function syntheticEntry(
+  tag: string,
+  declaredKind: DeclaredKind,
+  headSeq: number,
+  forkCount: number,
+  forksTruncated: boolean,
+): LedgerSummary {
+  const ledgerId = tag.repeat(26);
+  const firstSeen = 1700000300000;
+  return {
+    ledger_id: ledgerId,
+    declared_kind: declaredKind,
+    head_seq: headSeq,
+    head_event: syntheticEventId(tag, "z"),
+    event_count: headSeq + 1,
+    first_seen_ms: firstSeen,
+    updated_ms: firstSeen + headSeq * 60000,
+    fork_count: forkCount,
+    forks_truncated: forksTruncated,
+    source_endpoint: witnessLedgerWitnesses[0],
+  };
+}
+
+/** The ledger the witness stopped recording forks for, flagged forks_truncated. */
+export const TRUNCATED_LEDGER = "gh".repeat(26);
+
+export const SYNTHETIC_ENTRIES: LedgerSummary[] = [
+  syntheticEntry("cd", "organization", 3, 0, false),
+  syntheticEntry("gh", "person", 2, 128, true),
+  syntheticEntry("mn", "agent", 1, 0, false),
+  syntheticEntry("tv", "service", 2, 0, false),
+];
+
+/**
+ * The fork statement, worded by the node and reproduced here from the frozen
+ * fixture so the mock cannot drift from the contract's wording.
+ */
+function forkStatement(ledgerId: string, seq: number): string {
+  return witnessForkFixture.statement
+    .replaceAll(ALICE, ledgerId)
+    .replace(`seq ${witnessForkFixture.seq}`, `seq ${seq}`);
+}
+
+/** Every ledger the mock witness holds, unsorted; the store orders by ledger id. */
+export function witnessLedgers(): HeldLedger[] {
+  const frozen = witnessLedgerEntries.map((entry) => ({
+    entry: { ...entry },
+    witnesses: [...witnessLedgerWitnesses],
+    events: entry.ledger_id === ALICE ? seedEvents() : syntheticEvents(entry),
+  }));
+  const minted = SYNTHETIC_ENTRIES.map((entry) => ({
+    entry: { ...entry },
+    witnesses: [witnessLedgerWitnesses[0]],
+    events: syntheticEvents(entry),
+  }));
+  return [...frozen, ...minted];
+}
+
+/** Alice's frozen fork record plus one on the ledger whose fork list is truncated. */
+export function witnessForks(): ForkRecord[] {
+  const truncated = SYNTHETIC_ENTRIES.find((entry) => entry.ledger_id === TRUNCATED_LEDGER)!;
+  const chain = syntheticEvents(truncated);
+  const kept = chain[1];
+  return [
+    { ...witnessForkFixture },
+    {
+      ledger_id: truncated.ledger_id,
+      seq: kept.seq,
+      observed_ms: truncated.updated_ms,
+      source_endpoint: witnessForkFixture.source_endpoint,
+      kept,
+      conflicting: {
+        ...kept,
+        event_id: syntheticEventId("gh", "q"),
+        timestamp_ms: kept.timestamp_ms + 10000,
+        payload_kind: "trust_attestation",
+        payload: { subject: BOB },
+      },
+      statement: forkStatement(truncated.ledger_id, kept.seq),
+    },
+  ];
 }

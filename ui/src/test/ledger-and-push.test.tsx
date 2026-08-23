@@ -56,10 +56,4 @@ describe("identity detail", () => {
     expect(await screen.findByTestId(`witness-row-${endpoint}`)).toBeInTheDocument();
     expect(screen.getByTestId("witness-add-head-seq")).toHaveTextContent("head_seq 4");
   });
-
-  it("holds the witness route as a placeholder for ticket 014", async () => {
-    renderApp("/witness");
-    expect(await screen.findByTestId("witness-placeholder")).toBeInTheDocument();
-    expect(screen.getByTestId("witness-placeholder-note")).toHaveTextContent("Ticket 014");
-  });
 });

@@ -8,10 +8,14 @@ import type {
   CreateIdentityRequest,
   CreateIdentityResponse,
   ErrorEnvelope,
+  ForkListResponse,
+  ForkRecord,
   Identity,
   IdentityListResponse,
   IdentityResponse,
+  LedgerEntryResponse,
   LedgerEvent,
+  LedgerListResponse,
   LedgerPageResponse,
   RevokeTrustRequest,
   RevokeTrustResponse,
@@ -21,7 +25,10 @@ import type {
   VerifyLedgerRequest,
   VerifyTrustReport,
   VerifyTrustRequest,
+  WalletNodeInfo,
+  WitnessNodeInfo,
 } from "@/api/types";
+import type { HeldLedger } from "./fixtures";
 import {
   ALICE,
   BOB,
@@ -34,6 +41,10 @@ import {
   verifyTrustRevoked,
   verifyTrustTrusted,
   verifyTrustUnresolved,
+  walletNode,
+  witnessForks,
+  witnessLedgers,
+  witnessNode,
 } from "./fixtures";
 
 /** A rejected request: the HTTP status plus the error envelope body. */
@@ -73,19 +84,36 @@ function mintId(seed: string): string {
   return out;
 }
 
+export type NodeRole = "wallet" | "witness";
+
+/**
+ * A real node has exactly one role, but the mock serves both routes from one
+ * process. In the browser the role follows the path being browsed, so /witness
+ * sees a witness document; a test driving a memory router sets it explicitly.
+ */
+let nodeRole: NodeRole | null = null;
+
+export function setNodeRole(role: NodeRole | null): void {
+  nodeRole = role;
+}
+
 interface State {
   identities: Identity[];
   events: Map<string, LedgerEvent[]>;
+  /** The witness side, independent of the wallet: a witness holds copies. */
+  held: HeldLedger[];
+  forks: ForkRecord[];
 }
 
 let state: State = emptyState();
 
 function emptyState(): State {
-  return { identities: [], events: new Map() };
+  return { identities: [], events: new Map(), held: [], forks: [] };
 }
 
 export function resetStore(): void {
   minted = 0;
+  nodeRole = null;
   state = {
     identities: seedIdentities.map((identity) => ({
       ...identity,
@@ -93,6 +121,8 @@ export function resetStore(): void {
       trust: identity.trust.map((record) => ({ ...record })),
     })),
     events: new Map([[ALICE, seedEvents()]]),
+    held: witnessLedgers(),
+    forks: witnessForks(),
   };
 }
 
@@ -437,5 +467,132 @@ export function verifyLedger(body: VerifyLedgerRequest): VerifyLedgerReport {
     ledger_id: identity.identity_id,
     declared_kind: identity.declared_kind,
     event_count: identity.event_count,
+  };
+}
+
+// The witness routes. Every one of them reads: a witness serves no mutation
+// over HTTP (proposal 001 section 10).
+
+export function nodeInfo(): WalletNodeInfo | WitnessNodeInfo {
+  const browsed = globalThis.location?.pathname.startsWith("/witness") ? "witness" : "wallet";
+  if ((nodeRole ?? browsed) !== "witness") {
+    return walletNode;
+  }
+  // The counts follow the seeded store, not the fixture, so the node document
+  // and the ledger list agree.
+  return {
+    ...witnessNode,
+    ledger_count: state.held.length,
+    fork_count: state.forks.length,
+  };
+}
+
+function checkLedgerId(ledgerId: string): void {
+  if (ledgerId.length !== 52) {
+    failWith(400, {
+      ok: false,
+      code: 10,
+      message: "Schema error: ledger id must be 52 base32 characters",
+      details: { reason: "malformed_ledger_id", value: ledgerId },
+    });
+  }
+}
+
+function checkRange(name: string, value: number | undefined): number | undefined {
+  if (value !== undefined && (!Number.isInteger(value) || value < 0)) {
+    failWith(400, {
+      ok: false,
+      code: 2,
+      message: `${name} must be a non-negative integer`,
+      details: { reason: "malformed_query_parameter", parameter: name, value: String(value) },
+    });
+  }
+  return value;
+}
+
+function held(ledgerId: string): HeldLedger {
+  checkLedgerId(ledgerId);
+  const found = state.held.find((entry) => entry.entry.ledger_id === ledgerId);
+  if (!found) {
+    failWith(404, {
+      ok: false,
+      code: 2,
+      message: `this witness does not hold ${ledgerId}`,
+      details: { reason: "ledger_not_held", ledger_id: ledgerId },
+    });
+  }
+  return found;
+}
+
+/** GET /api/ledgers, ordered by ascending ledger_id. */
+export function listLedgers(params: { offset?: number; limit?: number }): LedgerListResponse {
+  const offset = checkRange("offset", params.offset) ?? 0;
+  const limit = checkRange("limit", params.limit) ?? 256;
+  const ordered = [...state.held].sort((left, right) =>
+    left.entry.ledger_id < right.entry.ledger_id ? -1 : 1,
+  );
+  return {
+    ok: true,
+    offset,
+    limit,
+    more: ordered.length > offset + limit,
+    entries: ordered.slice(offset, offset + limit).map((entry) => entry.entry),
+  };
+}
+
+export function getLedgerEntry(ledgerId: string): LedgerEntryResponse {
+  const found = held(ledgerId);
+  return { ok: true, entry: found.entry, witnesses: [...found.witnesses] };
+}
+
+/** GET /api/ledgers/:ledger_id/events. since is inclusive: the page opens at seq === since. */
+export function getLedgerEvents(
+  ledgerId: string,
+  params: { since?: number; limit?: number },
+): LedgerPageResponse {
+  const found = held(ledgerId);
+  const since = checkRange("since", params.since) ?? 0;
+  const limit = checkRange("limit", params.limit) ?? 512;
+  const matching = found.events.filter((event) => event.seq >= since);
+  return {
+    ok: true,
+    ledger_id: found.entry.ledger_id,
+    declared_kind: found.entry.declared_kind,
+    since,
+    limit,
+    head_seq: found.entry.head_seq,
+    head_event: found.entry.head_event,
+    event_count: found.entry.event_count,
+    more: matching.length > limit,
+    events: matching.slice(0, limit),
+  };
+}
+
+/** GET /api/forks, ordered by ledger_id then seq, optionally filtered to one ledger. */
+export function listForks(params: {
+  ledger_id?: string;
+  offset?: number;
+  limit?: number;
+}): ForkListResponse {
+  const offset = checkRange("offset", params.offset) ?? 0;
+  const limit = checkRange("limit", params.limit) ?? 64;
+  if (params.ledger_id !== undefined) {
+    checkLedgerId(params.ledger_id);
+  }
+  const matching = state.forks
+    .filter((record) => params.ledger_id === undefined || record.ledger_id === params.ledger_id)
+    .sort((left, right) =>
+      left.ledger_id === right.ledger_id
+        ? left.seq - right.seq
+        : left.ledger_id < right.ledger_id
+          ? -1
+          : 1,
+    );
+  return {
+    ok: true,
+    offset,
+    limit,
+    more: matching.length > offset + limit,
+    entries: matching.slice(offset, offset + limit),
   };
 }

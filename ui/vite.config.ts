@@ -16,6 +16,8 @@ export default defineConfig({
   },
   server: {
     port: 5173,
+    // Demo access over tailscale serve (proxies with a .ts.net Host header).
+    allowedHosts: [".ts.net"],
     // The fixtures live outside the Vite root and are imported read-only.
     fs: { allow: [src, contracts, fileURLToPath(new URL(".", import.meta.url))] },
   },

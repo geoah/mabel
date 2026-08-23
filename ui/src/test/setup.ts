@@ -9,6 +9,7 @@ beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
 
 afterEach(() => {
   server.resetHandlers();
+  server.events.removeAllListeners();
   resetStore();
 });
 

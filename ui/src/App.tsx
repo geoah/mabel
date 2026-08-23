@@ -5,6 +5,7 @@ import { IdentityDetail } from "@/routes/wallet/IdentityDetail";
 import { VerifyPage } from "@/routes/wallet/VerifyPage";
 import { WalletHome } from "@/routes/wallet/WalletHome";
 import { WitnessHome } from "@/routes/witness/WitnessHome";
+import { WitnessLedgerDetail } from "@/routes/witness/WitnessLedgerDetail";
 
 const LINKS = [
   { to: "/wallet", label: "Wallet", testId: "nav-wallet" },
@@ -41,6 +42,7 @@ export function App() {
         <Route path="/wallet/verify" element={<VerifyPage />} />
         <Route path="/wallet/identities/:identityId" element={<IdentityDetail />} />
         <Route path="/witness" element={<WitnessHome />} />
+        <Route path="/witness/ledgers/:ledgerId" element={<WitnessLedgerDetail />} />
         <Route path="*" element={<p data-testid="route-not-found">no such route</p>} />
       </Routes>
     </div>
