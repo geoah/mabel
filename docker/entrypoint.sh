@@ -8,14 +8,18 @@
 #   MABEL_HTTP_BIND        node.json http_bind, default 0.0.0.0:9080
 #   MABEL_RELAY            node.json relay, disabled (default) or n0
 #   MABEL_STORAGE_CAPACITY node.json storage_capacity in bytes
+#   MABEL_WITNESSES        node.json witnesses, endpoint ids separated by
+#                          spaces or commas: the witnesses this node queries
+#                          for any ledger, whatever a ledger's own chain names
 #   MABEL_IROH_PORT        UDP port this node's Iroh endpoint binds, 9070
 #   MABEL_ADVERTISE_IP     IP the published ticket names, default this
 #                          container's address on the compose network
 #   MABEL_PUBLISH_TICKET   path prefix to write <prefix>.ticket and
 #                          <prefix>.id to, for the witness
-#   MABEL_WAIT_FOR_TICKET  path prefix to read <prefix>.ticket from; the
-#                          ticket is appended to the command as --peer
-#   MABEL_WAIT_SECONDS     how long to wait for that file, default 60
+#   MABEL_WAIT_FOR_TICKET  path prefixes to read <prefix>.ticket from,
+#                          separated by spaces or commas; each ticket is
+#                          appended to the command as --peer
+#   MABEL_WAIT_SECONDS     how long to wait for each of those files, default 60
 
 set -euo pipefail
 
@@ -47,50 +51,6 @@ container_ip() {
     printf '%s' "$address"
 }
 
-# A postcard varint, which is how the ticket encodes a UDP port.
-varint_hex() {
-    local value="$1" out=""
-    while [ "$value" -ge 128 ]; do
-        out+="$(printf '%02x' "$(((value & 127) | 128))")"
-        value="$((value >> 7))"
-    done
-    printf '%s%02x' "$out" "$value"
-}
-
-# The `endpoint...` string `mabel --peer` takes, built from an endpoint id and
-# one IPv4 socket address.
-#
-# mabel has no command that prints a ticket (see docker/README.md, "The ticket
-# gap"), so the bytes are assembled here. The format is iroh-tickets 1.0.0's
-# `EndpointTicket`: the lowercase kind prefix `endpoint`, then unpadded base32
-# of postcard-encoded bytes, which are
-#
-#   00                  ticket wire format, Variant1
-#   <32 bytes>          the endpoint id
-#   01                  one transport address
-#   01 00               TransportAddr::Ip, IPv4
-#   <4 bytes> <varint>  the address and the port
-#
-# A wrong layout is loud, not silent: `mabel wallet serve --peer` exits 2 with
-# reason `malformed_peer_ticket` and the service never becomes healthy.
-endpoint_ticket() {
-    local endpoint_id="$1" address="$2" port="$3"
-    local id_hex address_hex hex escaped
-    id_hex="$(printf '%s====' "$endpoint_id" | tr 'a-z' 'A-Z' | base32 -d |
-        od -An -v -tx1 | tr -d ' \n')"
-    if [ "${#id_hex}" -ne 64 ]; then
-        log "$endpoint_id is not a 32-byte endpoint id"
-        exit 1
-    fi
-    address_hex="$(printf '%s' "$address" |
-        awk -F. '{ printf "%02x%02x%02x%02x", $1, $2, $3, $4 }')"
-    hex="00${id_hex}010100${address_hex}$(varint_hex "$port")"
-    escaped="$(printf '%s' "$hex" | sed 's/../\\x&/g')"
-    # shellcheck disable=SC2059
-    printf 'endpoint%s' \
-        "$(printf "$escaped" | base32 -w0 | tr -d '=' | tr 'A-Z' 'a-z')"
-}
-
 write_atomically() {
     local path="$1" content="$2"
     printf '%s\n' "$content" >"$path.writing"
@@ -111,31 +71,40 @@ cat >"$home/node.json" <<JSON
 }
 JSON
 
+# `witness set-default` validates every id and rewrites node.json's witness
+# set, so a typo here fails the container instead of being stored.
+if [ -n "${MABEL_WITNESSES:-}" ]; then
+    # shellcheck disable=SC2086
+    mabel witness set-default ${MABEL_WITNESSES//,/ } >/dev/null
+    log "node-wide witnesses: ${MABEL_WITNESSES//,/ }"
+fi
+
 endpoint_id="$(mabel node id)"
 log "$role $endpoint_id, http $http_bind, iroh udp $iroh_port, relay $relay"
 
 if [ -n "$publish" ]; then
     address="$(container_ip)"
-    ticket="$(endpoint_ticket "$endpoint_id" "$address" "$iroh_port")"
+    ticket="$(mabel node ticket --addr "$address:$iroh_port")"
     write_atomically "$publish.id" "$endpoint_id"
     write_atomically "$publish.ticket" "$ticket"
     log "published $publish.ticket for $address:$iroh_port"
 fi
 
-if [ -n "$wait_for" ]; then
+# Each prefix is waited for in turn and seeded as one --peer, so a wallet in
+# the two-witnesses overlay starts knowing where both witnesses are.
+for prefix in ${wait_for//,/ }; do
     waited=0
-    until [ -f "$wait_for.ticket" ]; do
+    until [ -f "$prefix.ticket" ]; do
         if [ "$waited" -ge "$wait_seconds" ]; then
-            log "$wait_for.ticket did not appear within ${wait_seconds}s"
+            log "$prefix.ticket did not appear within ${wait_seconds}s"
             exit 1
         fi
         sleep 1
         waited="$((waited + 1))"
     done
-    ticket="$(cat "$wait_for.ticket")"
-    log "seeding peer ticket from $wait_for.ticket"
-    set -- "$@" --peer "$ticket"
-fi
+    log "seeding peer ticket from $prefix.ticket"
+    set -- "$@" --peer "$(cat "$prefix.ticket")"
+done
 
 log "running mabel $*"
 exec mabel "$@"

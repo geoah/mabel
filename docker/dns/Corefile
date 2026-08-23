@@ -1,0 +1,22 @@
+# CoreDNS for the test resolver of `docker/compose.dns.yaml` (ticket 032).
+#
+# `example` is served from a zone file that story 007 rewrites. Everything else
+# is REFUSED rather than forwarded: nothing in this topology may reach the
+# public internet, and a wallet that asks for a name outside the zone should
+# fail loudly instead of leaking the hostname it is checking.
+
+example:53 {
+    file /etc/coredns/zones/example.zone {
+        reload 5s
+    }
+    errors
+    log
+}
+
+.:53 {
+    template ANY ANY {
+        rcode REFUSED
+    }
+    errors
+    log
+}

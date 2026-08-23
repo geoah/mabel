@@ -1,6 +1,6 @@
 # 032: topology tooling gaps
 
-- Status: open
+- Status: done
 - Depends on: none
 
 ## Goal

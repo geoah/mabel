@@ -1,0 +1,27 @@
+{
+  "command": "mabel node ticket --json",
+  "cases": [
+    {
+      "case": "one-address",
+      "command": "mabel node ticket --addr 10.0.0.5:9070 --json",
+      "exit_code": 0,
+      "document": {
+        "ok": true,
+        "endpoint_id": "54rw3lmckcpqf4ofkvyx3i74agumvale2qmzdu76ubpita6sw5va",
+        "addrs": ["10.0.0.5:9070"],
+        "ticket": "endpointadxsg3nnqjij6axryvkxc7nd7qa2rsubmtkbteot72qf5cmd2k3wuaibaafaaaaf5zda"
+      }
+    },
+    {
+      "case": "no-address",
+      "command": "mabel node ticket --json",
+      "exit_code": 0,
+      "document": {
+        "ok": true,
+        "endpoint_id": "54rw3lmckcpqf4ofkvyx3i74agumvale2qmzdu76ubpita6sw5va",
+        "addrs": [],
+        "ticket": "endpointadxsg3nnqjij6axryvkxc7nd7qa2rsubmtkbteot72qf5cmd2k3wuaa"
+      }
+    }
+  ]
+}

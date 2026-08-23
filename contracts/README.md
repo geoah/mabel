@@ -48,6 +48,7 @@ do not settle, the decision is listed under "Decisions taken here".
 | `cli/trust-list.json` | `mabel trust list --json` |
 | `cli/witness-add.json` | `mabel witness add --json` |
 | `cli/witness-run.json` | `mabel witness run --json` |
+| `cli/witness-set-default.json` | `mabel witness set-default --json` |
 | `cli/membership-invite.json` | `mabel membership invite --json` |
 | `cli/membership-accept.json` | `mabel membership accept --json` |
 | `cli/membership-admit.json` | `mabel membership admit --json` |
@@ -56,6 +57,7 @@ do not settle, the decision is listed under "Decisions taken here".
 | `cli/sync-push.json` | `mabel sync push --json` |
 | `cli/sync-fetch.json` | `mabel sync fetch --json` |
 | `cli/node-id.json` | `mabel node id --json` |
+| `cli/node-ticket.json` | `mabel node ticket --json` |
 | `cli/wallet-serve.json` | `mabel wallet serve --json` |
 | `cli/verify-trust.json` | `mabel verify trust --json` |
 | `cli/verify-ledger.json` | `mabel verify ledger --json` |

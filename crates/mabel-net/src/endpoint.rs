@@ -16,6 +16,7 @@ use iroh::Endpoint;
 use iroh::address_lookup::memory::MemoryLookup;
 use iroh::endpoint::{BindError, presets};
 use iroh_base::{EndpointAddr, SecretKey};
+use iroh_tickets::Ticket;
 use iroh_tickets::endpoint::EndpointTicket;
 
 /// Whether the endpoint uses the n0 relays.
@@ -84,6 +85,17 @@ pub fn parse_peer_ticket(ticket: &str) -> Result<EndpointAddr, iroh_tickets::Par
     Ok(ticket.parse::<EndpointTicket>()?.into())
 }
 
+/// Writes an `EndpointTicket` string, the sibling of [`parse_peer_ticket`].
+///
+/// This is what `mabel node ticket` prints and what a peer passes back as
+/// `--peer`. An address in the ticket is a hint and never authorization
+/// (proposal 001 section 4), so a ticket carrying no address at all is valid:
+/// it names the endpoint and leaves the relays to find it.
+#[must_use]
+pub fn build_peer_ticket(addr: EndpointAddr) -> String {
+    EndpointTicket::new(addr).encode_string()
+}
+
 /// Binds an endpoint per `config`.
 ///
 /// # Errors
@@ -114,7 +126,6 @@ pub async fn bind_endpoint(config: EndpointConfig) -> Result<BoundEndpoint, Bind
 mod tests {
     use super::*;
     use iroh_base::{EndpointId, TransportAddr};
-    use iroh_tickets::Ticket;
 
     fn addr() -> EndpointAddr {
         let id: EndpointId = SecretKey::from_bytes(&[5u8; 32]).public();
@@ -133,6 +144,22 @@ mod tests {
             parse_peer_ticket(&ticket).expect("the ticket parses"),
             addr()
         );
+    }
+
+    #[test]
+    fn a_built_ticket_parses_back_to_the_address_it_names() {
+        let ticket = build_peer_ticket(addr());
+        assert!(ticket.starts_with("endpoint"), "{ticket}");
+        assert_eq!(parse_peer_ticket(&ticket).expect("it parses"), addr());
+    }
+
+    #[test]
+    fn a_ticket_with_no_address_names_the_endpoint_alone() {
+        let id: EndpointId = SecretKey::from_bytes(&[5u8; 32]).public();
+        let ticket = build_peer_ticket(EndpointAddr::new(id));
+        let parsed = parse_peer_ticket(&ticket).expect("it parses");
+        assert_eq!(parsed.id, id);
+        assert!(parsed.addrs.is_empty(), "{parsed:?}");
     }
 
     #[test]

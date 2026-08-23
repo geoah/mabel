@@ -223,6 +223,48 @@ async fn a_push_lands_on_every_configured_witness() {
 }
 
 #[tokio::test]
+async fn a_push_writes_the_witnesses_that_took_it_into_peers_json() {
+    bounded!({
+        let witness = Served::new().await;
+        let wallet = Wallet::new();
+        let alice = wallet.identity("alice");
+        wallet
+            .witnesses(alice, &[witness.endpoint_id, nowhere()])
+            .await;
+        let sync = wallet.sync(std::slice::from_ref(&witness.addr)).await;
+        assert!(
+            wallet
+                .core
+                .home()
+                .peers()
+                .expect("peers.json reads")
+                .ledgers
+                .is_empty(),
+            "a fresh home records no hint"
+        );
+
+        sync.push(&wallet.core, alice, &[witness.endpoint_id, nowhere()])
+            .await
+            .expect("a partial failure is still a report");
+
+        // Only the endpoint that accepted the push is a hint: an unreachable
+        // one is no evidence that it holds the ledger.
+        let peers = wallet.core.home().peers().expect("peers.json reads");
+        assert_eq!(peers.hints(alice), [witness.endpoint_id]);
+
+        // A repeat leaves one entry, and no other ledger gains a hint.
+        sync.push(&wallet.core, alice, &[witness.endpoint_id])
+            .await
+            .expect("the push reports");
+        let peers = wallet.core.home().peers().expect("peers.json reads");
+        assert_eq!(peers.hints(alice), [witness.endpoint_id]);
+        assert_eq!(peers.ledgers.len(), 1);
+
+        witness.stop().await;
+    });
+}
+
+#[tokio::test]
 async fn a_witness_that_cannot_be_reached_is_one_row_of_the_push_report() {
     bounded!({
         let witness = Served::new().await;

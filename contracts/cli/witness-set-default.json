@@ -1,0 +1,14 @@
+{
+  "command": "mabel witness set-default --json",
+  "cases": [
+    {
+      "case": "set",
+      "command": "mabel witness set-default 54rw3lmckcpqf4ofkvyx3i74agumvale2qmzdu76ubpita6sw5va --json",
+      "exit_code": 0,
+      "document": {
+        "ok": true,
+        "witnesses": ["54rw3lmckcpqf4ofkvyx3i74agumvale2qmzdu76ubpita6sw5va"]
+      }
+    }
+  ]
+}

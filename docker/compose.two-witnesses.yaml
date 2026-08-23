@@ -1,0 +1,67 @@
+# A second witness, for the stories that need one ledger to meet two of them
+# (stories 004 and 005, ticket 032).
+#
+#   docker compose -f docker/compose.yaml -f docker/compose.two-witnesses.yaml \
+#     up --build -d
+#   docker compose -f docker/compose.yaml -f docker/compose.two-witnesses.yaml \
+#     down -v
+#
+# witness-two is the same image and the same entrypoint as witness, on
+# 127.0.0.1:9083 and UDP 9073, publishing its ticket to the shared volume as
+# /shared/witness-two.ticket and its endpoint id as /shared/witness-two.id.
+# Alice and bob wait for both tickets and start with both seeded as --peer, so
+# a story can push one ledger at either witness with no --peer of its own.
+#
+# The two witnesses share nothing but the ticket volume: each has its own home,
+# so a ledger pushed to one is unknown to the other until something pushes it
+# there, which is what story 004's fork needs.
+
+services:
+  witness-two:
+    image: mabel:dev
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    init: true
+    stop_signal: SIGINT
+    stop_grace_period: 5s
+    networks: [mabel]
+    container_name: mabel-witness-two
+    environment:
+      MABEL_RELAY: disabled
+      MABEL_STORAGE_CAPACITY: "2147483648"
+      MABEL_ROLE: witness
+      MABEL_HTTP_BIND: 0.0.0.0:9083
+      MABEL_HTTP_PORT: "9083"
+      MABEL_IROH_PORT: "9073"
+      MABEL_PUBLISH_TICKET: /shared/witness-two
+    command: ["witness", "run", "--http", "0.0.0.0:9083", "--iroh-port", "9073"]
+    ports:
+      - "9083:9083/tcp"
+      - "9073:9073/udp"
+    volumes:
+      - witness-two-data:/data
+      - witness-ticket:/shared
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/mabel-healthcheck", "9083"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+      start_period: 2s
+
+  alice:
+    depends_on:
+      witness-two:
+        condition: service_healthy
+    environment:
+      MABEL_WAIT_FOR_TICKET: /shared/witness /shared/witness-two
+
+  bob:
+    depends_on:
+      witness-two:
+        condition: service_healthy
+    environment:
+      MABEL_WAIT_FOR_TICKET: /shared/witness /shared/witness-two
+
+volumes:
+  witness-two-data:

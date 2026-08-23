@@ -651,6 +651,126 @@ fn node_id_prints_this_nodes_endpoint_id() {
 }
 
 #[test]
+fn node_ticket_round_trips_through_parse_peer_ticket() {
+    let home = Home::new();
+    let document = home.json(&["node", "ticket", "--addr", "10.0.0.5:9070"]);
+    assert_shape(
+        &document,
+        &fixture("node-ticket", "one-address"),
+        "node-ticket",
+    );
+    assert!(is_id(&document["endpoint_id"]), "{document}");
+    assert_eq!(document["addrs"], serde_json::json!(["10.0.0.5:9070"]));
+
+    let ticket = text(&document["ticket"]);
+    let parsed = mabel_net::parse_peer_ticket(&ticket).expect("the printed ticket parses");
+    assert_eq!(base32(parsed.id.as_bytes()), home.endpoint());
+    assert_eq!(
+        parsed.addrs.into_iter().collect::<Vec<_>>(),
+        vec![iroh_base::TransportAddr::Ip(
+            "10.0.0.5:9070".parse().expect("a socket address")
+        )]
+    );
+
+    // Text mode prints the ticket and nothing else, so `--peer "$(mabel node
+    // ticket ...)"` works, which is what docker/entrypoint.sh does.
+    let (code, stdout, _) = home.run(&["node", "ticket", "--addr", "10.0.0.5:9070"]);
+    assert_eq!(code, 0);
+    assert_eq!(stdout.trim(), ticket);
+}
+
+#[test]
+fn node_ticket_carries_every_address_it_is_given_and_none_by_default() {
+    let home = Home::new();
+    let document = home.json(&[
+        "node",
+        "ticket",
+        "--addr",
+        "10.0.0.5:9070",
+        "--addr",
+        "10.0.0.6:9071",
+    ]);
+    let parsed = mabel_net::parse_peer_ticket(&text(&document["ticket"])).expect("it parses");
+    assert_eq!(parsed.addrs.len(), 2, "{document}");
+
+    let document = home.json(&["node", "ticket"]);
+    assert_eq!(document["addrs"], serde_json::json!([]));
+    let parsed = mabel_net::parse_peer_ticket(&text(&document["ticket"])).expect("it parses");
+    assert!(parsed.addrs.is_empty(), "{document}");
+}
+
+#[test]
+fn a_malformed_ticket_address_exits_2() {
+    let home = Home::new();
+    let (code, document) = home.failure(&["node", "ticket", "--addr", "10.0.0.5"]);
+    assert_eq!(code, 2);
+    assert_eq!(document["details"]["reason"], Value::from("invalid_value"));
+}
+
+#[test]
+fn witness_set_default_replaces_the_node_wide_set() {
+    let home = Home::new();
+    let endpoint = home.endpoint();
+    // A second home is the simplest source of another real endpoint id: an
+    // arbitrary 32 bytes is not a valid one.
+    let other = &Home::new().endpoint();
+
+    let document = home.json(&["witness", "set-default", &endpoint, other]);
+    assert_shape(
+        &document,
+        &fixture("witness-set-default", "set"),
+        "witness-set-default",
+    );
+    assert_eq!(
+        document["witnesses"],
+        serde_json::json!([endpoint.clone(), other])
+    );
+    assert_eq!(config_witnesses(&home).len(), 2);
+
+    // The set is replaced, not added to, and a repeat is dropped.
+    let document = home.json(&["witness", "set-default", other, other]);
+    assert_eq!(document["witnesses"], serde_json::json!([other]));
+    assert_eq!(config_witnesses(&home).len(), 1);
+
+    let (code, stdout, _) = home.run(&["witness", "set-default", other]);
+    assert_eq!(code, 0);
+    assert!(stdout.contains("1 default witness"), "{stdout}");
+    assert!(stdout.contains(other), "{stdout}");
+}
+
+#[test]
+fn a_malformed_default_witness_exits_2_and_leaves_node_json_alone() {
+    let home = Home::new();
+    home.json(&["witness", "set-default", &home.endpoint()]);
+    let (code, document) = home.failure(&["witness", "set-default", "not-an-endpoint"]);
+    assert_eq!(code, 2);
+    assert_eq!(
+        document["details"]["reason"],
+        Value::from("malformed_endpoint_id")
+    );
+    assert_eq!(config_witnesses(&home).len(), 1);
+}
+
+/// 32 bytes as every document spells an id.
+fn base32(value: &[u8]) -> String {
+    data_encoding::BASE32_NOPAD
+        .encode(value)
+        .to_ascii_lowercase()
+}
+
+/// `node.json.witnesses`, which `iroh_base` spells as hex.
+fn config_witnesses(home: &Home) -> Vec<String> {
+    let bytes = std::fs::read(home.path().join("node.json")).expect("node.json is there");
+    let config: Value = serde_json::from_slice(&bytes).expect("node.json is JSON");
+    config["witnesses"]
+        .as_array()
+        .expect("witnesses is an array")
+        .iter()
+        .map(text)
+        .collect()
+}
+
+#[test]
 fn a_missing_argument_matches_the_usage_fixture() {
     let home = Home::new();
     let (code, document) = home.failure(&["trust", "add", "--issuer", "alice"]);

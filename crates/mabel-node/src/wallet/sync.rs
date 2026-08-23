@@ -15,6 +15,7 @@ use mabel_core::fold::fold;
 use mabel_net::client::rejection_of;
 use mabel_net::store::Head;
 use mabel_net::{Client, Error as NetError};
+use tracing::warn;
 
 use crate::api::documents::{PushResult, PushStatus, Pushed};
 use crate::api::error::ServiceError;
@@ -141,6 +142,7 @@ impl WalletSync {
         for witness in witnesses {
             results.push(self.push_one(*witness, ledger, &loaded.events).await);
         }
+        record_hints(core, ledger, witnesses, &results);
         Ok(Pushed {
             ledger_id: ids::identity(ledger),
             head_seq: loaded.head_seq,
@@ -388,6 +390,48 @@ impl WalletSync {
             return Err(stale_head(ledger, local.head_seq, &head, *witness));
         }
         Ok(freshness)
+    }
+}
+
+/// Writes the endpoints that accepted a push back into `peers.json`.
+///
+/// An endpoint that accepted a push holds this ledger, so it is where to look
+/// for it next time: `peers.json` hints are second in the crawler's source
+/// order (proposal 003 section 3). A hint is an address book entry and never
+/// authorization; what a hinted peer serves is still verified from nothing.
+///
+/// This runs after the push has already happened, so a `peers.json` that
+/// cannot be written is logged and the push still reports what it did. The
+/// next accepted push writes the hint again.
+fn record_hints(
+    core: &WalletCore,
+    ledger: LedgerId,
+    witnesses: &[EndpointId],
+    results: &[PushResult],
+) {
+    let accepted = witnesses
+        .iter()
+        .zip(results)
+        .filter(|(_, result)| matches!(result.status, PushStatus::Accepted))
+        .map(|(witness, _)| *witness);
+
+    let home = core.home();
+    let mut peers = match home.peers() {
+        Ok(peers) => peers,
+        Err(error) => {
+            warn!("peers.json could not be read, keeping no hint for {ledger}: {error}");
+            return;
+        }
+    };
+    let before = peers.hints(ledger).len();
+    for endpoint in accepted {
+        peers.add_hint(ledger, endpoint);
+    }
+    if peers.hints(ledger).len() == before {
+        return;
+    }
+    if let Err(error) = home.write_peers(&peers) {
+        warn!("peers.json could not be written for {ledger}: {error}");
     }
 }
 

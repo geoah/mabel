@@ -90,6 +90,7 @@ fn dispatch(ctx: &Context, cli: &Cli) -> Result<Outcome> {
                 endpoint,
                 append,
             } => witness::add(ctx, identity, endpoint, append),
+            WitnessCommand::SetDefault { endpoints } => witness::set_default(ctx, endpoints),
             WitnessCommand::Run {
                 http,
                 iroh_port,
@@ -130,6 +131,7 @@ fn dispatch(ctx: &Context, cli: &Cli) -> Result<Outcome> {
         },
         Command::Node { command } => match command {
             NodeCommand::Id => node::id(ctx),
+            NodeCommand::Ticket { addr, port } => node::ticket(ctx, addr, *port),
         },
     }
 }

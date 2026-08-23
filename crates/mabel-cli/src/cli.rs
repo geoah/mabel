@@ -60,7 +60,7 @@ pub enum Command {
         #[command(subcommand)]
         command: TrustCommand,
     },
-    /// Configure the witnesses an identity's ledger is pushed to.
+    /// Configure the witnesses a ledger is pushed to, or this node's own set.
     Witness {
         #[command(subcommand)]
         command: WitnessCommand,
@@ -288,6 +288,18 @@ pub enum WitnessCommand {
         #[command(flatten)]
         append: AppendOptions,
     },
+    /// Replace the node-wide witness set in `node.json`.
+    ///
+    /// These are the witnesses this node queries for any ledger, which is a
+    /// separate thing from the witnesses a ledger names in its own chain:
+    /// `witness add` signs a ledger event, `witness set-default` edits this
+    /// node's configuration and signs nothing.
+    SetDefault {
+        /// Witness endpoint ids, base32 or hex. The set is replaced, not
+        /// added to.
+        #[arg(value_name = "ENDPOINT_ID", required = true, num_args = 1..)]
+        endpoints: Vec<String>,
+    },
     /// Serve this home as a witness until ctrl-c.
     Run {
         /// Address the HTTP API binds, overriding node.json's http_bind.
@@ -393,6 +405,20 @@ pub enum WalletCommand {
 pub enum NodeCommand {
     /// Print this node's Iroh endpoint id.
     Id,
+    /// Print this node's `EndpointTicket`, the string `--peer` takes.
+    ///
+    /// The ticket names this node's endpoint id and the addresses it is
+    /// reachable at. With no `--addr` and no `--port` it carries no address,
+    /// which is enough for a node whose `node.json` sets `relay: "n0"`.
+    Ticket {
+        /// An address this node is reachable at, `IP:PORT`. Repeatable.
+        #[arg(long, value_name = "ADDR")]
+        addr: Vec<SocketAddr>,
+        /// Pair this node's detected IPv4 address with this UDP port, which is
+        /// the port the Iroh endpoint binds.
+        #[arg(long, value_name = "PORT")]
+        port: Option<u16>,
+    },
 }
 
 /// The declared kind an identity is created with (proposal 002 section 3).

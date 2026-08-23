@@ -1,0 +1,20 @@
+# The test DNS resolver of `docker/compose.dns.yaml` (ticket 032).
+#
+# CoreDNS from Alpine rather than the coredns/coredns image, because that image
+# carries no shell and no `dig`, so it can hold no healthcheck that proves the
+# server answers. `bind-tools` is what the healthcheck runs.
+#
+# The zone file is baked in and `compose.dns.yaml` mounts a named volume over
+# the directory, which Docker seeds from these contents the first time it is
+# created. Story 007 rewrites the file in the volume; the `file` plugin rereads
+# it within five seconds, so no restart is needed.
+FROM alpine:3.21
+
+RUN apk add --no-cache coredns=1.11.3-r5 bind-tools=9.18.49-r0
+
+COPY dns/Corefile /etc/coredns/Corefile
+COPY dns/zones/example.zone /etc/coredns/zones/example.zone
+
+EXPOSE 53/tcp 53/udp
+
+ENTRYPOINT ["/usr/bin/coredns", "-conf", "/etc/coredns/Corefile"]

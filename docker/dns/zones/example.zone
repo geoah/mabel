@@ -1,0 +1,28 @@
+; The `example` zone of the test resolver (ticket 032, story 007).
+;
+; Docker seeds the `resolver-zones` volume from this file the first time it is
+; created. Story 007 rewrites the copy in the volume with the identity ids the
+; run minted, and CoreDNS rereads it within five seconds:
+;
+;   docker compose ... exec -T resolver \
+;     sh -c 'cat > /etc/coredns/zones/example.zone' < the-new-zone
+;
+; A hostname claim is `_mabel.<hostname> IN TXT "mabel=<identity id>"`
+; (proposal 003 section 2). The serial has to rise on every rewrite, or the
+; `file` plugin keeps serving what it already loaded.
+
+$ORIGIN example.
+$TTL 5
+
+@   IN SOA ns.example. hostmaster.example. (
+        1          ; serial, raise it on every rewrite
+        60         ; refresh
+        30         ; retry
+        300        ; expire
+        5 )        ; negative caching TTL
+@   IN NS  ns.example.
+ns  IN A   127.0.0.1
+
+; What the container's healthcheck asks for. Story 007 keeps this record when
+; it rewrites the zone, or the resolver goes unhealthy.
+_mabel.health IN TXT "mabel=health"

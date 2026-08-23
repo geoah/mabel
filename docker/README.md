@@ -40,11 +40,18 @@ binds 9081. Publishing `9181:9081` would make every request from the host a 403.
 The healthcheck sends the same header from inside the container, so a mapping
 that breaks the rule shows up as an unhealthy service.
 
-| Service | Role    | HTTP and UI       | Iroh UDP    | Home volume     |
-| ------- | ------- | ----------------- | ----------- | --------------- |
-| witness | witness | `127.0.0.1:9080`  | `9070/udp`  | `witness-data`  |
-| alice   | wallet  | `127.0.0.1:9081`  | `9071/udp`  | `alice-data`    |
-| bob     | wallet  | `127.0.0.1:9082`  | `9072/udp`  | `bob-data`      |
+| Service     | Role     | HTTP and UI      | Iroh UDP   | Volume             |
+| ----------- | -------- | ---------------- | ---------- | ------------------ |
+| witness     | witness  | `127.0.0.1:9080` | `9070/udp` | `witness-data`     |
+| alice       | wallet   | `127.0.0.1:9081` | `9071/udp` | `alice-data`       |
+| bob         | wallet   | `127.0.0.1:9082` | `9072/udp` | `bob-data`         |
+| witness-two | witness  | `127.0.0.1:9083` | `9073/udp` | `witness-two-data` |
+| resolver    | test DNS | none             | none       | `resolver-zones`   |
+
+The last two rows come from the overlays below and are not in the base
+topology. The resolver publishes no host port: it answers DNS on port 53 on
+the compose network only, and its volume holds a zone file rather than a node
+home.
 
 Each node binds its HTTP API to `0.0.0.0` so the published port reaches it, and
 each one logs the warning that says what that costs: the API has no
@@ -65,11 +72,16 @@ Startup order follows from that: the wallets declare
 `depends_on: witness: condition: service_healthy`, and their entrypoints also
 wait for `/shared/witness.ticket` to exist.
 
-The claim is checked, not asserted:
+The claim is checked, not asserted, by the `compose.internal.yaml` overlay
+below.
 
-```sh
-docker compose -f docker/compose.yaml -f docker/compose.internal.yaml up -d
-```
+## Overlays
+
+Each overlay is a second `-f` after `compose.yaml`. None of them renames a
+service, moves a port or drops a volume, so anything written against the base
+topology keeps working with an overlay on top.
+
+### `compose.internal.yaml`, no route out
 
 The overlay marks the network `internal`, so the containers have no route out
 at all. All three still reach healthy and a push from alice still reaches the
@@ -77,23 +89,84 @@ witness. Published ports do not work on an internal network, so drive that run
 from inside a container (`docker compose exec alice bash`) rather than with
 `docker/smoke.sh`.
 
-## The ticket gap
+### `compose.two-witnesses.yaml`, a second witness
 
-`mabel` has no command that prints an `EndpointTicket`. `mabel node id` prints
-the endpoint id, `witness run` prints the id and the bound UDP addresses, and
-`--peer` is the only place a ticket is read. `docker/entrypoint.sh` therefore
-assembles the ticket itself from the endpoint id, this container's address on
-the compose network and the fixed UDP port; the byte layout of iroh-tickets
-1.0.0 is documented at that function. A `mabel node ticket [--addr]` command
-would replace those twenty lines, and the entrypoint should switch to it when it
-exists.
+```sh
+docker compose -f docker/compose.yaml -f docker/compose.two-witnesses.yaml \
+  up --build -d
+```
+
+`witness-two` is on `127.0.0.1:9083` and UDP 9073, with its own home volume,
+and publishes `/shared/witness-two.ticket` and `/shared/witness-two.id` beside
+the first witness's. Alice and bob wait for both tickets and start with both
+seeded as `--peer`, so a command in either wallet can push to either witness
+with no `--peer` of its own. The two witnesses share nothing but the ticket
+volume, which is what lets stories 004 and 005 push one branch of a ledger to
+one witness and another branch to the other.
+
+### `compose.dns.yaml`, a test resolver
+
+```sh
+docker compose -f docker/compose.yaml -f docker/compose.dns.yaml up --build -d
+docker compose -f docker/compose.yaml -f docker/compose.dns.yaml \
+  exec -T alice getent hosts ns.example        # the resolver answers
+```
+
+`resolver` is CoreDNS on Alpine (`docker/Dockerfile.resolver`), fixed at
+`172.29.0.53`, serving the `example` zone from
+`/etc/coredns/zones/example.zone` and answering REFUSED for every other name,
+so no lookup leaves the machine. Alice and bob are pointed at it with `dns:`;
+Docker's embedded resolver still owns the container names and forwards the
+rest. The address is fixed because `dns:` takes addresses, which is why this
+overlay gives the network a declared subnet.
+
+The zone lives in the `resolver-zones` volume, seeded from
+`docker/dns/zones/example.zone` in the image. The `file` plugin rereads the
+file within five seconds, so a rewritten zone needs no restart, but its serial
+has to rise or CoreDNS keeps serving what it loaded:
+
+```sh
+docker compose -f docker/compose.yaml -f docker/compose.dns.yaml exec -T \
+  resolver sh -c 'cat > /etc/coredns/zones/example.zone' < zone-with-the-ids
+```
+
+Story 007 is what this is for. A hostname claim is
+`_mabel.<hostname> IN TXT "mabel=<identity id>"` (proposal 003 section 2), and
+the story publishes three cases: a record naming alice, a record under
+`bob.example` naming the wrong identity, and no record at all under
+`nobody.example`. The wallet side that reads them arrives with tickets 024 and
+026; today the overlay only has to exist and resolve, which
+`_mabel.health.example` proves, and which the resolver's own healthcheck asks
+for on every interval. A rewritten zone that drops that record makes the
+resolver unhealthy.
+
+## Tickets
+
+`mabel node ticket` prints this node's `EndpointTicket`, the string `--peer`
+takes:
+
+```sh
+docker compose -f docker/compose.yaml exec -T witness mabel node ticket --port 9070
+```
+
+`--port` pairs the node's own address, detected from its default route, with
+that UDP port. `--addr <IP:PORT>` names an address instead and is repeatable.
+With neither flag the ticket names the endpoint alone, which is enough for a
+node whose `node.json` sets `relay: "n0"`.
+
+Text output is the ticket and nothing else, so `--peer "$(mabel node ticket
+--addr ...)"` works. That is what `docker/entrypoint.sh` does when
+`MABEL_PUBLISH_TICKET` is set, and it passes `--addr` rather than `--port`
+because a container on the `compose.internal.yaml` network has no default
+route to detect from: `--port` there exits 2 with `no_local_address`.
 
 A wrong ticket is loud rather than silent: `wallet serve --peer` exits 2 with
 reason `malformed_peer_ticket`, so the wallet never becomes healthy.
 
-`peers.json` has a `tickets` field, but no runtime reads it yet, so the ticket
-is passed on the command line instead. Ticket 015's acceptance criterion asks
-for the ticket in `peers.json`; seeding it there today would seed nothing.
+`peers.json` still has a `tickets` field that no runtime reads; a ticket
+reaches a node on the command line. Its `ledgers` hints are written: an
+accepted `sync push` records the endpoint that took it as a source for that
+ledger (proposal 003 section 3).
 
 ## Operating notes
 
@@ -106,7 +179,12 @@ for the ticket in `peers.json`; seeding it there today would seed nothing.
   the stop grace period.
 - `node.json` is written by the entrypoint on every start from the service's
   environment (`MABEL_ROLE`, `MABEL_HTTP_BIND`, `MABEL_RELAY`,
-  `MABEL_STORAGE_CAPACITY`), so an edited compose file takes effect on restart.
+  `MABEL_STORAGE_CAPACITY`, `MABEL_WITNESSES`), so an edited compose file takes
+  effect on restart. `MABEL_WITNESSES` is a space- or comma-separated list of
+  endpoint ids and goes through `mabel witness set-default`, so a typo fails
+  the container rather than being stored. These are the witnesses the node
+  queries for any ledger, which is a different set from the witnesses a
+  ledger's own chain names.
   Nothing in mabel rewrites that file. `node.key`, the identities and the
   ledgers live on the home volume and survive a recreate; `down -v` drops them.
 - The image runs `mabel` as the container command, so the role is the command:

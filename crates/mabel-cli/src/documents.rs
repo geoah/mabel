@@ -174,6 +174,25 @@ pub struct NodeId {
     pub endpoint_id: Id,
 }
 
+/// `mabel node ticket --json`.
+#[derive(Debug, Serialize)]
+pub struct NodeTicket {
+    /// This node's Iroh endpoint id, which is what the ticket names.
+    pub endpoint_id: Id,
+    /// The `IP:PORT` addresses the ticket carries, in the order it carries
+    /// them. Empty when the ticket names the endpoint alone.
+    pub addrs: Vec<String>,
+    /// The `endpoint...` string `--peer` takes.
+    pub ticket: String,
+}
+
+/// `mabel witness set-default --json`.
+#[derive(Debug, Serialize)]
+pub struct DefaultWitnesses {
+    /// The node-wide witness set `node.json` now holds.
+    pub witnesses: Vec<Id>,
+}
+
 /// Where a ledger's signing authority came from (proposal 002 section 2).
 ///
 /// This is what proposal 001 called the ledger kind. The declared kind is a

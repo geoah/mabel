@@ -1,0 +1,71 @@
+# A test DNS resolver, for the hostname verification of story 007 (ticket 032).
+#
+#   docker compose -f docker/compose.yaml -f docker/compose.dns.yaml up --build -d
+#   docker compose -f docker/compose.yaml -f docker/compose.dns.yaml down -v
+#
+# The resolver serves the `example` zone from
+# /etc/coredns/zones/example.zone in the `resolver-zones` volume and REFUSES
+# every other name, so no lookup leaves the machine. Alice and bob are pointed
+# at it with `dns:`, which Docker's embedded resolver forwards to for any name
+# it does not own; container names still resolve.
+#
+# The address is fixed at 172.29.0.53 because `dns:` takes addresses and not
+# names. Fixing it means the network needs a declared subnet, so this overlay
+# gives `mabel` one; bringing the topology up with the overlay recreates the
+# network.
+#
+# The wallet side of story 007 arrives with tickets 024 and 026. Until then
+# this overlay is verified on its own: resolve `_mabel.health.example` from
+# inside a wallet container.
+
+services:
+  resolver:
+    image: mabel-resolver:dev
+    build:
+      context: .
+      dockerfile: Dockerfile.resolver
+    init: true
+    container_name: mabel-resolver
+    networks:
+      mabel:
+        ipv4_address: 172.29.0.53
+    volumes:
+      - resolver-zones:/etc/coredns/zones
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "sh",
+          "-c",
+          "dig +short +timeout=2 +tries=1 @127.0.0.1 TXT _mabel.health.example | grep -q 'mabel=health'",
+        ]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+      start_period: 2s
+
+  alice:
+    depends_on:
+      resolver:
+        condition: service_healthy
+    dns:
+      - 172.29.0.53
+
+  bob:
+    depends_on:
+      resolver:
+        condition: service_healthy
+    dns:
+      - 172.29.0.53
+
+networks:
+  mabel:
+    ipam:
+      config:
+        - subnet: 172.29.0.0/24
+
+volumes:
+  # Seeded from docker/dns/zones/ in the image the first time it is created.
+  # `down -v` drops it, which is how an edited zone file in the repository
+  # takes effect.
+  resolver-zones:
