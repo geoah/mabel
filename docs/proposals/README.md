@@ -16,3 +16,7 @@ never move.
   on-ledger profiles (payload tag 17), DNS hostname verification, the local
   trust graph, and the wallet information architecture. Accepted; implements
   decisions 014, 015 and 016.
+- [004-three-primitive-ui.md](004-three-primitive-ui.md): the UI collapses to
+  three primitives (identity list, witness list, one identity page for local
+  and foreign identities), a search box replaces the lookup and verify tabs,
+  and a witnesses tab browses what a witness holds. Accepted.
