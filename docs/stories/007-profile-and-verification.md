@@ -10,10 +10,10 @@ contact up and sees how she knows him.
 
 Nothing in this story is implemented. Every command, route, field and status
 below is proposal 003's accepted surface, so the Playwright work can start the
-moment tickets 023 to 029 land. Two things named here are `data-testid`
-placeholders: the profile, verification and lookup screens do not exist yet, so
-the steps name the route and the document field a screen must show, and the
-testids arrive with tickets 027, 028 and 029.
+moment tickets 023 to 029 land. This story names no `data-testid` at all: the
+profile, verification, contact and lookup screens do not exist, so each step
+names the route, the document field and the rendering rule a screen must
+satisfy, and the testids arrive with tickets 027, 028 and 029.
 
 ## Actors
 
@@ -25,26 +25,34 @@ testids arrive with tickets 027, 028 and 029.
   except through the crawl.
 - witness: compose service `witness`, the only place alice can read bob's and
   carol's ledgers from.
-- a test resolver: one container on the compose network serving TXT records for
-  `example` names, with the wallet containers started `--dns <its address>`.
-  Nothing may reach the public internet.
+- a test resolver: the container ticket 032 adds, serving TXT records for
+  `example` names to the wallets. Nothing may reach the public internet.
 
 `dc` stands for `docker compose -f docker/compose.yaml`, run from the
 repository root.
 
 ## Story
 
-1. Run story 001 in full, then create carol in bob's home, have bob attest
-   carol, and push both ledgers. The trust chain is alice trusts bob, bob
-   trusts carol.
-2. Point each wallet at the test resolver and give the crawler somewhere to
-   read from. Two preconditions no shipped surface provides yet:
-   - the wallet containers must run with `--dns <resolver address>`, since the
-     DNS verifier of ticket 024 resolves through the system configuration;
-   - `node.json` must name the witness in its node-wide `witnesses` list, since
-     that is step 3 of the crawler's source order and neither the entrypoint
-     nor any CLI command sets it. Add `MABEL_WITNESSES` to
-     `docker/entrypoint.sh` or write the file before the wallet starts.
+1. Run story 001 steps 1 to 12, then create carol in bob's home, name the
+   witness on her ledger and push it, and have bob attest her:
+   ```sh
+   dc exec -T bob mabel identity create --alias carol --kind person
+   dc exec -T bob mabel witness add --identity carol --endpoint "$witness_id"
+   dc exec -T bob sh -c 'mabel sync push --identity carol \
+     --peer "$(cat /shared/witness.ticket)"'
+   dc exec -T bob mabel trust add --issuer bob --subject "$carol_id"
+   dc exec -T bob sh -c 'mabel sync push --identity bob \
+     --peer "$(cat /shared/witness.ticket)"'
+   ```
+   The witness add is not optional: a witness refuses a ledger whose chain does
+   not name it, so without it carol's push answers `NOT_ADMITTED` and the crawl
+   has nothing to read. The trust chain is alice trusts bob, bob trusts carol.
+2. Wire the resolver and the crawl sources. Blocked on ticket 032, which owns
+   both: the resolver container with its zone and the wallets' resolver
+   configuration, and `node.json.witnesses` becoming settable so the crawler's
+   source order has a node-wide witness to query (ticket 024's `Resolver` seam
+   covers unit tests only). Do not hand-wire either here; run this story
+   against the overlay that ticket delivers.
 3. Publish the TXT records on the test resolver:
    - `_mabel.alice.example. IN TXT "mabel=<alice_id>"`
    - `_mabel.bob.example. IN TXT "mabel=<carol_id>"`, a record that names the
@@ -93,6 +101,10 @@ repository root.
 
 ## Verified outcomes
 
+- Step 1: carol's push is accepted, and `GET
+  http://127.0.0.1:9080/api/ledgers/<carol_id>` answers `entry.head_seq: 1`
+  with `witnesses` naming the witness. Bob's ledger carries an unrevoked
+  attestation for carol.
 - Step 4 appends one `ProfileUpdate` (payload tag 17) to alice's ledger.
   `GET /api/identities/<alice_id>` answers `profile.display_name == "Alice
   Example"`, `profile.hostname == "alice.example"`, `profile.seq` equal to the

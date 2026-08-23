@@ -16,12 +16,15 @@ recorded, and issues nothing but reads.
   witness holds.
 
 `dc` stands for `docker compose -f docker/compose.yaml`, run from the
-repository root.
+repository root. This story starts from story 004, so it inherits the
+hand-started second witness and second machine that ticket 032's compose
+overlay replaces, and step 11 tears them down.
 
 ## Story
 
-1. Run story 004 steps 1 to 7. Witness one now holds alice's ledger at seq 3
-   and has recorded one fork record for it. Keep `alice_id` and `witness_id`.
+1. Run story 004 steps 1 to 7, stopping before its teardown. Witness one now
+   holds alice's ledger at seq 3 and has recorded one fork record for it. Keep
+   `alice_id` and `witness_id`.
 2. Give the witness enough ledgers to page. Carol and dave exist in alice's
    home from story 004 but were never pushed:
    ```sh
@@ -39,17 +42,23 @@ repository root.
 3. Open `http://127.0.0.1:9080/witness`. Read the Node card.
 4. Read the Ledgers card. Four rows are shown, the first four ledger ids in
    ascending order, because the page size is 4 and the list orders by ledger
-   id so paging is stable.
+   id so paging is stable. Ledger ids are digests, so which four they are is
+   whatever the ordering says: read the row ids from the DOM and assert per
+   page, never "the org is on page one".
 5. Click `witness-ledger-next`, then `witness-ledger-previous`.
-6. Read the declared kind of each row, and the note under the table.
-7. Read the fork counts.
-8. Click `witness-ledger-link-<alice_id>`. On the detail page read the summary
+6. Read the declared kind of each visible row on both pages, and the note under
+   the table.
+7. Read the fork count of each visible row on both pages.
+8. Click `witness-ledger-link-<alice_id>`, from whichever page holds it. On the
+   detail page read the summary
    card, then set `witness-events-since` to `2`, `witness-events-limit` to `1`
    and click `witness-events-load`.
 9. Read the Forks card on the same page: it is filtered to this ledger.
-10. Try to write. The witness API has no route that appends, and every one of
-    these is a single `curl` from the host:
+10. Try to write. Record the store first, so the "nothing changed" claim is
+    checked rather than asserted, then send three requests the witness must
+    refuse:
     ```sh
+    curl -fsS 'http://127.0.0.1:9080/api/ledgers?offset=0&limit=256' > /tmp/before.json
     curl -i -X POST -H 'Origin: http://127.0.0.1:9080' \
       -H 'Content-Type: application/json' --data '{}' \
       http://127.0.0.1:9080/api/ledgers
@@ -57,15 +66,22 @@ repository root.
       -H 'Content-Type: application/json' --data '{}' \
       http://127.0.0.1:9080/api/trust
     curl -i -H 'Host: evil.example' http://127.0.0.1:9080/api/node
+    curl -fsS 'http://127.0.0.1:9080/api/ledgers?offset=0&limit=256' > /tmp/after.json
+    ```
+11. Tear down what story 004 left running, then the topology:
+    ```sh
+    docker rm -f mabel-alice-two mabel-witness-two
+    docker volume rm mabel-alice-second
+    dc down -v
     ```
 
 ## Verified outcomes
 
 - Step 3: `witness-read-only-note` reads `every request this route issues is a
   read`. `witness-node-role` reads `witness`, `witness-node-relay` reads
-  `disabled`, `witness-node-ledger-count` reads `5`,
-  `witness-node-fork-count` reads `1`, `witness-node-storage-capacity` reads
-  `2147483648`.
+  `disabled`, `witness-node-endpoint-id` carries `witness_id`,
+  `witness-node-ledger-count` reads `5`, `witness-node-fork-count` reads `1`,
+  and `witness-node-storage-capacity` reads `2147483648`.
 - Step 4: `witness-ledger-offset` reads `offset 0`, `witness-ledger-limit`
   reads `limit 4`, `witness-ledger-more` reads `more true`,
   `witness-ledger-previous` is disabled, and exactly four
@@ -77,13 +93,14 @@ repository root.
   shown, `witness-ledger-more` reads `more false`, `witness-ledger-next` is
   disabled and `witness-ledger-previous` is enabled. After Previous, the first
   page returns unchanged.
-- Step 6: `witness-ledger-declared-kind-<org_id>` reads `organization` and the
-  four others read `person`. `witness-ledger-declared-kind-note` reads
-  `declared kind is advisory: it gates no authorization, no payload validity
-  and no verification outcome`.
-- Step 7: `witness-ledger-fork-count-<alice_id>` reads `1`, every other row
-  reads `0`, and every `witness-ledger-forks-truncated-*` reads
-  `forks_truncated false`.
+- Step 6, across both pages: `witness-ledger-declared-kind-<org_id>` reads
+  `organization` and the four person rows read `person`. Which page each falls
+  on follows from the digest order, so the assertion is per visible row.
+  `witness-ledger-declared-kind-note` reads `declared kind is advisory: it
+  gates no authorization, no payload validity and no verification outcome`.
+- Step 7, across both pages: `witness-ledger-fork-count-<alice_id>` reads `1`,
+  every other row reads `0`, and every `witness-ledger-forks-truncated-*`
+  visible reads `forks_truncated false`.
 - Step 8's summary: `witness-detail-head-seq` reads `3`,
   `witness-detail-event-count` reads `4`, `witness-detail-fork-count` reads
   `1`, `witness-detail-forks-truncated` reads `false`, and
@@ -111,6 +128,8 @@ repository root.
 - Step 10, third request: HTTP 403 with `code: 2`, `details.reason ==
   "host_not_loopback"` and `message` exactly `request rejected: Host header
   must be 127.0.0.1:9080 or localhost:9080`.
-- The witness signed nothing during any of this: `GET
-  http://127.0.0.1:9080/api/node` reports the same `storage_used` before and
-  after step 10, and the witness holds no identity of its own.
+- Nothing in step 10 changed the store. Every mutating request answered 405 or
+  404, and `/tmp/after.json` holds the same five entries as `/tmp/before.json`:
+  the same `head_seq`, `head_event`, `event_count` and `fork_count` per ledger.
+  `GET /api/forks` still answers one record with the same `kept.event_id` and
+  `conflicting.event_id`.

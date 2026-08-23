@@ -1,7 +1,7 @@
 # 001: two people meet
 
 - Status: draft
-- Surfaces: wallet UI (alice and bob), CLI
+- Surfaces: wallet UI (alice and bob), CLI, wallet HTTP API, witness HTTP API
 - Test: `tests/e2e/001-two-people-meet.spec.ts` (not written yet)
 
 Two strangers create identities in two wallet UIs, exchange descriptors out of
@@ -82,6 +82,25 @@ repository root.
     the ticket volume is `mabel_witness-ticket`; `docker network ls` and
     `docker volume ls` confirm both.
 12. Run step 11 again with `--json` for the document assertions below.
+13. The subject nobody can read. Alice creates a third identity that never
+    reaches the witness, and attests it:
+    ```sh
+    dc exec -T alice mabel identity create --alias carol --kind person
+    ```
+    Record `carol_id`. In alice's UI paste `carol_id` into `trust-add-subject`,
+    click `trust-add-submit` (`identity-detail-head-seq` reads `3`), then click
+    `sync-push-submit`.
+14. Verify that attestation from an empty home. Carol's ledger is in nobody's
+    reach: alice pushed her own ledger, not carol's.
+    ```sh
+    docker run --rm --network mabel_mabel \
+      --volume mabel_witness-ticket:/shared:ro \
+      --env MABEL_WAIT_FOR_TICKET=/shared/witness \
+      mabel:dev verify trust --issuer "$alice_id" --subject "$carol_id" \
+      --from "$witness_id" --json
+    ```
+    The subject's participation is deliberately not required (decision 003), so
+    this is an answer, not a failure.
 
 ## Verified outcomes
 
@@ -111,6 +130,18 @@ repository root.
   `source == witness_id`, `sources_queried == [witness_id]`, `head_seq: 2`.
 - The mirrored verification, `--issuer "$bob_id" --subject "$alice_id"`, also
   exits 0 with `trusted: true`: two ledgers, two events.
-- `GET http://127.0.0.1:9080/api/ledgers` lists exactly two entries, `alice_id`
-  and `bob_id`, each with `declared_kind: "person"`, `head_seq: 2`,
-  `event_count: 3`, `fork_count: 0`.
+- After step 10, `GET http://127.0.0.1:9080/api/ledgers` lists exactly two
+  entries, `alice_id` and `bob_id`, each with `declared_kind: "person"`,
+  `head_seq: 2`, `event_count: 3`, `fork_count: 0`.
+- Step 14 exits 0, and its document reads `trusted: true` with
+  `subject_resolution: "unresolved"` and `subject_note` exactly `subject:
+  unresolved (not held by any queried source)`. The text form prints that
+  sentence as its own line, after `signed by principal ...` and before the two
+  standing sentences.
+- Step 14's `head_seq` is 3 and its statement reads `valid as of seq 3 of
+  <alice_id>, fetched from <witness_id> at <RFC 3339 UTC>; no revocation up to
+  seq 3`. An unresolved subject changes what is reported, never the exit code:
+  only chain, signature and equivocation failures exit 20.
+- `GET http://127.0.0.1:9080/api/ledgers/<carol_id>` answers 404 with
+  `details.reason == "ledger_not_held"`: the witness holds no copy of the
+  subject, which is exactly what step 14 reported.

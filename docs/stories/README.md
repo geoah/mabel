@@ -14,6 +14,14 @@ origin, and the host port equals the container port because the API refuses any
 strings come from [../../contracts/](../../contracts/README.md) and the
 `data-testid` values from the components in `ui/src/`.
 
+Reading an identifier in a spec: the `data-value` attribute holding the whole
+52-character value sits on the `Identifier` span *inside* the element carrying
+the testid, so a spec reads
+`page.getByTestId('identity-detail-identity-id').locator('[data-value]')` and
+its `data-value` attribute. `textContent` on the testid element is also the
+whole value, because the hidden middle characters stay in the DOM in an
+`sr-only` span; what a reader sees truncated is drawn by CSS.
+
 - [001-two-people-meet.md](001-two-people-meet.md): two identities created in
   two wallet UIs, descriptors exchanged, one witness, mutual attestations, and
   a stranger verifying from an empty home.

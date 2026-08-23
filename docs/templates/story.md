@@ -1,8 +1,14 @@
 # NNN: short name
 
-- Status: draft | implemented
-- Surfaces: CLI | wallet UI | witness UI (which are exercised)
+- Status: draft | draft, blocked on <tickets> | implemented
+- Surfaces: CLI | wallet UI | witness UI | wallet HTTP API | witness HTTP API
+  (which are exercised)
 - Test: path to the e2e test implementing this story (once written)
+
+Optional: one paragraph saying what the story proves, followed by the
+environment notes a runner needs (which topology, which ports, what `dc` or
+any other shorthand stands for). Both are optional and neither belongs inside
+Actors.
 
 ## Actors
 

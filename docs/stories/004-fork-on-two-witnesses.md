@@ -1,7 +1,7 @@
 # 004: the fork
 
 - Status: draft
-- Surfaces: CLI, witness UI
+- Surfaces: CLI, witness UI, witness HTTP API, wallet HTTP API
 - Test: `tests/e2e/004-fork-on-two-witnesses.spec.ts` (not written yet)
 
 One wallet on two machines signs two different events at one sequence. Each
@@ -22,7 +22,9 @@ here forges a signature: both events are valid.
 
 `dc` stands for `docker compose -f docker/compose.yaml`, run from the
 repository root. `compose.yaml` defines one witness, so step 2 starts the
-second one by hand on the same bridge network.
+second one by hand on the same bridge network; ticket 032 replaces that with a
+`docker/compose.two-witnesses.yaml` overlay, and this story switches to the
+overlay when it lands.
 
 ## Story
 
@@ -38,6 +40,12 @@ second one by hand on the same bridge network.
      --env MABEL_PUBLISH_TICKET=/shared/witness-two \
      --publish 9083:9083 --publish 9073:9073/udp \
      mabel:dev witness run --http 0.0.0.0:9083 --iroh-port 9073
+   ```
+   `docker run -d` returns before the node is up, so wait for both signals the
+   entrypoint and the API give, then read the id and the ticket:
+   ```sh
+   until dc exec -T alice test -f /shared/witness-two.ticket; do sleep 1; done
+   until curl -fsS http://127.0.0.1:9083/api/node >/dev/null; do sleep 1; done
    witness_two_id="$(dc exec -T alice cat /shared/witness-two.id)"
    witness_two_ticket="$(dc exec -T alice cat /shared/witness-two.ticket)"
    ```
@@ -65,17 +73,28 @@ second one by hand on the same bridge network.
      --volume mabel-alice-second:/data --volume mabel_witness-ticket:/shared:ro \
      --env MABEL_ROLE=wallet --env MABEL_RELAY=disabled \
      --env MABEL_HTTP_BIND=0.0.0.0:9084 --env MABEL_IROH_PORT=9074 \
+     --publish 9084:9084 \
      mabel:dev wallet serve --http 0.0.0.0:9084 --iroh-port 9074
+   until curl -fsS http://127.0.0.1:9084/api/node >/dev/null; do sleep 1; done
    ```
+   The wait matters: `docker run -d` returns before the home is prepared, and
+   an `exec` that lands first sees no `node.json`. The published port is host
+   port equals container port, as every other node's is, so the loopback rules
+   accept a request from the host.
 5. Both machines append offline, at the same sequence, on the same previous
    event:
    ```sh
-   dc exec -T alice mabel trust add --issuer alice --subject "$carol_id" --no-sync
-   docker exec mabel-alice-two mabel trust add --issuer alice --subject "$dave_id" --no-sync
+   kept_event="$(dc exec -T alice mabel trust add --issuer alice \
+     --subject "$carol_id" --no-sync --json | jq -r .attestation_event)"
+   conflicting_event="$(docker exec mabel-alice-two mabel trust add --issuer alice \
+     --subject "$dave_id" --no-sync --json | jq -r .attestation_event)"
    ```
-   Both print `attested <subject> at seq 3 of <alice_id>`. Record the two event
-   ids as `kept_event` (the first machine, carol) and `conflicting_event` (the
-   second machine, dave).
+   Both documents carry `attestation_seq: 3`. Each machine's `prev` is the
+   other's `prev`, which the ledger route on each wallet reports:
+   ```sh
+   curl -fsS "http://127.0.0.1:9081/api/identities/$alice_id/ledger?since=3" | jq -r .events[0].prev
+   curl -fsS "http://127.0.0.1:9084/api/identities/$alice_id/ledger?since=3" | jq -r .events[0].prev
+   ```
 6. One branch to each witness:
    ```sh
    dc exec -T alice sh -c 'mabel sync push --identity alice --to '"$witness_id"' \
@@ -111,19 +130,21 @@ second one by hand on the same bridge network.
 
 ## Verified outcomes
 
-- Step 5: the two events carry the same `seq` (3) and the same `prev`, and
-  different event ids. Both verify: `dc exec -T alice mabel verify ledger alice
-  --json` exits 0 on the first machine and
-  `docker exec mabel-alice-two mabel verify ledger alice --json` exits 0 on the
-  second.
+- Step 5: `kept_event != conflicting_event`, both documents read
+  `attestation_seq: 3`, and the two ledger routes report the same
+  `events[0].prev`, which is alice's seq-2 event id. Both branches verify:
+  `dc exec -T alice mabel verify ledger alice --json` exits 0 on the first
+  machine and `docker exec mabel-alice-two mabel verify ledger alice --json`
+  exits 0 on the second. Nothing here forges a signature.
 - Step 7 exits 30. Its document has `ok: false`, `code: 30`, `message` starting
   `Network error: `, `details.reason == "all_witnesses_failed"`,
   `details.results[0].status == "rejected"`, `details.results[0].reject_code ==
   "FORK"` and `details.results[0].at_seq == 3`. First seen wins: nothing
   overwrote the stored event.
 - Witness one still serves the first branch: `GET
-  http://127.0.0.1:9080/api/ledgers/<alice_id>` answers `head_seq: 3`,
-  `head_event == kept_event`, `fork_count: 1`, `forks_truncated: false`.
+  http://127.0.0.1:9080/api/ledgers/<alice_id>` answers `entry.head_seq: 3`,
+  `entry.head_event == kept_event`, `entry.fork_count: 1`,
+  `entry.forks_truncated: false`, and `witnesses` listing both endpoint ids.
 - Step 8's fork record, at `fork-record-<alice_id>-3`:
   - `fork-statement-<alice_id>-3` reads exactly `two distinct validly signed
     events exist at seq 3 of <alice_id>, produced by whoever held signing
@@ -141,8 +162,8 @@ second one by hand on the same bridge network.
   - `fork-source-endpoint-<alice_id>-3` carries the second machine's endpoint
     id, which is provenance and not authorization.
 - Witness two recorded nothing: `GET http://127.0.0.1:9083/api/forks` answers
-  `entries: []`, and its copy of the ledger has `head_event ==
-  conflicting_event`.
+  `entries: []`, and `GET http://127.0.0.1:9083/api/ledgers/<alice_id>` answers
+  `entry.head_event == conflicting_event` and `entry.fork_count: 0`.
 - Step 9 exits 20 with `ok: false`, `code: 20`, `message` exactly `Ledger
   error: two sources hold divergent events at seq 3 of <alice_id>`,
   `details.reason == "equivocation"`, `details.at_seq == 3`, and two

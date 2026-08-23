@@ -1,7 +1,7 @@
 # 006: stale append
 
 - Status: draft
-- Surfaces: wallet UI (alice), CLI
+- Surfaces: wallet UI (alice), CLI, wallet HTTP API, witness HTTP API
 - Test: `tests/e2e/006-stale-append.spec.ts` (not written yet)
 
 Two machines may sign for one shared ledger. One of them signs on a head the
@@ -21,7 +21,10 @@ action, run again.
 - witness: compose service `witness`, API and UI on `http://127.0.0.1:9080`.
 
 `dc` stands for `docker compose -f docker/compose.yaml`, run from the
-repository root.
+repository root. The race is one wallet's key on two machines, because that is
+what runs today: bob is a controller on the chain but cannot append from his
+own home until ticket 031 lands. This story tests one controller key on two
+machines; two admitted controllers acting from their own homes is ticket 031.
 
 ## Story
 
@@ -34,7 +37,7 @@ repository root.
    dc exec -T alice sh -c 'mabel sync push --identity mabel-demo-co \
      --peer "$(cat /shared/witness.ticket)"'
    ```
-   The shared ledger is now at seq 3 on both machines' witness.
+   The shared ledger is now at seq 3 in alice's home and on the witness.
 3. Make the second machine, after the push so both copies start level:
    ```sh
    docker volume create mabel-alice-second
@@ -45,8 +48,13 @@ repository root.
      --volume mabel-alice-second:/data --volume mabel_witness-ticket:/shared:ro \
      --env MABEL_ROLE=wallet --env MABEL_RELAY=disabled \
      --env MABEL_HTTP_BIND=0.0.0.0:9084 --env MABEL_IROH_PORT=9074 \
+     --publish 9084:9084 \
      mabel:dev wallet serve --http 0.0.0.0:9084 --iroh-port 9074
+   until curl -fsS http://127.0.0.1:9084/api/node >/dev/null; do sleep 1; done
    ```
+   `docker run -d` returns before the entrypoint has written `node.json`, so
+   the wait is not optional: an `exec` that lands first fails on a home that is
+   not a home yet.
 4. In alice's UI at `http://127.0.0.1:9081/wallet`, open
    `identity-link-<org_id>`, paste `bob_id` into `trust-add-subject` and click
    `trust-add-submit`. It succeeds: the witness is at seq 3, alice is at seq 3,
@@ -63,14 +71,27 @@ repository root.
    `trust-add-submit`. This is the losing append: before anything is signed,
    the wallet asks the ledger's witnesses where it ends and finds an event it
    does not hold at seq 4.
-7. Read what the panel now shows in the ledger card: click `ledger-load` with
-   `ledger-since` at `0`. Alice's seq 4 is the second machine's event, not the
-   one she signed in step 4.
+7. Read what alice's home now holds: in the Ledger card set `ledger-since` to
+   `0`, `ledger-limit` to `8`, and click `ledger-load`. Five rows appear,
+   `ledger-event-0` to `ledger-event-4`. Alice's seq 4 is the second machine's
+   event, not the one she signed in step 4.
 8. Click `trust-add-submit` once more, with `bob_id` still in
    `trust-add-subject`. Losing a race is a retry: the same intent, re-signed on
    the new head.
-9. Click `sync-push-submit`, then tear the extra container down:
-   `docker rm -f mabel-alice-two && docker volume rm mabel-alice-second`.
+9. Click `sync-push-submit`.
+10. The second machine reads the settled chain back from the witness:
+    ```sh
+    docker exec mabel-alice-two sh -c 'mabel verify trust --issuer mabel-demo-co \
+      --subject '"$bob_id"' --from '"$witness_id"' \
+      --peer "$(cat /shared/witness.ticket)"'
+    ```
+    The `--peer` is explicit here: this container was started without
+    `MABEL_WAIT_FOR_TICKET`, so nothing seeded the witness address for it.
+11. Tear the extra container down, after the assertions above are made:
+    ```sh
+    docker rm -f mabel-alice-two
+    docker volume rm mabel-alice-second
+    ```
 
 ## Verified outcomes
 
@@ -88,21 +109,29 @@ repository root.
   --peer "$(cat /shared/witness.ticket)" --json` exits 50 with `ok: false`,
   `code: 50` and `details.reason == "stale_head"`.
 - Step 7: alice's event from step 4 is gone from her home. `dc exec -T alice
-  mabel trust list --issuer mabel-demo-co --json` answers `head_seq: 4` and one
-  entry, whose `subject == alice_id` and whose `attestation_seq` is 4: the
-  second machine's event, fetched during the failed attempt. The event id alice
-  signed in step 4 appears nowhere in the ledger.
+  mabel trust list --issuer mabel-demo-co --json` answers `head_seq: 4` and a
+  one-element `trust` array: `trust[0].subject == alice_id` and
+  `trust[0].attestation_seq == 4`, the second machine's event, fetched during
+  the failed attempt. The event id alice signed in step 4 appears nowhere in
+  the ledger.
+- Step 7's Ledger card agrees: `event-payload-kind-4` reads
+  `trust_attestation`, the identifier inside `event-id-4` carries the second
+  machine's event id, and `event-payload-4` reads `{"subject":"<alice_id>"}`.
+  The five rows read `inception`, `membership_invitation`,
+  `membership_acceptance`, `witness_config`, `trust_attestation` in order.
 - No fork was created: `GET http://127.0.0.1:9080/api/forks` answers `entries:
   []` and `GET http://127.0.0.1:9080/api/ledgers/<org_id>` answers
-  `fork_count: 0`. The losing event was discarded before it was ever pushed,
-  which is the difference between this story and story 004.
+  `entry.fork_count: 0`. The losing event was discarded before it was ever
+  pushed, which is the difference between this story and story 004.
 - Step 8 succeeds: `trust-appended-event` shows a new event id,
   `identity-detail-head-seq` reads `5`, and a row for the new attestation reads
   `unrevoked`.
 - Step 9's push report reads `push-status-<witness_id>` `accepted` and
   `push-stored-<witness_id>` `1`.
-- After step 9 both machines agree:
-  `docker exec mabel-alice-two mabel verify trust --issuer mabel-demo-co
-  --subject "$bob_id" --from "$witness_id"` exits 0 with `trusted: true` and
-  the statement `valid as of seq 5 of <org_id>, fetched from <witness_id> at
-  <RFC 3339 UTC>; no revocation up to seq 5`.
+- Step 10 exits 0 and prints `trusted: true`, then `valid as of seq 5 of
+  <org_id>, fetched from <witness_id> at <RFC 3339 UTC>; no revocation up to
+  seq 5`, then `signed by principal <alice_id> (<alice active key>)`. The
+  second machine reads the witness's seq-5 copy: `--from` pins the source, so
+  the report is about the witness's chain, not this container's own.
+- The witness agrees: `GET http://127.0.0.1:9080/api/ledgers/<org_id>` answers
+  `entry.head_seq: 5` and `entry.event_count: 6`.
