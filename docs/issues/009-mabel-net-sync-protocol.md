@@ -1,6 +1,6 @@
 # 009: `mabel-net` client, server and protocol caps
 
-- Status: open
+- Status: done
 - Depends on: 003
 
 ## Goal

@@ -2037,7 +2037,6 @@ dependencies = [
  "iroh-base",
  "iroh-tickets",
  "mabel-core",
- "mabel-proto",
  "thiserror 2.0.20",
  "tokio",
  "tracing",
