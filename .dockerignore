@@ -1,0 +1,23 @@
+# The build context is the repository root (docker/compose.yaml sets
+# `context: ..`). Everything the image needs is a manifest, a source tree,
+# `proto/`, `contracts/` (compiled in with include_str!) or `ui/`.
+.git
+.gitignore
+.demo
+*.log
+
+# Build output. The image builds `ui/dist` in its own stage and the Rust
+# target directory would be the largest thing in the context by far.
+target
+ui/dist
+ui/dist-demo
+ui/node_modules
+node_modules
+
+# Not read by any build stage.
+docs
+test-vectors
+ui/screenshots
+ui/scripts
+mise.toml
+README.md

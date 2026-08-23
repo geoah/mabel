@@ -1,0 +1,122 @@
+# One witness and two wallets on one bridge network, needing no internet
+# (proposal 001 section 11, ticket 015).
+#
+#   docker compose -f docker/compose.yaml up --build -d
+#   docker compose -f docker/compose.yaml down -v
+#
+# The witness starts first, writes its EndpointTicket to the shared
+# witness-ticket volume, and the wallets start once it is healthy and pass that
+# ticket as --peer. Every node.json sets relay "disabled", so no relay and no
+# discovery service is contacted.
+#
+# Host port == container port for every HTTP port, because the API's loopback
+# rules require `Host: 127.0.0.1:<the port the API is bound to>`; a request
+# from the host through a remapped port would carry the wrong port and be
+# refused with 403.
+
+name: mabel
+
+x-node: &node
+  image: mabel:dev
+  build:
+    context: ..
+    dockerfile: docker/Dockerfile
+  init: true
+  # `witness run` and `wallet serve` stop on SIGINT; SIGTERM is not handled, so
+  # the default stop signal would wait out the grace period on every down.
+  stop_signal: SIGINT
+  stop_grace_period: 5s
+  networks: [mabel]
+  environment: &node_env
+    MABEL_RELAY: disabled
+    MABEL_STORAGE_CAPACITY: "2147483648"
+
+services:
+  witness:
+    <<: *node
+    container_name: mabel-witness
+    environment:
+      <<: *node_env
+      MABEL_ROLE: witness
+      MABEL_HTTP_BIND: 0.0.0.0:9080
+      MABEL_HTTP_PORT: "9080"
+      MABEL_IROH_PORT: "9070"
+      MABEL_PUBLISH_TICKET: /shared/witness
+    command: ["witness", "run", "--http", "0.0.0.0:9080", "--iroh-port", "9070"]
+    ports:
+      - "9080:9080/tcp"
+      - "9070:9070/udp"
+    volumes:
+      - witness-data:/data
+      - witness-ticket:/shared
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/mabel-healthcheck", "9080"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+      start_period: 2s
+
+  alice:
+    <<: *node
+    container_name: mabel-alice
+    depends_on:
+      witness:
+        condition: service_healthy
+    environment:
+      <<: *node_env
+      MABEL_ROLE: wallet
+      MABEL_HTTP_BIND: 0.0.0.0:9081
+      MABEL_HTTP_PORT: "9081"
+      MABEL_IROH_PORT: "9071"
+      MABEL_WAIT_FOR_TICKET: /shared/witness
+    command: ["wallet", "serve", "--http", "0.0.0.0:9081", "--iroh-port", "9071"]
+    ports:
+      - "9081:9081/tcp"
+      - "9071:9071/udp"
+    volumes:
+      - alice-data:/data
+      - witness-ticket:/shared:ro
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/mabel-healthcheck", "9081"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+      start_period: 2s
+
+  bob:
+    <<: *node
+    container_name: mabel-bob
+    depends_on:
+      witness:
+        condition: service_healthy
+    environment:
+      <<: *node_env
+      MABEL_ROLE: wallet
+      MABEL_HTTP_BIND: 0.0.0.0:9082
+      MABEL_HTTP_PORT: "9082"
+      MABEL_IROH_PORT: "9072"
+      MABEL_WAIT_FOR_TICKET: /shared/witness
+    command: ["wallet", "serve", "--http", "0.0.0.0:9082", "--iroh-port", "9072"]
+    ports:
+      - "9082:9082/tcp"
+      - "9072:9072/udp"
+    volumes:
+      - bob-data:/data
+      - witness-ticket:/shared:ro
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/mabel-healthcheck", "9082"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+      start_period: 2s
+
+networks:
+  mabel:
+    driver: bridge
+
+volumes:
+  witness-data:
+  alice-data:
+  bob-data:
+  # The witness writes its ticket and endpoint id here; both wallets read them.
+  witness-ticket:

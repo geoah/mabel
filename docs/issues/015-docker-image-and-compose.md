@@ -1,6 +1,6 @@
 # 015: container image and compose topology
 
-- Status: open
+- Status: done
 - Depends on: 013
 
 ## Goal

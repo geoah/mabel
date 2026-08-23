@@ -1,0 +1,11 @@
+# Overlay that proves the topology needs no internet: the compose network gets
+# no route out, so a relay, a DNS lookup or a pkarr publish would fail. Every
+# service must still reach healthy and docker/smoke.sh must still pass.
+#
+#   docker compose -f docker/compose.yaml -f docker/compose.internal.yaml up -d
+#
+# Published ports keep working: they are host-to-container forwards, not egress.
+
+networks:
+  mabel:
+    internal: true
