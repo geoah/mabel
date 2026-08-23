@@ -133,6 +133,10 @@ test("step 7: alice's home holds the second machine's event at seq 4", async () 
   ] as const) {
     await expect(alicePage.getByTestId(`event-payload-kind-${seq}`)).toHaveText(kind);
   }
+  // A ledger line carries its sequence and its type; the event id and the
+  // payload are one click into the line (ticket 028).
+  await alicePage.getByTestId("event-expand-4").click();
+  await expect(alicePage.getByTestId("event-detail-4")).toBeVisible();
   expect(await identifier(alicePage, "event-id-4")).toBe(secondMachineEvent);
   await expect(alicePage.getByTestId("event-payload-4")).toHaveText(
     `{"subject":"${aliceId}"}`,

@@ -5,7 +5,6 @@ import type { Identity } from "@/api/types";
 import { ErrorEnvelopeView } from "@/components/ErrorEnvelopeView";
 import { Identifier } from "@/components/Identifier";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { asApiError } from "@/hooks/useResource";
@@ -46,47 +45,41 @@ export function WitnessConfigPanel({
   }
 
   return (
-    <Card data-testid="witness-config">
-      <CardHeader>
-        <CardTitle>Witnesses</CardTitle>
-        <CardDescription>The route replaces the whole set, 1 to 16 distinct ids</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {identity.witnesses.length === 0 ? (
-          <p data-testid="witness-list-empty" className="text-sm">
-            no witnesses configured
-          </p>
-        ) : (
-          <ul data-testid="witness-list" className="space-y-1">
-            {identity.witnesses.map((id) => (
-              <li key={id} data-testid={`witness-row-${id}`}>
-                <Identifier value={id} />
-              </li>
-            ))}
-          </ul>
-        )}
-        <form onSubmit={submit} className="space-y-2" data-testid="witness-add-form">
-          <div className="space-y-1">
-            <Label htmlFor="witness-add-endpoint">endpoint id</Label>
-            <Input
-              id="witness-add-endpoint"
-              data-testid="witness-add-endpoint"
-              value={endpoint}
-              onChange={(event) => setEndpoint(event.target.value)}
-              placeholder="52 base32 characters"
-            />
-          </div>
-          <Button type="submit" data-testid="witness-add-submit" disabled={pending}>
-            {pending ? "appending" : "Add witness"}
-          </Button>
-        </form>
-        {headSeq !== null && (
-          <p data-testid="witness-add-head-seq" className="text-xs">
-            head_seq {headSeq}
-          </p>
-        )}
-        {error && <ErrorEnvelopeView error={error} testId="witness-add-error" />}
-      </CardContent>
-    </Card>
+    <div data-testid="witness-config" className="space-y-3">
+      {identity.witnesses.length === 0 ? (
+        <p data-testid="witness-list-empty" className="text-sm">
+          no witnesses configured
+        </p>
+      ) : (
+        <ul data-testid="witness-list" className="space-y-1">
+          {identity.witnesses.map((id) => (
+            <li key={id} data-testid={`witness-row-${id}`}>
+              <Identifier value={id} />
+            </li>
+          ))}
+        </ul>
+      )}
+      <form onSubmit={submit} className="space-y-2" data-testid="witness-add-form">
+        <div className="space-y-1">
+          <Label htmlFor="witness-add-endpoint">endpoint id</Label>
+          <Input
+            id="witness-add-endpoint"
+            data-testid="witness-add-endpoint"
+            value={endpoint}
+            onChange={(event) => setEndpoint(event.target.value)}
+            placeholder="52 base32 characters"
+          />
+        </div>
+        <Button type="submit" data-testid="witness-add-submit" disabled={pending}>
+          {pending ? "appending" : "Add witness"}
+        </Button>
+      </form>
+      {headSeq !== null && (
+        <p data-testid="witness-add-head-seq" className="text-xs">
+          head_seq {headSeq}
+        </p>
+      )}
+      {error && <ErrorEnvelopeView error={error} testId="witness-add-error" />}
+    </div>
   );
 }

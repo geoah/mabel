@@ -20,12 +20,20 @@ const OUT_DIR = fileURLToPath(new URL("../screenshots", import.meta.url));
 /** The ids the demo fixtures carry; the same ones the component tests use. */
 const ALICE = "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq";
 const BOB = "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq";
+/** The foreign identity the lookup fixture answers for, two hops from Alice. */
+const CAROL = "jqtnsb2me7mj5xsze4gavqklohqhdmkshfiz65khjmxtxjruqh2q";
 
 const VIEWPORTS = [
   { name: "360x780", width: 360, height: 780 },
   { name: "768x1024", width: 768, height: 1024 },
   { name: "1280x800", width: 1280, height: 800 },
 ];
+
+/** Moves the selector to alice, which is the root a lookup answers from. */
+async function lookFromAlice(page) {
+  await page.getByTestId(`identity-selector-option-${ALICE}`).check();
+  await page.getByTestId("lookup-degrees").getByText("2 hops").waitFor();
+}
 
 const SCREENS = [
   { name: "wallet-home", path: "/wallet", ready: "identity-list" },
@@ -41,6 +49,42 @@ const SCREENS = [
     async act(page) {
       await page.getByTestId("sync-push-submit").click();
       await page.getByTestId("sync-push-results").waitFor();
+    },
+  },
+  {
+    name: "wallet-identity-event",
+    path: `/wallet/identities/${ALICE}`,
+    ready: "ledger-events",
+    async act(page) {
+      await page.getByTestId("event-expand-2").click();
+      await page.getByTestId("event-detail-2").waitFor();
+    },
+  },
+  {
+    name: "wallet-identity-invite",
+    path: `/wallet/identities/${ALICE}`,
+    ready: "action-invite-summary",
+    async act(page) {
+      await page.getByTestId("action-invite-summary").click();
+      await page.getByTestId("invite-submit").waitFor();
+    },
+  },
+  {
+    name: "wallet-lookup",
+    path: `/wallet/lookup/${CAROL}`,
+    ready: "lookup-result",
+    // The crawl reaches carol from alice, so the shot answers from alice: with
+    // the default root, the lowest local id, the honest answer is "no path".
+    act: lookFromAlice,
+  },
+  {
+    name: "wallet-lookup-expanded",
+    path: `/wallet/lookup/${CAROL}`,
+    ready: "lookup-result",
+    async act(page) {
+      await lookFromAlice(page);
+      await page.getByTestId(`lookup-trust-expand-${BOB}`).click();
+      await page.getByTestId(`lookup-trust-expansion-${BOB}`).waitFor();
     },
   },
   { name: "wallet-verify", path: "/wallet/verify", ready: "verify-trust-form" },

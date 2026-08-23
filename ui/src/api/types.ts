@@ -65,6 +65,132 @@ export interface PrincipalEntry {
   is_root: boolean;
 }
 
+/** Where a ledger's signing authority came from (proposal 002 section 2). */
+export type RootName = "raw" | "identity";
+
+/** What became of an invitation (proposal 002 section 4). */
+export type InvitationStatus = "open" | "accepted" | "cancelled";
+
+/** One entry of MembershipView.invitations. */
+export interface InvitationEntry {
+  invitation_event: string;
+  invitation_seq: number;
+  invitee: string;
+  invitee_key: string;
+  role: Role;
+  status: InvitationStatus;
+}
+
+/** GET /api/identities/:identity_id/memberships. */
+export interface MembershipView {
+  ok: true;
+  ledger_id: string;
+  declared_kind: DeclaredKind;
+  root: RootName;
+  head_seq: number;
+  head_event: string;
+  principals: PrincipalEntry[];
+  invitations: InvitationEntry[];
+}
+
+/**
+ * POST /api/identities/:identity_id/memberships/invitations. The invitee hands
+ * over a descriptor file; the wallet uploads its bytes as base64 and never
+ * parses them (contracts/README.md, "Artifacts over JSON").
+ */
+export interface InviteRequest {
+  by: string;
+  role: Role;
+  invitee_descriptor_base64: string;
+}
+
+export interface InvitedResponse {
+  ok: true;
+  ledger_id: string;
+  by: string;
+  invitee: string;
+  invitee_key: string;
+  role: Role;
+  invitation_event: string;
+  invitation_seq: number;
+  timestamp_ms: number;
+  head_seq: number;
+  head_event: string;
+  event: LedgerEvent;
+  /** The InvitationBundle to hand the invitee, base64 of the same bytes the CLI writes. */
+  invitation_bundle_base64: string;
+  event_count: number;
+}
+
+/** POST /api/identities/:identity_id/memberships/acceptances. */
+export interface AcceptRequest {
+  invitation_bundle_base64: string;
+}
+
+/**
+ * The surface proposal 002 section 4 requires a person to see before anything
+ * is signed, plus the file the node signed. The browser holds no keys.
+ */
+export interface AcceptedResponse {
+  ok: true;
+  ledger_id: string;
+  declared_kind: DeclaredKind;
+  root: RootName;
+  controllers: PrincipalEntry[];
+  invitation_event: string;
+  invitee: string;
+  invitee_key: string;
+  role: Role;
+  /** True when accepting means signing as the ledger's own identity. */
+  controller_on_raw_root: boolean;
+  warning: string | null;
+  acceptance_base64: string;
+}
+
+/** POST /api/identities/:identity_id/memberships/admissions. */
+export interface AdmitRequest {
+  by: string;
+  acceptance_base64: string;
+}
+
+export interface AdmittedResponse {
+  ok: true;
+  ledger_id: string;
+  by: string;
+  invitee: string;
+  invitee_key: string;
+  role: Role;
+  invitation_event: string;
+  acceptance_event: string;
+  acceptance_seq: number;
+  timestamp_ms: number;
+  head_seq: number;
+  head_event: string;
+  event: LedgerEvent;
+}
+
+/** POST /api/identities/:identity_id/memberships/removals. */
+export interface RemoveRequest {
+  by: string;
+  target: string;
+}
+
+export interface RemovedResponse {
+  ok: true;
+  ledger_id: string;
+  by: string;
+  target: string;
+  principal_removed: boolean;
+  /** The open invitation the removal cancelled, null when there was none. */
+  invitation_cancelled: string | null;
+  removal_event: string;
+  removal_seq: number;
+  timestamp_ms: number;
+  head_seq: number;
+  head_event: string;
+  event: LedgerEvent;
+}
+
 /**
  * The two fields a ProfileUpdate carries (proposal 003 section 1). The payload
  * replaces the whole document, so an omitted field clears that name; both the

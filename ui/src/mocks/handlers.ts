@@ -78,6 +78,39 @@ export const handlers = [
     return answer(() => store.setContact(String(params.identityId), body as Body));
   }),
 
+  http.get("/api/identities/:identityId/memberships", ({ params }) =>
+    answer(() => store.memberships(String(params.identityId))),
+  ),
+
+  http.post(
+    "/api/identities/:identityId/memberships/invitations",
+    async ({ params, request }) => {
+      const body = await request.json();
+      return answer(() => store.invite(String(params.identityId), body as Body));
+    },
+  ),
+
+  http.post(
+    "/api/identities/:identityId/memberships/acceptances",
+    async ({ params, request }) => {
+      const body = await request.json();
+      return answer(() => store.acceptInvitation(String(params.identityId), body as Body));
+    },
+  ),
+
+  http.post(
+    "/api/identities/:identityId/memberships/admissions",
+    async ({ params, request }) => {
+      const body = await request.json();
+      return answer(() => store.admit(String(params.identityId), body as Body));
+    },
+  ),
+
+  http.post("/api/identities/:identityId/memberships/removals", async ({ params, request }) => {
+    const body = await request.json();
+    return answer(() => store.removePrincipal(String(params.identityId), body as Body));
+  }),
+
   http.get("/api/lookup/:identityId", ({ params, request }) => {
     const from = new URL(request.url).searchParams.get("from");
     return answer(() =>

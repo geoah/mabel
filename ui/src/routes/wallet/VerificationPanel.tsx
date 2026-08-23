@@ -7,7 +7,6 @@ import { ErrorEnvelopeView } from "@/components/ErrorEnvelopeView";
 import { KeyValue, KeyValueTable } from "@/components/KeyValue";
 import { VerificationMark, VerificationNote } from "@/components/ResolvedIdentity";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { asApiError } from "@/hooks/useResource";
 
 /**
@@ -42,59 +41,51 @@ export function VerificationPanel({
   }
 
   return (
-    <Card data-testid="verification-panel">
-      <CardHeader>
-        <CardTitle>Hostname</CardTitle>
-        <CardDescription>
-          A TXT record at _mabel.&lt;hostname&gt; whose value is mabel=&lt;identity id&gt;
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <KeyValueTable>
-          <KeyValue label="status" testId="verification-status">
-            {verification.status === "unclaimed" || verification.hostname === null ? (
-              "unclaimed"
-            ) : (
-              <VerificationMark
-                status={verification.status}
-                hostname={verification.hostname}
-                stale={verification.stale}
-                testId="verification-mark"
-              />
-            )}
+    <div data-testid="verification-panel" className="space-y-3">
+      <KeyValueTable>
+        <KeyValue label="status" testId="verification-status">
+          {verification.status === "unclaimed" || verification.hostname === null ? (
+            "unclaimed"
+          ) : (
+            <VerificationMark
+              status={verification.status}
+              hostname={verification.hostname}
+              stale={verification.stale}
+              testId="verification-mark"
+            />
+          )}
+        </KeyValue>
+        <DeveloperOnly>
+          <KeyValue label="checked_at_ms" testId="verification-checked-at-ms">
+            {verification.checked_at_ms ?? "null"}
           </KeyValue>
-          <DeveloperOnly>
-            <KeyValue label="checked_at_ms" testId="verification-checked-at-ms">
-              {verification.checked_at_ms ?? "null"}
-            </KeyValue>
-            <KeyValue label="last_verified_at_ms" testId="verification-last-verified-at-ms">
-              {verification.last_verified_at_ms ?? "null"}
-            </KeyValue>
-            <KeyValue label="stale" testId="verification-stale">
-              {String(verification.stale)}
-            </KeyValue>
-            <KeyValue label="detail" testId="verification-detail">
-              <span className="font-mono text-xs">{verification.detail ?? "null"}</span>
-            </KeyValue>
-            <KeyValue label="unreachable" testId="verification-unreachable">
-              {verification.unreachable === null
-                ? "null"
-                : `${verification.unreachable.checked_at_ms}: ${verification.unreachable.detail ?? "null"}`}
-            </KeyValue>
-          </DeveloperOnly>
-        </KeyValueTable>
-        <Button
-          variant="outline"
-          size="sm"
-          data-testid="verification-check"
-          disabled={pending}
-          onClick={() => void check()}
-        >
-          {pending ? "checking" : "Check now"}
-        </Button>
-        {error && <ErrorEnvelopeView error={error} testId="verification-error" />}
-        <VerificationNote testId="verification-note" />
-      </CardContent>
-    </Card>
+          <KeyValue label="last_verified_at_ms" testId="verification-last-verified-at-ms">
+            {verification.last_verified_at_ms ?? "null"}
+          </KeyValue>
+          <KeyValue label="stale" testId="verification-stale">
+            {String(verification.stale)}
+          </KeyValue>
+          <KeyValue label="detail" testId="verification-detail">
+            <span className="font-mono text-xs">{verification.detail ?? "null"}</span>
+          </KeyValue>
+          <KeyValue label="unreachable" testId="verification-unreachable">
+            {verification.unreachable === null
+              ? "null"
+              : `${verification.unreachable.checked_at_ms}: ${verification.unreachable.detail ?? "null"}`}
+          </KeyValue>
+        </DeveloperOnly>
+      </KeyValueTable>
+      <Button
+        variant="outline"
+        size="sm"
+        data-testid="verification-check"
+        disabled={pending}
+        onClick={() => void check()}
+      >
+        {pending ? "checking" : "Check now"}
+      </Button>
+      {error && <ErrorEnvelopeView error={error} testId="verification-error" />}
+      <VerificationNote testId="verification-note" />
+    </div>
   );
 }

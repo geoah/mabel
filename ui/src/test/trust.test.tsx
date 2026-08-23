@@ -14,6 +14,12 @@ async function openDetail() {
   return rendered;
 }
 
+/** The event id of the last append, which the line carries as an identifier. */
+async function appendedEvent(): Promise<string> {
+  const line = await screen.findByTestId("trust-appended-event");
+  return line.querySelector("[data-value]")?.getAttribute("data-value") ?? "";
+}
+
 describe("trust add and revoke", () => {
   it("posts issuer and subject and lists the new attestation", async () => {
     const bodies: unknown[] = [];
@@ -27,8 +33,7 @@ describe("trust add and revoke", () => {
     await user.type(screen.getByTestId("trust-add-subject"), ACME);
     await user.click(screen.getByTestId("trust-add-submit"));
 
-    const appended = await screen.findByTestId("trust-appended-event");
-    const eventId = appended.textContent ?? "";
+    const eventId = await appendedEvent();
     expect(bodies).toEqual([{ issuer: ALICE, subject: ACME }]);
 
     const row = await screen.findByTestId(`trust-row-${eventId}`);
@@ -39,7 +44,7 @@ describe("trust add and revoke", () => {
     const { user } = await openDetail();
     await user.type(screen.getByTestId("trust-add-subject"), ACME);
     await user.click(screen.getByTestId("trust-add-submit"));
-    const eventId = (await screen.findByTestId("trust-appended-event")).textContent ?? "";
+    const eventId = await appendedEvent();
 
     await user.click(await screen.findByTestId(`trust-revoke-${eventId}`));
 
@@ -66,6 +71,21 @@ describe("trust add and revoke", () => {
       "duplicate_unrevoked_attestation",
     );
     expect(within(envelope).getByTestId("error-message")).toHaveTextContent("Policy error:");
+  });
+
+  it("keeps the subject in the box when the append is refused", async () => {
+    const { user } = await openDetail();
+    await user.type(screen.getByTestId("trust-add-subject"), ACME);
+    await user.click(screen.getByTestId("trust-add-submit"));
+    await screen.findByTestId("trust-appended-event");
+    expect(screen.getByTestId("trust-add-subject")).toHaveValue("");
+
+    await user.type(screen.getByTestId("trust-add-subject"), ACME);
+    await user.click(screen.getByTestId("trust-add-submit"));
+
+    await screen.findByTestId("trust-error");
+    // Retrying is the same action run again, not the same id typed again.
+    expect(screen.getByTestId("trust-add-subject")).toHaveValue(ACME);
   });
 
   it("renders the code 10 schema envelope when the subject is the issuer", async () => {

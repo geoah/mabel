@@ -4,7 +4,6 @@ import { type ApiError, setContact } from "@/api/client";
 import type { Contact } from "@/api/types";
 import { ErrorEnvelopeView } from "@/components/ErrorEnvelopeView";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { asApiError } from "@/hooks/useResource";
@@ -53,46 +52,38 @@ export function ContactPanel({
   }
 
   return (
-    <Card data-testid="contact-panel">
-      <CardHeader>
-        <CardTitle>Contact</CardTitle>
-        <CardDescription>
-          A private note, kept in this node home, never signed and never synced
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <form onSubmit={submit} className="space-y-2" data-testid="contact-form">
-          <div className="space-y-1">
-            <Label htmlFor="contact-nickname">nickname</Label>
-            <Input
-              id="contact-nickname"
-              data-testid="contact-nickname"
-              value={nickname}
-              onChange={(event) => setNickname(event.target.value)}
-              placeholder="bob at the print shop"
-            />
-          </div>
-          <div className="space-y-1">
-            <Label htmlFor="contact-note">note</Label>
-            <Input
-              id="contact-note"
-              data-testid="contact-note"
-              value={note}
-              onChange={(event) => setNote(event.target.value)}
-              placeholder="met at the 2023 zine fair"
-            />
-          </div>
-          <Button type="submit" size="sm" data-testid="contact-save" disabled={pending}>
-            {pending ? "saving" : "Save contact"}
-          </Button>
-        </form>
-        {error && <ErrorEnvelopeView error={error} testId="contact-error" />}
-        {saved && (
-          <p data-testid="contact-result" className="mt-2 text-xs">
-            saved at {saved.updated_at_ms}
-          </p>
-        )}
-      </CardContent>
-    </Card>
+    <div data-testid="contact-panel">
+      <form onSubmit={submit} className="space-y-2" data-testid="contact-form">
+        <div className="space-y-1">
+          <Label htmlFor="contact-nickname">nickname</Label>
+          <Input
+            id="contact-nickname"
+            data-testid="contact-nickname"
+            value={nickname}
+            onChange={(event) => setNickname(event.target.value)}
+            placeholder="bob at the print shop"
+          />
+        </div>
+        <div className="space-y-1">
+          <Label htmlFor="contact-note">note</Label>
+          <Input
+            id="contact-note"
+            data-testid="contact-note"
+            value={note}
+            onChange={(event) => setNote(event.target.value)}
+            placeholder="met at the 2023 zine fair"
+          />
+        </div>
+        <Button type="submit" size="sm" data-testid="contact-save" disabled={pending}>
+          {pending ? "saving" : "Save contact"}
+        </Button>
+      </form>
+      {error && <ErrorEnvelopeView error={error} testId="contact-error" />}
+      {saved && (
+        <p data-testid="contact-result" className="mt-2 text-xs">
+          saved at {saved.updated_at_ms}
+        </p>
+      )}
+    </div>
   );
 }

@@ -1,17 +1,22 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  acceptInvitation,
+  admit,
   ApiError,
   forceVerification,
   getContact,
   getGraph,
   getIdentity,
+  getMemberships,
+  invite,
   lookup,
+  removePrincipal,
   replaceProfile,
   setContact,
   syncGraph,
 } from "@/api/client";
-import { ACME, ALICE, BOB, CAROL, seedContact, seedGraph } from "@/mocks/fixtures";
+import { ACME, ALICE, BOB, CAROL, seedContact, seedGraph, seedIdentities } from "@/mocks/fixtures";
 
 /**
  * The seven routes ticket 026 added, driven through the client against the mock
@@ -77,6 +82,57 @@ describe("lookup", () => {
 
     expect(error.status).toBe(400);
     expect(error.reason).toBe("unknown_from_identity");
+  });
+});
+
+describe("memberships", () => {
+  const acmeKey = seedIdentities.find((identity) => identity.identity_id === ACME)!.principals[0]
+    .active_key;
+  const descriptor = btoa(JSON.stringify({ identity: ACME, active_key: acmeKey }));
+
+  it("serves the principal set and the invitations of one ledger", async () => {
+    const view = await getMemberships(ALICE);
+
+    expect(view.root).toBe("raw");
+    expect(view.principals[0].is_root).toBe(true);
+    expect(view.invitations).toEqual([]);
+  });
+
+  it("carries an invitation from the bundle to the acceptance to the principal set", async () => {
+    const invited = await invite(ALICE, {
+      by: ALICE,
+      role: "controller",
+      invitee_descriptor_base64: descriptor,
+    });
+    expect(invited.invitee).toBe(ACME);
+    expect(invited.event.payload_kind).toBe("membership_invitation");
+    expect((await getMemberships(ALICE)).invitations[0].status).toBe("open");
+
+    const accepted = await acceptInvitation(ACME, {
+      invitation_bundle_base64: invited.invitation_bundle_base64,
+    });
+    // Alice's ledger keys itself, so a controller there signs as Alice.
+    expect(accepted.controller_on_raw_root).toBe(true);
+    expect(accepted.warning).toContain(ALICE);
+
+    const admitted = await admit(ALICE, {
+      by: ALICE,
+      acceptance_base64: accepted.acceptance_base64,
+    });
+    expect(admitted.invitee).toBe(ACME);
+    expect((await getMemberships(ALICE)).invitations[0].status).toBe("accepted");
+    expect((await getIdentity(ALICE)).identity.open_invitation_count).toBe(0);
+
+    const removed = await removePrincipal(ALICE, { by: ALICE, target: ACME });
+    expect(removed.principal_removed).toBe(true);
+    expect((await getMemberships(ALICE)).principals).toHaveLength(1);
+  });
+
+  it("refuses removing the raw root of its own ledger", async () => {
+    const error = await rejection(() => removePrincipal(ALICE, { by: ALICE, target: ALICE }));
+
+    expect(error.status).toBe(409);
+    expect(error.reason).toBe("root_not_removable");
   });
 });
 

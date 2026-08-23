@@ -1,6 +1,7 @@
 import type { VerifyReport } from "@/api/types";
 import { DeclaredKindNote, DeclaredKindValue } from "@/components/DeclaredKind";
-import { Field, FieldGrid, Nullable } from "@/components/Field";
+import { Nullable } from "@/components/Field";
+import { KeyValue, KeyValueTable } from "@/components/KeyValue";
 import { Identifier } from "@/components/Identifier";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -27,31 +28,31 @@ export function VerifyReportView({ report }: { report: VerifyReport }) {
         <p data-testid="verify-report-statement" className="text-sm">
           {report.statement}
         </p>
-        <FieldGrid>
-          <Field label="kind" testId="verify-report-kind">
+        <KeyValueTable>
+          <KeyValue label="kind" testId="verify-report-kind">
             {report.kind}
-          </Field>
-          <Field label="source" testId="verify-report-source">
+          </KeyValue>
+          <KeyValue label="source" testId="verify-report-source">
             <Identifier value={report.source} full />
-          </Field>
-          <Field label="sources_queried" testId="verify-report-sources-queried">
+          </KeyValue>
+          <KeyValue label="sources_queried" testId="verify-report-sources-queried">
             <span className="flex flex-col gap-1">
               {report.sources_queried.map((source) => (
                 <Identifier key={source} value={source} full />
               ))}
             </span>
-          </Field>
-          <Field label="head_seq" testId="verify-report-head-seq">
+          </KeyValue>
+          <KeyValue label="head_seq" testId="verify-report-head-seq">
             {report.head_seq}
-          </Field>
-          <Field label="head_event" testId="verify-report-head-event">
+          </KeyValue>
+          <KeyValue label="head_event" testId="verify-report-head-event">
             <Identifier value={report.head_event} full />
-          </Field>
-          <Field label="fetched_at_ms" testId="verify-report-fetched-at-ms">
+          </KeyValue>
+          <KeyValue label="fetched_at_ms" testId="verify-report-fetched-at-ms">
             {report.fetched_at_ms}
-          </Field>
+          </KeyValue>
           {report.signing_principal !== undefined && (
-            <Field label="signing_principal" testId="verify-report-signing-principal">
+            <KeyValue label="signing_principal" testId="verify-report-signing-principal">
               {report.signing_principal === null ? (
                 <Identifier value={null} full />
               ) : (
@@ -62,14 +63,14 @@ export function VerifyReportView({ report }: { report: VerifyReport }) {
                   </span>
                 </span>
               )}
-            </Field>
+            </KeyValue>
           )}
           {report.kind === "trust" ? (
             <TrustFields report={report} />
           ) : (
             <LedgerFields report={report} />
           )}
-        </FieldGrid>
+        </KeyValueTable>
         {report.kind === "ledger" && (
           <DeclaredKindNote testId="verify-report-declared-kind-note" />
         )}
@@ -118,35 +119,35 @@ export function VerifyReportView({ report }: { report: VerifyReport }) {
 function TrustFields({ report }: { report: Extract<VerifyReport, { kind: "trust" }> }) {
   return (
     <>
-      <Field label="trusted" testId="verify-report-trusted">
+      <KeyValue label="trusted" testId="verify-report-trusted">
         <Badge
           variant={report.trusted ? "secondary" : "destructive"}
           data-testid="verify-report-trusted-badge"
         >
           {String(report.trusted)}
         </Badge>
-      </Field>
-      <Field label="issuer" testId="verify-report-issuer">
+      </KeyValue>
+      <KeyValue label="issuer" testId="verify-report-issuer">
         <Identifier value={report.issuer} full />
-      </Field>
-      <Field label="subject" testId="verify-report-subject">
+      </KeyValue>
+      <KeyValue label="subject" testId="verify-report-subject">
         <Identifier value={report.subject} full />
-      </Field>
-      <Field label="subject_resolution" testId="verify-report-subject-resolution">
+      </KeyValue>
+      <KeyValue label="subject_resolution" testId="verify-report-subject-resolution">
         {report.subject_resolution}
-      </Field>
-      <Field label="subject_note" testId="verify-report-subject-note">
+      </KeyValue>
+      <KeyValue label="subject_note" testId="verify-report-subject-note">
         <Nullable value={report.subject_note} />
-      </Field>
-      <Field label="attestation_event" testId="verify-report-attestation-event">
+      </KeyValue>
+      <KeyValue label="attestation_event" testId="verify-report-attestation-event">
         <Identifier value={report.attestation_event} full />
-      </Field>
-      <Field label="attestation_seq" testId="verify-report-attestation-seq">
+      </KeyValue>
+      <KeyValue label="attestation_seq" testId="verify-report-attestation-seq">
         <Nullable value={report.attestation_seq} />
-      </Field>
-      <Field label="revoked_count" testId="verify-report-revoked-count">
+      </KeyValue>
+      <KeyValue label="revoked_count" testId="verify-report-revoked-count">
         {report.revoked_count}
-      </Field>
+      </KeyValue>
     </>
   );
 }
@@ -154,27 +155,27 @@ function TrustFields({ report }: { report: Extract<VerifyReport, { kind: "trust"
 function LedgerFields({ report }: { report: Extract<VerifyReport, { kind: "ledger" }> }) {
   return (
     <>
-      <Field label="ledger_id" testId="verify-report-ledger-id">
+      <KeyValue label="ledger_id" testId="verify-report-ledger-id">
         <Identifier value={report.ledger_id} full />
-      </Field>
-      <Field label="declared_kind" testId="verify-report-declared-kind-row">
+      </KeyValue>
+      <KeyValue label="declared_kind" testId="verify-report-declared-kind-row">
         <DeclaredKindValue
           kind={report.declared_kind}
           testId="verify-report-declared-kind"
         />
-      </Field>
-      <Field label="valid" testId="verify-report-valid">
+      </KeyValue>
+      <KeyValue label="valid" testId="verify-report-valid">
         {String(report.valid)}
-      </Field>
-      <Field label="valid_to_seq" testId="verify-report-valid-to-seq">
+      </KeyValue>
+      <KeyValue label="valid_to_seq" testId="verify-report-valid-to-seq">
         {report.valid_to_seq}
-      </Field>
-      <Field label="failed_at_seq" testId="verify-report-failed-at-seq">
+      </KeyValue>
+      <KeyValue label="failed_at_seq" testId="verify-report-failed-at-seq">
         <Nullable value={report.failed_at_seq} />
-      </Field>
-      <Field label="event_count" testId="verify-report-event-count">
+      </KeyValue>
+      <KeyValue label="event_count" testId="verify-report-event-count">
         {report.event_count}
-      </Field>
+      </KeyValue>
     </>
   );
 }

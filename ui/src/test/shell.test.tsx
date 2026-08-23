@@ -114,7 +114,7 @@ describe("developer mode", () => {
     await screen.findByTestId("identity-detail");
 
     expect(screen.getByTestId("identity-detail-head-event")).toBeInTheDocument();
-    expect(screen.getByTestId(`principal-key-${ALICE}`)).toBeInTheDocument();
+    expect(screen.getByTestId("identity-detail-created-at-ms")).toBeInTheDocument();
     expect(screen.getByTestId("identity-detail-raw")).toHaveTextContent(ALICE);
     expect(screen.getByTestId("verification-detail")).toHaveTextContent("_mabel.alice.example.");
     expect(await screen.findByTestId("ledger-id")).toBeInTheDocument();
@@ -128,11 +128,11 @@ describe("developer mode", () => {
       "profile-panel",
       "verification-panel",
       "contact-panel",
-      "principals-panel",
       "witness-config",
       "trust-panel",
       "sync-push",
       "ledger-panel",
+      "identity-actions",
     ]) {
       expect(screen.getByTestId(panel)).toBeInTheDocument();
     }

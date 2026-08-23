@@ -71,9 +71,16 @@ export function IdentitySelector({ identities }: { identities: Identity[] }) {
                       testId={`identity-selector-name-${identity.identity_id}`}
                     />
                     <Link
+                      to={`/wallet/lookup/${identity.identity_id}`}
+                      data-testid={`identity-selector-lookup-${identity.identity_id}`}
+                      className="ml-auto text-sm underline"
+                    >
+                      Lookup
+                    </Link>
+                    <Link
                       to={`/wallet/identities/${identity.identity_id}`}
                       data-testid={`identity-selector-open-${identity.identity_id}`}
-                      className="ml-auto text-sm underline"
+                      className="text-sm underline"
                     >
                       Open
                     </Link>

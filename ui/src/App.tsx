@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import { useDeveloperMode } from "@/lib/preferences";
 import { GraphSyncControl } from "@/routes/wallet/GraphSyncControl";
 import { IdentityDetail } from "@/routes/wallet/IdentityDetail";
+import { LookupPage } from "@/routes/wallet/LookupPage";
 import { VerifyPage } from "@/routes/wallet/VerifyPage";
 import { WalletHome } from "@/routes/wallet/WalletHome";
 import { WitnessHome } from "@/routes/witness/WitnessHome";
@@ -12,6 +13,7 @@ import { WitnessLedgerDetail } from "@/routes/witness/WitnessLedgerDetail";
 
 const LINKS = [
   { to: "/wallet", label: "Wallet", testId: "nav-wallet" },
+  { to: "/wallet/lookup", label: "Lookup", testId: "nav-lookup" },
   { to: "/wallet/verify", label: "Verify", testId: "nav-verify" },
   { to: "/witness", label: "Witness", testId: "nav-witness" },
 ];
@@ -102,6 +104,8 @@ export function App() {
         <Route path="/" element={<Navigate to="/wallet" replace />} />
         <Route path="/wallet" element={<WalletHome />} />
         <Route path="/wallet/verify" element={<VerifyPage />} />
+        <Route path="/wallet/lookup" element={<LookupPage />} />
+        <Route path="/wallet/lookup/:identityId" element={<LookupPage />} />
         <Route path="/wallet/identities/:identityId" element={<IdentityDetail />} />
         <Route path="/witness" element={<WitnessHome />} />
         <Route path="/witness/ledgers/:ledgerId" element={<WitnessLedgerDetail />} />

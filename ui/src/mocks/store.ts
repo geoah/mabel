@@ -3,12 +3,17 @@
 // a model of the node: no keys, no crypto, no chain verification.
 
 import type {
+  AcceptRequest,
+  AcceptedResponse,
   AddTrustRequest,
+  AdmitRequest,
+  AdmittedResponse,
   AppendResponse,
   Contact,
   ContactResponse,
   CreateIdentityRequest,
   CreateIdentityResponse,
+  DeclaredKind,
   ErrorEnvelope,
   ForkListResponse,
   ForkRecord,
@@ -18,15 +23,24 @@ import type {
   Identity,
   IdentityListResponse,
   IdentityResponse,
+  InvitationEntry,
+  InviteRequest,
+  InvitedResponse,
   LedgerEntryResponse,
   LedgerEvent,
   LedgerListResponse,
   LedgerPageResponse,
   LookupHop,
   LookupResponse,
+  MembershipView,
+  PrincipalEntry,
   ProfileFields,
+  RemoveRequest,
+  RemovedResponse,
   ReplaceProfileResponse,
   ResolvedIdentity,
+  Role,
+  RootName,
   RevokeTrustRequest,
   RevokeTrustResponse,
   SetContactRequest,
@@ -126,6 +140,8 @@ interface Edge {
 interface State {
   identities: Identity[];
   events: Map<string, LedgerEvent[]>;
+  /** Every invitation a ledger issued, by ledger id, cancelled ones included. */
+  invitations: Map<string, InvitationEntry[]>;
   /** contacts/<identity_id>.json, foreign ids included, never signed or synced. */
   contacts: Map<string, Contact>;
   /** The crawl generation this home holds, null before the first sync. */
@@ -144,6 +160,7 @@ function emptyState(): State {
   return {
     identities: [],
     events: new Map(),
+    invitations: new Map(),
     contacts: new Map(),
     graph: null,
     resolved: new Map(),
@@ -176,6 +193,7 @@ export function resetStore(): void {
   state = {
     identities,
     events: new Map([[ALICE, seedEvents()]]),
+    invitations: new Map(),
     contacts,
     graph: { ...seedGraph, roots: seedGraph.roots.map((root) => ({ ...root })) },
     resolved: seedResolved(),
@@ -496,6 +514,350 @@ export function revokeTrust(
     head_event: identity.head_event,
     revoked_attestation: record.attestation_event,
     revoked_attestation_seq: record.attestation_seq,
+    event,
+  };
+}
+
+// The membership routes (ticket 021). Every artifact crosses as base64 of an
+// opaque blob; the mock makes that blob a JSON object so an invitation minted
+// here can be accepted and admitted here, which is what the demo and the
+// component tests drive. A real bundle is a length-prefixed event prefix.
+
+/** The invitation prefix the inviter hands over, carried inside the bundle. */
+interface Bundle {
+  ledger_id: string;
+  declared_kind: DeclaredKind;
+  root: RootName;
+  controllers: PrincipalEntry[];
+  invitation_event: string;
+  invitee: string;
+  invitee_key: string;
+  role: Role;
+}
+
+/** The acceptance file the invitee's node signs and hands back. */
+interface Acceptance {
+  ledger_id: string;
+  invitation_event: string;
+  invitee: string;
+  invitee_key: string;
+  role: Role;
+}
+
+function encodeArtifact(value: Bundle | Acceptance): string {
+  return btoa(JSON.stringify(value));
+}
+
+function decodeArtifact<T>(field: string, raw: unknown): T {
+  if (typeof raw !== "string" || raw === "") {
+    failWith(400, {
+      ok: false,
+      code: 2,
+      message: `${field} is required`,
+      details: { reason: "missing_field", field },
+    });
+  }
+  try {
+    return JSON.parse(atob(raw)) as T;
+  } catch {
+    failWith(400, {
+      ok: false,
+      code: 10,
+      message: `Schema error: ${field} is not base64`,
+      details: { reason: "malformed_base64", field },
+    });
+  }
+}
+
+function requireField(field: string, value: string | undefined | null): string {
+  if (value === undefined || value === null || value === "") {
+    failWith(400, {
+      ok: false,
+      code: 2,
+      message: `${field} is required`,
+      details: { reason: "missing_field", field },
+    });
+  }
+  return value;
+}
+
+/** raw when the ledger keys itself, identity when a founder keys it. */
+function rootOf(identity: Identity): RootName {
+  return identity.active_key === undefined ? "identity" : "raw";
+}
+
+function invitationsOf(ledgerId: string): InvitationEntry[] {
+  const held = state.invitations.get(ledgerId);
+  if (held) {
+    return held;
+  }
+  const created: InvitationEntry[] = [];
+  state.invitations.set(ledgerId, created);
+  return created;
+}
+
+export function memberships(identityId: string): MembershipView {
+  checkIdentityId(identityId);
+  const identity = find(identityId);
+  return {
+    ok: true,
+    ledger_id: identity.identity_id,
+    declared_kind: identity.declared_kind,
+    root: rootOf(identity),
+    head_seq: identity.head_seq,
+    head_event: identity.head_event,
+    principals: identity.principals.map((principal) => ({ ...principal })),
+    invitations: invitationsOf(identityId).map((entry) => ({ ...entry })),
+  };
+}
+
+/**
+ * A descriptor is opaque bytes the invitee exported. The mock reads the JSON
+ * one this store writes and otherwise mints an identity and a key from the
+ * bytes, so any uploaded file produces one stable invitee.
+ */
+function inviteeOf(descriptor: string): { identity: string; active_key: string } {
+  try {
+    const parsed = JSON.parse(atob(descriptor)) as Partial<{
+      identity: string;
+      active_key: string;
+    }>;
+    if (parsed.identity && parsed.active_key) {
+      return { identity: parsed.identity, active_key: parsed.active_key };
+    }
+  } catch {
+    // Not the JSON descriptor this store writes, so mint one below.
+  }
+  return { identity: mintId(descriptor), active_key: mintId(`${descriptor}:key`) };
+}
+
+export function invite(identityId: string, body: Partial<InviteRequest>): InvitedResponse {
+  const identity = find(identityId);
+  const by = requireField("by", body.by);
+  const role: Role = body.role === "member" ? "member" : "controller";
+  const descriptor = requireField(
+    "invitee_descriptor_base64",
+    body.invitee_descriptor_base64,
+  );
+  const invitee = inviteeOf(descriptor);
+  const entries = invitationsOf(identityId);
+  const open = entries.find(
+    (entry) => entry.invitee === invitee.identity && entry.status === "open",
+  );
+  if (open) {
+    failWith(409, {
+      ok: false,
+      code: 20,
+      message: `Policy error: ${invitee.identity} already has an open invitation, ${open.invitation_event}`,
+      details: { reason: "duplicate_invitation", at_seq: open.invitation_seq },
+    });
+  }
+  const event = append(identity, "membership_invitation", {
+    invitee: invitee.identity,
+    invitee_key: invitee.active_key,
+    role,
+  });
+  entries.push({
+    invitation_event: event.event_id,
+    invitation_seq: event.seq,
+    invitee: invitee.identity,
+    invitee_key: invitee.active_key,
+    role,
+    status: "open",
+  });
+  identity.open_invitation_count += 1;
+  const bundle: Bundle = {
+    ledger_id: identity.identity_id,
+    declared_kind: identity.declared_kind,
+    root: rootOf(identity),
+    controllers: identity.principals
+      .filter((principal) => principal.role === "controller")
+      .map((principal) => ({ ...principal })),
+    invitation_event: event.event_id,
+    invitee: invitee.identity,
+    invitee_key: invitee.active_key,
+    role,
+  };
+  return {
+    ok: true,
+    ledger_id: identity.identity_id,
+    by,
+    invitee: invitee.identity,
+    invitee_key: invitee.active_key,
+    role,
+    invitation_event: event.event_id,
+    invitation_seq: event.seq,
+    timestamp_ms: event.timestamp_ms,
+    head_seq: identity.head_seq,
+    head_event: identity.head_event,
+    event,
+    invitation_bundle_base64: encodeArtifact(bundle),
+    event_count: identity.event_count,
+  };
+}
+
+export function acceptInvitation(
+  identityId: string,
+  body: Partial<AcceptRequest>,
+): AcceptedResponse {
+  checkIdentityId(identityId);
+  const bundle = decodeArtifact<Bundle>(
+    "invitation_bundle_base64",
+    body.invitation_bundle_base64,
+  );
+  if (bundle.invitee !== identityId) {
+    failWith(400, {
+      ok: false,
+      code: 2,
+      message: `this invitation invites ${bundle.invitee}, not ${identityId}`,
+      details: {
+        reason: "not_the_invitee",
+        ledger_id: bundle.ledger_id,
+        invitee: bundle.invitee,
+      },
+    });
+  }
+  // A controller on a raw-rooted ledger signs as that ledger's own identity,
+  // which is the one thing a person must read before accepting.
+  const controllerOnRawRoot = bundle.root === "raw" && bundle.role === "controller";
+  const acceptance: Acceptance = {
+    ledger_id: bundle.ledger_id,
+    invitation_event: bundle.invitation_event,
+    invitee: bundle.invitee,
+    invitee_key: bundle.invitee_key,
+    role: bundle.role,
+  };
+  return {
+    ok: true,
+    ledger_id: bundle.ledger_id,
+    declared_kind: bundle.declared_kind,
+    root: bundle.root,
+    controllers: bundle.controllers,
+    invitation_event: bundle.invitation_event,
+    invitee: bundle.invitee,
+    invitee_key: bundle.invitee_key,
+    role: bundle.role,
+    controller_on_raw_root: controllerOnRawRoot,
+    warning: controllerOnRawRoot
+      ? `accepting a controller role on a raw-rooted ledger means signing as ${bundle.ledger_id}: every event you append to it is that identity's own event`
+      : null,
+    acceptance_base64: encodeArtifact(acceptance),
+  };
+}
+
+export function admit(identityId: string, body: Partial<AdmitRequest>): AdmittedResponse {
+  const identity = find(identityId);
+  const by = requireField("by", body.by);
+  const acceptance = decodeArtifact<Acceptance>("acceptance_base64", body.acceptance_base64);
+  const entry = invitationsOf(identityId).find(
+    (candidate) => candidate.invitation_event === acceptance.invitation_event,
+  );
+  if (!entry) {
+    failWith(409, {
+      ok: false,
+      code: 20,
+      message: `Policy error: Acceptance.invitation_event ${acceptance.invitation_event} names no invitation in this ledger`,
+      details: { reason: "unknown_invitation", at_seq: identity.head_seq + 1 },
+    });
+  }
+  if (entry.status !== "open") {
+    failWith(409, {
+      ok: false,
+      code: 50,
+      message: `Replay error: this acceptance was already admitted at seq ${entry.invitation_seq} of ${identityId}`,
+      details: {
+        reason: "acceptance_already_used",
+        ledger_id: identityId,
+        invitation_event: entry.invitation_event,
+        at_seq: entry.invitation_seq,
+      },
+    });
+  }
+  const event = append(identity, "membership_acceptance", {
+    acceptance: mintId(`${entry.invitation_event}:acceptance`),
+    signature: mintId(`${entry.invitation_event}:signature`),
+  });
+  entry.status = "accepted";
+  identity.open_invitation_count = Math.max(0, identity.open_invitation_count - 1);
+  identity.principals.push({
+    identity: entry.invitee,
+    active_key: entry.invitee_key,
+    role: entry.role,
+    is_root: false,
+  });
+  return {
+    ok: true,
+    ledger_id: identity.identity_id,
+    by,
+    invitee: entry.invitee,
+    invitee_key: entry.invitee_key,
+    role: entry.role,
+    invitation_event: entry.invitation_event,
+    acceptance_event: event.event_id,
+    acceptance_seq: event.seq,
+    timestamp_ms: event.timestamp_ms,
+    head_seq: identity.head_seq,
+    head_event: identity.head_event,
+    event,
+  };
+}
+
+export function removePrincipal(
+  identityId: string,
+  body: Partial<RemoveRequest>,
+): RemovedResponse {
+  const identity = find(identityId);
+  const by = requireField("by", body.by);
+  const target = requireField("target", body.target);
+  const principal = identity.principals.find((entry) => entry.identity === target);
+  if (principal?.is_root && rootOf(identity) === "raw") {
+    failWith(409, {
+      ok: false,
+      code: 20,
+      message: `Policy error: ${target} is this ledger's raw root and is not removable`,
+      details: { reason: "root_not_removable", at_seq: identity.head_seq + 1 },
+    });
+  }
+  const controllers = identity.principals.filter((entry) => entry.role === "controller");
+  if (principal?.role === "controller" && controllers.length === 1) {
+    failWith(409, {
+      ok: false,
+      code: 20,
+      message: `Policy error: removing ${target} would leave this ledger with no controller`,
+      details: { reason: "last_controller", at_seq: identity.head_seq + 1 },
+    });
+  }
+  const open = invitationsOf(identityId).find(
+    (entry) => entry.invitee === target && entry.status === "open",
+  );
+  if (!principal && !open) {
+    failWith(409, {
+      ok: false,
+      code: 20,
+      message: `Policy error: ${target} is neither a principal nor an open invitation of ${identityId}`,
+      details: { reason: "not_a_principal", ledger_id: identityId, target },
+    });
+  }
+  const event = append(identity, "membership_removal", { target });
+  if (principal) {
+    identity.principals = identity.principals.filter((entry) => entry.identity !== target);
+  }
+  if (open) {
+    open.status = "cancelled";
+    identity.open_invitation_count = Math.max(0, identity.open_invitation_count - 1);
+  }
+  return {
+    ok: true,
+    ledger_id: identity.identity_id,
+    by,
+    target,
+    principal_removed: principal !== undefined,
+    invitation_cancelled: open?.invitation_event ?? null,
+    removal_event: event.event_id,
+    removal_seq: event.seq,
+    timestamp_ms: event.timestamp_ms,
+    head_seq: identity.head_seq,
+    head_event: identity.head_event,
     event,
   };
 }

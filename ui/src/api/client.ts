@@ -1,5 +1,9 @@
 import type {
+  AcceptRequest,
+  AcceptedResponse,
   AddTrustRequest,
+  AdmitRequest,
+  AdmittedResponse,
   AppendResponse,
   ContactResponse,
   CreateIdentityRequest,
@@ -11,10 +15,15 @@ import type {
   GraphSyncResponse,
   IdentityListResponse,
   IdentityResponse,
+  InviteRequest,
+  InvitedResponse,
   LedgerEntryResponse,
   LedgerListResponse,
   LedgerPageResponse,
   LookupResponse,
+  MembershipView,
+  RemoveRequest,
+  RemovedResponse,
   ReplaceProfileRequest,
   ReplaceProfileResponse,
   RevokeTrustRequest,
@@ -218,6 +227,41 @@ export function setContact(
   body: SetContactRequest,
 ): Promise<ContactResponse> {
   return put<ContactResponse>(`/identities/${identityId}/contact`, body);
+}
+
+// The membership routes (ticket 021). Every artifact crosses as base64 of the
+// same bytes the CLI writes, and the node does the signing: the browser holds
+// no keys (proposal 001 section 10).
+
+export function getMemberships(identityId: string): Promise<MembershipView> {
+  return get<MembershipView>(`/identities/${identityId}/memberships`);
+}
+
+export function invite(identityId: string, body: InviteRequest): Promise<InvitedResponse> {
+  return post<InvitedResponse>(`/identities/${identityId}/memberships/invitations`, body);
+}
+
+/**
+ * Called on the invitee's own ledger: the node signs the acceptance and answers
+ * with the surface it signed under, so a person sees the ledger, its
+ * controllers and the raw-root warning before the file leaves the wallet.
+ */
+export function acceptInvitation(
+  identityId: string,
+  body: AcceptRequest,
+): Promise<AcceptedResponse> {
+  return post<AcceptedResponse>(`/identities/${identityId}/memberships/acceptances`, body);
+}
+
+export function admit(identityId: string, body: AdmitRequest): Promise<AdmittedResponse> {
+  return post<AdmittedResponse>(`/identities/${identityId}/memberships/admissions`, body);
+}
+
+export function removePrincipal(
+  identityId: string,
+  body: RemoveRequest,
+): Promise<RemovedResponse> {
+  return post<RemovedResponse>(`/identities/${identityId}/memberships/removals`, body);
 }
 
 /**
