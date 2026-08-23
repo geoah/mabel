@@ -3,6 +3,11 @@
 - Date: 2026-08-23
 - Status: accepted (2026-08-23, after dual review by Codex and an independent
   Opus reviewer; 21 arbitrated revision items applied)
+- Superseded in part by [002-unified-ledger.md](002-unified-ledger.md)
+  (2026-08-24): one ledger type with a principal set replaces the person and
+  organization ledger kinds. Affected here: 3.3 kind-as-discriminator, 3.4
+  payload table and Org* messages, 3.6 seq-0 seeding, 9 org commands, 10
+  /orgs routes. Proposal 002 section 10 lists every delta.
 - Decisions affected: implements 001, 003, 005, 006, 007, 008; amends 002,
   interprets 004
 

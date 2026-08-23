@@ -10,5 +10,5 @@ never move.
   (ledger, keys, Iroh sync, crates, storage, CLI, UIs, testing). Accepted.
 - [002-unified-ledger.md](002-unified-ledger.md): replaces the person and
   organization ledger types with one ledger whose folded state is a principal
-  set, rooted in either a raw key or one founding identity. Proposed;
+  set, rooted in either a raw key or one founding identity. Accepted;
   supersedes parts of 001 sections 3.1 to 3.6, 9 and 10.
