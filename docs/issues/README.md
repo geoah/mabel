@@ -53,6 +53,7 @@ milestone 10 and are deliberately not ticketed here.
   013.
 - [016-cli-integration-and-fresh-verifier.md](016-cli-integration-and-fresh-verifier.md):
   cross-node CLI suite and the fresh-verifier test. Depends on 010, 011, 018.
+  Done.
 - [017-demo-script.md](017-demo-script.md): CLI demo over the compose
   topology. Depends on 015.
 - [018-cli-membership-commands-and-artifacts.md](018-cli-membership-commands-and-artifacts.md):

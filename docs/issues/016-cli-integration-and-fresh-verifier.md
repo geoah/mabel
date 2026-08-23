@@ -1,6 +1,6 @@
 # 016: CLI integration tests and the fresh-verifier test
 
-- Status: open
+- Status: done
 - Depends on: 010, 011, 018
 
 ## Goal
@@ -48,3 +48,23 @@ deliberately not ticketed here.
 - [ ] Wire the append discipline (WalletSync::ensure_fresh) into the CLI
       appending commands (trust add/revoke, witness add, membership) for
       ledgers that name witnesses, with a test (ticket 011 deviation 2).
+
+## Deviations
+
+1. A fresh home knows no witness for a ledger it has never held, so
+   `verify ledger` and `verify trust` now read the `--peer` ticket endpoints as
+   the sources to query, in the one case that previously exited 30 with
+   `no_source_available`. Tickets stay address hints and never authorization:
+   every candidate is still folded from nothing and its ledger id is still
+   required to equal the one that was asked for.
+2. A fast-forward is silent. `ensure_fresh` returns `Freshness`, and the
+   appending commands ignore it rather than adding a field to a frozen
+   `contracts/cli/` document or a line to their text output. The new head
+   sequence in the answer is the observable evidence.
+3. A witness refuses the inception of an identity-rooted ledger:
+   `Push` wraps a `SignedEvent` two levels down and an identity root already
+   reaches depth 7 of the 8 `mabel_core::validate::MAX_NESTING` allows, so the
+   witness answers `MALFORMED` at seq 0. The suite verifies the
+   identity-rooted attestation from the home that holds it instead. The fix
+   belongs to `mabel-net`, which should scan a nested `SignedEvent` from depth
+   0 rather than from its position in the request frame.
