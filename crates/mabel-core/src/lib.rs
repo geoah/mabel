@@ -5,11 +5,16 @@
 
 pub mod digest;
 pub mod encoding;
+pub mod fold;
 pub mod id;
 pub mod sign;
 pub mod validate;
 
 pub use digest::{accept_input, event_id, reserve_commit, sign_input};
+pub use fold::{
+    Attestation, Head, Invite, InviteStatus, LedgerKind, LedgerState, OrgState, PersonState,
+    Principal, Reason, Violation, fold,
+};
 pub use id::{EventId, IdentityId, LedgerId, ParseIdError};
 pub use mabel_proto::v0 as proto;
 pub use sign::{

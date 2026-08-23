@@ -1,6 +1,6 @@
 # 004: person ledger fold and the verification pipeline
 
-- Status: open
+- Status: done
 - Depends on: 003
 
 ## Goal
