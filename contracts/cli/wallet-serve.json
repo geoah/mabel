@@ -1,0 +1,19 @@
+{
+  "command": "mabel wallet serve --http 127.0.0.1:9080 --iroh-port 9071 --json",
+  "cases": [
+    {
+      "case": "served-until-ctrl-c",
+      "command": "mabel wallet serve --http 127.0.0.1:9080 --iroh-port 9071 --json",
+      "exit_code": 0,
+      "document": {
+        "ok": true,
+        "endpoint_id": "fd2ijzgxe3qk64jeqbgwjgqcg2cnmyyrfwghb6oar2wbg5ddxvla",
+        "http_bind": "127.0.0.1:9080",
+        "iroh_bind": [
+          "0.0.0.0:9071"
+        ],
+        "identity_count": 2
+      }
+    }
+  ]
+}

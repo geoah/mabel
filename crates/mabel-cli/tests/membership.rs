@@ -2,10 +2,9 @@
 //!
 //! Two temp homes stand for two machines: the inviter holds one identity, the
 //! invitee another, and the only thing that crosses between them is a file.
-//! No fixture in `contracts/cli/` covers this surface yet
-//! (`contracts/http/PENDING-membership.md`), so the `--json` assertions name
-//! the keys of each document here, and ticket 021 fixtures the HTTP
-//! counterpart against these names.
+//! The `--json` assertions name the keys of each document here; the frozen
+//! copies are `contracts/cli/membership-*.json` and their HTTP counterparts,
+//! indexed in `contracts/README.md`.
 //!
 //! The exit codes this ticket owns are 0, 2, 10, 20 and 50.
 

@@ -1,0 +1,25 @@
+{
+  "command": "mabel membership admit --ledger alice --by alice bob.acceptance --json",
+  "cases": [
+    {
+      "case": "admitted",
+      "command": "mabel membership admit --ledger alice --by alice bob.acceptance --json",
+      "exit_code": 0,
+      "document": {
+        "ok": true,
+        "ledger_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+        "by": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+        "invitee": "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq",
+        "invitee_key": "mpvsw45ffkwexrnkxubkqqwgdg5mwopl5qoeaimfyw27cm42ttiq",
+        "role": "controller",
+        "invitation_event": "zx7msbfj3lbmwq3d2aybjddujknuwsyxdqczvxgs55kvn56iwo7q",
+        "acceptance_event": "vq5lohqdyrkxvx56hg3l3q5kvpq2hjn4i6dnhmedhi5kij7nfobq",
+        "acceptance_seq": 5,
+        "timestamp_ms": 1700000660000,
+        "head_seq": 5,
+        "head_event": "vq5lohqdyrkxvx56hg3l3q5kvpq2hjn4i6dnhmedhi5kij7nfobq",
+        "path": "bob.acceptance"
+      }
+    }
+  ]
+}

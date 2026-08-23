@@ -54,6 +54,6 @@ covers the membership fold.
       byte-identical files.
 - [x] `mabel-proto` contains only `build.rs` and re-exports, and `cargo tree -p
       mabel-core` lists neither `tokio` nor `iroh` proper.
-- [ ] Root `README.md` contains both sentences verbatim.
+- [x] Root `README.md` contains both sentences verbatim.
 - [x] tests: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`
       and `cargo test --workspace` all pass.

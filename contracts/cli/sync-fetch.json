@@ -1,0 +1,35 @@
+{
+  "command": "mabel sync fetch sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq --from zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq --json",
+  "cases": [
+    {
+      "case": "whole-ledger-stored",
+      "command": "mabel sync fetch sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq --from zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq --json",
+      "exit_code": 0,
+      "document": {
+        "ok": true,
+        "ledger_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+        "source": "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq",
+        "event_count": 4,
+        "stored": 4,
+        "head_seq": 3,
+        "head_event": "ewckxhi7cixugkyrql6eqnncbgxqtnrho3rpsp6plhhh7yr6rosq",
+        "fetched_at_ms": 1700000500000
+      }
+    },
+    {
+      "case": "already-current",
+      "command": "mabel sync fetch sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq --from zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq --json",
+      "exit_code": 0,
+      "document": {
+        "ok": true,
+        "ledger_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+        "source": "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq",
+        "event_count": 4,
+        "stored": 0,
+        "head_seq": 3,
+        "head_event": "ewckxhi7cixugkyrql6eqnncbgxqtnrho3rpsp6plhhh7yr6rosq",
+        "fetched_at_ms": 1700000560000
+      }
+    }
+  ]
+}

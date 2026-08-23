@@ -1,0 +1,20 @@
+{
+  "command": "mabel witness run --http 127.0.0.1:9080 --iroh-port 9070 --json",
+  "cases": [
+    {
+      "case": "served-until-ctrl-c",
+      "command": "mabel witness run --http 127.0.0.1:9080 --iroh-port 9070 --json",
+      "exit_code": 0,
+      "document": {
+        "ok": true,
+        "endpoint_id": "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq",
+        "http_bind": "127.0.0.1:9080",
+        "iroh_bind": [
+          "0.0.0.0:9070"
+        ],
+        "ledger_count": 2,
+        "fork_count": 1
+      }
+    }
+  ]
+}

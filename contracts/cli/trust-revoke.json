@@ -1,0 +1,23 @@
+{
+  "command": "mabel trust revoke --issuer alice --attestation 65cssg5tnr3gyxe2rwhsgqc3nct3pwg2bqxr2oxpelejuoorlsnq --json",
+  "cases": [
+    {
+      "case": "revoked",
+      "command": "mabel trust revoke --issuer alice --attestation 65cssg5tnr3gyxe2rwhsgqc3nct3pwg2bqxr2oxpelejuoorlsnq --json",
+      "exit_code": 0,
+      "document": {
+        "ok": true,
+        "issuer": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+        "subject": "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq",
+        "attestation_event": "65cssg5tnr3gyxe2rwhsgqc3nct3pwg2bqxr2oxpelejuoorlsnq",
+        "attestation_seq": 2,
+        "revocation_event": "ewckxhi7cixugkyrql6eqnncbgxqtnrho3rpsp6plhhh7yr6rosq",
+        "revocation_seq": 3,
+        "timestamp_ms": 1700000180000,
+        "head_seq": 3,
+        "head_event": "ewckxhi7cixugkyrql6eqnncbgxqtnrho3rpsp6plhhh7yr6rosq",
+        "pushed": false
+      }
+    }
+  ]
+}

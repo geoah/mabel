@@ -1,0 +1,26 @@
+{
+  "command": "mabel membership invite --ledger alice --by alice --invitee bob.descriptor --role controller --out bob.invitation --json",
+  "cases": [
+    {
+      "case": "controller-invited",
+      "command": "mabel membership invite --ledger alice --by alice --invitee bob.descriptor --role controller --out bob.invitation --json",
+      "exit_code": 0,
+      "document": {
+        "ok": true,
+        "ledger_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+        "by": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+        "invitee": "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq",
+        "invitee_key": "mpvsw45ffkwexrnkxubkqqwgdg5mwopl5qoeaimfyw27cm42ttiq",
+        "role": "controller",
+        "invitation_event": "zx7msbfj3lbmwq3d2aybjddujknuwsyxdqczvxgs55kvn56iwo7q",
+        "invitation_seq": 4,
+        "timestamp_ms": 1700000600000,
+        "head_seq": 4,
+        "head_event": "zx7msbfj3lbmwq3d2aybjddujknuwsyxdqczvxgs55kvn56iwo7q",
+        "path": "bob.invitation",
+        "bytes": 1323,
+        "event_count": 5
+      }
+    }
+  ]
+}

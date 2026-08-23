@@ -21,9 +21,11 @@ export interface ErrorDetails {
 }
 
 /**
- * payload_kind is the oneof tag name from ledger.proto in snake_case. The frozen
- * set is person_inception, witness_config, trust_attestation, trust_revocation;
- * membership and inception names wait on proposal 002, so this stays a string.
+ * payload_kind is the oneof tag name from ledger.proto in snake_case. The seven
+ * frozen values are listed in contracts/README.md, "Event document": inception,
+ * witness_config, trust_attestation, trust_revocation, membership_invitation,
+ * membership_acceptance and membership_removal. It stays a string so a node
+ * that mints a value this build does not know still renders.
  */
 export type PayloadKind = string;
 
@@ -49,10 +51,25 @@ export interface TrustRecord {
   revocation_seq: number | null;
 }
 
+/** What a principal may do (proposal 002 section 1). */
+export type Role = "member" | "controller";
+
+/**
+ * One entry of Identity.principals, contracts/README.md, "Identity document".
+ * is_root is true for the principal the inception seeded.
+ */
+export interface PrincipalEntry {
+  identity: string;
+  active_key: string;
+  role: Role;
+  is_root: boolean;
+}
+
 /**
  * contracts/README.md, "Identity document". active_key and reserve_commit are
- * present only on an identity with a raw root (a person in proposal 001 terms).
- * The membership view is not frozen: no principals field yet, ticket 019.
+ * the root-dependent exception to the nullability rule: a raw-rooted identity
+ * carries both, an identity-rooted one holds no key of its own and omits them.
+ * principals is the folded principal set, on every ledger of either root.
  */
 export interface Identity {
   identity_id: string;
@@ -64,6 +81,8 @@ export interface Identity {
   event_count: number;
   witnesses: string[];
   trust: TrustRecord[];
+  principals: PrincipalEntry[];
+  open_invitation_count: number;
   active_key?: string;
   reserve_commit?: string;
 }

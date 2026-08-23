@@ -137,6 +137,14 @@ function syntheticEventId(tag: string, marker: string): string {
 const POSITION_MARKERS = "abcdefghijklmnop";
 const AUTHOR_KEY = seedLedgerEvents.events[0].author_key;
 
+/** The frozen seq-0 payload, so a synthetic inception cannot drift from it. */
+const FROZEN_INCEPTION = seedLedgerEvents.events[0].payload as {
+  nonce: string;
+  root: { raw_root: { active_key: string; reserve_commit: string } };
+};
+const INCEPTION_NONCE = FROZEN_INCEPTION.nonce;
+const RESERVE_COMMIT = FROZEN_INCEPTION.root.raw_root.reserve_commit;
+
 /**
  * A chain shaped like the frozen one for a ledger the fixtures do not carry:
  * seq 0 is the inception whose event id is the ledger id, and the last event id
@@ -159,20 +167,17 @@ function syntheticEvents(entry: LedgerSummary): LedgerEvent[] {
       prev: seq === 0 ? null : events[seq - 1].event_id,
       timestamp_ms: entry.first_seen_ms + seq * 60000,
       author_key: AUTHOR_KEY,
-      // person_inception is the only frozen inception payload_kind; the identity
-      // root spelling waits on proposal 002, so a non-person root is labelled
-      // inception and the UI prints whatever string arrives.
+      // One inception payload_kind for both roots (contracts/README.md, "Event
+      // document"); these synthetic ledgers all carry a raw root.
       payload_kind:
-        seq === 0
-          ? entry.declared_kind === "person"
-            ? "person_inception"
-            : "inception"
-          : seq === 1
-            ? "witness_config"
-            : "trust_attestation",
+        seq === 0 ? "inception" : seq === 1 ? "witness_config" : "trust_attestation",
       payload:
         seq === 0
-          ? { declared_kind: entry.declared_kind }
+          ? {
+              declared_kind: entry.declared_kind,
+              nonce: INCEPTION_NONCE,
+              root: { raw_root: { active_key: AUTHOR_KEY, reserve_commit: RESERVE_COMMIT } },
+            }
           : seq === 1
             ? { witnesses: [witnessLedgerWitnesses[0]] }
             : { subject: ACME },

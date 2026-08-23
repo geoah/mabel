@@ -315,3 +315,19 @@ whose root key leaks cannot remove it in this POC and has no recourse but a new
 identity until rotation lands. Deferred: nesting beyond depth 1, thresholds,
 capabilities narrower than `CONTROLLER`, and rotation, each with its slot named
 in section 9.
+
+## Clarifications
+
+Added 2026-08-25 after a security review of the fold; these rulings are part of
+the accepted proposal.
+
+- A role change answers to the removal rules of section 4. An acceptance that
+  lowers a `CONTROLLER` to `MEMBER` must leave at least one `CONTROLLER`,
+  counted over distinct keys, and the raw root is never lowered below
+  `CONTROLLER`. Without the rule the sole founder of an identity-rooted ledger
+  can invite itself as a `MEMBER` and admit that invitation, leaving a ledger
+  nobody may append to. The fold rejects the acceptance, not the invitation,
+  with the codes `demotes_last_controller` and `root_not_demotable`; the
+  removal codes `last_controller` and `root_not_removable` keep their current
+  meaning. Rejection vector:
+  `test-vectors/rejections/68-acceptance-demoting-the-last-controller.json`.

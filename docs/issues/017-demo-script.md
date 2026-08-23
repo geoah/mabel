@@ -33,3 +33,13 @@ deliberately not ticketed here.
       result naming its source and head sequence (sections 3.7 and 6).
 - [ ] tests: a CI-callable invocation of the script returns 0 and its output
       contains the revocation and the witness ledger list.
+
+## Deviations
+
+1. Phase 11 lists what the witness holds over the HTTP debug API
+   (`curl http://127.0.0.1:9080/api/ledgers | jq`), not the CLI: the CLI has no
+   `witness list` command, deliberately, because enumerating one witness's
+   ledgers is a diagnostic and not a product surface (proposal 001 section 6,
+   flag D). Phases 1 to 10 use only the CLI surface of section 9 and the
+   seeded ticket, so criterion 2 holds for the story and fails only for the
+   listing.

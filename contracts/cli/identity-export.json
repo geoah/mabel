@@ -1,0 +1,20 @@
+{
+  "command": "mabel identity export bob --out bob.descriptor --json",
+  "cases": [
+    {
+      "case": "raw-rooted-descriptor",
+      "command": "mabel identity export bob --out bob.descriptor --json",
+      "exit_code": 0,
+      "document": {
+        "ok": true,
+        "identity_id": "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq",
+        "declared_kind": "person",
+        "root": "raw",
+        "active_key": "mpvsw45ffkwexrnkxubkqqwgdg5mwopl5qoeaimfyw27cm42ttiq",
+        "witnesses": [],
+        "path": "bob.descriptor",
+        "bytes": 205
+      }
+    }
+  ]
+}

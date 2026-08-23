@@ -1,0 +1,38 @@
+{
+  "command": "mabel trust list --issuer alice --json",
+  "cases": [
+    {
+      "case": "one-revoked-attestation",
+      "command": "mabel trust list --issuer alice --json",
+      "exit_code": 0,
+      "document": {
+        "ok": true,
+        "issuer": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+        "head_seq": 3,
+        "head_event": "ewckxhi7cixugkyrql6eqnncbgxqtnrho3rpsp6plhhh7yr6rosq",
+        "trust": [
+          {
+            "attestation_event": "65cssg5tnr3gyxe2rwhsgqc3nct3pwg2bqxr2oxpelejuoorlsnq",
+            "attestation_seq": 2,
+            "subject": "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq",
+            "revoked": true,
+            "revocation_event": "ewckxhi7cixugkyrql6eqnncbgxqtnrho3rpsp6plhhh7yr6rosq",
+            "revocation_seq": 3
+          }
+        ]
+      }
+    },
+    {
+      "case": "no-attestations",
+      "command": "mabel trust list --issuer acme --json",
+      "exit_code": 0,
+      "document": {
+        "ok": true,
+        "issuer": "2okqwhextnpkpmydrgrkk563vbehcklffwfzidxlh5dslawjmn6a",
+        "head_seq": 3,
+        "head_event": "zouk2anjwjry3k7lwi47yc3uauzsva25xmobabgx65xbd2mg63va",
+        "trust": []
+      }
+    }
+  ]
+}

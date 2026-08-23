@@ -1,0 +1,73 @@
+{
+  "command": "mabel membership list --ledger alice --json",
+  "cases": [
+    {
+      "case": "one-open-invitation",
+      "command": "mabel membership list --ledger alice --json",
+      "exit_code": 0,
+      "document": {
+        "ok": true,
+        "ledger_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+        "declared_kind": "person",
+        "root": "raw",
+        "head_seq": 4,
+        "head_event": "zx7msbfj3lbmwq3d2aybjddujknuwsyxdqczvxgs55kvn56iwo7q",
+        "principals": [
+          {
+            "identity": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+            "active_key": "2bflemtufo2kwoqtnc6umfpe43icesvxdiawxl4fecrtfslxq43q",
+            "role": "controller",
+            "is_root": true
+          }
+        ],
+        "invitations": [
+          {
+            "invitation_event": "zx7msbfj3lbmwq3d2aybjddujknuwsyxdqczvxgs55kvn56iwo7q",
+            "invitation_seq": 4,
+            "invitee": "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq",
+            "invitee_key": "mpvsw45ffkwexrnkxubkqqwgdg5mwopl5qoeaimfyw27cm42ttiq",
+            "role": "controller",
+            "status": "open"
+          }
+        ]
+      }
+    },
+    {
+      "case": "after-the-admission",
+      "command": "mabel membership list --ledger alice --json",
+      "exit_code": 0,
+      "document": {
+        "ok": true,
+        "ledger_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+        "declared_kind": "person",
+        "root": "raw",
+        "head_seq": 5,
+        "head_event": "vq5lohqdyrkxvx56hg3l3q5kvpq2hjn4i6dnhmedhi5kij7nfobq",
+        "principals": [
+          {
+            "identity": "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq",
+            "active_key": "mpvsw45ffkwexrnkxubkqqwgdg5mwopl5qoeaimfyw27cm42ttiq",
+            "role": "controller",
+            "is_root": false
+          },
+          {
+            "identity": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+            "active_key": "2bflemtufo2kwoqtnc6umfpe43icesvxdiawxl4fecrtfslxq43q",
+            "role": "controller",
+            "is_root": true
+          }
+        ],
+        "invitations": [
+          {
+            "invitation_event": "zx7msbfj3lbmwq3d2aybjddujknuwsyxdqczvxgs55kvn56iwo7q",
+            "invitation_seq": 4,
+            "invitee": "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq",
+            "invitee_key": "mpvsw45ffkwexrnkxubkqqwgdg5mwopl5qoeaimfyw27cm42ttiq",
+            "role": "controller",
+            "status": "accepted"
+          }
+        ]
+      }
+    }
+  ]
+}

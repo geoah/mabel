@@ -1,0 +1,32 @@
+{
+  "command": "mabel membership accept alice.invitation --as alice --out alice.acceptance --yes --json",
+  "cases": [
+    {
+      "case": "controller-on-a-raw-root",
+      "command": "mabel membership accept alice.invitation --as alice --out alice.acceptance --yes --json",
+      "exit_code": 0,
+      "document": {
+        "ok": true,
+        "ledger_id": "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq",
+        "declared_kind": "person",
+        "root": "raw",
+        "controllers": [
+          {
+            "identity": "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq",
+            "active_key": "mpvsw45ffkwexrnkxubkqqwgdg5mwopl5qoeaimfyw27cm42ttiq",
+            "role": "controller",
+            "is_root": true
+          }
+        ],
+        "invitation_event": "rqz2wivauyw2u3edzs43m5fimsd2yf7cxmno2l6psyqtpurhdhha",
+        "invitee": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+        "invitee_key": "2bflemtufo2kwoqtnc6umfpe43icesvxdiawxl4fecrtfslxq43q",
+        "role": "controller",
+        "controller_on_raw_root": true,
+        "warning": "accepting a controller role on a raw-rooted ledger means signing as jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq: every event you append to it is that identity's own event",
+        "path": "alice.acceptance",
+        "bytes": 205
+      }
+    }
+  ]
+}

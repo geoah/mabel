@@ -41,11 +41,29 @@ do not settle, the decision is listed under "Decisions taken here".
 | `http/witness-get-forks.json` | `GET /api/forks` |
 | `cli/identity-create.json` | `mabel identity create --json` |
 | `cli/identity-list.json` | `mabel identity list --json` |
+| `cli/identity-show.json` | `mabel identity show --json` |
+| `cli/identity-export.json` | `mabel identity export --json` |
 | `cli/trust-add.json` | `mabel trust add --json` |
+| `cli/trust-revoke.json` | `mabel trust revoke --json` |
+| `cli/trust-list.json` | `mabel trust list --json` |
+| `cli/witness-add.json` | `mabel witness add --json` |
+| `cli/witness-run.json` | `mabel witness run --json` |
+| `cli/membership-invite.json` | `mabel membership invite --json` |
+| `cli/membership-accept.json` | `mabel membership accept --json` |
+| `cli/membership-admit.json` | `mabel membership admit --json` |
+| `cli/membership-remove.json` | `mabel membership remove --json` |
+| `cli/membership-list.json` | `mabel membership list --json` |
 | `cli/sync-push.json` | `mabel sync push --json` |
+| `cli/sync-fetch.json` | `mabel sync fetch --json` |
+| `cli/node-id.json` | `mabel node id --json` |
+| `cli/wallet-serve.json` | `mabel wallet serve --json` |
 | `cli/verify-trust.json` | `mabel verify trust --json` |
 | `cli/verify-ledger.json` | `mabel verify ledger --json` |
 | `cli/errors.json` | the error envelope, one case per exit code and layer prefix |
+
+`mabel identity rotate` has no fixture: it exits 70 with the error envelope
+`cli/errors.json` already pins. `wallet serve` and `witness run` print their
+document when the process stops, so their one case is the shutdown document.
 
 Each `http/*.json` holds `route`, `method`, `request` (an example body, or
 `null` for GET), `response` (an example 200 body) and `errors` (examples of
@@ -99,6 +117,12 @@ answers code 70.
 absent: `prev` and `ledger_id` are `null` in a seq-0 event document,
 `attestation_event` is `null` when `trusted` is false. Arrays are empty, not
 null. Consumers can rely on every key in these fixtures existing.
+
+One exception: fields the document defines as root-dependent are omitted when
+the root does not carry them: `active_key`, `reserve_commit`. An
+identity-rooted ledger holds no key of its own, so its identity document has
+no key field to null out, and a consumer reads their absence as the root kind
+(`wallet-get-identities.json`, the first entry).
 
 **Ordering.** `GET /api/identities` and `GET /api/ledgers` sort by ascending
 id, matching the `List` request in `sync.proto`, so paging is stable. Events

@@ -163,7 +163,7 @@ function append(
     ledger_id: identity.identity_id,
     prev: identity.head_event,
     timestamp_ms: Date.now(),
-    author_key: identity.active_key ?? identity.head_event,
+    author_key: identity.active_key ?? identity.principals[0].active_key,
     payload_kind: payloadKind,
     payload,
   };
@@ -219,6 +219,11 @@ export function createIdentity(body: Partial<CreateIdentityRequest>): CreateIden
   }
   const identityId = mintId(body.alias);
   const rawRoot = !body.founder;
+  const activeKey = String(createdIdentity.identity.active_key);
+  const founder = rawRoot ? identityId : String(body.founder);
+  // A raw root signs with its own new key; an identity root signs with the
+  // founder's, which this home already holds.
+  const founderKey = rawRoot ? activeKey : String(find(founder).active_key);
   const identity: Identity = {
     identity_id: identityId,
     declared_kind: body.declared_kind,
@@ -229,17 +234,22 @@ export function createIdentity(body: Partial<CreateIdentityRequest>): CreateIden
     event_count: 1,
     witnesses: [],
     trust: [],
+    // The inception seeds exactly one principal: the ledger itself on a raw
+    // root, the founding identity on an identity root (proposal 002 section 1).
+    principals: [
+      { identity: founder, active_key: founderKey, role: "controller", is_root: true },
+    ],
+    open_invitation_count: 0,
     ...(rawRoot
       ? {
-          active_key: createdIdentity.identity.active_key,
+          active_key: activeKey,
           reserve_commit: createdIdentity.identity.reserve_commit,
         }
       : {}),
   };
   state.identities.push(identity);
-  // person_inception is the only frozen inception payload_kind. The identity-root
-  // spelling waits on proposal 002, so the mock labels it and the UI just prints
-  // whatever string arrives.
+  // One inception payload_kind for both roots, with the root oneof under `root`
+  // (contracts/README.md, "Event document").
   state.events.set(identityId, [
     {
       event_id: identityId,
@@ -247,16 +257,28 @@ export function createIdentity(body: Partial<CreateIdentityRequest>): CreateIden
       ledger_id: null,
       prev: null,
       timestamp_ms: identity.created_at_ms,
-      author_key: identity.active_key ?? identityId,
-      payload_kind: rawRoot ? "person_inception" : "inception",
-      payload: rawRoot
-        ? {
-            declared_kind: identity.declared_kind,
-            active_key: identity.active_key,
-            reserve_commit: identity.reserve_commit,
-            nonce: "ugq2dinbugq2dinbugq2dinbue",
-          }
-        : { declared_kind: identity.declared_kind, founder: body.founder },
+      author_key: founderKey,
+      payload_kind: "inception",
+      payload: {
+        declared_kind: identity.declared_kind,
+        nonce: "ugq2dinbugq2dinbugq2dinbue",
+        root: rawRoot
+          ? {
+              raw_root: {
+                active_key: identity.active_key,
+                reserve_commit: identity.reserve_commit,
+              },
+            }
+          : {
+              identity_root: {
+                founder,
+                founder_key: founderKey,
+                // The founder's inception event, embedded verbatim and rendered
+                // as base32 of those bytes, not as a decoded message.
+                founder_inception: `${mintId(founder)}${mintId(founder)}`.slice(0, 63),
+              },
+            },
+      },
     },
   ]);
   return { ok: true, identity, inception_event: identityId };

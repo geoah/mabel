@@ -36,5 +36,23 @@ run in parallel rather than in a chain.
 - [x] One error case per exit code, each with a `details.reason`.
 - [x] Every field name follows decision 012: snake_case, full words, no
       abbreviation, and one name per thing across both surfaces.
-- [x] Fields that do not apply are present and `null`, so a consumer can rely
+- [ ] Fields that do not apply are present and `null`, so a consumer can rely
       on every key existing.
+
+## Deviations
+
+1. Criterion 5 has one documented exception, so the box stays unticked. An
+   identity-rooted ledger holds no key of its own, so its identity document
+   omits `active_key` and `reserve_commit` rather than nulling them, and a
+   consumer reads their absence as the root kind
+   (`contracts/http/wallet-get-identities.json`, first entry). The
+   "Nullability" section of `contracts/README.md` now states that exception
+   instead of contradicting the fixture. Every other field that does not apply
+   is present and `null`.
+2. `contracts/http/PENDING-membership.md` is gone. Ticket 021 froze the five
+   membership routes and the `principals` and `open_invitation_count` fields of
+   the identity document, so nothing is left pending for it to list. Criterion
+   1 is satisfied by the fixtures, not by the pending list.
+3. `mabel identity rotate` has no `contracts/cli/` file. It exits 70 with the
+   error envelope `contracts/cli/errors.json` already pins, so a fixture would
+   duplicate that case. Every other `--json` command has one.

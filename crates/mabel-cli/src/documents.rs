@@ -1,22 +1,14 @@
 //! The `--json` documents this ticket owns.
 //!
-//! `contracts/cli/identity-create.json`, `identity-list.json`,
-//! `trust-add.json`, `verify-ledger.json` and `verify-trust.json` are
-//! normative: a field spelled differently here is a bug here, not in the
-//! fixture. The identity document, the trust entries and both verification
-//! reports are the types `mabel-node` already shares with the HTTP API, so one
-//! surface cannot drift from the other.
+//! Every document below is pinned by a fixture in `contracts/cli/`, indexed in
+//! `contracts/README.md`. The fixtures are normative: a field spelled
+//! differently here is a bug here, not in the fixture. The identity document,
+//! the trust entries and both verification reports are the types `mabel-node`
+//! already shares with the HTTP API, so one surface cannot drift from the
+//! other.
 //!
-//! `mabel trust revoke`, `trust list` and `witness add` have no fixture. They
-//! reuse the frozen field names, and `contracts/cli/` grows a case when one is
-//! pinned.
-//!
-//! The membership documents have no fixture either:
-//! `contracts/http/PENDING-membership.md` lists the whole membership surface as
-//! pending and ticket 021 fixtures the HTTP counterpart. They reuse the frozen
-//! names (`ledger_id`, `head_seq`, `head_event`, `timestamp_ms`, `event_count`)
-//! and spell every ledger word as proposal 002 does: `invitation`, never
-//! `invite`.
+//! The membership documents spell every ledger word as proposal 002 does:
+//! `invitation`, never `invite`.
 
 use mabel_core::fold::{InvitationStatus, LedgerRoot};
 use mabel_node::api::documents::{DeclaredKind, Id, Pushed, TrustEntry};
@@ -152,10 +144,7 @@ pub struct PushedLedger {
     pub pushed: Pushed,
 }
 
-/// `mabel sync fetch --json`.
-///
-/// No fixture pins this command. It reuses the frozen names: `ledger_id`,
-/// `source`, `head_seq`, `head_event`, `event_count` and `fetched_at_ms`.
+/// `mabel sync fetch --json` (`contracts/cli/sync-fetch.json`).
 #[derive(Debug, Serialize)]
 pub struct FetchedLedger {
     /// The ledger that was fetched.

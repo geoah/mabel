@@ -1,0 +1,23 @@
+{
+  "command": "mabel membership remove --ledger alice --by alice --member jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq --json",
+  "cases": [
+    {
+      "case": "principal-removed",
+      "command": "mabel membership remove --ledger alice --by alice --member jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq --json",
+      "exit_code": 0,
+      "document": {
+        "ok": true,
+        "ledger_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+        "by": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+        "target": "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq",
+        "principal_removed": true,
+        "invitation_cancelled": null,
+        "removal_event": "jyegrzet5r2davu3yv46tnrdivpvrznzo2srmm4qyam6jzm5u5ba",
+        "removal_seq": 6,
+        "timestamp_ms": 1700000720000,
+        "head_seq": 6,
+        "head_event": "jyegrzet5r2davu3yv46tnrdivpvrznzo2srmm4qyam6jzm5u5ba"
+      }
+    }
+  ]
+}

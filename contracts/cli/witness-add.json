@@ -1,0 +1,22 @@
+{
+  "command": "mabel witness add --identity acme --endpoint zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq --json",
+  "cases": [
+    {
+      "case": "first-endpoint",
+      "command": "mabel witness add --identity acme --endpoint zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq --json",
+      "exit_code": 0,
+      "document": {
+        "ok": true,
+        "identity_id": "2okqwhextnpkpmydrgrkk563vbehcklffwfzidxlh5dslawjmn6a",
+        "endpoint": "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq",
+        "witnesses": [
+          "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq"
+        ],
+        "event_id": "4dzeup2wrtqxnb6qegqxmkashov6ebmdfad57ydg3cw5npixxnra",
+        "timestamp_ms": 1700000300000,
+        "head_seq": 4,
+        "head_event": "4dzeup2wrtqxnb6qegqxmkashov6ebmdfad57ydg3cw5npixxnra"
+      }
+    }
+  ]
+}

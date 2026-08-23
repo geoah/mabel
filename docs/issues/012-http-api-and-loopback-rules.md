@@ -58,3 +58,11 @@ implemented concurrently with tickets 010, 011 and 013.
       mutating route is covered.
 - [x] tests: one test per fixture asserts the stub response equals the fixture,
       including `?since=` at the head sequence.
+
+## Deviations
+
+1. Criterion 3 is superseded. The membership routes do not answer 501 with
+   `code: 70`: ticket 021 implemented them, so they answer 200 with the frozen
+   documents (`crates/mabel-node/src/api/wallet.rs`, asserted by
+   `the_membership_routes_spell_memberships_and_answer_the_frozen_documents`).
+   The box stays unticked because the criterion as written is false.

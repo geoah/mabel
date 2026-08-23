@@ -782,6 +782,9 @@ part of the accepted proposal.
 - Ids use literal RFC 4648 base32, lowercase display, case-insensitive
   parse. iroh-base 1.0.3 displays keys as hex, so "Iroh's alphabet" in 3.1
   was inaccurate; the encoding stands on its own.
+- Two section 12 frontend pins moved: `typescript` stays 5.9.x until
+  typescript-eslint supports 7, and `playwright` is pinned exact (1.57.0),
+  not to a caret range.
 
 ## Consequences
 

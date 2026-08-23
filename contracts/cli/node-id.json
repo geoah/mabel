@@ -1,0 +1,14 @@
+{
+  "command": "mabel node id --json",
+  "cases": [
+    {
+      "case": "endpoint-id",
+      "command": "mabel node id --json",
+      "exit_code": 0,
+      "document": {
+        "ok": true,
+        "endpoint_id": "fd2ijzgxe3qk64jeqbgwjgqcg2cnmyyrfwghb6oar2wbg5ddxvla"
+      }
+    }
+  ]
+}

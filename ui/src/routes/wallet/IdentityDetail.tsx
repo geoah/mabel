@@ -76,7 +76,7 @@ export function IdentityDetail() {
               <DeclaredKindNote testId="identity-detail-declared-kind-note" />
             </CardContent>
           </Card>
-          <PrincipalsPanel />
+          <PrincipalsPanel identity={identity.data.identity} />
           <WitnessConfigPanel identity={identity.data.identity} onAppended={refresh} />
           <TrustPanel identity={identity.data.identity} onAppended={refresh} />
           <SyncPushPanel identityId={identity.data.identity.identity_id} />

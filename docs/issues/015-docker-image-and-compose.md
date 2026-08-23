@@ -33,3 +33,13 @@ already seeded, needing no internet.
 - [ ] tests: `docker compose up` reaches all three services healthy on a host
       with no outbound network, and a scripted check pushes a ledger from one
       wallet and reads its head from the other through the witness.
+
+## Deviations
+
+1. No runtime reads `peers.json`, so criterion 3 is met through argv instead:
+   `docker/entrypoint.sh` waits for the witness's `EndpointTicket` on the
+   shared volume and appends `--peer <ticket>` to the command it execs. The
+   effect is the same, the witness address reaches each wallet before its
+   first command with no internet, and `--peer` is the flag every command
+   already takes. Making a node home seed `peers.json` from a ticket is a
+   future cleanup, not a blocker.
