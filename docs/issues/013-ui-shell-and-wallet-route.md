@@ -1,6 +1,6 @@
 # 013: UI app shell, API client and the identity and trust screens
 
-- Status: open
+- Status: done
 - Depends on: 020
 
 ## Goal
