@@ -14,5 +14,5 @@ never move.
   supersedes parts of 001 sections 3.1 to 3.6, 9 and 10.
 - [003-wallet-ux-dns-and-trust-graph.md](003-wallet-ux-dns-and-trust-graph.md):
   on-ledger profiles (payload tag 17), DNS hostname verification, the local
-  trust graph, and the wallet information architecture. Proposed; implements
+  trust graph, and the wallet information architecture. Accepted; implements
   decisions 014, 015 and 016.
