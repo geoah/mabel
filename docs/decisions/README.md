@@ -27,5 +27,11 @@ without KERI.
   semver, frequent pushes.
 - [012-naming-full-words.md](012-naming-full-words.md): full words in
   identifiers, `organization` not `org`.
+- [014-wallet-ux.md](014-wallet-ux.md): address-book wallet, clean primary
+  view, developer mode for the rest.
+- [015-dns-verification.md](015-dns-verification.md): hostname linking via
+  TXT records, cached daily verification, advisory.
+- [016-trust-graph.md](016-trust-graph.md): crawled trust graph, degrees of
+  separation, manual sync with staleness, configurable depth.
 
-Number 013 was used briefly and retired; the next decision takes 014.
+Number 013 was used briefly and retired.
