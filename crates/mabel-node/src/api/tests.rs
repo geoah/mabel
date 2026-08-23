@@ -17,8 +17,8 @@ use tower::ServiceExt;
 use super::documents::{DeclaredKind, RoleName};
 use super::error::{ErrorLayer, ServiceError};
 use super::service::{
-    EventPageRequest, ForkQuery, LookupRequest, PageRequest, PushRequest, ReplaceProfile,
-    SetContact, VerifyRequest,
+    EventPageRequest, FetchIdentity, ForkQuery, LookupRequest, PageRequest, PushRequest,
+    ReplaceProfile, SetContact,
 };
 use super::stub::{
     FIXTURES, Fixture, StubWalletService, StubWitnessService, WalletCall, WitnessCall,
@@ -31,6 +31,9 @@ const ACME: &str = "2okqwhextnpkpmydrgrkk563vbehcklffwfzidxlh5dslawjmn6a";
 const ATTESTATION: &str = "65cssg5tnr3gyxe2rwhsgqc3nct3pwg2bqxr2oxpelejuoorlsnq";
 const WITNESS_ONE: &str = "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq";
 const WITNESS_TWO: &str = "5yy7qpeiu4jbtjx47g7obwu3yitcaweplik2mfcvknie36letzoa";
+/// The hostname `wallet-get-resolve.json` looks up, and the one Alice's
+/// profile claims.
+const HOSTNAME: &str = "alice.example";
 
 /// The host the loopback rules expect at the default bind.
 const HOST: &str = "127.0.0.1:9080";
@@ -40,7 +43,7 @@ const ORIGIN: &str = "http://127.0.0.1:9080";
 /// The reasons this module produces itself, before any service is called.
 /// Every other reason in a fixture's `errors` array comes from a service, and
 /// the round-trip test below drives those through the stub.
-const API_OWNED_REASONS: [&str; 11] = [
+const API_OWNED_REASONS: [&str; 13] = [
     "host_not_loopback",
     "origin_mismatch",
     "content_type_not_json",
@@ -49,6 +52,8 @@ const API_OWNED_REASONS: [&str; 11] = [
     "unsupported_declared_kind",
     "malformed_identity_id",
     "malformed_ledger_id",
+    "malformed_endpoint_id",
+    "malformed_hostname",
     "malformed_query_parameter",
     "malformed_base64",
     "duplicate_witness",
@@ -125,6 +130,8 @@ fn concrete_route(route: &str) -> String {
         .replace(":identity_id", ALICE)
         .replace(":ledger_id", ALICE)
         .replace(":event_id", ATTESTATION)
+        .replace(":endpoint_id", WITNESS_ONE)
+        .replace(":hostname", HOSTNAME)
 }
 
 /// Runs a fixture's own request against a wallet stub.
@@ -644,27 +651,158 @@ async fn wallet_post_sync_push_matches_the_fixture() {
 }
 
 #[tokio::test]
-async fn wallet_post_verify_matches_the_fixture() {
-    let name = "wallet-post-verify.json";
+async fn wallet_post_identity_fetch_matches_the_fixture() {
+    let name = "wallet-post-identity-fetch.json";
     let stub = Arc::new(StubWalletService::new());
     let (status, body) = run_wallet(name, &stub).await;
     expect_response(name, status, &body);
     assert_eq!(
         stub.call(),
-        WalletCall::Verify(VerifyRequest::Trust {
-            issuer: id(ALICE),
-            subject: id(BOB),
-            from: None
+        WalletCall::FetchIdentity(FetchIdentity {
+            identity_id: id(ALICE),
+            from: Some(id(WITNESS_ONE)),
         })
     );
+    // The route answers the document `mabel sync fetch --json` prints, down
+    // to the key that says whether this home may now append.
+    assert_eq!(body["stored"], json!(4));
+    assert!(body["controlled_by"].is_null());
+}
+
+#[tokio::test]
+async fn a_fetch_without_a_source_leaves_the_witness_choice_to_the_service() {
+    let stub = Arc::new(StubWalletService::new());
+    let uri = format!("/api/identities/{BOB}/fetch");
+    let (status, _) = send(wallet(&stub), request("POST", &uri, &json!({"from": null}))).await;
+    assert_eq!(status, StatusCode::OK);
     assert_eq!(
-        body["subject_control"],
-        json!(super::documents::SUBJECT_CONTROL_SENTENCE)
+        stub.call(),
+        WalletCall::FetchIdentity(FetchIdentity {
+            identity_id: id(BOB),
+            from: None,
+        })
     );
+}
+
+#[tokio::test]
+async fn wallet_get_resolve_matches_the_fixture_and_passes_the_hostname_through() {
+    let name = "wallet-get-resolve.json";
+    let stub = Arc::new(StubWalletService::new());
+    let (status, body) = run_wallet(name, &stub).await;
+    expect_response(name, status, &body);
+    assert_eq!(stub.call(), WalletCall::Resolve(HOSTNAME.to_owned()));
+    assert_eq!(body["status"], json!("resolved"));
+    assert_eq!(body["identity_id"], json!(ALICE));
+
+    // A hostname the profile rule refuses never reaches the resolver.
+    let (expected_status, expected) = fixture_error(name, "malformed_hostname");
+    let stub = Arc::new(StubWalletService::new());
+    let (status, body) = send(
+        wallet(&stub),
+        request("GET", "/api/resolve/alice_ashworth.example", &Value::Null),
+    )
+    .await;
+    assert_eq!(status, expected_status);
+    assert_eq!(body, expected);
+    assert!(stub.calls().is_empty());
+}
+
+#[tokio::test]
+async fn wallet_get_witnesses_matches_the_fixture_and_says_where_each_is_known_from() {
+    let name = "wallet-get-witnesses.json";
+    let stub = Arc::new(StubWalletService::new());
+    let (status, body) = run_wallet(name, &stub).await;
+    expect_response(name, status, &body);
+    assert_eq!(stub.call(), WalletCall::Witnesses);
+
+    let witnesses = body["witnesses"].as_array().expect("an array");
+    let endpoints: Vec<&str> = witnesses
+        .iter()
+        .map(|witness| witness["endpoint_id"].as_str().expect("an endpoint id"))
+        .collect();
+    let mut sorted = endpoints.clone();
+    sorted.sort_unstable();
+    assert_eq!(endpoints, sorted, "witnesses sort by ascending endpoint id");
+    // A witness `node.json` does not name is still listed, because a stored
+    // ledger names it.
+    assert!(
+        witnesses
+            .iter()
+            .any(|witness| witness["is_node_default"] == json!(false)),
+        "{witnesses:?}"
+    );
+    let shared = witnesses
+        .iter()
+        .find(|witness| witness["endpoint_id"] == json!(WITNESS_ONE))
+        .expect("the fixture lists the first witness");
+    assert_eq!(shared["named_by"], json!([ACME, ALICE]));
+}
+
+#[tokio::test]
+async fn wallet_get_witness_ledgers_matches_the_fixture_and_pages_like_the_witness_route() {
+    let name = "wallet-get-witness-ledgers.json";
+    let stub = Arc::new(StubWalletService::new());
+    let (status, body) = run_wallet(name, &stub).await;
+    expect_response(name, status, &body);
     assert_eq!(
-        body["verified_means"],
-        json!(super::documents::VERIFIED_MEANS_SENTENCE)
+        stub.call(),
+        WalletCall::WitnessLedgers(
+            id(WITNESS_ONE),
+            PageRequest {
+                offset: 0,
+                limit: 256
+            }
+        )
     );
+    assert_eq!(body["endpoint_id"], json!(WITNESS_ONE));
+    // The proxy carries what `List` serves, so the three fields that come
+    // from the witness's own meta.json are absent.
+    let entry = body["ledgers"][0].as_object().expect("a row");
+    assert_eq!(entry.len(), 6, "{entry:?}");
+    for absent in ["source_endpoint", "first_seen_ms", "forks_truncated"] {
+        assert!(!entry.contains_key(absent), "{absent} is in {entry:?}");
+    }
+
+    let (expected_status, expected) = fixture_error(name, "malformed_endpoint_id");
+    let stub = Arc::new(StubWalletService::new());
+    let (status, body) = send(
+        wallet(&stub),
+        request("GET", "/api/witnesses/witness-one/ledgers", &Value::Null),
+    )
+    .await;
+    assert_eq!(status, expected_status);
+    assert_eq!(body, expected);
+    assert!(stub.calls().is_empty());
+}
+
+#[tokio::test]
+async fn a_witness_ledger_limit_over_the_maximum_reaches_the_service_clamped() {
+    let stub = Arc::new(StubWalletService::new());
+    let uri = format!("/api/witnesses/{WITNESS_ONE}/ledgers?offset=8&limit=100000");
+    let (status, _) = send(wallet(&stub), request("GET", &uri, &Value::Null)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        stub.call(),
+        WalletCall::WitnessLedgers(
+            id(WITNESS_ONE),
+            PageRequest {
+                offset: 8,
+                limit: 256
+            }
+        ),
+        "the proxy clamps to the same maximum as GET /api/ledgers"
+    );
+}
+
+#[tokio::test]
+async fn there_is_no_verify_route() {
+    // Proposal 004 removed `POST /api/verify` with the verify tab; verifying
+    // trust and ledgers is a CLI concern.
+    let stub = Arc::new(StubWalletService::new());
+    let (status, body) = send(wallet(&stub), request("POST", "/api/verify", &json!({}))).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(body["details"]["reason"], json!("unknown_route"));
+    assert!(stub.calls().is_empty());
 }
 
 // --------------------------------------------------------------- witness ----
@@ -968,6 +1106,7 @@ async fn every_mutating_route_enforces_the_origin_and_content_type_rules() {
         &format!("/api/identities/{ALICE}/contact"),
         "/api/graph/sync",
         &format!("/api/identities/{ALICE}/witnesses"),
+        &format!("/api/identities/{ALICE}/fetch"),
         &format!("/api/identities/{ALICE}/memberships/invitations"),
         &format!("/api/identities/{ALICE}/memberships/acceptances"),
         &format!("/api/identities/{ALICE}/memberships/admissions"),
@@ -975,7 +1114,6 @@ async fn every_mutating_route_enforces_the_origin_and_content_type_rules() {
         "/api/trust",
         &format!("/api/trust/{ATTESTATION}/revoke"),
         "/api/sync/push",
-        "/api/verify",
     ]
     .map(ToOwned::to_owned);
 
@@ -1145,7 +1283,7 @@ async fn a_body_the_fixture_refuses_answers_the_fixture_rejection() {
     let acceptances = format!("/api/identities/{ALICE}/memberships/acceptances");
     let admissions = format!("/api/identities/{ALICE}/memberships/admissions");
     let removals = format!("/api/identities/{ALICE}/memberships/removals");
-    let cases: [(&str, &str, &str, Value); 9] = [
+    let cases: [(&str, &str, &str, Value); 8] = [
         (
             "wallet-post-identities.json",
             "missing_field",
@@ -1169,12 +1307,6 @@ async fn a_body_the_fixture_refuses_answers_the_fixture_rejection() {
             "subject_equals_ledger",
             "/api/trust",
             json!({"issuer": ALICE, "subject": ALICE}),
-        ),
-        (
-            "wallet-post-verify.json",
-            "unknown_enum_value",
-            "/api/verify",
-            json!({"kind": "identity", "issuer": ALICE, "subject": BOB}),
         ),
         (
             "wallet-post-membership-invitations.json",

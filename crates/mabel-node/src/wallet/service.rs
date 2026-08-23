@@ -1,39 +1,47 @@
 //! The wallet HTTP surface, over the same core the CLI drives.
 //!
-//! Every method turns the validated request into one call on [`WalletCore`],
-//! [`WalletSync`] or [`Verifier`] and renders the document the fixtures under
+//! Every method turns the validated request into one call on [`WalletCore`]
+//! or [`WalletSync`] and renders the document the fixtures under
 //! `contracts/http/` freeze. Blocking file work runs under `spawn_blocking`;
 //! the network work is already async.
+//!
+//! Verification is not here. Proposal 004 removed `POST /api/verify` with the
+//! verify tab, so [`crate::wallet::Verifier`] is a CLI concern and this
+//! surface never renders a verification report.
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex as StdMutex};
 
 use axum::http::StatusCode;
 use iroh_base::EndpointId;
-use mabel_core::IdentityId;
+use mabel_core::{IdentityId, LedgerId};
 
 use crate::api::documents::{
-    Accepted, Admitted, Appended, ContactView, CreatedIdentity, GraphSynced, GraphView, Id,
-    Identity, Invited, LedgerPage, Lookup, MembershipView, ProfileReplaced, Pushed, Relay, Removed,
-    Revoked, Role, VerificationChecked, VerificationReport, WalletNode,
+    Accepted, Admitted, Appended, ContactView, CreatedIdentity, DeclaredKind, FetchedLedger,
+    GraphSynced, GraphView, Id, Identity, Invited, LedgerPage, Lookup, MembershipView,
+    ProfileReplaced, Pushed, Relay, Removed, ResolveStatus, Resolved, Revoked, Role,
+    VerificationChecked, WalletNode, WitnessEntry, WitnessLedgerEntry, WitnessLedgers, WitnessList,
 };
 use crate::api::error::ServiceError;
 use crate::api::service::{
-    AcceptInvitation, AddTrust, AdmitAcceptance, CreateIdentity, EventPageRequest, Invite,
-    LookupRequest, PushRequest, RemoveMembership, ReplaceProfile, ServiceFuture, SetContact,
-    VerifyRequest, WalletService,
+    AcceptInvitation, AddTrust, AdmitAcceptance, CreateIdentity, EventPageRequest, FetchIdentity,
+    Invite, LookupRequest, PageRequest, PushRequest, RemoveMembership, ReplaceProfile,
+    ServiceFuture, SetContact, WalletService,
 };
 use crate::config::RelayMode;
-use crate::graph::{CrawlOptions, GraphStore, LedgerFetcher, NetLedgerFetcher, crawl};
+use crate::graph::{
+    CrawlOptions, GraphStore, LedgerFetcher, NetLedgerFetcher, crawl, plan_sources,
+};
 use crate::now_ms;
-use crate::verification::{HickoryResolver, ResolveFuture, Resolver, TxtRecord, verify_hostname};
+use crate::verification::{
+    HickoryResolver, ResolveFuture, Resolver, TxtRecord, mabel_claim, query_name, verify_hostname,
+};
 use crate::wallet::core::{AppendLock, WalletCore, verification_document};
-use crate::wallet::error::storage_error;
+use crate::wallet::error::{no_source_available, storage_error};
 use crate::wallet::ids;
 use crate::wallet::lookup::{Names, default_root, graph_status, lookup_document};
 use crate::wallet::sync::WalletSync;
-use crate::wallet::verify::Verifier;
 
 /// The version `GET /api/node` reports.
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -259,6 +267,68 @@ impl WalletService for WalletApiService {
         })
     }
 
+    /// Fetches one ledger from a witness and stores it, exactly as `mabel sync
+    /// fetch` does (proposal 004).
+    ///
+    /// With no `from`, every known witness is asked in the crawler's source
+    /// order until one serves a chain that verifies. A source that could not
+    /// answer is skipped; anything else stops the walk, because a chain that
+    /// does not verify is an answer about the ledger, not about the source.
+    fn fetch_identity(&self, request: FetchIdentity) -> ServiceFuture<'_, FetchedLedger> {
+        Box::pin(async move {
+            let ledger = ids::parse_ledger(&request.identity_id)?;
+            let core = self.core.clone();
+            let known = spawn(move || fetch_sources(&core, ledger)).await?;
+            let asked = match &request.from {
+                Some(from) if !known.contains(from) => {
+                    return Err(ServiceError::usage(
+                        "unknown_witness",
+                        format!("this wallet knows no witness {from}"),
+                    )
+                    .with_detail("endpoint_id", from.as_str()));
+                }
+                Some(from) => vec![from.clone()],
+                None => known,
+            };
+            if asked.is_empty() {
+                return Err(ServiceError::usage(
+                    "no_witness_configured",
+                    format!("this wallet knows no witness to fetch {ledger} from"),
+                )
+                .with_detail("ledger_id", ledger.to_string()));
+            }
+
+            let mut refused: Option<ServiceError> = None;
+            for endpoint_id in &asked {
+                let endpoint = ids::parse_endpoint(endpoint_id)?;
+                match self.sync.fetch(&self.core, ledger, endpoint).await {
+                    Ok(fetched) => return Ok(fetched_document(&fetched)),
+                    Err(error) if error.reason() == "peer_unreachable" => {
+                        refused = Some(
+                            witness_unreachable(
+                                endpoint_id,
+                                format!("{endpoint_id} did not answer for {ledger}"),
+                                unreachable_detail(&error),
+                            )
+                            .with_detail("ledger_id", ledger.to_string()),
+                        );
+                    }
+                    Err(error) if error.code() == 30 => refused = Some(error),
+                    Err(error) => return Err(error),
+                }
+            }
+            Err(refused.unwrap_or_else(|| {
+                no_source_available(
+                    ledger,
+                    &asked
+                        .iter()
+                        .filter_map(|endpoint| ids::parse_endpoint(endpoint).ok())
+                        .collect::<Vec<EndpointId>>(),
+                )
+            }))
+        })
+    }
+
     fn lookup(&self, request: LookupRequest) -> ServiceFuture<'_, Lookup> {
         self.blocking(move |core| {
             let target = ids::parse_identity(&request.identity_id)?;
@@ -444,7 +514,7 @@ impl WalletService for WalletApiService {
             let identity = ids::parse_identity(&request.identity_id)?;
             let witnesses = match &request.to {
                 Some(to) => vec![ids::parse_endpoint(to)?],
-                None => self.witnesses(identity).await?,
+                None => self.witnesses_of(identity).await?,
             };
             let pushed = self.sync.push(&self.core, identity, &witnesses).await?;
             if pushed
@@ -463,31 +533,89 @@ impl WalletService for WalletApiService {
         })
     }
 
-    fn verify(&self, request: VerifyRequest) -> ServiceFuture<'_, VerificationReport> {
+    /// One TXT lookup of `_mabel.<hostname>.`, for navigation only.
+    ///
+    /// Nothing is written and nothing is read from the verification cache of
+    /// proposal 003 section 2: a hostname typed into a search box is not a
+    /// claim any ledger made, so it gets no cached verdict and leaves none.
+    /// Only the label itself is queried, with no CNAME chain.
+    fn resolve(&self, hostname: String) -> ServiceFuture<'_, Resolved> {
         Box::pin(async move {
-            let verifier = Verifier::new(&self.core, Some(&self.sync));
-            match request {
-                VerifyRequest::Trust {
-                    issuer,
-                    subject,
-                    from,
-                } => {
-                    let report = verifier
-                        .trust_report(
-                            ids::parse_identity(&issuer)?,
-                            ids::parse_identity(&subject)?,
-                            endpoint(from.as_ref())?,
-                        )
-                        .await?;
-                    Ok(VerificationReport::Trust(report))
-                }
-                VerifyRequest::Ledger { ledger_id, from } => {
-                    let report = verifier
-                        .ledger_report(ids::parse_ledger(&ledger_id)?, endpoint(from.as_ref())?)
-                        .await?;
-                    Ok(VerificationReport::Ledger(report))
+            let name = query_name(&hostname);
+            let Ok(records) = self.resolver.lookup_txt(&name).await else {
+                return Ok(Resolved {
+                    hostname,
+                    identity_id: None,
+                    status: ResolveStatus::Unreachable,
+                });
+            };
+            let mut claims = 0usize;
+            let mut identity_id = None;
+            for record in &records {
+                let value = record.value();
+                let Some(claimed) = mabel_claim(&value) else {
+                    continue;
+                };
+                claims += 1;
+                if identity_id.is_none()
+                    && let Ok(identity) = claimed.parse::<IdentityId>()
+                {
+                    identity_id = Some(ids::identity(identity));
                 }
             }
+            let status = if identity_id.is_some() {
+                ResolveStatus::Resolved
+            } else if claims == 0 {
+                ResolveStatus::NoRecord
+            } else {
+                ResolveStatus::MismatchedRecords
+            };
+            Ok(Resolved {
+                hostname,
+                identity_id,
+                status,
+            })
+        })
+    }
+
+    fn witnesses(&self) -> ServiceFuture<'_, WitnessList> {
+        self.blocking(|core| {
+            Ok(WitnessList {
+                witnesses: known_witnesses(core)?,
+            })
+        })
+    }
+
+    /// Proxies one `List` request to a witness over the sync protocol.
+    ///
+    /// Nothing is stored: this is what that witness holds right now, read
+    /// live, and the ledgers it names are fetched only by the explicit fetch
+    /// route (proposal 004).
+    fn witness_ledgers(
+        &self,
+        endpoint_id: Id,
+        page: PageRequest,
+    ) -> ServiceFuture<'_, WitnessLedgers> {
+        Box::pin(async move {
+            let endpoint = ids::parse_endpoint(&endpoint_id)?;
+            let served = self
+                .sync
+                .list(endpoint, page.offset, page.limit)
+                .await
+                .map_err(|error| {
+                    witness_unreachable(
+                        &endpoint_id,
+                        format!("{endpoint_id} did not answer the ledger list"),
+                        error.to_string(),
+                    )
+                })?;
+            Ok(WitnessLedgers {
+                endpoint_id,
+                offset: page.offset,
+                limit: page.limit,
+                more: served.more,
+                ledgers: served.items.iter().map(witness_ledger_entry).collect(),
+            })
         })
     }
 }
@@ -535,10 +663,7 @@ impl WalletApiService {
     }
 
     /// The witnesses one ledger is pushed to.
-    async fn witnesses(
-        &self,
-        identity: mabel_core::IdentityId,
-    ) -> Result<Vec<EndpointId>, ServiceError> {
+    async fn witnesses_of(&self, identity: IdentityId) -> Result<Vec<EndpointId>, ServiceError> {
         let core = self.core.clone();
         spawn(move || core.witnesses_of(identity)).await
     }
@@ -564,7 +689,7 @@ impl WalletApiService {
         if !shared {
             return Ok(());
         }
-        let witnesses = self.witnesses(identity).await?;
+        let witnesses = self.witnesses_of(identity).await?;
         if witnesses.is_empty() {
             return Ok(());
         }
@@ -596,9 +721,107 @@ impl Resolver for UnavailableResolver {
     }
 }
 
-/// The pinned source of a request, if it named one.
-fn endpoint(from: Option<&Id>) -> Result<Option<EndpointId>, ServiceError> {
-    from.map(ids::parse_endpoint).transpose()
+/// Every witness endpoint this wallet knows, ascending, with the stored
+/// ledgers that name it (proposal 004).
+///
+/// Two sources: the folded `WitnessConfig` of every ledger under `ledgers/`,
+/// which is the same fold the identity document renders from, and the
+/// node-wide defaults of `node.json`. An endpoint only `node.json` names has
+/// an empty `named_by`.
+fn known_witnesses(core: &WalletCore) -> Result<Vec<WitnessEntry>, ServiceError> {
+    let mut named: BTreeMap<Id, BTreeSet<Id>> = BTreeMap::new();
+    for ledger in core.home().ledgers().map_err(storage_error)? {
+        for endpoint in core.load(ledger)?.witnesses() {
+            named
+                .entry(endpoint)
+                .or_default()
+                .insert(ids::identity(ledger));
+        }
+    }
+    let mut defaults: BTreeSet<Id> = BTreeSet::new();
+    for endpoint in core.config()?.witnesses {
+        let endpoint = ids::key(&endpoint);
+        named.entry(endpoint.clone()).or_default();
+        defaults.insert(endpoint);
+    }
+    Ok(named
+        .into_iter()
+        .map(|(endpoint_id, named_by)| WitnessEntry {
+            is_node_default: defaults.contains(&endpoint_id),
+            endpoint_id,
+            named_by: named_by.into_iter().collect(),
+        })
+        .collect())
+}
+
+/// The endpoints a fetch of `ledger` may ask, in the crawler's source order
+/// (proposal 003 section 3): the `peers.json` hints for this ledger, then the
+/// node-wide witnesses, then every other witness this wallet knows.
+///
+/// The crawl's local copy is not a source here: a fetch is about getting the
+/// chain from somewhere else.
+fn fetch_sources(core: &WalletCore, ledger: LedgerId) -> Result<Vec<Id>, ServiceError> {
+    let mut sources: Vec<Id> = Vec::new();
+    for planned in plan_sources(core, ledger, &[])? {
+        if let Some(endpoint) = planned.endpoint {
+            push_source(&mut sources, ids::key(&endpoint));
+        }
+    }
+    for witness in known_witnesses(core)? {
+        push_source(&mut sources, witness.endpoint_id);
+    }
+    Ok(sources)
+}
+
+fn push_source(sources: &mut Vec<Id>, endpoint: Id) {
+    if !sources.contains(&endpoint) {
+        sources.push(endpoint);
+    }
+}
+
+/// A witness that could not be dialled or did not answer: code 30, reason
+/// `witness_unreachable`, the endpoint named in `details`.
+fn witness_unreachable(endpoint_id: &Id, sentence: String, detail: String) -> ServiceError {
+    ServiceError::network("witness_unreachable", sentence)
+        .with_detail("endpoint_id", endpoint_id.as_str())
+        .with_detail("error", detail)
+}
+
+/// The sentence a `peer_unreachable` failure carried, so respelling it as
+/// `witness_unreachable` loses nothing.
+fn unreachable_detail(error: &ServiceError) -> String {
+    error
+        .details()
+        .get("error")
+        .and_then(serde_json::Value::as_str)
+        .map_or_else(|| error.message().to_owned(), ToOwned::to_owned)
+}
+
+/// One row of a witness's `List` answer as the proxy renders it.
+fn witness_ledger_entry(summary: &mabel_net::store::LedgerSummary) -> WitnessLedgerEntry {
+    WitnessLedgerEntry {
+        ledger_id: ids::identity(summary.ledger),
+        declared_kind: DeclaredKind::parse(mabel_core::declared_kind_name(summary.declared_kind))
+            .unwrap_or(DeclaredKind::Person),
+        head_seq: summary.head_seq,
+        head_event: ids::event(summary.head_event),
+        event_count: summary.event_count,
+        fork_count: u64::from(summary.fork_count),
+    }
+}
+
+/// What a fetch stored, in the shape `mabel sync fetch --json` prints.
+fn fetched_document(fetched: &crate::wallet::sync::Fetched) -> FetchedLedger {
+    FetchedLedger {
+        ledger_id: ids::identity(fetched.ledger),
+        source: ids::key(&fetched.source),
+        event_count: fetched.event_count,
+        stored: fetched.stored,
+        head_seq: fetched.head_seq,
+        head_event: ids::event(fetched.head_event),
+        fetched_at_ms: fetched.fetched_at_ms,
+        controlled_by: fetched.controlled_by.map(ids::identity),
+    }
 }
 
 /// Runs one piece of blocking core work off the reactor.

@@ -130,8 +130,8 @@ pub fn build_error(error: &BuildError) -> ServiceError {
     ServiceError::schema("event_not_buildable", error.to_string())
 }
 
-/// No source answered for a ledger: code 30, the fixture's wording
-/// (`contracts/http/wallet-post-verify.json`).
+/// No source answered for a ledger: code 30, the wording
+/// `contracts/cli/errors.json` pins.
 #[must_use]
 pub fn no_source_available(ledger: LedgerId, queried: &[EndpointId]) -> ServiceError {
     ServiceError::network(

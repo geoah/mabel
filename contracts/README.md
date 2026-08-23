@@ -33,7 +33,11 @@ contact, lookup and graph surfaces.
 | `http/wallet-post-identity-verification.json` | `POST /api/identities/:identity_id/verification` |
 | `http/wallet-get-identity-contact.json` | `GET /api/identities/:identity_id/contact` |
 | `http/wallet-put-identity-contact.json` | `PUT /api/identities/:identity_id/contact` |
+| `http/wallet-post-identity-fetch.json` | `POST /api/identities/:identity_id/fetch` |
 | `http/wallet-get-lookup.json` | `GET /api/lookup/:identity_id?from=` |
+| `http/wallet-get-resolve.json` | `GET /api/resolve/:hostname` |
+| `http/wallet-get-witnesses.json` | `GET /api/witnesses` |
+| `http/wallet-get-witness-ledgers.json` | `GET /api/witnesses/:endpoint_id/ledgers?offset&limit` |
 | `http/wallet-get-graph.json` | `GET /api/graph` |
 | `http/wallet-post-graph-sync.json` | `POST /api/graph/sync` |
 | `http/wallet-post-identity-witnesses.json` | `POST /api/identities/:identity_id/witnesses` |
@@ -45,7 +49,6 @@ contact, lookup and graph surfaces.
 | `http/wallet-post-trust.json` | `POST /api/trust` |
 | `http/wallet-post-trust-revoke.json` | `POST /api/trust/:event_id/revoke` |
 | `http/wallet-post-sync-push.json` | `POST /api/sync/push` |
-| `http/wallet-post-verify.json` | `POST /api/verify` |
 | `http/witness-get-node.json` | `GET /api/node` (witness) |
 | `http/witness-get-ledgers.json` | `GET /api/ledgers` |
 | `http/witness-get-ledger.json` | `GET /api/ledgers/:ledger_id` |
@@ -182,10 +185,11 @@ in `details` is specific to that reason. Consumers branch on `code` and
 
 ## Verification reports
 
-`POST /api/verify` and `mabel verify ...` return the same report. Every
-report carries `source`, `head_seq`, `head_event` and `fetched_at_ms` (flag
-R, proposal 001 section 6), plus `sources_queried`, and a rendered
-`statement`:
+`mabel verify trust` and `mabel verify ledger` return these reports. There is
+no HTTP route for them: proposal 004 removed `POST /api/verify` with the
+verify tab, and verification stays a CLI concern. Every report carries
+`source`, `head_seq`, `head_event` and `fetched_at_ms` (flag R, proposal 001
+section 6), plus `sources_queried`, and a rendered `statement`:
 
 ```
 valid as of seq 2 of <ledger id>, fetched from <endpoint id> at <RFC 3339>; no revocation up to seq 2
@@ -494,6 +498,28 @@ reviewer can overrule them cheaply, before consumers are written.
   id. Proposal 003 section 3 defaults it to the identity selected in the
   wallet, which is a browser fact the node does not hold; a client that cares
   sends the parameter.
+- `GET /api/witnesses/:endpoint_id/ledgers` names its array `ledgers`, not
+  `entries`, and each row carries six keys: `ledger_id`, `declared_kind`,
+  `head_seq`, `head_event`, `event_count` and `fork_count`. The row is what
+  the `List` request of `sync.proto` serves, so the `source_endpoint` of
+  `witness-get-ledgers.json` cannot appear: it comes from the witness's own
+  `ledgers/<id>/meta.json`, which no peer sends. Proposal 004 fixes both the
+  key and the row.
+- A witness that cannot be dialled, or that refuses the `List`, answers 502
+  with code 30 and reason `witness_unreachable`, naming the endpoint in
+  `details.endpoint_id`. One spelling covers the ledger list and the fetch
+  route.
+- `GET /api/resolve/:hostname` runs one TXT lookup and writes nothing: it
+  never reads or fills the verification cache of proposal 003 section 2.
+  Navigation is not verification, and a hostname typed into a search box is
+  not a claim any ledger made. Its four statuses (`resolved`, `no_record`,
+  `mismatched_records`, `unreachable`) are a separate vocabulary from the five
+  of `verification.status`.
+- `POST /api/identities/:identity_id/fetch` answers the document
+  `contracts/cli/sync-fetch.json` pins for `mabel sync fetch --json`, because
+  it is the same operation over the same wallet core. A `from` naming an
+  endpoint this wallet knows no witness at is refused with code 2 and reason
+  `unknown_witness`, before anything is dialled.
 - A wallet route asked for an identity this home does not hold answers 404
   with reason `unknown_ledger`, detail key `ledger_id` and the message `this
   home holds no ledger <id>`. One spelling covers every wallet route, the

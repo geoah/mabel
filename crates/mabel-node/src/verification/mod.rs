@@ -36,6 +36,6 @@ pub use resolver::{
     HickoryResolver, ResolveError, ResolveFuture, Resolver, StubResolver, TxtRecord,
 };
 pub use verify::{
-    MAX_CNAME_LINKS, TXT_LABEL, TXT_PREFIX, VerificationOutcome, VerificationStatus, query_name,
-    verify_hostname,
+    MAX_CNAME_LINKS, TXT_LABEL, TXT_PREFIX, VerificationOutcome, VerificationStatus,
+    check_hostname, mabel_claim, query_name, verify_hostname,
 };

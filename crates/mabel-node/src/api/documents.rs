@@ -868,7 +868,7 @@ pub struct Pushed {
     pub results: Vec<PushResult>,
 }
 
-/// Which report `POST /api/verify` returns.
+/// Which report `mabel verify` returns.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum VerifyKind {
@@ -1279,6 +1279,125 @@ pub struct GraphView {
 pub struct GraphSynced {
     /// The generation this sync wrote.
     pub graph: GraphStatus,
+}
+
+/// One witness endpoint this wallet knows, and where it knows it from
+/// (proposal 004).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WitnessEntry {
+    /// The witness endpoint.
+    pub endpoint_id: Id,
+    /// Every stored ledger whose folded witness config names it, ascending by
+    /// id. Empty when only `node.json` names it.
+    pub named_by: Vec<Id>,
+    /// Whether `node.json` lists it as a node-wide default.
+    pub is_node_default: bool,
+}
+
+/// `GET /api/witnesses`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WitnessList {
+    /// Sorted by ascending `endpoint_id`.
+    pub witnesses: Vec<WitnessEntry>,
+}
+
+/// One row of a witness's ledger list, as the `List` request serves it.
+///
+/// This is [`LedgerEntry`] minus the three fields only the witness's own
+/// `ledgers/<id>/meta.json` holds: no peer sends `source_endpoint`,
+/// `first_seen_ms` or `forks_truncated` (`contracts/README.md`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WitnessLedgerEntry {
+    /// The ledger.
+    pub ledger_id: Id,
+    /// What it says it is.
+    pub declared_kind: DeclaredKind,
+    /// Sequence number of the head event.
+    pub head_seq: u64,
+    /// Id of the head event.
+    pub head_event: Id,
+    /// Events the witness holds.
+    pub event_count: u64,
+    /// Fork records it holds for the ledger.
+    pub fork_count: u64,
+}
+
+/// `GET /api/witnesses/{endpoint_id}/ledgers`, a live proxy of the witness's
+/// own ledger list.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WitnessLedgers {
+    /// The witness that answered.
+    pub endpoint_id: Id,
+    /// The offset that produced this page, echoed back.
+    pub offset: u32,
+    /// The effective limit after clamping, echoed back.
+    pub limit: u32,
+    /// Whether entries past this page exist, as the witness reported it.
+    pub more: bool,
+    /// Sorted by ascending `ledger_id`, which is what `List` guarantees.
+    pub ledgers: Vec<WitnessLedgerEntry>,
+}
+
+/// What one TXT lookup of `_mabel.<hostname>.` found (proposal 004).
+///
+/// A separate vocabulary from [`VerificationStatus`]: this answers "which
+/// identity should the wallet navigate to", not "does this ledger's claim
+/// hold".
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ResolveStatus {
+    /// A `mabel=` record at the label carries an identity id that parses.
+    Resolved,
+    /// The label carries no `mabel=` record.
+    NoRecord,
+    /// The label carries `mabel=` records and none of them parses as an
+    /// identity id.
+    MismatchedRecords,
+    /// The lookup did not answer.
+    Unreachable,
+}
+
+/// `GET /api/resolve/{hostname}`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Resolved {
+    /// The hostname that was queried, as it was given.
+    pub hostname: String,
+    /// The identity the record names, `null` unless `status` is `resolved`.
+    pub identity_id: Option<Id>,
+    /// What the lookup found.
+    pub status: ResolveStatus,
+}
+
+/// `POST /api/identities/{identity_id}/fetch`.
+///
+/// The same document `mabel sync fetch --json` prints
+/// (`contracts/cli/sync-fetch.json`): one operation over one wallet core, one
+/// shape.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FetchedLedger {
+    /// The ledger that was fetched.
+    pub ledger_id: Id,
+    /// The endpoint that served it.
+    pub source: Id,
+    /// Events the source served.
+    pub event_count: u64,
+    /// Events this fetch newly stored.
+    pub stored: u64,
+    /// The head after storing.
+    pub head_seq: u64,
+    /// The head event after storing.
+    pub head_event: Id,
+    /// When the source answered.
+    pub fetched_at_ms: u64,
+    /// The local identity whose key signs for this ledger, `null` when the
+    /// chain names none of this home's keys a controller.
+    pub controlled_by: Option<Id>,
 }
 
 /// `GET /api/forks`.

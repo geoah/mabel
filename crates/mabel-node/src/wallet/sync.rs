@@ -13,7 +13,7 @@ use iroh::{Endpoint, EndpointId};
 use mabel_core::LedgerId;
 use mabel_core::fold::fold;
 use mabel_net::client::rejection_of;
-use mabel_net::store::Head;
+use mabel_net::store::{Head, LedgerSummary, Page};
 use mabel_net::{Client, Error as NetError};
 use tracing::warn;
 
@@ -226,6 +226,30 @@ impl WalletSync {
         let head = client.head(ledger).await;
         client.close();
         head.map_err(|error| unreachable(peer, &error))
+    }
+
+    /// One page of the ledgers a peer holds, by ascending ledger id.
+    ///
+    /// The peer is dialled by endpoint id like every other request here, so
+    /// the same `--peer` ticket and the same `peers.json` addresses apply.
+    /// The error stays a [`NetError`] because the caller phrases the failure:
+    /// `GET /api/witnesses/{endpoint_id}/ledgers` calls it
+    /// `witness_unreachable`, not `peer_unreachable`.
+    ///
+    /// # Errors
+    ///
+    /// Returns the connect error, the request error, or a timeout spelled as
+    /// one.
+    pub async fn list(
+        &self,
+        peer: EndpointId,
+        offset: u32,
+        limit: u32,
+    ) -> Result<Page<LedgerSummary>, NetError> {
+        let client = self.connect(peer).await?;
+        let page = client.list(offset, limit).await;
+        client.close();
+        page
     }
 
     /// Every event one peer holds for `ledger`, verified from nothing.

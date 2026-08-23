@@ -1,0 +1,71 @@
+{
+  "route": "/api/identities/:identity_id/fetch",
+  "method": "POST",
+  "request": {
+    "from": "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq"
+  },
+  "response": {
+    "ok": true,
+    "ledger_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+    "source": "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq",
+    "event_count": 4,
+    "stored": 4,
+    "head_seq": 3,
+    "head_event": "ewckxhi7cixugkyrql6eqnncbgxqtnrho3rpsp6plhhh7yr6rosq",
+    "fetched_at_ms": 1700000500000,
+    "controlled_by": null
+  },
+  "errors": [
+    {
+      "status": 400,
+      "body": {
+        "ok": false,
+        "code": 2,
+        "message": "this wallet knows no witness 54rw3lmckcpqf4ofkvyx3i74agumvale2qmzdu76ubpita6sw5va",
+        "details": {
+          "reason": "unknown_witness",
+          "endpoint_id": "54rw3lmckcpqf4ofkvyx3i74agumvale2qmzdu76ubpita6sw5va"
+        }
+      }
+    },
+    {
+      "status": 502,
+      "body": {
+        "ok": false,
+        "code": 30,
+        "message": "Network error: zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq does not hold sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+        "details": {
+          "reason": "ledger_not_held",
+          "ledger_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+          "source": "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq"
+        }
+      }
+    },
+    {
+      "status": 502,
+      "body": {
+        "ok": false,
+        "code": 30,
+        "message": "Network error: zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq did not answer for sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+        "details": {
+          "reason": "witness_unreachable",
+          "ledger_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+          "endpoint_id": "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq",
+          "error": "no route to zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq after 10s"
+        }
+      }
+    },
+    {
+      "status": 403,
+      "body": {
+        "ok": false,
+        "code": 2,
+        "message": "request rejected: Origin must be http://127.0.0.1:9080 or http://localhost:9080 on a mutating route",
+        "details": {
+          "reason": "origin_mismatch",
+          "origin": "https://attacker.example"
+        }
+      }
+    }
+  ]
+}

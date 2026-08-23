@@ -11,14 +11,15 @@ use data_encoding::BASE64;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 
-use super::documents::{DeclaredKind, ID_LENGTH, Id, RoleName, VerifyKind};
+use super::documents::{DeclaredKind, ID_LENGTH, Id, RoleName};
 use super::error::ServiceError;
 use super::service::{
-    AcceptInvitation, AddTrust, AdmitAcceptance, CreateIdentity, EventPageRequest, ForkQuery,
-    Invite, LookupRequest, PageRequest, PushRequest, RemoveMembership, ReplaceProfile, SetContact,
-    VerifyRequest,
+    AcceptInvitation, AddTrust, AdmitAcceptance, CreateIdentity, EventPageRequest, FetchIdentity,
+    ForkQuery, Invite, LookupRequest, PageRequest, PushRequest, RemoveMembership, ReplaceProfile,
+    SetContact,
 };
 use crate::contacts::{ContactTextError, MAX_NICKNAME_BYTES, MAX_NOTE_BYTES, normalize};
+use crate::verification::check_hostname;
 
 /// The query string, one value per name.
 pub(super) type Query = HashMap<String, String>;
@@ -164,7 +165,9 @@ pub(super) fn event_page(query: &Query) -> Result<EventPageRequest, ServiceError
     })
 }
 
-/// `?offset=` and `?limit=` for `GET /api/ledgers`.
+/// `?offset=` and `?limit=` for `GET /api/ledgers` and for the witness ledger
+/// proxy of proposal 004, which pages the same way and clamps to the same
+/// maximum.
 pub(super) fn ledger_page(query: &Query) -> Result<PageRequest, ServiceError> {
     only(query, &["offset", "limit"])?;
     Ok(PageRequest {
@@ -603,57 +606,39 @@ pub(super) fn push(bytes: &[u8]) -> Result<PushRequest, ServiceError> {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct VerifyBody {
-    kind: Option<String>,
-    issuer: Option<String>,
-    subject: Option<String>,
-    ledger_id: Option<String>,
+struct FetchBody {
+    #[serde(default)]
     from: Option<String>,
 }
 
-/// `POST /api/verify`.
-pub(super) fn verify(bytes: &[u8]) -> Result<VerifyRequest, ServiceError> {
-    let parsed: VerifyBody = body(bytes)?;
-    let kind_raw = required("kind", parsed.kind.as_ref())?;
-    let kind = match kind_raw {
-        "trust" => VerifyKind::Trust,
-        "ledger" => VerifyKind::Ledger,
-        _ => {
-            return Err(ServiceError::schema(
-                "unknown_enum_value",
-                "kind must be one of trust, ledger",
-            )
-            .with_detail("field", "kind")
-            .with_detail("value", kind_raw));
-        }
-    };
+/// `POST /api/identities/{identity_id}/fetch`.
+///
+/// An absent or `null` `from` means every known witness, in the crawler's
+/// source order (proposal 004).
+pub(super) fn fetch_identity(identity_id: Id, bytes: &[u8]) -> Result<FetchIdentity, ServiceError> {
+    let parsed: FetchBody = body(bytes)?;
     let from = match parsed.from.as_deref().map(str::trim) {
         None | Some("") => None,
         Some(raw) => Some(id_field(IdKind::Endpoint, "from", raw)?),
     };
-    match kind {
-        VerifyKind::Trust => Ok(VerifyRequest::Trust {
-            issuer: id_field(
-                IdKind::Identity,
-                "issuer",
-                required("issuer", parsed.issuer.as_ref())?,
-            )?,
-            subject: id_field(
-                IdKind::Identity,
-                "subject",
-                required("subject", parsed.subject.as_ref())?,
-            )?,
-            from,
-        }),
-        VerifyKind::Ledger => Ok(VerifyRequest::Ledger {
-            ledger_id: id_field(
-                IdKind::Ledger,
-                "ledger_id",
-                required("ledger_id", parsed.ledger_id.as_ref())?,
-            )?,
-            from,
-        }),
-    }
+    Ok(FetchIdentity { identity_id, from })
+}
+
+/// The `{hostname}` path segment of `GET /api/resolve/{hostname}`.
+///
+/// The same syntax a profile hostname must satisfy, so a name this route
+/// accepts is a name a ledger could claim (proposal 003 section 2).
+pub(super) fn hostname(raw: &str) -> Result<String, ServiceError> {
+    let trimmed = raw.trim().to_ascii_lowercase();
+    check_hostname(&trimmed).map_err(|detail| {
+        ServiceError::schema(
+            "malformed_hostname",
+            format!("{trimmed} is not a hostname: {detail}"),
+        )
+        .with_detail("value", trimmed.clone())
+        .with_detail("detail", detail)
+    })?;
+    Ok(trimmed)
 }
 
 /// The 404 for a path no route claims, so an unknown route answers the
@@ -680,10 +665,10 @@ pub(super) fn method_not_allowed(method: &str, path: &str) -> ServiceError {
 #[cfg(test)]
 mod tests {
     use super::{
-        IdKind, MAX_EVENT_LIMIT, Query, create_identity, event_page, fork_query, id, ledger_page,
-        limit, verify, witnesses,
+        IdKind, MAX_EVENT_LIMIT, Query, create_identity, event_page, fetch_identity, fork_query,
+        hostname, id, ledger_page, limit, witnesses,
     };
-    use crate::api::service::VerifyRequest;
+    use crate::api::documents::Id;
     use serde_json::json;
 
     const ALICE: &str = "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq";
@@ -764,24 +749,37 @@ mod tests {
     }
 
     #[test]
-    fn verify_ledger_names_its_ledger_in_ledger_id() {
-        let bytes = json!({"kind": "ledger", "ledger_id": ALICE, "from": null}).to_string();
-        let request = verify(bytes.as_bytes()).expect("a ledger request");
-        assert!(matches!(request, VerifyRequest::Ledger { .. }));
-
-        let bytes = json!({"kind": "ledger"}).to_string();
-        let error = verify(bytes.as_bytes()).expect_err("no ledger named");
-        assert_eq!(error.reason(), "missing_field");
+    fn a_fetch_body_reads_from_as_optional() {
+        let ledger = Id::parse(ALICE).expect("a fixture id");
+        for body in [json!({}), json!({"from": null}), json!({"from": ""})] {
+            let request = fetch_identity(ledger.clone(), body.to_string().as_bytes())
+                .unwrap_or_else(|error| panic!("{body}: {error}"));
+            assert_eq!(request.from, None, "{body}");
+            assert_eq!(request.identity_id, ledger, "{body}");
+        }
+        let body = json!({"from": BOB}).to_string();
+        let request = fetch_identity(ledger, body.as_bytes()).expect("a pinned source");
+        assert_eq!(request.from.as_ref().map(Id::as_str), Some(BOB));
     }
 
     #[test]
-    fn verify_trust_needs_an_issuer_and_a_subject() {
-        let bytes = json!({"kind": "trust", "issuer": ALICE, "subject": BOB, "from": null});
-        let request = verify(bytes.to_string().as_bytes()).expect("a trust request");
-        assert!(matches!(request, VerifyRequest::Trust { .. }));
+    fn a_fetch_body_refuses_a_from_that_is_not_an_endpoint_id() {
+        let ledger = Id::parse(ALICE).expect("a fixture id");
+        let body = json!({"from": "witness-one"}).to_string();
+        let error = fetch_identity(ledger, body.as_bytes()).expect_err("not an endpoint id");
+        assert_eq!(error.reason(), "malformed_endpoint_id");
+    }
 
-        let bytes = json!({"kind": "trust", "issuer": ALICE});
-        let error = verify(bytes.to_string().as_bytes()).expect_err("no subject");
-        assert_eq!(error.reason(), "missing_field");
+    #[test]
+    fn a_hostname_is_lowercased_and_checked_against_the_profile_rule() {
+        assert_eq!(
+            hostname(" Alice.Example ").expect("a hostname"),
+            "alice.example"
+        );
+        for bad in ["alice_example", "alice", "alice.example.", ""] {
+            let error = hostname(bad).expect_err(bad);
+            assert_eq!(error.reason(), "malformed_hostname", "{bad}");
+            assert_eq!(error.code(), 10, "{bad}");
+        }
     }
 }

@@ -38,7 +38,11 @@ pub(super) fn router(service: Service) -> Router {
             get(contact).put(set_contact),
         )
         .route("/identities/{identity_id}/witnesses", post(set_witnesses))
+        .route("/identities/{identity_id}/fetch", post(fetch_identity))
         .route("/lookup/{identity_id}", get(lookup))
+        .route("/resolve/{hostname}", get(resolve))
+        .route("/witnesses", get(witnesses))
+        .route("/witnesses/{endpoint_id}/ledgers", get(witness_ledgers))
         .route("/graph", get(graph))
         .route("/graph/sync", post(sync_graph))
         .route("/identities/{identity_id}/memberships", get(memberships))
@@ -61,7 +65,6 @@ pub(super) fn router(service: Service) -> Router {
         .route("/trust", post(add_trust))
         .route("/trust/{event_id}/revoke", post(revoke_trust))
         .route("/sync/push", post(push))
-        .route("/verify", post(verify))
         .with_state(service)
 }
 
@@ -137,6 +140,16 @@ async fn set_contact(
     Ok(success(service.set_contact(request).await?))
 }
 
+async fn fetch_identity(
+    State(service): State<Service>,
+    Path(identity_id): Path<String>,
+    body: Bytes,
+) -> Result<Response, ServiceError> {
+    let identity_id = parse::id(IdKind::Identity, &identity_id)?;
+    let request = parse::fetch_identity(identity_id, &body)?;
+    Ok(success(service.fetch_identity(request).await?))
+}
+
 async fn lookup(
     State(service): State<Service>,
     Path(identity_id): Path<String>,
@@ -145,6 +158,28 @@ async fn lookup(
     let identity_id = parse::id(IdKind::Identity, &identity_id)?;
     let request = parse::lookup(identity_id, &query(parameters)?)?;
     Ok(success(service.lookup(request).await?))
+}
+
+async fn resolve(
+    State(service): State<Service>,
+    Path(hostname): Path<String>,
+) -> Result<Response, ServiceError> {
+    let hostname = parse::hostname(&hostname)?;
+    Ok(success(service.resolve(hostname).await?))
+}
+
+async fn witnesses(State(service): State<Service>) -> Result<Response, ServiceError> {
+    Ok(success(service.witnesses().await?))
+}
+
+async fn witness_ledgers(
+    State(service): State<Service>,
+    Path(endpoint_id): Path<String>,
+    parameters: Result<AxumQuery<Query>, QueryRejection>,
+) -> Result<Response, ServiceError> {
+    let endpoint_id = parse::id(IdKind::Endpoint, &endpoint_id)?;
+    let page = parse::ledger_page(&query(parameters)?)?;
+    Ok(success(service.witness_ledgers(endpoint_id, page).await?))
 }
 
 async fn graph(State(service): State<Service>) -> Result<Response, ServiceError> {
@@ -233,9 +268,4 @@ async fn revoke_trust(
 async fn push(State(service): State<Service>, body: Bytes) -> Result<Response, ServiceError> {
     let request = parse::push(&body)?;
     Ok(success(service.push(request).await?))
-}
-
-async fn verify(State(service): State<Service>, body: Bytes) -> Result<Response, ServiceError> {
-    let request = parse::verify(&body)?;
-    Ok(success(service.verify(request).await?))
 }

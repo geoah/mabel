@@ -229,7 +229,8 @@ fn classify(
 ///
 /// The remainder must be UTF-8; the id codec, which is case-insensitive,
 /// judges the rest.
-fn mabel_claim(value: &[u8]) -> Option<&str> {
+#[must_use]
+pub fn mabel_claim(value: &[u8]) -> Option<&str> {
     let prefix = TXT_PREFIX.len();
     let (head, rest) = value.split_at_checked(prefix)?;
     if !head.eq_ignore_ascii_case(TXT_PREFIX.as_bytes()) {
@@ -252,8 +253,13 @@ fn absolute(target: &str) -> String {
 /// a cached or hand-edited claim never passed the wire validator.
 ///
 /// The same reasons `mabel-core` gives, so one claim reads the same wherever
-/// it is refused.
-fn check_hostname(text: &str) -> Result<(), &'static str> {
+/// it is refused. `GET /api/resolve/{hostname}` validates its path segment
+/// with this, so the route accepts exactly the names a profile may claim.
+///
+/// # Errors
+///
+/// Returns the clause naming which rule the name broke.
+pub fn check_hostname(text: &str) -> Result<(), &'static str> {
     if text.is_empty() {
         return Err("it is empty");
     }

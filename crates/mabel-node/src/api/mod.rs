@@ -35,8 +35,15 @@
 //!   unnamed; accepting an invitation you received and admitting someone
 //!   else's acceptance run on different wallets and get different paths
 //!   (`contracts/README.md`, "Membership").
-//! - `POST /api/verify` with `kind: "ledger"` names its ledger in `ledger_id`.
-//!   The fixture pins the `trust` body only, where the ledger is the `issuer`.
+//! - There is no `POST /api/verify`. Proposal 004 removed it with the verify
+//!   tab, and `mabel verify trust|ledger` runs over the wallet core with no
+//!   HTTP in the path.
+//! - `GET /api/witnesses/{endpoint_id}/ledgers` names its array `ledgers` and
+//!   drops the three `witness-get-ledgers.json` fields that come from the
+//!   witness's own `meta.json` rather than from the `List` answer.
+//! - `GET /api/resolve/{hostname}` never reads or writes the verification
+//!   cache. Its four statuses are navigation, not the five-status verdict of
+//!   proposal 003 section 2.
 //! - An unknown query parameter is refused with code 2, matching the
 //!   "unknown route or parameter" row of the table in `contracts/README.md`.
 //! - `limit` above a route's maximum is clamped, not refused; the response

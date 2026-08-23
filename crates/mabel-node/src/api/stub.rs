@@ -16,16 +16,16 @@ use serde::de::DeserializeOwned;
 use serde_json::Value;
 
 use super::documents::{
-    Accepted, Admitted, Appended, ContactView, CreatedIdentity, ForkList, GraphSynced, GraphView,
-    Id, Identity, IdentityList, IdentityView, Invited, LedgerList, LedgerPage, LedgerView, Lookup,
-    MembershipView, ProfileReplaced, Pushed, Removed, Revoked, VerificationChecked,
-    VerificationReport, WalletNode, WitnessNode,
+    Accepted, Admitted, Appended, ContactView, CreatedIdentity, FetchedLedger, ForkList,
+    GraphSynced, GraphView, Id, Identity, IdentityList, IdentityView, Invited, LedgerList,
+    LedgerPage, LedgerView, Lookup, MembershipView, ProfileReplaced, Pushed, Removed, Resolved,
+    Revoked, VerificationChecked, WalletNode, WitnessLedgers, WitnessList, WitnessNode,
 };
 use super::error::ServiceError;
 use super::service::{
-    AcceptInvitation, AddTrust, AdmitAcceptance, CreateIdentity, EventPageRequest, ForkQuery,
-    Invite, LookupRequest, PageRequest, PushRequest, RemoveMembership, ReplaceProfile,
-    ServiceFuture, SetContact, VerifyRequest, WalletService, WitnessService,
+    AcceptInvitation, AddTrust, AdmitAcceptance, CreateIdentity, EventPageRequest, FetchIdentity,
+    ForkQuery, Invite, LookupRequest, PageRequest, PushRequest, RemoveMembership, ReplaceProfile,
+    ServiceFuture, SetContact, WalletService, WitnessService,
 };
 
 /// One file under `contracts/http/`.
@@ -47,7 +47,7 @@ macro_rules! fixture {
 }
 
 /// Every frozen HTTP fixture, in the order `contracts/README.md` indexes them.
-pub const FIXTURES: [Fixture; 27] = [
+pub const FIXTURES: [Fixture; 30] = [
     fixture!("wallet-get-node"),
     fixture!("wallet-get-identities"),
     fixture!("wallet-post-identities"),
@@ -57,7 +57,11 @@ pub const FIXTURES: [Fixture; 27] = [
     fixture!("wallet-post-identity-verification"),
     fixture!("wallet-get-identity-contact"),
     fixture!("wallet-put-identity-contact"),
+    fixture!("wallet-post-identity-fetch"),
     fixture!("wallet-get-lookup"),
+    fixture!("wallet-get-resolve"),
+    fixture!("wallet-get-witnesses"),
+    fixture!("wallet-get-witness-ledgers"),
     fixture!("wallet-get-graph"),
     fixture!("wallet-post-graph-sync"),
     fixture!("wallet-post-identity-witnesses"),
@@ -69,7 +73,6 @@ pub const FIXTURES: [Fixture; 27] = [
     fixture!("wallet-post-trust"),
     fixture!("wallet-post-trust-revoke"),
     fixture!("wallet-post-sync-push"),
-    fixture!("wallet-post-verify"),
     fixture!("witness-get-node"),
     fixture!("witness-get-ledgers"),
     fixture!("witness-get-ledger"),
@@ -224,8 +227,16 @@ pub enum WalletCall {
     Contact(Id),
     /// `PUT /api/identities/{identity_id}/contact`.
     SetContact(SetContact),
+    /// `POST /api/identities/{identity_id}/fetch`.
+    FetchIdentity(FetchIdentity),
     /// `GET /api/lookup/{identity_id}`.
     Lookup(LookupRequest),
+    /// `GET /api/resolve/{hostname}`.
+    Resolve(String),
+    /// `GET /api/witnesses`.
+    Witnesses,
+    /// `GET /api/witnesses/{endpoint_id}/ledgers`.
+    WitnessLedgers(Id, PageRequest),
     /// `GET /api/graph`.
     Graph,
     /// `POST /api/graph/sync`.
@@ -246,8 +257,6 @@ pub enum WalletCall {
     RevokeTrust(Id, Id),
     /// `POST /api/sync/push`.
     Push(PushRequest),
-    /// `POST /api/verify`.
-    Verify(VerifyRequest),
 }
 
 /// A [`WalletService`] that answers from `contracts/http/wallet-*.json`.
@@ -276,8 +285,16 @@ pub struct StubWalletService {
     pub contact: ContactView,
     /// `PUT /api/identities/{identity_id}/contact`.
     pub contact_set: ContactView,
+    /// `POST /api/identities/{identity_id}/fetch`.
+    pub fetched: FetchedLedger,
     /// `GET /api/lookup/{identity_id}`.
     pub lookup: Lookup,
+    /// `GET /api/resolve/{hostname}`.
+    pub resolved: Resolved,
+    /// `GET /api/witnesses`.
+    pub witnesses: WitnessList,
+    /// `GET /api/witnesses/{endpoint_id}/ledgers`.
+    pub witness_ledgers: WitnessLedgers,
     /// `GET /api/graph`.
     pub graph: GraphView,
     /// `POST /api/graph/sync`.
@@ -298,8 +315,6 @@ pub struct StubWalletService {
     pub revoked: Revoked,
     /// `POST /api/sync/push`.
     pub pushed: Pushed,
-    /// `POST /api/verify`.
-    pub report: VerificationReport,
     failure: Mutex<Option<ServiceError>>,
     calls: Mutex<Vec<WalletCall>>,
 }
@@ -335,7 +350,11 @@ impl StubWalletService {
                 .parse_response(),
             contact: Fixture::named("wallet-get-identity-contact.json").parse_response(),
             contact_set: Fixture::named("wallet-put-identity-contact.json").parse_response(),
+            fetched: Fixture::named("wallet-post-identity-fetch.json").parse_response(),
             lookup: Fixture::named("wallet-get-lookup.json").parse_response(),
+            resolved: Fixture::named("wallet-get-resolve.json").parse_response(),
+            witnesses: Fixture::named("wallet-get-witnesses.json").parse_response(),
+            witness_ledgers: Fixture::named("wallet-get-witness-ledgers.json").parse_response(),
             graph: Fixture::named("wallet-get-graph.json").parse_response(),
             graph_synced: Fixture::named("wallet-post-graph-sync.json").parse_response(),
             memberships: Fixture::named("wallet-get-identity-memberships.json").parse_response(),
@@ -346,7 +365,6 @@ impl StubWalletService {
             trust_appended: Fixture::named("wallet-post-trust.json").parse_response(),
             revoked: Fixture::named("wallet-post-trust-revoke.json").parse_response(),
             pushed: Fixture::named("wallet-post-sync-push.json").parse_response(),
-            report: Fixture::named("wallet-post-verify.json").parse_response(),
             failure: Mutex::new(None),
             calls: Mutex::new(Vec::new()),
         }
@@ -445,8 +463,31 @@ impl WalletService for StubWalletService {
         self.answer(WalletCall::SetContact(request), self.contact_set.clone())
     }
 
+    fn fetch_identity(&self, request: FetchIdentity) -> ServiceFuture<'_, FetchedLedger> {
+        self.answer(WalletCall::FetchIdentity(request), self.fetched.clone())
+    }
+
     fn lookup(&self, request: LookupRequest) -> ServiceFuture<'_, Lookup> {
         self.answer(WalletCall::Lookup(request), self.lookup.clone())
+    }
+
+    fn resolve(&self, hostname: String) -> ServiceFuture<'_, Resolved> {
+        self.answer(WalletCall::Resolve(hostname), self.resolved.clone())
+    }
+
+    fn witnesses(&self) -> ServiceFuture<'_, WitnessList> {
+        self.answer(WalletCall::Witnesses, self.witnesses.clone())
+    }
+
+    fn witness_ledgers(
+        &self,
+        endpoint_id: Id,
+        page: PageRequest,
+    ) -> ServiceFuture<'_, WitnessLedgers> {
+        self.answer(
+            WalletCall::WitnessLedgers(endpoint_id, page),
+            self.witness_ledgers.clone(),
+        )
     }
 
     fn graph(&self) -> ServiceFuture<'_, GraphView> {
@@ -493,10 +534,6 @@ impl WalletService for StubWalletService {
 
     fn push(&self, request: PushRequest) -> ServiceFuture<'_, Pushed> {
         self.answer(WalletCall::Push(request), self.pushed.clone())
-    }
-
-    fn verify(&self, request: VerifyRequest) -> ServiceFuture<'_, VerificationReport> {
-        self.answer(WalletCall::Verify(request), self.report.clone())
     }
 }
 

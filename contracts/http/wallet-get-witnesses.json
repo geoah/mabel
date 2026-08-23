@@ -1,0 +1,58 @@
+{
+  "route": "/api/witnesses",
+  "method": "GET",
+  "request": null,
+  "response": {
+    "ok": true,
+    "witnesses": [
+      {
+        "endpoint_id": "54rw3lmckcpqf4ofkvyx3i74agumvale2qmzdu76ubpita6sw5va",
+        "named_by": [
+          "2okqwhextnpkpmydrgrkk563vbehcklffwfzidxlh5dslawjmn6a"
+        ],
+        "is_node_default": false
+      },
+      {
+        "endpoint_id": "5yy7qpeiu4jbtjx47g7obwu3yitcaweplik2mfcvknie36letzoa",
+        "named_by": [
+          "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq"
+        ],
+        "is_node_default": true
+      },
+      {
+        "endpoint_id": "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq",
+        "named_by": [
+          "2okqwhextnpkpmydrgrkk563vbehcklffwfzidxlh5dslawjmn6a",
+          "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq"
+        ],
+        "is_node_default": true
+      }
+    ]
+  },
+  "errors": [
+    {
+      "status": 403,
+      "body": {
+        "ok": false,
+        "code": 2,
+        "message": "request rejected: Host header must be 127.0.0.1:9080 or localhost:9080",
+        "details": {
+          "reason": "host_not_loopback",
+          "host": "evil.example"
+        }
+      }
+    },
+    {
+      "status": 500,
+      "body": {
+        "ok": false,
+        "code": 10,
+        "message": "Schema error: node.json is malformed",
+        "details": {
+          "reason": "malformed_file",
+          "path": "node.json"
+        }
+      }
+    }
+  ]
+}

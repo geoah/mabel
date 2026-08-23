@@ -15,10 +15,10 @@ use std::future::Future;
 use std::pin::Pin;
 
 use super::documents::{
-    Accepted, Admitted, Appended, ContactView, CreatedIdentity, DeclaredKind, ForkList,
-    GraphSynced, GraphView, Id, Identity, Invited, LedgerList, LedgerPage, LedgerView, Lookup,
-    MembershipView, ProfileReplaced, Pushed, Removed, Revoked, RoleName, VerificationChecked,
-    VerificationReport, WalletNode, WitnessNode,
+    Accepted, Admitted, Appended, ContactView, CreatedIdentity, DeclaredKind, FetchedLedger,
+    ForkList, GraphSynced, GraphView, Id, Identity, Invited, LedgerList, LedgerPage, LedgerView,
+    Lookup, MembershipView, ProfileReplaced, Pushed, Removed, Resolved, Revoked, RoleName,
+    VerificationChecked, WalletNode, WitnessLedgers, WitnessList, WitnessNode,
 };
 use super::error::ServiceError;
 
@@ -168,29 +168,14 @@ pub struct PushRequest {
     pub to: Option<Id>,
 }
 
-/// `POST /api/verify`, after validation.
-///
-/// The frozen fixture pins the `trust` request body only. A `ledger` request
-/// names its ledger in `ledger_id`, since `issuer` would be the wrong word for
-/// it (a deviation recorded in `crate::api`).
+/// `POST /api/identities/{identity_id}/fetch`, after validation.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum VerifyRequest {
-    /// Verify trust from an issuer to a subject.
-    Trust {
-        /// The issuer ledger.
-        issuer: Id,
-        /// The subject the attestation must name.
-        subject: Id,
-        /// One source to ask, or every configured source when absent.
-        from: Option<Id>,
-    },
-    /// Verify one ledger's chain.
-    Ledger {
-        /// The ledger to verify.
-        ledger_id: Id,
-        /// One source to ask, or every configured source when absent.
-        from: Option<Id>,
-    },
+pub struct FetchIdentity {
+    /// The ledger to fetch, from the path. This home need not hold it.
+    pub identity_id: Id,
+    /// One witness to ask, or every known witness in the crawler's source
+    /// order when absent.
+    pub from: Option<Id>,
 }
 
 /// The wallet API's view of the node (proposal 001 section 10).
@@ -230,8 +215,27 @@ pub trait WalletService: Send + Sync + 'static {
     /// `PUT /api/identities/{identity_id}/contact`.
     fn set_contact(&self, request: SetContact) -> ServiceFuture<'_, ContactView>;
 
+    /// `POST /api/identities/{identity_id}/fetch`, the CLI `sync fetch` behind
+    /// a route.
+    fn fetch_identity(&self, request: FetchIdentity) -> ServiceFuture<'_, FetchedLedger>;
+
     /// `GET /api/lookup/{identity_id}?from=`.
     fn lookup(&self, request: LookupRequest) -> ServiceFuture<'_, Lookup>;
+
+    /// `GET /api/resolve/{hostname}`, one TXT lookup that never touches the
+    /// verification cache (proposal 004).
+    fn resolve(&self, hostname: String) -> ServiceFuture<'_, Resolved>;
+
+    /// `GET /api/witnesses`, sorted by ascending `endpoint_id`.
+    fn witnesses(&self) -> ServiceFuture<'_, WitnessList>;
+
+    /// `GET /api/witnesses/{endpoint_id}/ledgers`, a live `List` against that
+    /// witness.
+    fn witness_ledgers(
+        &self,
+        endpoint_id: Id,
+        page: PageRequest,
+    ) -> ServiceFuture<'_, WitnessLedgers>;
 
     /// `GET /api/graph`.
     fn graph(&self) -> ServiceFuture<'_, GraphView>;
@@ -263,9 +267,6 @@ pub trait WalletService: Send + Sync + 'static {
 
     /// `POST /api/sync/push`.
     fn push(&self, request: PushRequest) -> ServiceFuture<'_, Pushed>;
-
-    /// `POST /api/verify`.
-    fn verify(&self, request: VerifyRequest) -> ServiceFuture<'_, VerificationReport>;
 }
 
 /// The witness API's view of the node, read-only (proposal 001 section 10).
