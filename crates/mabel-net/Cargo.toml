@@ -1,0 +1,20 @@
+[package]
+name = "mabel-net"
+description = "Iroh sync protocol client and server for mabel ledgers"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+mabel-core.workspace = true
+mabel-proto.workspace = true
+iroh.workspace = true
+iroh-base.workspace = true
+iroh-tickets.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync"] }
+tracing.workspace = true
+
+[dev-dependencies]
+iroh = { workspace = true, features = ["test-utils"] }

@@ -1,0 +1,108 @@
+// Normative schema for mabel ledger events (proposal 001, sections 3.1-3.5).
+//
+// Canonical encoding, required for every signed or hashed message:
+//   - fields in ascending field-number order;
+//   - minimal varints;
+//   - no field set to its proto3 default value is serialized;
+//   - each non-repeated field appears exactly once, and every field the
+//     field-validation table (proposal 001 section 3.4) marks required is
+//     present;
+//   - no packed repeated fields in signed messages.
+//
+// The encoded bytes are authoritative: they are hashed, signed, stored and
+// shipped as-is, and are never re-serialized. Field numbers and oneof tags
+// are append-only; a breaking change means a v1 directory, a new envelope
+// version and a new ALPN.
+
+syntax = "proto3";
+
+package mabel.v0;
+
+enum IdentityKind {
+  IDENTITY_KIND_UNSPECIFIED = 0;
+  PERSON = 1;
+  ORG = 2;
+}
+
+enum Role {
+  ROLE_UNSPECIFIED = 0;
+  MEMBER = 1;
+  CONTROLLER = 2;
+}
+
+message PersonInception {
+  IdentityKind kind = 1;      // must be PERSON
+  bytes active_key = 2;       // 32-byte ed25519 public key
+  bytes reserve_commit = 3;   // BLAKE3("mabel/reserve/v0\n" || reserve pubkey)
+  bytes nonce = 4;            // 16 bytes
+}
+
+message OrgInception {
+  IdentityKind kind = 1;      // must be ORG
+  bytes founder = 2;          // founder person identity id, 32 bytes
+  bytes founder_key = 3;      // founder active key, 32 bytes
+  bytes founder_inception = 4; // founder's seq-0 SignedEvent bytes, <= 4096
+  bytes nonce = 5;            // 16 bytes
+}
+
+message WitnessConfig {
+  repeated bytes witnesses = 1; // 1..=16 distinct 32-byte Iroh EndpointIds
+}
+
+message TrustAttestation {
+  bytes subject = 1;          // identity id, 32 bytes, differs from ledger id
+}
+
+message TrustRevocation {
+  bytes target = 1;           // event id of an unrevoked TrustAttestation
+}
+
+message OrgInvite {
+  bytes invitee = 1;          // person identity id, 32 bytes
+  bytes invitee_key = 2;      // invitee active key, 32 bytes
+  Role role = 3;              // MEMBER or CONTROLLER
+  bytes invitee_inception = 4; // invitee's seq-0 SignedEvent bytes, <= 4096
+}
+
+message OrgAcceptance {
+  bytes acceptance = 1;       // encoded Acceptance bytes, <= 1024
+  bytes sig = 2;              // invitee signature over accept_input, 64 bytes
+}
+
+message OrgRemoval {
+  bytes target = 1;           // identity id of member, controller or invitee
+}
+
+message EventBody {
+  uint32 version = 1;         // 0, so absent under the canonical encoding
+  bytes ledger = 2;           // 32 bytes; absent at seq 0
+  uint64 seq = 3;             // 0-based, strictly +1 per event
+  bytes prev = 4;             // previous event_id; absent at seq 0
+  uint64 timestamp_ms = 5;    // unix ms, ledger order; 1..=4102444800000
+  bytes author_key = 6;       // 32-byte ed25519 public key
+  oneof payload {             // tags 10..=17, append-only
+    PersonInception person_inception = 10;
+    OrgInception org_inception = 11;
+    WitnessConfig witness_config = 12;
+    TrustAttestation trust_attestation = 13;
+    TrustRevocation trust_revocation = 14;
+    OrgInvite org_invite = 15;
+    OrgAcceptance org_acceptance = 16;
+    OrgRemoval org_removal = 17;
+  }
+}
+
+message SignedEvent {
+  bytes body = 1;             // the exact encoded EventBody bytes, <= 4096
+  bytes sig = 2;              // 64-byte ed25519 signature over sign_input
+}
+
+// Detached invitee acceptance (proposal 001 section 3.5). Signed over
+// accept_input = "mabel/accept/v0\n" || acceptance_bytes.
+message Acceptance {
+  uint32 version = 1;         // 0, so absent under the canonical encoding
+  bytes org = 2;              // org ledger id, 32 bytes
+  bytes invite_event = 3;     // OrgInvite event id, 32 bytes
+  bytes invitee = 4;          // invitee identity id, 32 bytes
+  bytes invitee_key = 5;      // invitee active key, 32 bytes
+}

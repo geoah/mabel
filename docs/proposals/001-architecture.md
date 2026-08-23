@@ -223,11 +223,11 @@ exact.
 | `EventBody.author_key` / `.payload` | required | 32 / - | key authorized by state `0..=i-1`; exactly one recognised variant |
 | `*Inception.kind` / `.nonce` | required | - / 16 | kind matches the variant and sets the ledger kind |
 | `PersonInception.active_key`, `.reserve_commit` | required | 32 | must differ |
-| `OrgInception.founder`, `.founder_key`, `.founder_inception` | required | 32, 32, <= 4096 | id and key match the embedded standalone-valid PERSON seq-0 event |
+| `OrgInception.founder`, `.founder_key`, `.founder_inception` | required | 32, 32, <= 1024 | id and key match the embedded standalone-valid PERSON seq-0 event |
 | `WitnessConfig.witnesses` | 1 to 16 | 32 each | all distinct |
 | `TrustAttestation.subject` | required | 32 | differs from `ledger_id` |
 | `TrustRevocation.target` | required | 32 | unrevoked attestation earlier in this ledger |
-| `OrgInvite.invitee`, `.invitee_key`, `.invitee_inception` | required | 32, 32, <= 4096 | as for `OrgInception` |
+| `OrgInvite.invitee`, `.invitee_key`, `.invitee_inception` | required | 32, 32, <= 1024 | as for `OrgInception` |
 | `OrgInvite.role` | required | - | `MEMBER` or `CONTROLLER` |
 | `OrgAcceptance.acceptance` / `.sig` | required | <= 1024 / 64 | canonical `Acceptance`; invitee signature over `accept_input` |
 | `OrgRemoval.target` | required | 32 | a current member, controller or open invitee |
@@ -752,6 +752,28 @@ shadcn/ui vendored into the single `ui/` app, Node 22 LTS in the build stage.
 - **Reusing an identity key as the node key** for free pusher authentication:
   ties transport identity to one of a wallet's many identities and exposes a
   signing key to a listener, while the chain already authenticates content.
+
+## Clarifications
+
+Added 2026-08-24 after ticket cutting surfaced ambiguities; these rulings are
+part of the accepted proposal.
+
+- Size caps: the 4096-byte event cap applies to the encoded `SignedEvent`;
+  `EventBody` fits inside it. An embedded inception (`founder_inception`,
+  `invitee_inception`) is capped at 1024 bytes; real inceptions are ~150.
+- `test-vectors/` lives at the repository root.
+- The `.proto` files under `proto/mabel/v0/` are the field-number authority
+  for sync messages; the sketch in section 5 is illustrative.
+- `Get.since` is inclusive: the response starts at `seq == since`.
+- An unresolved trust subject exits 0; only chain, signature or equivocation
+  failures exit 20.
+- `node.json` gets a `relay` setting: `"n0"` (default) or `"disabled"`. The
+  compose topology sets `"disabled"` and seeds `EndpointTicket`s, which is
+  what makes the container suite runnable with no internet.
+- Fork record files are named by the conflicting event's id; the kept event
+  already lives in the ledger directory.
+- Orgs surface through `GET /identities` (an org is an identity with kind
+  `org`); there is no separate `GET /orgs`.
 
 ## Consequences
 

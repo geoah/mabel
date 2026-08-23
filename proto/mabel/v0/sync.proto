@@ -1,0 +1,124 @@
+// Sync protocol over Iroh, ALPN "mabel/ledger/0" (proposal 001 section 5).
+// One request per bidirectional stream; protobuf frames, no length prefix,
+// EOF-framed with hard byte caps (frames 4 MiB each way).
+
+syntax = "proto3";
+
+package mabel.v0;
+
+import "mabel/v0/ledger.proto";
+
+message HeadReq {
+  bytes ledger = 1;
+}
+
+message GetReq {
+  bytes ledger = 1;
+  uint64 since = 2;   // first sequence wanted
+  uint32 limit = 3;   // clamped to 512
+}
+
+message PushReq {
+  bytes ledger = 1;
+  repeated SignedEvent events = 2; // <= 512 events, <= 2 MiB
+}
+
+message ListReq {
+  uint32 offset = 1;  // ordered by ascending ledger id
+  uint32 limit = 2;   // clamped to 256
+}
+
+message ForksReq {
+  bytes ledger = 1;   // empty means all ledgers
+  uint32 offset = 2;
+  uint32 limit = 3;   // clamped to 64
+}
+
+message Request {
+  oneof kind {
+    HeadReq head = 1;
+    GetReq get = 2;
+    PushReq push = 3;
+    ListReq list = 4;
+    ForksReq forks = 5;
+  }
+}
+
+enum RejectCode {
+  REJECT_CODE_UNSPECIFIED = 0;
+  MALFORMED = 1;
+  TOO_LARGE = 2;
+  INVALID = 3;
+  FORK = 4;
+  UNSUPPORTED = 5;
+  NOT_ADMITTED = 6;
+  BUSY = 7;
+}
+
+message HeadResp {
+  uint64 head_seq = 1;
+  bytes head_event = 2;
+  uint64 updated_ms = 3;
+}
+
+message EventsResp {
+  repeated SignedEvent events = 1;
+  uint64 head_seq = 2;
+  bool more = 3;
+}
+
+message AcceptedResp {
+  uint64 head_seq = 1;
+  uint32 stored = 2;  // events newly stored by this push
+}
+
+message LedgerSummary {
+  bytes ledger = 1;
+  IdentityKind kind = 2;
+  uint64 head_seq = 3;
+  bytes head_event = 4;
+  uint64 event_count = 5;
+  uint64 first_seen_ms = 6;
+  uint64 updated_ms = 7;
+  uint32 fork_count = 8;
+  bool forks_truncated = 9;
+}
+
+message LedgersResp {
+  repeated LedgerSummary entries = 1;
+  bool more = 2;
+}
+
+message ForkRecord {
+  bytes ledger = 1;
+  uint64 seq = 2;
+  SignedEvent kept = 3;        // first seen, retained
+  SignedEvent conflicting = 4; // fully verified against the shared prefix
+  uint64 observed_ms = 5;
+  bytes source_endpoint = 6;   // provenance, never authorization
+}
+
+message ForksResp {
+  repeated ForkRecord entries = 1;
+  bool more = 2;
+}
+
+message NotFoundResp {}
+
+message RejectedResp {
+  RejectCode code = 1;
+  uint64 at_seq = 2;
+  string msg = 3;
+}
+
+message Response {
+  oneof kind {
+    HeadResp head = 1;
+    EventsResp events = 2;
+    AcceptedResp accepted = 3;
+    LedgersResp ledgers = 4;
+    ForksResp forks = 5;
+    NotFoundResp not_found = 6;
+    RejectedResp rejected = 7;
+  }
+}

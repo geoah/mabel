@@ -1,0 +1,27 @@
+[package]
+name = "mabel-node"
+description = "Node home, storage, wallet and witness runtimes, HTTP API"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+mabel-core.workspace = true
+mabel-net.workspace = true
+mabel-proto.workspace = true
+anyhow.workspace = true
+axum.workspace = true
+getrandom.workspace = true
+iroh.workspace = true
+iroh-base.workspace = true
+rust-embed.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "fs", "signal", "sync"] }
+tower-http.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

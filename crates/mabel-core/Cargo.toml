@@ -1,0 +1,15 @@
+[package]
+name = "mabel-core"
+description = "Ledger semantics: canonical encoding, wire-format validation, digests, verification fold"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+# No Iroh networking, no tokio, no filesystem (proposal 001 section 7).
+[dependencies]
+mabel-proto.workspace = true
+blake3.workspace = true
+data-encoding.workspace = true
+iroh-base.workspace = true
+thiserror.workspace = true

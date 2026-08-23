@@ -7,7 +7,8 @@
 - [research/](research/README.md): background research (hearsay digest,
   Iroh research).
 - [templates/](templates/README.md): one template per artifact type.
-- issues/: implementation tickets (phase 2).
+- [issues/](issues/README.md): implementation tickets for the accepted
+  architecture proposal.
 - stories/: end-to-end user stories (phase 5).
 
 Convention: docs folders keep numbered `NNN-name` files and a `README.md`

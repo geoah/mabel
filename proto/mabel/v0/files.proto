@@ -1,0 +1,23 @@
+// File artifacts that cross machines (proposal 001 section 3.8). Each is
+// subject to the wire-format validator, the field table and a size cap
+// checked before allocation, exactly as network input.
+
+syntax = "proto3";
+
+package mabel.v0;
+
+import "mabel/v0/ledger.proto";
+
+message InviteBundle {
+  repeated SignedEvent org_prefix = 1; // org events 0..=invite; file <= 1 MiB
+}
+
+message AcceptanceFile {
+  bytes acceptance = 1; // encoded Acceptance bytes
+  bytes sig = 2;        // invitee signature, 64 bytes; file <= 4 KiB
+}
+
+message IdentityDescriptor {
+  SignedEvent inception = 1;    // the identity's seq-0 event
+  repeated bytes witnesses = 2; // 32-byte EndpointIds; file <= 64 KiB
+}
