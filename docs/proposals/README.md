@@ -6,4 +6,5 @@ moves from proposed to accepted or rejected after review; accepted proposals
 that establish product-level rules get a decision record citing them. Files
 never move.
 
-- 001-architecture.md: overall mabel architecture (in progress).
+- [001-architecture.md](001-architecture.md): overall mabel architecture
+  (ledger, keys, Iroh sync, crates, storage, CLI, UIs, testing). Proposed.
