@@ -13,3 +13,17 @@ pub const MAX_TIMESTAMP_MS: u64 = 4_102_444_800_000;
 
 /// Maximum encoded size of a `SignedEvent` (proposal 001 section 5).
 pub const MAX_EVENT_BYTES: usize = 4096;
+
+#[cfg(test)]
+mod tests {
+    /// Milestone-1 probe (proposal 001 section 4): iroh-base key types work
+    /// under `default-features = false, features = ["key"]` with no runtime
+    /// dependencies pulled into this crate.
+    #[test]
+    fn iroh_base_key_probe() {
+        let sk = iroh_base::SecretKey::from_bytes(&[7u8; 32]);
+        let pk = sk.public();
+        let sig = sk.sign(b"probe");
+        pk.verify(b"probe", &sig).expect("signature verifies");
+    }
+}
