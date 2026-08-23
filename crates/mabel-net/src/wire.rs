@@ -886,4 +886,53 @@ mod tests {
         assert!(signed_event_id(&events[0]).is_some());
         assert_eq!(signed_event_seq(b"not an event"), None);
     }
+
+    /// Regression: an identity-rooted inception reaches nesting depth 7 by
+    /// itself, so counting a pushed event's depth from the frame root made
+    /// every `identity create --founder` ledger unpushable. Events are
+    /// detached objects with their own budget.
+    #[test]
+    fn an_identity_rooted_inception_survives_frame_validation() {
+        use mabel_core::proto::DeclaredKind;
+        use mabel_core::sign::{Root, build_inception};
+
+        let founder_signer = iroh_base::SecretKey::from_bytes(&[9u8; 32]);
+        let reserve = iroh_base::SecretKey::from_bytes(&[137u8; 32]);
+        let founder = build_inception(
+            &founder_signer,
+            DeclaredKind::Person,
+            Root::Raw {
+                reserve_key: &reserve.public(),
+            },
+            [9u8; 16],
+            1_700_000_000_000,
+        )
+        .expect("the founder inception builds");
+        let team = build_inception(
+            &founder_signer,
+            DeclaredKind::Organization,
+            Root::Identity {
+                founder: founder.event_id.into(),
+                founder_inception: &founder.signed_event,
+            },
+            [10u8; 16],
+            1_700_000_000_000,
+        )
+        .expect("the identity-rooted inception builds");
+
+        let ledger: LedgerId = team.event_id.into();
+        let frame = push_request(ledger, std::slice::from_ref(&team.signed_event));
+        let parsed = parse_request(&frame).expect("the push frame validates");
+        match parsed {
+            Request::Push {
+                ledger: got,
+                events,
+            } => {
+                assert_eq!(got, ledger);
+                assert_eq!(events.len(), 1);
+                assert_eq!(events[0], team.signed_event.as_slice());
+            }
+            other => panic!("expected a push request, got {other:?}"),
+        }
+    }
 }

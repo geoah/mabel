@@ -48,8 +48,10 @@ const TIMESTAMP: FieldKind = FieldKind::Varint {
 const FLAG: FieldKind = FieldKind::Varint { min: 1, max: 1 };
 
 /// A `SignedEvent` submessage, capped at [`MAX_EVENT_BYTES`] by its own
-/// descriptor.
-const EVENT: FieldKind = FieldKind::Message {
+/// descriptor. Detached: an event's bytes are stored and served verbatim,
+/// so its nesting budget is its own, not the frame's (an identity-rooted
+/// inception reaches depth 7 by itself).
+const EVENT: FieldKind = FieldKind::Detached {
     descriptor: &SIGNED_EVENT,
 };
 

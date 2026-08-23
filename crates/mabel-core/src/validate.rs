@@ -455,6 +455,14 @@ pub enum FieldKind {
         /// The descriptor of the submessage.
         descriptor: &'static MessageDescriptor,
     },
+    /// A submessage that is an independent top-level object: its bytes are
+    /// stored and served verbatim (a `SignedEvent` inside a frame, bundle or
+    /// fork record), so it is scanned with a fresh nesting budget instead of
+    /// inheriting the container's depth.
+    Detached {
+        /// The descriptor of the detached message.
+        descriptor: &'static MessageDescriptor,
+    },
 }
 
 /// One field of a message.
@@ -475,9 +483,10 @@ impl FieldDescriptor {
     pub const fn wire_kind(&self) -> WireKind {
         match self.kind {
             FieldKind::Varint { .. } | FieldKind::Enum { .. } => WireKind::Varint,
-            FieldKind::Bytes { .. } | FieldKind::Nested { .. } | FieldKind::Message { .. } => {
-                WireKind::Len
-            }
+            FieldKind::Bytes { .. }
+            | FieldKind::Nested { .. }
+            | FieldKind::Message { .. }
+            | FieldKind::Detached { .. } => WireKind::Len,
         }
     }
 }
@@ -1299,6 +1308,9 @@ fn check_bytes(
         // An empty submessage is legal protobuf; its own required fields and
         // repeated bounds reject it.
         FieldKind::Message { descriptor } => validate(descriptor, slice, depth + 1).map(|_| ()),
+        // A detached object restarts the budget: its bytes stand alone
+        // outside this container, so its depth is its own.
+        FieldKind::Detached { descriptor } => validate(descriptor, slice, 0).map(|_| ()),
         _ => unreachable!("only length-delimited fields reach check_bytes"),
     }
 }

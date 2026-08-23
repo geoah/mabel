@@ -52,7 +52,9 @@ const SIG: FieldKind = FieldKind::Bytes {
 };
 
 /// A `SignedEvent` submessage, capped at 4096 bytes by its own descriptor.
-const EVENT: FieldKind = FieldKind::Message {
+/// Detached: event bytes stand alone outside the bundle, so their nesting
+/// budget is their own, not the bundle's.
+const EVENT: FieldKind = FieldKind::Detached {
     descriptor: &SIGNED_EVENT,
 };
 
