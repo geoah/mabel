@@ -140,8 +140,9 @@ pub struct ForkRecord {
 pub enum StoreError {
     /// The store refuses the request, with a code the peer sees verbatim.
     ///
-    /// Only `INVALID`, `FORK` and `NOT_ADMITTED` belong here; the transport
-    /// codes are this crate's to produce.
+    /// Typically `INVALID`, `FORK`, `NOT_ADMITTED`, plus `MALFORMED` for a
+    /// gapped push and `TOO_LARGE` for a store-side cap; the remaining
+    /// transport codes are this crate's to produce.
     #[error("{0}")]
     Rejected(Rejection),
     /// The store failed for a reason the peer cannot fix. The server logs it

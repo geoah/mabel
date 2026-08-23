@@ -759,6 +759,27 @@ fn the_global_flags_are_accepted_before_and_after_the_subcommand() {
     assert_eq!(document["alias"], Value::from("alice"));
 }
 
+#[test]
+fn witness_run_refuses_a_peer_that_is_not_a_ticket() {
+    let home = Home::new();
+    let (code, document) = home.failure(&["witness", "run", "--peer", "nope"]);
+    assert_eq!(code, 2);
+    assert_eq!(
+        document["details"]["reason"],
+        Value::from("malformed_peer_ticket")
+    );
+    assert_eq!(document["details"]["value"], Value::from("nope"));
+}
+
+#[test]
+fn witness_run_takes_an_http_address_an_iroh_port_and_peer_tickets() {
+    let (code, stdout, _) = output(binary().args(["witness", "run", "--help"]));
+    assert_eq!(code, 0);
+    for flag in ["--http", "--iroh-port", "--peer"] {
+        assert!(stdout.contains(flag), "{flag} is not in the help: {stdout}");
+    }
+}
+
 /// Flips one bit of a stored event's signature, which the fold refuses.
 fn tamper(path: &Path) {
     let mut bytes = std::fs::read(path).expect("the event file");

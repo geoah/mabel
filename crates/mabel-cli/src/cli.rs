@@ -5,6 +5,7 @@
 //! alice --json` and `mabel --json identity create --alias alice` are the same
 //! command line; the fixtures in `contracts/cli/` write `--json` last.
 
+use std::net::SocketAddr;
 use std::path::PathBuf;
 
 use clap::{Parser, Subcommand, ValueEnum};
@@ -247,6 +248,18 @@ pub enum WitnessCommand {
         /// The witness endpoint id, base32 or hex.
         #[arg(long)]
         endpoint: String,
+    },
+    /// Serve this home as a witness until ctrl-c.
+    Run {
+        /// Address the HTTP API binds, overriding node.json's http_bind.
+        #[arg(long, value_name = "ADDR")]
+        http: Option<SocketAddr>,
+        /// UDP port the Iroh endpoint binds, instead of an ephemeral one.
+        #[arg(long, value_name = "PORT")]
+        iroh_port: Option<u16>,
+        /// Endpoint ticket to seed into address lookup. Repeatable.
+        #[arg(long, value_name = "TICKET")]
+        peer: Vec<String>,
     },
 }
 

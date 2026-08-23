@@ -1,6 +1,6 @@
 # 010: witness runtime, admission, push semantics and forks
 
-- Status: open
+- Status: done
 - Depends on: 006, 007, 009
 
 ## Goal

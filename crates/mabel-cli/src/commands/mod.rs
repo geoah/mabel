@@ -6,6 +6,7 @@ pub mod node;
 pub mod trust;
 pub mod verify;
 pub mod witness;
+pub mod witness_run;
 
 use crate::cli::{
     Cli, Command, IdentityCommand, MembershipCommand, NodeCommand, TrustCommand, VerifyCommand,
@@ -73,6 +74,11 @@ fn dispatch(ctx: &Context, cli: &Cli) -> Result<Outcome> {
         },
         Command::Witness { command } => match command {
             WitnessCommand::Add { identity, endpoint } => witness::add(ctx, identity, endpoint),
+            WitnessCommand::Run {
+                http,
+                iroh_port,
+                peer,
+            } => witness_run::run(ctx, *http, *iroh_port, peer),
         },
         Command::Verify { command } => match command {
             VerifyCommand::Ledger { ledger_id } => verify::ledger(ctx, ledger_id),

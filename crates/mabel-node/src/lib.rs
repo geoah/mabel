@@ -25,6 +25,7 @@ mod home;
 pub mod keys;
 mod ledger;
 mod peers;
+pub mod witness;
 
 pub use atomic::{DATA_MODE, DIR_MODE, KEY_MODE};
 pub use config::{
