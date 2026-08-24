@@ -112,11 +112,27 @@ authored by `github-actions[bot]`, and tags the commit. Every later job builds
 from the tag, so the tarball name, the binary's own `--version` and the image
 tag are the same version as the release.
 
-A release carries two tarballs, `x86_64-linux` and `aarch64-macos`, each holding
-the `mabel` binary with the UI compiled in. The same commit's image goes to
-`ghcr.io/geoah/mabel` tagged with the short commit sha, the release tag and
-`latest`. The release notes are the commits since the previous release, grouped
-by conventional-commit type.
+A release carries four files:
+
+- `mabel-<version>-x86_64-linux.tar.gz`, the `mabel` binary with the UI
+  compiled in.
+- `mabel-<version>-aarch64-macos.tar.gz`, the same binary for arm64 macOS,
+  signed with a Developer ID and notarized.
+- `mabel-app-<version>-macos.dmg`, the desktop app from `app/`, signed,
+  notarized and stapled.
+- `mabel-app-<version>-macos.zip`, the same `.app` outside a disk image.
+
+Signing needs six Apple secrets on the repository, listed in
+[app/README.md](app/README.md#the-secrets). Without them the release still
+carries all four files, unsigned, and the notes say so on the release page;
+Gatekeeper refuses an unsigned download. The `mabel` binary in the macOS tarball
+is notarized but not stapled, because a bare executable has nowhere to keep a
+ticket, so Gatekeeper looks that one up over the network. The `.dmg` and the
+`.app` carry their ticket with them.
+
+The same commit's image goes to `ghcr.io/geoah/mabel` tagged with the short
+commit sha, the release tag and `latest`. The release notes are the commits
+since the previous release, grouped by conventional-commit type.
 
 The release commit carries `[skip ci]` and is pushed with the workflow's own
 token, so it starts no further runs. To bump a version by hand, run
@@ -183,6 +199,8 @@ cargo install tauri-cli --version 2.11.4 --locked
 
 `app/src-tauri` is its own cargo workspace, so `cargo build --workspace` and
 `cargo test --workspace` at the repository root do not build tauri.
-[.github/workflows/app.yml](.github/workflows/app.yml) builds the unsigned macOS
-bundle and an unsigned iOS simulator build on every push to `main` and uploads
-both as workflow artifacts.
+The release workflow builds the macOS app and attaches the `.dmg` to the
+release, as [Releases](#releases) describes.
+[.github/workflows/app.yml](.github/workflows/app.yml) builds an unsigned iOS
+simulator build on every push to `main` and uploads it as a workflow artifact,
+and builds the macOS app on demand.

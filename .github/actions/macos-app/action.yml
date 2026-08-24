@@ -1,0 +1,321 @@
+name: Build the macOS app
+description: >
+  Builds the tauri app in app/ for macOS and stages the dmg and the zipped
+  .app for upload. Signs and notarizes both when all six Apple inputs carry a
+  value, and builds unsigned when any of them is empty.
+
+# Called by release.yml, which publishes what this produces, and by the
+# on-demand macOS job in app.yml. Both callers pass the same six secrets, so the
+# signing decision and the notarization steps live here once.
+
+inputs:
+  version:
+    description: >
+      The version the built bundle has to report, and the version in the staged
+      file names. release.yml passes the version it tagged; app.yml reads it
+      from app/src-tauri/tauri.conf.json.
+    required: true
+  tauri-cli-version:
+    description: The tauri CLI version to install, pinned by the caller.
+    required: true
+  staging-dir:
+    description: >
+      Directory the renamed dmg and the zipped .app are written to, relative
+      to the workspace.
+    required: false
+    default: app-dist
+  apple-certificate:
+    description: Base64 of a Developer ID Application .p12.
+    required: false
+    default: ''
+  apple-certificate-password:
+    description: The password of that .p12.
+    required: false
+    default: ''
+  apple-signing-identity:
+    description: The full certificate name codesign matches on.
+    required: false
+    default: ''
+  apple-api-issuer:
+    description: App Store Connect API issuer id.
+    required: false
+    default: ''
+  apple-api-key:
+    description: App Store Connect API key id.
+    required: false
+    default: ''
+  apple-api-key-content:
+    description: The body of the AuthKey_<keyid>.p8 file.
+    required: false
+    default: ''
+
+outputs:
+  signed:
+    description: '"true" when the bundle is signed and notarized.'
+    value: ${{ steps.signing.outputs.enabled }}
+  dmg:
+    description: Path to the staged dmg.
+    value: ${{ steps.stage.outputs.dmg }}
+  app-zip:
+    description: Path to the staged zip of the .app.
+    value: ${{ steps.stage.outputs.app-zip }}
+
+runs:
+  using: composite
+  steps:
+    - name: Check for the Apple signing secrets
+      # An unset secret arrives as an empty string, and tauri reads these
+      # variables with `var_os`, for which an empty string is still a value. So
+      # the signing variables are set on the signing build step only, never on
+      # the job, and this step decides which build step runs.
+      #
+      # It is all six or none. Signing without notarizing is not a useful
+      # state, because Gatekeeper refuses a signed but un-notarized download
+      # just as it refuses an unsigned one. The step prints secret names, never
+      # secret values.
+      id: signing
+      shell: bash
+      env:
+        CERTIFICATE: ${{ inputs.apple-certificate }}
+        CERTIFICATE_PASSWORD: ${{ inputs.apple-certificate-password }}
+        SIGNING_IDENTITY: ${{ inputs.apple-signing-identity }}
+        API_ISSUER: ${{ inputs.apple-api-issuer }}
+        API_KEY: ${{ inputs.apple-api-key }}
+        API_KEY_CONTENT: ${{ inputs.apple-api-key-content }}
+      run: |
+        set -eu
+        missing=""
+        [ -n "${CERTIFICATE:-}" ] || missing="$missing APPLE_CERTIFICATE"
+        [ -n "${CERTIFICATE_PASSWORD:-}" ] ||
+          missing="$missing APPLE_CERTIFICATE_PASSWORD"
+        [ -n "${SIGNING_IDENTITY:-}" ] ||
+          missing="$missing APPLE_SIGNING_IDENTITY"
+        [ -n "${API_ISSUER:-}" ] || missing="$missing APPLE_API_ISSUER"
+        [ -n "${API_KEY:-}" ] || missing="$missing APPLE_API_KEY"
+        [ -n "${API_KEY_CONTENT:-}" ] ||
+          missing="$missing APPLE_API_KEY_CONTENT"
+        if [ -z "$missing" ]; then
+          echo "enabled=true" >> "$GITHUB_OUTPUT"
+          echo "Signing and notarizing: every Apple secret is set."
+        else
+          echo "enabled=false" >> "$GITHUB_OUTPUT"
+          echo "::notice::Building unsigned because no signing secrets" \
+            "are set. Missing:$missing. Gatekeeper refuses an unsigned" \
+            "download."
+        fi
+
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '24'
+        cache: npm
+        cache-dependency-path: ui/package-lock.json
+
+    - name: Build the UI bundle
+      # mabel-node compiles ui/dist into the binary, so this has to run before
+      # any cargo build. A checkout without it would produce an app that
+      # answers ui_not_built.
+      shell: bash
+      working-directory: ui
+      env:
+        # playwright is a dev dependency of ui/ and this bundle needs no
+        # browsers, so `npm ci` must not download them.
+        PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+      run: |
+        set -euo pipefail
+        npm ci
+        npm run build
+        test -f dist/index.html
+
+    - name: Install the rust toolchain
+      shell: bash
+      run: |
+        set -euo pipefail
+        rustup toolchain install stable --profile minimal --no-self-update
+        rustup default stable
+        rustc --version
+
+    - name: Cache cargo
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          ~/.cargo/bin
+          app/src-tauri/target
+        key: app-macos-${{ hashFiles('app/src-tauri/Cargo.lock') }}
+        restore-keys: app-macos-
+
+    - name: Install the tauri CLI
+      # Builds from source on a cold cache; a warm cache restores the binary,
+      # which cargo install refuses to overwrite, so skip when the right
+      # version is already there.
+      shell: bash
+      env:
+        TAURI_CLI_VERSION: ${{ inputs.tauri-cli-version }}
+      run: |
+        set -euo pipefail
+        if cargo tauri --version 2>/dev/null |
+          grep -qF "$TAURI_CLI_VERSION"; then
+          echo "tauri-cli $TAURI_CLI_VERSION is already installed"
+        else
+          cargo install tauri-cli --version "$TAURI_CLI_VERSION" \
+            --locked --force
+        fi
+
+    - name: Generate the icon set
+      # The checked-in icons are bare PNGs; the macOS bundler needs the derived
+      # set (icon.icns included) or it fails with "No matching IconType".
+      # `tauri icon` writes the full set from the source PNG.
+      shell: bash
+      working-directory: app/src-tauri
+      run: cargo tauri icon icons/app-icon.png
+
+    - name: Write the notarization API key
+      # tauri reads the key from a file named by APPLE_API_KEY_PATH; it has no
+      # variable for the key contents. So the .p8 is written to the runner's
+      # temp directory, which is outside the workspace and so cannot end up in
+      # an artifact, with a mode that only the runner user can read.
+      if: steps.signing.outputs.enabled == 'true'
+      shell: bash
+      env:
+        API_KEY_CONTENT: ${{ inputs.apple-api-key-content }}
+      run: |
+        set -eu
+        umask 077
+        printf '%s\n' "$API_KEY_CONTENT" > "$RUNNER_TEMP/apple-api-key.p8"
+
+    - name: Build the app and the dmg, unsigned
+      # Native arm64. A universal binary needs
+      # `rustup target add x86_64-apple-darwin aarch64-apple-darwin` and
+      # `--target universal-apple-darwin`.
+      if: steps.signing.outputs.enabled != 'true'
+      shell: bash
+      working-directory: app/src-tauri
+      run: cargo tauri build
+
+    - name: Build the app and the dmg, signed and notarized
+      # Same command and same artifacts as the unsigned step; the environment
+      # is the whole difference. `cargo tauri build` does the signing itself:
+      # tauri-bundler imports the base64 .p12 from APPLE_CERTIFICATE into a
+      # keychain it creates and deletes on its own, signs the .app with
+      # APPLE_SIGNING_IDENTITY under the hardened runtime, then submits the
+      # .app to notarytool with the App Store Connect key and staples the
+      # ticket to it. No `security`, `notarytool` or `stapler` call belongs
+      # here.
+      #
+      # APPLE_ID and APPLE_PASSWORD are deliberately absent: tauri prefers
+      # them over the API key when they are set, and then demands
+      # APPLE_TEAM_ID as well.
+      if: steps.signing.outputs.enabled == 'true'
+      shell: bash
+      working-directory: app/src-tauri
+      env:
+        APPLE_CERTIFICATE: ${{ inputs.apple-certificate }}
+        APPLE_CERTIFICATE_PASSWORD: ${{ inputs.apple-certificate-password }}
+        APPLE_SIGNING_IDENTITY: ${{ inputs.apple-signing-identity }}
+        APPLE_API_ISSUER: ${{ inputs.apple-api-issuer }}
+        APPLE_API_KEY: ${{ inputs.apple-api-key }}
+        APPLE_API_KEY_PATH: ${{ runner.temp }}/apple-api-key.p8
+      run: cargo tauri build
+
+    - name: Notarize and staple the dmg
+      # tauri signs the dmg but does not notarize it, so macOS warns when the
+      # disk image is opened even though the .app inside it carries a ticket.
+      # This is the gap the bundler leaves, and the only place this action
+      # calls notarytool directly.
+      if: steps.signing.outputs.enabled == 'true'
+      shell: bash
+      env:
+        API_ISSUER: ${{ inputs.apple-api-issuer }}
+        API_KEY: ${{ inputs.apple-api-key }}
+      run: |
+        set -eu
+        dmg=""
+        for candidate in app/src-tauri/target/release/bundle/dmg/*.dmg; do
+          dmg="$candidate"
+        done
+        test -f "$dmg"
+        xcrun notarytool submit "$dmg" \
+          --key-id "$API_KEY" \
+          --key "$RUNNER_TEMP/apple-api-key.p8" \
+          --issuer "$API_ISSUER" \
+          --wait \
+          --timeout 45m
+        xcrun stapler staple "$dmg"
+
+    - name: Verify the signature and the notarization ticket
+      # What a user's Gatekeeper will check, checked here instead. `stapler
+      # validate` is the step that proves notarization actually happened
+      # rather than that the command merely ran.
+      if: steps.signing.outputs.enabled == 'true'
+      shell: bash
+      run: |
+        set -eu
+        bundle=""
+        for candidate in app/src-tauri/target/release/bundle/macos/*.app; do
+          bundle="$candidate"
+        done
+        test -d "$bundle"
+        codesign --verify --deep --strict --verbose=2 "$bundle"
+        xcrun stapler validate "$bundle"
+        dmg=""
+        for candidate in app/src-tauri/target/release/bundle/dmg/*.dmg; do
+          dmg="$candidate"
+        done
+        test -f "$dmg"
+        codesign --verify --strict --verbose=2 "$dmg"
+        xcrun stapler validate "$dmg"
+
+    - name: Remove the notarization API key
+      if: always()
+      shell: bash
+      run: rm -f "$RUNNER_TEMP/apple-api-key.p8"
+
+    - name: Stage the dmg and the zipped .app
+      # The caller uploads exactly these two paths, so the names a user
+      # downloads are decided here and nowhere else.
+      id: stage
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+        STAGING: ${{ inputs.staging-dir }}
+      run: |
+        set -euo pipefail
+
+        bundle=""
+        for candidate in app/src-tauri/target/release/bundle/macos/*.app; do
+          bundle="$candidate"
+        done
+        test -d "$bundle"
+
+        # The caller names the version, so the bundle has to report it. Tauri
+        # writes CFBundleShortVersionString from the version in
+        # tauri.conf.json, and the release commit is what writes that.
+        reported=$(plutil -extract CFBundleShortVersionString raw \
+          "$bundle/Contents/Info.plist")
+        echo "the bundle reports $reported"
+        if [ "$reported" != "$VERSION" ]; then
+          echo "the bundle reports $reported, expected $VERSION" >&2
+          exit 1
+        fi
+
+        dmg=""
+        for candidate in app/src-tauri/target/release/bundle/dmg/*.dmg; do
+          dmg="$candidate"
+        done
+        test -f "$dmg"
+
+        mkdir -p "$STAGING"
+        stem="mabel-app-${VERSION}-macos"
+        cp "$dmg" "${STAGING}/${stem}.dmg"
+        # ditto, not zip: a zip drops the executable bit and the extended
+        # attribute that holds a stapled notarization ticket, which would
+        # leave an .app that cannot be launched.
+        ditto -c -k --sequesterRsrc --keepParent "$bundle" \
+          "${STAGING}/${stem}.zip"
+
+        {
+          echo "dmg=${STAGING}/${stem}.dmg"
+          echo "app-zip=${STAGING}/${stem}.zip"
+        } >> "$GITHUB_OUTPUT"
+        ls -l "$STAGING"

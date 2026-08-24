@@ -25,6 +25,9 @@ env:
   # `ui/` carries playwright as a dev dependency and the release bundle needs
   # no browsers, so `npm ci` must not download them.
   PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+  # Pinned so a CLI release cannot change what this workflow produces. app.yml
+  # pins the same version for its iOS job.
+  TAURI_CLI_VERSION: 2.11.4
 
 jobs:
   # Decide the version, write it into the manifests, tag it. Every job below
@@ -113,6 +116,9 @@ jobs:
   # are native builds and neither needs a cross toolchain.
   binaries:
     needs: version
+    # A codesign that cannot find its identity prompts, which on a runner
+    # is a silent hang; the timeout turns that into a failure.
+    timeout-minutes: 60
     permissions:
       contents: read
     strategy:
@@ -130,6 +136,44 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: refs/tags/${{ needs.version.outputs.tag }}
+
+      # Early, so the log says whether this tarball will be signed before the
+      # build spends ten minutes. It is all six secrets or none: signing
+      # without notarizing is not a useful state, because Gatekeeper refuses a
+      # signed but un-notarized download just as it refuses an unsigned one.
+      # The step prints secret names, never secret values, and does nothing on
+      # the linux leg.
+      - name: Check for the Apple signing secrets
+        if: matrix.os == 'macos-latest'
+        id: signing
+        env:
+          CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          API_KEY: ${{ secrets.APPLE_API_KEY }}
+          API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY_CONTENT }}
+        run: |
+          set -eu
+          missing=""
+          [ -n "${CERTIFICATE:-}" ] || missing="$missing APPLE_CERTIFICATE"
+          [ -n "${CERTIFICATE_PASSWORD:-}" ] ||
+            missing="$missing APPLE_CERTIFICATE_PASSWORD"
+          [ -n "${SIGNING_IDENTITY:-}" ] ||
+            missing="$missing APPLE_SIGNING_IDENTITY"
+          [ -n "${API_ISSUER:-}" ] || missing="$missing APPLE_API_ISSUER"
+          [ -n "${API_KEY:-}" ] || missing="$missing APPLE_API_KEY"
+          [ -n "${API_KEY_CONTENT:-}" ] ||
+            missing="$missing APPLE_API_KEY_CONTENT"
+          if [ -z "$missing" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            echo "Signing and notarizing the macOS binary."
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::The macOS tarball is unsigned because no signing" \
+              "secrets are set. Missing:$missing. Gatekeeper refuses an" \
+              "unsigned download."
+          fi
 
       - uses: actions/setup-node@v4
         with:
@@ -182,6 +226,108 @@ jobs:
           # The tag names the version, so the binary has to report it.
           printf '%s\n' "$reported" | grep -qF " ${VERSION}"
 
+      - name: Sign the macOS binary
+        # The app build lets tauri do this; a plain cargo build has nobody to
+        # do it, so this is the keychain dance by hand. The keychain lives
+        # under RUNNER_TEMP with a throwaway password and is deleted in the
+        # cleanup step below. `--options runtime` is the hardened runtime and
+        # `--timestamp` is a secure timestamp from Apple; notarization refuses
+        # a signature that lacks either.
+        if: >-
+          matrix.os == 'macos-latest' &&
+          steps.signing.outputs.enabled == 'true'
+        env:
+          CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: |
+          set -euo pipefail
+          umask 077
+
+          keychain="$RUNNER_TEMP/mabel-signing.keychain-db"
+          password=$(openssl rand -base64 24)
+          printf '%s' "$CERTIFICATE" | base64 --decode \
+            > "$RUNNER_TEMP/certificate.p12"
+
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          security import "$RUNNER_TEMP/certificate.p12" -k "$keychain" \
+            -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          # Without the partition list codesign asks for the keychain
+          # interactively, and a prompt on a runner is a hang until the
+          # timeout. The search list has to name the keychain too, or codesign
+          # looks in the login keychain only and finds no identity. Replacing
+          # the list is safe here: nothing else in this job reads a keychain.
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$password" "$keychain" > /dev/null
+          security list-keychains -d user -s "$keychain"
+          rm -f "$RUNNER_TEMP/certificate.p12"
+
+          codesign --force --options runtime --timestamp \
+            --sign "$SIGNING_IDENTITY" target/release/mabel
+          codesign --verify --strict --verbose=2 target/release/mabel
+
+      - name: Notarize the macOS binary
+        # notarytool takes a zip, a dmg or a pkg, so the signed binary is
+        # submitted inside a zip. Nothing is stapled afterwards: a stapled
+        # ticket lives in a bundle's or a disk image's metadata and a bare
+        # mach-o has nowhere to keep one. The ticket exists on Apple's side, so
+        # Gatekeeper looks it up over the network the first time the binary
+        # runs, and a machine that is offline for that first run sees an
+        # un-notarized binary. The dmg from the macos-app job is the download
+        # that carries its ticket with it.
+        #
+        # The grep is belt and braces. `notarytool submit --wait` should
+        # already exit non-zero on a rejected submission, and there is no
+        # stapled ticket here to prove afterwards that it did, so the printed
+        # status is checked as well.
+        if: >-
+          matrix.os == 'macos-latest' &&
+          steps.signing.outputs.enabled == 'true'
+        env:
+          API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          API_KEY: ${{ secrets.APPLE_API_KEY }}
+          API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY_CONTENT }}
+        run: |
+          set -euo pipefail
+          umask 077
+
+          # Outside the workspace, so no artifact can pick it up.
+          key="$RUNNER_TEMP/apple-api-key.p8"
+          printf '%s\n' "$API_KEY_CONTENT" > "$key"
+
+          # ditto zips a directory, so the binary is copied into one first.
+          src="$RUNNER_TEMP/notarize-src"
+          zip="$RUNNER_TEMP/mabel-notarize.zip"
+          rm -rf "$src"
+          mkdir -p "$src"
+          cp target/release/mabel "$src/mabel"
+          ditto -c -k --sequesterRsrc "$src" "$zip"
+
+          xcrun notarytool submit "$zip" \
+            --key-id "$API_KEY" \
+            --key "$key" \
+            --issuer "$API_ISSUER" \
+            --wait \
+            --timeout 45m | tee "$RUNNER_TEMP/notarize.log"
+          grep -q 'status: Accepted' "$RUNNER_TEMP/notarize.log"
+
+      - name: Remove the signing keychain and the API key
+        # `security delete-keychain` drops the keychain from the search list as
+        # well as deleting the file.
+        if: always() && matrix.os == 'macos-latest'
+        run: |
+          set -eu
+          rm -rf "$RUNNER_TEMP/notarize-src"
+          rm -f "$RUNNER_TEMP/certificate.p12" \
+            "$RUNNER_TEMP/apple-api-key.p8" \
+            "$RUNNER_TEMP/mabel-notarize.zip"
+          keychain="$RUNNER_TEMP/mabel-signing.keychain-db"
+          if [ -f "$keychain" ]; then
+            security delete-keychain "$keychain" || true
+          fi
+
       - name: Package the tarball
         env:
           VERSION: ${{ needs.version.outputs.version }}
@@ -203,6 +349,52 @@ jobs:
         with:
           name: tarball-${{ matrix.asset }}
           path: dist/*.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+
+  # The desktop app: a signed, notarized dmg and the same .app as a zip. Every
+  # step is in .github/actions/macos-app, which app.yml's on-demand macOS job
+  # calls with the same secrets, so the release build and a build off a branch
+  # cannot drift. This is the canonical macOS app build; app.yml no longer
+  # builds one on a push.
+  macos-app:
+    needs: version
+    runs-on: macos-latest
+    # Notarization is a round trip to Apple's notary service, which usually
+    # answers in minutes but has no promised time.
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    outputs:
+      signed: ${{ steps.build.outputs.signed }}
+    steps:
+      # The tag, not the pushed commit: the release commit is what writes the
+      # version into tauri.conf.json, and the action fails the build when the
+      # bundle reports anything else.
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ needs.version.outputs.tag }}
+
+      - name: Build the app
+        id: build
+        uses: ./.github/actions/macos-app
+        with:
+          version: ${{ needs.version.outputs.version }}
+          tauri-cli-version: ${{ env.TAURI_CLI_VERSION }}
+          apple-certificate: ${{ secrets.APPLE_CERTIFICATE }}
+          apple-certificate-password: >-
+            ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          apple-signing-identity: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          apple-api-issuer: ${{ secrets.APPLE_API_ISSUER }}
+          apple-api-key: ${{ secrets.APPLE_API_KEY }}
+          apple-api-key-content: ${{ secrets.APPLE_API_KEY_CONTENT }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: app-macos
+          path: |
+            ${{ steps.build.outputs.dmg }}
+            ${{ steps.build.outputs.app-zip }}
           if-no-files-found: error
           retention-days: 7
 
@@ -255,7 +447,7 @@ jobs:
           cache-to: type=gha,mode=max
 
   release:
-    needs: [version, binaries, docker]
+    needs: [version, binaries, macos-app, docker]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -273,11 +465,18 @@ jobs:
           pattern: tarball-*
           merge-multiple: true
 
+      # The dmg and the zipped .app, into the same directory as the tarballs.
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          name: app-macos
+
       - name: Write the release notes
         env:
           TAG: ${{ needs.version.outputs.tag }}
           SHA: ${{ needs.version.outputs.sha }}
           SHORT_SHA: ${{ needs.version.outputs.short_sha }}
+          SIGNED: ${{ needs.macos-app.outputs.signed }}
         run: |
           set -euo pipefail
 
@@ -300,6 +499,18 @@ jobs:
           The same image is tagged \`$TAG\`, \`$SHORT_SHA\` and \`latest\`.
           EOF
 
+          # Say it on the release page rather than only in a build log: the
+          # same six secrets sign the app and the macOS tarball, so one flag
+          # describes both downloads.
+          if [ "$SIGNED" != true ]; then
+            cat >> notes.md <<'EOF'
+
+          The macOS downloads are unsigned, because the Apple signing secrets
+          are not set on this repository. Gatekeeper refuses an unsigned
+          download.
+          EOF
+          fi
+
           cat notes.md
 
       - name: Create the release
@@ -310,15 +521,22 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Both binary jobs must have landed their tarball.
-          count=$(find dist -name '*.tar.gz' -type f | wc -l)
-          if [ "$count" -ne 2 ]; then
-            echo "expected 2 tarballs, found $count" >&2
-            find dist -type f >&2
-            exit 1
-          fi
+          # Four assets, from three jobs: the two CLI tarballs, the dmg and
+          # the .app as a zip. A missing one is a failed release rather than a
+          # release that quietly ships less than the last one did.
+          expect() {
+            count=$(find dist -maxdepth 1 -name "$1" -type f | wc -l)
+            if [ "$count" -ne "$2" ]; then
+              echo "expected $2 of $1, found $count" >&2
+              find dist -type f >&2
+              exit 1
+            fi
+          }
+          expect '*.tar.gz' 2
+          expect '*.dmg' 1
+          expect '*.zip' 1
 
           # The tag exists before any of this built, so the release needs no
           # --target and is never a prerelease.
           gh release create "$TAG" --title "$NAME" --notes-file notes.md \
-            dist/*.tar.gz
+            dist/*.tar.gz dist/*.dmg dist/*.zip

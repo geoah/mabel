@@ -1,18 +1,18 @@
-# Builds the tauri app in app/ for macOS and for the iOS simulator, and uploads
-# both as workflow artifacts. It publishes no release: whoever owns the release
-# workflow can attach these artifacts later with
-# `gh run download <run-id> --name mabel-app-<sha>-macos` followed by
-# `gh release upload <tag> <file>`.
+# Checks the tauri app in app/ on every push, and builds it for the iOS
+# simulator. It publishes no release.
 #
-# Nothing else in the repository depends on this workflow, and it depends on
-# nothing else: it builds ui/dist itself, because mabel-node embeds that
-# directory at compile time.
+# The macOS app is not built on a push any more: release.yml builds the signed,
+# notarized dmg from the release tag and attaches it to the release, and a
+# second signed build on every push would cost another 15 minutes of macOS
+# runner for a bundle nobody downloads. The macOS job here runs on
+# workflow_dispatch only, for building the app off a branch before it lands. It
+# and release.yml call the same composite action,
+# .github/actions/macos-app, so the two builds cannot drift.
 #
-# Signing is conditional. With no Apple secrets set the workflow builds exactly
-# what it built before, unsigned, and says so in the log. With the secrets set
-# the macOS build is signed and notarized, and the iOS job can additionally
-# produce a signed App Store archive. app/README.md lists every secret and where
-# it comes from.
+# Signing is conditional. With no Apple secrets set the builds are unsigned and
+# say so in the log. With the secrets set the macOS build is signed and
+# notarized, and the iOS job can additionally produce a signed App Store
+# archive. app/README.md lists every secret and where it comes from.
 name: app
 
 on:
@@ -37,6 +37,7 @@ concurrency:
 
 env:
   # Pinned so a CLI release cannot change what this workflow produces.
+  # release.yml pins the same version for its macOS app job.
   TAURI_CLI_VERSION: 2.11.4
   CARGO_TERM_COLOR: always
 
@@ -74,8 +75,12 @@ jobs:
       - run: cargo test --no-default-features
         working-directory: app/src-tauri
 
+  # On demand only. release.yml builds and publishes the macOS app from the
+  # release tag on every push to main, so this job exists to build the app off
+  # a branch before it lands. Both call .github/actions/macos-app.
   macos:
     name: macOS app
+    if: github.event_name == 'workflow_dispatch'
     runs-on: macos-latest
     # Notarization is a round trip to Apple's notary service, which usually
     # answers in minutes but has no promised time.
@@ -83,207 +88,39 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Short sha
-        id: sha
-        run: echo "short=$(git rev-parse --short=7 HEAD)" >> "$GITHUB_OUTPUT"
-
-      - name: Check for the Apple signing secrets
-        # A secret that is not set arrives as an empty string, and tauri reads
-        # these variables with `var_os`, for which an empty string is still a
-        # value. So the signing variables are set on the signing build step
-        # only, never on the job, and this step decides which build step runs.
-        #
-        # It is all six secrets or none. Signing without notarizing is not a
-        # useful state, because Gatekeeper refuses a signed but un-notarized
-        # download just as it refuses an unsigned one. The step prints secret
-        # names, never secret values.
-        id: signing
-        env:
-          CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-          API_KEY: ${{ secrets.APPLE_API_KEY }}
-          API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY_CONTENT }}
+      - name: Short sha and version
+        # The sha names the artifact, so a dispatch off a branch is traceable.
+        # The version names the files inside it and is the version the action
+        # checks the built bundle against.
+        id: build-id
         run: |
-          set -eu
-          missing=""
-          [ -n "${CERTIFICATE:-}" ] || missing="$missing APPLE_CERTIFICATE"
-          [ -n "${CERTIFICATE_PASSWORD:-}" ] || missing="$missing APPLE_CERTIFICATE_PASSWORD"
-          [ -n "${SIGNING_IDENTITY:-}" ] || missing="$missing APPLE_SIGNING_IDENTITY"
-          [ -n "${API_ISSUER:-}" ] || missing="$missing APPLE_API_ISSUER"
-          [ -n "${API_KEY:-}" ] || missing="$missing APPLE_API_KEY"
-          [ -n "${API_KEY_CONTENT:-}" ] || missing="$missing APPLE_API_KEY_CONTENT"
-          if [ -z "$missing" ]; then
-            echo "enabled=true" >> "$GITHUB_OUTPUT"
-            echo "Signing and notarizing: every Apple secret is set."
-          else
-            echo "enabled=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::Building unsigned because no signing secrets" \
-              "are set. Missing:$missing. Gatekeeper refuses an unsigned" \
-              "download."
-          fi
+          set -euo pipefail
+          {
+            echo "short=$(git rev-parse --short=7 HEAD)"
+            echo "version=$(jq -r .version app/src-tauri/tauri.conf.json)"
+          } >> "$GITHUB_OUTPUT"
 
-      - uses: actions/setup-node@v4
+      - name: Build the app
+        id: build
+        uses: ./.github/actions/macos-app
         with:
-          node-version: "24"
-          cache: npm
-          cache-dependency-path: ui/package-lock.json
-
-      - name: Build the UI bundle
-        # mabel-node compiles ui/dist into the binary, so this has to run before
-        # any cargo build. A checkout without it would produce an app that
-        # answers ui_not_built.
-        run: npm ci && npm run build
-        working-directory: ui
-
-      - name: Install the rust toolchain
-        run: |
-          rustup toolchain install stable --profile minimal
-          rustup default stable
-          rustc --version
-
-      - name: Cache cargo
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            ~/.cargo/bin
-            app/src-tauri/target
-          key: app-macos-${{ hashFiles('app/src-tauri/Cargo.lock') }}
-          restore-keys: app-macos-
-
-      - name: Install the tauri CLI
-        # Builds from source on a cold cache; a warm cache restores the
-        # binary, which cargo install refuses to overwrite, so skip when the
-        # right version is already there.
-        run: |
-          cargo tauri --version 2>/dev/null | grep -qF "${{ env.TAURI_CLI_VERSION }}" \
-            || cargo install tauri-cli --version ${{ env.TAURI_CLI_VERSION }} --locked --force
-      - name: Generate the icon set
-        # The checked-in icons are bare PNGs; the macOS bundler needs the
-        # derived set (icon.icns included) or it fails with "No matching
-        # IconType". `tauri icon` writes the full set from the source PNG.
-        run: cargo tauri icon icons/app-icon.png
-        working-directory: app/src-tauri
-
-      - name: Write the notarization API key
-        # tauri reads the key from a file named by APPLE_API_KEY_PATH; it has no
-        # variable for the key contents. So the .p8 is written to the runner's
-        # temp directory, which is outside the workspace and so cannot end up in
-        # an artifact, with a mode that only the runner user can read.
-        if: steps.signing.outputs.enabled == 'true'
-        env:
-          API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY_CONTENT }}
-        run: |
-          set -eu
-          umask 077
-          printf '%s\n' "$API_KEY_CONTENT" > "$RUNNER_TEMP/apple-api-key.p8"
-
-      - name: Build the app and the dmg, unsigned
-        # Native arm64. A universal binary needs
-        # `rustup target add x86_64-apple-darwin aarch64-apple-darwin` and
-        # `--target universal-apple-darwin`.
-        if: steps.signing.outputs.enabled != 'true'
-        run: cargo tauri build
-        working-directory: app/src-tauri
-
-      - name: Build the app and the dmg, signed and notarized
-        # Same command and same artifacts as the unsigned step; the environment
-        # is the whole difference. `cargo tauri build` does the signing itself:
-        # tauri-bundler imports the base64 .p12 from APPLE_CERTIFICATE into a
-        # keychain it creates and deletes on its own, signs the .app with
-        # APPLE_SIGNING_IDENTITY under the hardened runtime, then submits the
-        # .app to notarytool with the App Store Connect key and staples the
-        # ticket to it. No `security`, `notarytool` or `stapler` call belongs
-        # here.
-        #
-        # APPLE_ID and APPLE_PASSWORD are deliberately absent: tauri prefers
-        # them over the API key when they are set, and then demands
-        # APPLE_TEAM_ID as well.
-        if: steps.signing.outputs.enabled == 'true'
-        env:
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
-          APPLE_API_KEY_PATH: ${{ runner.temp }}/apple-api-key.p8
-        run: cargo tauri build
-        working-directory: app/src-tauri
-
-      - name: Notarize and staple the dmg
-        # tauri signs the dmg but does not notarize it, so macOS warns when the
-        # disk image is opened even though the .app inside it carries a ticket.
-        # This is the gap the bundler leaves, and the only place this workflow
-        # calls notarytool directly.
-        if: steps.signing.outputs.enabled == 'true'
-        env:
-          API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-          API_KEY: ${{ secrets.APPLE_API_KEY }}
-        run: |
-          set -eu
-          dmg=""
-          for candidate in app/src-tauri/target/release/bundle/dmg/*.dmg; do
-            dmg="$candidate"
-          done
-          test -f "$dmg"
-          xcrun notarytool submit "$dmg" \
-            --key-id "$API_KEY" \
-            --key "$RUNNER_TEMP/apple-api-key.p8" \
-            --issuer "$API_ISSUER" \
-            --wait \
-            --timeout 45m
-          xcrun stapler staple "$dmg"
-
-      - name: Verify the signature and the notarization ticket
-        # What a user's Gatekeeper will check, checked here instead. `stapler
-        # validate` is the step that proves notarization actually happened
-        # rather than that the command merely ran.
-        if: steps.signing.outputs.enabled == 'true'
-        run: |
-          set -eu
-          bundle=""
-          for candidate in app/src-tauri/target/release/bundle/macos/*.app; do
-            bundle="$candidate"
-          done
-          test -d "$bundle"
-          codesign --verify --deep --strict --verbose=2 "$bundle"
-          xcrun stapler validate "$bundle"
-          dmg=""
-          for candidate in app/src-tauri/target/release/bundle/dmg/*.dmg; do
-            dmg="$candidate"
-          done
-          test -f "$dmg"
-          codesign --verify --strict --verbose=2 "$dmg"
-          xcrun stapler validate "$dmg"
-
-      - name: Remove the notarization API key
-        if: always()
-        run: rm -f "$RUNNER_TEMP/apple-api-key.p8"
-
-      - name: Zip the .app
-        # upload-artifact drops the executable bit, which would leave an .app
-        # that cannot be launched. ditto keeps the bundle intact, including the
-        # stapled notarization ticket when there is one.
-        run: |
-          set -eu
-          cd app/src-tauri/target/release/bundle/macos
-          bundle=""
-          for candidate in ./*.app; do
-            bundle="$candidate"
-          done
-          test -d "$bundle"
-          ditto -c -k --sequesterRsrc --keepParent "$bundle" mabel-macos.zip
+          version: ${{ steps.build-id.outputs.version }}
+          tauri-cli-version: ${{ env.TAURI_CLI_VERSION }}
+          apple-certificate: ${{ secrets.APPLE_CERTIFICATE }}
+          apple-certificate-password: >-
+            ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          apple-signing-identity: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          apple-api-issuer: ${{ secrets.APPLE_API_ISSUER }}
+          apple-api-key: ${{ secrets.APPLE_API_KEY }}
+          apple-api-key-content: ${{ secrets.APPLE_API_KEY_CONTENT }}
 
       - uses: actions/upload-artifact@v4
         with:
-          name: mabel-app-${{ steps.sha.outputs.short }}-macos
+          name: mabel-app-${{ steps.build-id.outputs.short }}-macos
           if-no-files-found: error
           path: |
-            app/src-tauri/target/release/bundle/macos/mabel-macos.zip
-            app/src-tauri/target/release/bundle/dmg/*.dmg
+            ${{ steps.build.outputs.dmg }}
+            ${{ steps.build.outputs.app-zip }}
 
   ios:
     name: iOS simulator app
