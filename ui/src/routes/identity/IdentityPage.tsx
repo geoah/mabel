@@ -20,7 +20,6 @@ import { ErrorEnvelopeView } from "@/components/ErrorEnvelopeView";
 import { Identifier } from "@/components/Identifier";
 import { KeyValue, KeyValueTable } from "@/components/KeyValue";
 import { ResolvedIdentity } from "@/components/ResolvedIdentity";
-import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useResolvedNames } from "@/hooks/useResolvedNames";
 import { useResource } from "@/hooks/useResource";
@@ -31,10 +30,10 @@ import { OverviewCard } from "@/routes/wallet/OverviewCard";
 import { PrincipalsPanel } from "@/routes/wallet/PrincipalsPanel";
 import { TrustPanel, useTrustActions } from "@/routes/wallet/TrustPanel";
 
-import { FetchPanel } from "./FetchPanel";
+import { FetchButton, FetchPanel } from "./FetchPanel";
 import { KnowledgeSection } from "./KnowledgeSection";
 
-/** A ledger this home does not hold is an answer, not a failure. */
+/** A record this wallet does not hold is an answer, not a failure. */
 function notStored(thrown: unknown): null {
   if (thrown instanceof ApiError && (thrown.status === 404 || thrown.reason === "unknown_ledger")) {
     return null;
@@ -54,9 +53,8 @@ function ContactSection({ identityId }: { identityId: string }) {
   return (
     <Action
       testId="lookup-contact"
-      title="Edit the contact note"
-      description="A private nickname and note kept in this node home, never signed and never synced."
-      defaultOpen
+      title="Write a private note"
+      description="A nickname and note only you see. It stays on this computer and is never published."
     >
       {contact.error && <ErrorEnvelopeView error={contact.error} testId="lookup-contact-error" />}
       {contact.data && (
@@ -72,12 +70,12 @@ function ContactSection({ identityId }: { identityId: string }) {
 
 /** Where the name on a crawled page came from, in the order section 4 fixes. */
 const PROVENANCE_SENTENCE: Record<NameProvenance, string> = {
-  profile: "the display name published on their own chain",
-  alias: "a nickname this node home keeps, which nobody else sees",
-  none: "nothing this home holds, so the id is the only label",
+  profile: "the name they publish themselves",
+  alias: "your own nickname for them, which nobody else sees",
+  none: "nothing your wallet knows, so the id is the only label",
 };
 
-/** The overview of a ledger this home does not hold: what the crawl named it. */
+/** The overview of a record this wallet does not hold: what it found them called. */
 function CrawledOverview({ answer }: { answer: LookupResponse }) {
   return (
     <Card data-testid="identity-detail">
@@ -88,14 +86,14 @@ function CrawledOverview({ answer }: { answer: LookupResponse }) {
       </CardHeader>
       <CardContent>
         <KeyValueTable>
-          <KeyValue label="identity_id" testId="identity-detail-identity-id">
+          <KeyValue label="identity id" testId="identity-detail-identity-id">
             <Identifier value={answer.identity.identity_id} />
           </KeyValue>
-          <KeyValue label="named by" testId="identity-detail-provenance">
+          <KeyValue label="name comes from" testId="identity-detail-provenance">
             {PROVENANCE_SENTENCE[answer.identity.provenance]}
           </KeyValue>
-          <KeyValue label="ledger" testId="identity-detail-ledger-summary">
-            not stored in this node home
+          <KeyValue label="record" testId="identity-detail-ledger-summary">
+            your wallet holds no copy of it
           </KeyValue>
         </KeyValueTable>
       </CardContent>
@@ -105,9 +103,10 @@ function CrawledOverview({ answer }: { answer: LookupResponse }) {
 
 /**
  * One identity, local or foreign, stored or not (proposal 004). What varies is
- * a single fact: when this wallet can sign for the ledger the page carries the
- * "your identity" badge and the actions; otherwise it carries the contact note
- * and how you know them. Everything else renders from whatever the wallet holds.
+ * a single fact: when this wallet can sign for the record the overview card
+ * carries the "your identity" badge and the page carries the actions; otherwise
+ * it carries the private note and how you know them. Everything else renders
+ * from whatever the wallet holds.
  */
 export function IdentityPage() {
   const { identityId = "" } = useParams();
@@ -154,16 +153,14 @@ export function IdentityPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-3">
-        <Link
-          to="/wallet"
-          className="inline-flex min-h-10 items-center text-sm underline"
-          data-testid="identity-back"
-        >
-          Wallet
-        </Link>
-        {canSign && <Badge data-testid="identity-own-badge">your identity</Badge>}
-      </div>
+      {/* The back link is navigation and nothing else lives in its row. */}
+      <Link
+        to="/wallet"
+        className="inline-flex min-h-10 items-center text-sm underline"
+        data-testid="identity-back"
+      >
+        Wallet
+      </Link>
       {loading && <p data-testid="identity-detail-loading">loading</p>}
       {identity.error && (
         <ErrorEnvelopeView error={identity.error} testId="identity-detail-error" />
@@ -173,8 +170,22 @@ export function IdentityPage() {
       )}
       {held && (
         <div className="grid gap-4 lg:grid-cols-2">
-          <OverviewCard identity={held} raw={identity.data} />
-          <LedgerPanel identityId={held.identity_id} version={version} />
+          <OverviewCard identity={held} own={canSign} />
+          <LedgerPanel
+            identityId={held.identity_id}
+            version={version}
+            // A record this wallet signs for is never missing its own entries,
+            // so only a stored foreign one offers to fetch the rest.
+            fetch={
+              canSign ? undefined : (
+                <FetchButton
+                  identityId={held.identity_id}
+                  onFetched={refresh}
+                  testId="ledger-fetch-button"
+                />
+              )
+            }
+          />
           <TrustPanel identity={held} names={names} actions={trust} />
           <PrincipalsPanel identity={held} memberships={memberships.data} names={names} />
         </div>
@@ -189,7 +200,7 @@ export function IdentityPage() {
           {knowledge.data && <KnowledgeSection response={knowledge.data} />}
           {from === null && !identity.loading && (
             <p data-testid="lookup-no-root" className="text-sm">
-              this node home holds no identity to answer from
+              Your wallet holds no identity of its own to answer from.
             </p>
           )}
         </>

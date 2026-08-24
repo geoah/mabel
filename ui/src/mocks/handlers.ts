@@ -40,6 +40,10 @@ export const handlers = [
     answer(() => store.getIdentity(String(params.identityId))),
   ),
 
+  http.get("/api/identities/:identityId/keys", ({ params }) =>
+    answer(() => store.getIdentityKeys(String(params.identityId))),
+  ),
+
   http.get("/api/identities/:identityId/ledger", ({ params, request }) => {
     const url = new URL(request.url);
     return answer(() =>

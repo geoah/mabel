@@ -36,17 +36,17 @@ describe("the witness node's debug route", () => {
 
     expect(cardIds()).toEqual(ORDERED_IDS);
     expect(screen.getByTestId("witness-holdings-note")).toHaveTextContent(
-      "a diagnostic and not an index",
+      "A record missing here may still be on another witness.",
     );
     expect(screen.getByTestId("witness-read-only-note")).toHaveTextContent(
-      "every request this route issues is a read",
+      "This page only reads. Nothing here changes anything.",
     );
     const card = screen.getByTestId(`identity-card-${ACME}`);
     expect(within(card).getByTestId(`identity-card-declared-kind-${ACME}`)).toHaveTextContent(
       "organization",
     );
     expect(within(card).getByTestId(`identity-card-head-seq-${ACME}`)).toHaveTextContent(
-      `head seq ${acme.head_seq}`,
+      `at position ${acme.head_seq}`,
     );
   });
 
@@ -55,7 +55,7 @@ describe("the witness node's debug route", () => {
     await screen.findByTestId("identity-cards");
 
     expect(screen.getByTestId(`identity-card-fork-count-${TRUNCATED_LEDGER}`)).toHaveTextContent(
-      `${truncated.fork_count} fork records, recording stopped`,
+      `${truncated.fork_count} conflicts, and it stopped recording more`,
     );
     expect(
       screen.queryByTestId(`identity-card-fork-count-${ACME}`),
@@ -106,10 +106,13 @@ describe("the witness node's debug route", () => {
       witnessForkFixture.conflicting.event_id,
     );
     expect(within(record).getAllByTestId(/^fork-(kept|conflicting)-.*-seq$/)).toHaveLength(2);
+    // The statement is the node's own wording, rendered verbatim.
     expect(screen.getByTestId(`fork-statement-${FORK_KEY}`)).toHaveTextContent(
       "equivocation or of a lost race between honest controllers",
     );
-    expect(screen.getByTestId("fork-evidence-note")).toHaveTextContent("it authorizes nothing");
+    expect(screen.getByTestId("fork-evidence-note")).toHaveTextContent(
+      "proves nothing beyond the conflict",
+    );
     expect(document.body.textContent).not.toMatch(/malicious|attacker|cheating|fraud/i);
     // Only this ledger's records, and no other ledger's, are on this page.
     expect(screen.queryByTestId(`fork-record-${TRUNCATED_LEDGER}-1`)).not.toBeInTheDocument();
@@ -129,7 +132,7 @@ describe("the witness node's debug route", () => {
 
     const { user, container } = renderApp("/witness");
     await screen.findByTestId("identity-cards");
-    expect(screen.getByTestId("nav-witness")).toHaveTextContent("Ledgers");
+    expect(screen.getByTestId("nav-witness")).toHaveTextContent("Records");
     expect(screen.queryByTestId("nav-wallet")).not.toBeInTheDocument();
 
     await user.click(await screen.findByTestId(`identity-card-link-${ALICE}`));

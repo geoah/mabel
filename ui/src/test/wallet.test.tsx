@@ -39,7 +39,7 @@ describe("the identity card list", () => {
       "person",
     );
     expect(within(card).getByTestId(`identity-card-head-seq-${ALICE}`)).toHaveTextContent(
-      `head seq ${alice.head_seq}`,
+      `at position ${alice.head_seq}`,
     );
   });
 
@@ -106,9 +106,9 @@ describe("the wallet search box", () => {
   });
 
   it.each([
-    ["nobody.example", "no_record", "holds no mabel record"],
-    [MISMATCHED_HOSTNAME, "mismatched_records", "none of them parses as an identity id"],
-    [UNREACHABLE_HOSTNAME, "unreachable", "could not be answered by the resolver"],
+    ["nobody.example", "no_record", "names no identity"],
+    [MISMATCHED_HOSTNAME, "mismatched_records", "nothing it said is an identity id"],
+    [UNREACHABLE_HOSTNAME, "unreachable", "gave no answer"],
   ])("says what the TXT lookup answered for %s", async (hostname, status, sentence) => {
     const { user } = renderApp("/wallet");
     await screen.findByTestId("wallet-search-form");

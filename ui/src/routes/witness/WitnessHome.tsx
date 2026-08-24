@@ -8,9 +8,9 @@ import { useResource } from "@/hooks/useResource";
 import { WITNESS_HOLDINGS_NOTE, WITNESS_READ_ONLY_NOTE } from "./notes";
 
 /**
- * The witness node's own debug route: what this one witness holds, as the same
+ * The witness node's own route: what this one witness holds, as the same
  * identity card list the wallet draws (proposal 004). A witness resolves no
- * names and runs no crawl, so every card is its ledger id.
+ * names and follows no trust links, so every card is its record id.
  */
 export function WitnessHome() {
   const page = useResource(() => listLedgers({ limit: 256 }), []);
@@ -22,8 +22,8 @@ export function WitnessHome() {
     markers:
       entry.fork_count > 0 ? (
         <span data-testid={`identity-card-fork-count-${entry.ledger_id}`}>
-          {entry.fork_count} fork {entry.fork_count === 1 ? "record" : "records"}
-          {entry.forks_truncated ? ", recording stopped" : ""}
+          {entry.fork_count} {entry.fork_count === 1 ? "conflict" : "conflicts"}
+          {entry.forks_truncated ? ", and it stopped recording more" : ""}
         </span>
       ) : null,
   }));
@@ -31,7 +31,7 @@ export function WitnessHome() {
   return (
     <Card data-testid="witness-ledger-list">
       <CardHeader>
-        <CardTitle>Ledgers</CardTitle>
+        <CardTitle>Records</CardTitle>
         <CardDescription data-testid="witness-holdings-note">
           {WITNESS_HOLDINGS_NOTE}
         </CardDescription>
@@ -48,7 +48,7 @@ export function WitnessHome() {
           <IdentityCardList
             entries={entries}
             testId="identity-cards"
-            empty="this witness holds no ledger"
+            empty="This witness holds no record."
             emptyTestId="witness-ledger-list-empty"
           />
         )}

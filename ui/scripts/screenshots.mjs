@@ -20,6 +20,8 @@ const OUT_DIR = fileURLToPath(new URL("../screenshots", import.meta.url));
 /** The ids the demo fixtures carry; the same ones the component tests use. */
 const ALICE = "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq";
 const BOB = "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq";
+/** The organization the demo fixtures found: identity-rooted, holding no key. */
+const ACME = "2okqwhextnpkpmydrgrkk563vbehcklffwfzidxlh5dslawjmn6a";
 /** The foreign identity the lookup fixture answers for, and no witness holds. */
 const CAROL = "jqtnsb2me7mj5xsze4gavqklohqhdmkshfiz65khjmxtxjruqh2q";
 /** The two witness endpoints the demo knows: one answers, one does not. */
@@ -44,6 +46,18 @@ const SCREENS = [
     },
   },
   {
+    // The step decision 017 asks for: the two keys, offered right after a create.
+    name: "wallet-home-create-keys",
+    path: "/wallet",
+    ready: "identity-create-summary",
+    async act(page) {
+      await page.getByTestId("identity-create-summary").click();
+      await page.getByTestId("identity-create-alias").fill("dana");
+      await page.getByTestId("identity-create-submit").click();
+      await page.getByTestId("identity-keys-download").waitFor();
+    },
+  },
+  {
     name: "wallet-home-resolve",
     path: "/wallet",
     ready: "wallet-search-input",
@@ -55,12 +69,29 @@ const SCREENS = [
   },
   { name: "identity-own", path: `/identities/${ALICE}`, ready: "ledger-events" },
   {
+    // An identity founded by another one: it holds no key, and its record says so.
+    name: "identity-own-founded",
+    path: `/identities/${ACME}`,
+    ready: "ledger-events",
+  },
+  {
+    // Every action starts closed (decision 017), so a screenshot of one opens it.
     name: "identity-own-push",
     path: `/identities/${ALICE}`,
-    ready: "sync-push-submit",
+    ready: "action-push-summary",
     async act(page) {
+      await page.getByTestId("action-push-summary").click();
       await page.getByTestId("sync-push-submit").click();
       await page.getByTestId("sync-push-results").waitFor();
+    },
+  },
+  {
+    name: "identity-own-keys",
+    path: `/identities/${ALICE}`,
+    ready: "action-keys-summary",
+    async act(page) {
+      await page.getByTestId("action-keys-summary").click();
+      await page.getByTestId("identity-keys-download").waitFor();
     },
   },
   {
@@ -106,7 +137,17 @@ const SCREENS = [
       await page.getByTestId("ledger-events").waitFor();
     },
   },
-  { name: "witnesses", path: "/witnesses", ready: "witness-cards" },
+  { name: "witnesses", path: "/witnesses", ready: "graph-sync-button" },
+  {
+    // The sync consent, which moved off the header onto this page.
+    name: "witnesses-sync-consent",
+    path: "/witnesses",
+    ready: "graph-sync-button",
+    async act(page) {
+      await page.getByTestId("graph-sync-button").click();
+      await page.getByTestId("graph-sync-consent").waitFor();
+    },
+  },
   { name: "witness-ledgers", path: `/witnesses/${WITNESS}`, ready: "identity-cards" },
   {
     name: "witness-unreachable",

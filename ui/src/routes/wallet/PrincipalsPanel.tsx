@@ -3,8 +3,6 @@ import type {
   MembershipView,
   ResolvedIdentity as ResolvedIdentityDocument,
 } from "@/api/types";
-import { DeveloperOnly } from "@/components/DeveloperMode";
-import { Identifier } from "@/components/Identifier";
 import { ResolvedIdentity } from "@/components/ResolvedIdentity";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -35,9 +33,9 @@ export function PrincipalsPanel({
   return (
     <Card data-testid="principals-panel">
       <CardHeader>
-        <CardTitle>Principals</CardTitle>
+        <CardTitle>Who can act for this identity</CardTitle>
         <CardDescription>
-          Who may append to this ledger, and the invitations it has issued
+          Everyone allowed to sign for it, and every invitation it has sent
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
@@ -56,17 +54,9 @@ export function PrincipalsPanel({
               <Badge data-testid={`principal-role-${principal.identity}`}>{principal.role}</Badge>
               {principal.is_root && (
                 <Badge variant="secondary" data-testid={`principal-root-${principal.identity}`}>
-                  root
+                  founder
                 </Badge>
               )}
-              <DeveloperOnly>
-                <div
-                  data-testid={`principal-key-${principal.identity}`}
-                  className="w-full text-xs text-muted-foreground"
-                >
-                  active_key <Identifier value={principal.active_key} />
-                </div>
-              </DeveloperOnly>
             </li>
           ))}
         </ul>
@@ -93,14 +83,18 @@ export function PrincipalsPanel({
                   {invitation.status}
                 </Badge>
                 <span className="text-xs text-muted-foreground">
-                  invited at seq {invitation.invitation_seq}
+                  invited at position {invitation.invitation_seq}
                 </span>
               </li>
             ))}
           </ul>
         )}
         <p data-testid="principals-open-invitations" className="text-xs text-muted-foreground">
-          open_invitation_count {identity.open_invitation_count}
+          {identity.open_invitation_count === 0
+            ? "No invitation is waiting to be accepted."
+            : `${identity.open_invitation_count} ${
+                identity.open_invitation_count === 1 ? "invitation is" : "invitations are"
+              } still waiting to be accepted.`}
         </p>
       </CardContent>
     </Card>

@@ -30,7 +30,7 @@ describe("profile replacement", () => {
     await waitFor(() =>
       expect(screen.getByTestId("profile-current-display-name")).toHaveTextContent("Alice A."),
     );
-    expect(screen.getByTestId("profile-replace-result")).toHaveTextContent("replaced at seq 9");
+    expect(screen.getByTestId("profile-replace-result")).toHaveTextContent("Saved at position 9.");
     expect(screen.getByTestId("identity-detail-resolved-name")).toHaveTextContent("Alice A.");
   });
 
@@ -116,14 +116,16 @@ describe("verification", () => {
     await waitFor(() =>
       expect(screen.getByTestId("verification-mark")).toHaveTextContent("alice.example"),
     );
-    expect(screen.getByTestId("verification-note")).toHaveTextContent("advisory");
+    expect(screen.getByTestId("verification-note")).toHaveTextContent("It grants nothing.");
   });
 
   it("refuses a check on an identity that claims no hostname", async () => {
     const { user } = renderApp(`/identities/${ACME}`);
     await screen.findByTestId("verification-panel");
 
-    expect(screen.getByTestId("verification-status")).toHaveTextContent("unclaimed");
+    expect(screen.getByTestId("verification-status")).toHaveTextContent(
+      "this identity claims no website",
+    );
 
     await user.click(screen.getByTestId("verification-check"));
 
@@ -143,7 +145,7 @@ describe("contact", () => {
     await user.type(screen.getByTestId("contact-note"), "keys live on the blue laptop");
     await user.click(screen.getByTestId("contact-save"));
 
-    expect(await screen.findByTestId("contact-result")).toHaveTextContent("saved at");
+    expect(await screen.findByTestId("contact-result")).toHaveTextContent("Saved ");
     await waitFor(() =>
       expect(screen.getByTestId("identity-detail-contact")).toHaveTextContent(
         "alice at the co-op: keys live on the blue laptop",

@@ -4,8 +4,6 @@ import { useCallback, useSyncExternalStore } from "react";
 // localStorage. localStorage is per origin and the wallet is served by its own
 // node, so "remembered" here means remembered per node home.
 
-/** Proposal 003 section 4 names this key; developer mode is off unless it is "1". */
-export const DEVELOPER_MODE_KEY = "mabel.developer_mode";
 /** Consent, taken once before the first hostname publication. */
 export const HOSTNAME_CONSENT_KEY = "mabel.consent.hostname_publication";
 /** Consent, taken once before the first graph sync. */
@@ -63,13 +61,6 @@ export function usePreference(key: string): [string | null, (value: string | nul
   );
   const set = useCallback((next: string | null) => writePreference(key, next), [key]);
   return [value, set];
-}
-
-/** Default off (decision 014): the primary view is the product, not the panels. */
-export function useDeveloperMode(): [boolean, (on: boolean) => void] {
-  const [value, set] = usePreference(DEVELOPER_MODE_KEY);
-  const setOn = useCallback((on: boolean) => set(on ? "1" : "0"), [set]);
-  return [value === "1", setOn];
 }
 
 /**

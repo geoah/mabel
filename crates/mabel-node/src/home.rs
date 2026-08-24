@@ -480,6 +480,22 @@ impl NodeHome {
             .collect())
     }
 
+    /// Reads `identities/<id>/active.key` and nothing else.
+    ///
+    /// [`NodeHome::identity_active_key`] resolves a keyless identity through
+    /// its `controlled_by` link, which hands back a key belonging to another
+    /// identity. A caller that means this identity's own key, and must fail
+    /// rather than borrow a controller's, uses this.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError::InsecurePermissions`] (exit code 60) for a
+    /// group- or world-accessible file, and [`StorageError::Io`] when this
+    /// identity holds no active key of its own.
+    pub fn identity_own_active_key(&self, identity: IdentityId) -> Result<SecretKey> {
+        self.read_identity_key(identity, ACTIVE_KEY_FILE)
+    }
+
     /// Reads the key committed at inception and unused in the POC.
     ///
     /// # Errors

@@ -56,7 +56,7 @@ export function IdentityCard({ entry }: { entry: IdentityCardEntry }) {
             />
           )}
           {entry.headSeq !== null && (
-            <span data-testid={`identity-card-head-seq-${id}`}>head seq {entry.headSeq}</span>
+            <span data-testid={`identity-card-head-seq-${id}`}>at position {entry.headSeq}</span>
           )}
           {entry.markers}
         </span>

@@ -2,17 +2,18 @@ import { useState } from "react";
 
 import { type ApiError, forceVerification } from "@/api/client";
 import type { Identity, Verification } from "@/api/types";
-import { DeveloperOnly } from "@/components/DeveloperMode";
 import { ErrorEnvelopeView } from "@/components/ErrorEnvelopeView";
 import { KeyValue, KeyValueTable } from "@/components/KeyValue";
 import { VerificationMark, VerificationNote } from "@/components/ResolvedIdentity";
 import { Button } from "@/components/ui/button";
 import { asApiError } from "@/hooks/useResource";
+import { formatTimestamp } from "@/lib/time";
 
 /**
- * The advisory DNS verdict for the hostname this identity claims. Checking is
+ * Whether the website this identity claims names it back in DNS. Checking is
  * manual: the GET routes answer from the cache, and this button forces one
- * check and waits for it (proposal 003 section 2).
+ * check and waits for it (proposal 003 section 2). It grants nothing either
+ * way, which the standing note under the button says.
  */
 export function VerificationPanel({
   identity,
@@ -43,9 +44,9 @@ export function VerificationPanel({
   return (
     <div data-testid="verification-panel" className="space-y-3">
       <KeyValueTable>
-        <KeyValue label="status" testId="verification-status">
+        <KeyValue label="website" testId="verification-status">
           {verification.status === "unclaimed" || verification.hostname === null ? (
-            "unclaimed"
+            "this identity claims no website"
           ) : (
             <VerificationMark
               status={verification.status}
@@ -55,25 +56,18 @@ export function VerificationPanel({
             />
           )}
         </KeyValue>
-        <DeveloperOnly>
-          <KeyValue label="checked_at_ms" testId="verification-checked-at-ms">
-            {verification.checked_at_ms ?? "null"}
-          </KeyValue>
-          <KeyValue label="last_verified_at_ms" testId="verification-last-verified-at-ms">
-            {verification.last_verified_at_ms ?? "null"}
-          </KeyValue>
-          <KeyValue label="stale" testId="verification-stale">
-            {String(verification.stale)}
-          </KeyValue>
-          <KeyValue label="detail" testId="verification-detail">
-            <span className="font-mono text-xs">{verification.detail ?? "null"}</span>
-          </KeyValue>
-          <KeyValue label="unreachable" testId="verification-unreachable">
-            {verification.unreachable === null
-              ? "null"
-              : `${verification.unreachable.checked_at_ms}: ${verification.unreachable.detail ?? "null"}`}
-          </KeyValue>
-        </DeveloperOnly>
+        <KeyValue label="last checked" testId="verification-checked-at-ms">
+          {verification.checked_at_ms === null
+            ? "never"
+            : formatTimestamp(verification.checked_at_ms)}
+        </KeyValue>
+        <KeyValue label="what DNS answered" testId="verification-detail">
+          {verification.detail === null ? (
+            "nothing yet"
+          ) : (
+            <span className="font-mono text-xs break-all">{verification.detail}</span>
+          )}
+        </KeyValue>
       </KeyValueTable>
       <Button
         variant="outline"

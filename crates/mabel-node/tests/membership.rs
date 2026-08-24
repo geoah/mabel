@@ -377,6 +377,59 @@ async fn an_identity_rooted_ledger_takes_its_founder_as_the_root_principal() {
     assert_eq!(invited.role, RoleName::Member);
 }
 
+/// `GET /api/identities/{identity_id}/keys` over a real home: a raw-rooted
+/// identity hands back both of its secrets, and a keyless identity-rooted one
+/// refuses even though its founder is local.
+#[tokio::test]
+async fn only_an_identity_that_keys_itself_hands_back_its_secrets() {
+    let wallet = Wallet::new().await;
+    let alice = wallet.identity("alice").await;
+
+    let keys = wallet
+        .service
+        .identity_keys(alice.clone())
+        .await
+        .expect("a raw-rooted identity holds both keys");
+    assert_eq!(keys.identity_id, alice);
+
+    // The active secret is the key the ledger's events are signed under, so
+    // its public half is what the identity document already reports.
+    let identity = wallet
+        .service
+        .identity(alice.clone())
+        .await
+        .expect("the identity reads");
+    assert_eq!(Some(keys.active_key.clone()), identity.active_key);
+    assert_eq!(Some(keys.reserve_commit.clone()), identity.reserve_commit);
+
+    // The secrets are the raw key bytes in the same base32 as the public
+    // values, and the two differ.
+    for value in [&keys.active_secret_key, &keys.reserve_secret_key] {
+        assert_eq!(value.as_str().len(), 52, "{value:?}");
+    }
+    assert_ne!(keys.active_secret_key, keys.reserve_secret_key);
+    assert_ne!(keys.active_secret_key, keys.active_key);
+
+    let acme = wallet
+        .service
+        .create_identity(CreateIdentity {
+            alias: "acme".to_owned(),
+            declared_kind: DeclaredKind::Organization,
+            founder: Some(alice),
+        })
+        .await
+        .expect("the organization is created")
+        .identity
+        .identity_id;
+    let error = wallet
+        .service
+        .identity_keys(acme)
+        .await
+        .expect_err("an identity-rooted ledger holds no key of its own");
+    assert_eq!(error.code(), 20);
+    assert_eq!(error.reason(), "no_keys_held");
+}
+
 #[tokio::test]
 async fn an_identity_rooted_ledger_cannot_be_invited_anywhere() {
     let wallet = Wallet::new().await;

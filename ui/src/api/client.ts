@@ -15,6 +15,7 @@ import type {
   ForkListResponse,
   GraphResponse,
   GraphSyncResponse,
+  IdentityKeysResponse,
   IdentityListResponse,
   IdentityResponse,
   InviteRequest,
@@ -162,6 +163,11 @@ export function createIdentity(body: CreateIdentityRequest): Promise<CreateIdent
 
 export function getIdentity(identityId: string): Promise<IdentityResponse> {
   return get<IdentityResponse>(`/identities/${identityId}`);
+}
+
+/** The two secret keys of one identity, for a person to save (decision 017). */
+export function getIdentityKeys(identityId: string): Promise<IdentityKeysResponse> {
+  return get<IdentityKeysResponse>(`/identities/${identityId}/keys`);
 }
 
 /** since is inclusive: the first event returned has seq === since. */

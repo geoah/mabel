@@ -7,7 +7,7 @@ import type { DeclaredKind } from "@/api/types";
  * surface says "declared kind" and repeats why.
  */
 export const DECLARED_KIND_NOTE =
-  "declared kind is advisory: it gates no authorization, no payload validity and no verification outcome";
+  "Anyone can declare any kind. It grants nothing and proves nothing.";
 
 export function DeclaredKindValue({
   kind,

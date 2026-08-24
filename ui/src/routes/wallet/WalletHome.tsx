@@ -29,7 +29,7 @@ export function WalletHome() {
       <WalletSearch />
       <Card data-testid="identity-list">
         <CardHeader>
-          <CardTitle>Identities</CardTitle>
+          <CardTitle>Your identities</CardTitle>
           <DeclaredKindNote testId="identity-list-declared-kind-note" />
         </CardHeader>
         <CardContent className="space-y-3">
@@ -41,7 +41,7 @@ export function WalletHome() {
             <IdentityCardList
               entries={entries}
               testId="identity-cards"
-              empty="no identities in this node home"
+              empty="You have no identities yet. Create one below."
               emptyTestId="identity-list-empty"
             />
           )}
@@ -52,7 +52,7 @@ export function WalletHome() {
           data-testid="identity-create-summary"
           className="flex min-h-11 cursor-pointer list-none items-center px-3 text-sm font-medium marker:content-none hover:bg-accent sm:px-4"
         >
-          New identity
+          Create an identity
         </summary>
         <div className="border-t p-3 sm:p-4">
           <IdentityCreateForm onCreated={identities.reload} />

@@ -7,6 +7,7 @@ import { Identifier } from "@/components/Identifier";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useResource } from "@/hooks/useResource";
+import { GraphSyncCard } from "@/routes/wallet/GraphSyncControl";
 
 /**
  * One witness endpoint and where this wallet knows it from: the ledgers whose
@@ -27,12 +28,12 @@ function WitnessCard({ witness }: { witness: WitnessSummary }) {
         <Identifier value={endpoint} plain />
         <span className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
           <span data-testid={`witness-card-named-by-${endpoint}`}>
-            named by {witness.named_by.length}{" "}
-            {witness.named_by.length === 1 ? "identity" : "identities"}
+            chosen by {witness.named_by.length}{" "}
+            {witness.named_by.length === 1 ? "identity" : "identities"} of yours
           </span>
           {witness.is_node_default && (
             <Badge variant="secondary" data-testid={`witness-card-default-${endpoint}`}>
-              node default
+              this node uses it by default
             </Badge>
           )}
         </span>
@@ -56,32 +57,37 @@ export function WitnessesPage() {
   const witnesses = useResource(listWitnesses, []);
 
   return (
-    <Card data-testid="witness-list">
-      <CardHeader>
-        <CardTitle>Witnesses</CardTitle>
-        <CardDescription>
-          Every endpoint this wallet knows of, from the witness configs of the ledgers it holds
-          and from this node's own defaults
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {witnesses.loading && <p data-testid="witness-list-loading">loading</p>}
-        {witnesses.error && (
-          <ErrorEnvelopeView error={witnesses.error} testId="witness-list-error" />
-        )}
-        {witnesses.data && witnesses.data.witnesses.length === 0 && (
-          <p data-testid="witness-list-empty">this wallet knows of no witness</p>
-        )}
-        {witnesses.data && witnesses.data.witnesses.length > 0 && (
-          <ul data-testid="witness-cards" className="grid gap-2 sm:grid-cols-2">
-            {witnesses.data.witnesses.map((witness) => (
-              <li key={witness.endpoint_id} className="min-w-0">
-                <WitnessCard witness={witness} />
-              </li>
-            ))}
-          </ul>
-        )}
-      </CardContent>
-    </Card>
+    <div className="space-y-4">
+      <Card data-testid="witness-list">
+        <CardHeader>
+          <CardTitle>Witnesses</CardTitle>
+          <CardDescription>
+            A witness keeps a copy of an identity&apos;s record so other people can read it. These
+            are the ones your wallet knows: the ones your identities chose, and the ones this node
+            uses by default.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {witnesses.loading && <p data-testid="witness-list-loading">loading</p>}
+          {witnesses.error && (
+            <ErrorEnvelopeView error={witnesses.error} testId="witness-list-error" />
+          )}
+          {witnesses.data && witnesses.data.witnesses.length === 0 && (
+            <p data-testid="witness-list-empty">Your wallet knows of no witness yet.</p>
+          )}
+          {witnesses.data && witnesses.data.witnesses.length > 0 && (
+            <ul data-testid="witness-cards" className="grid gap-2 sm:grid-cols-2">
+              {witnesses.data.witnesses.map((witness) => (
+                <li key={witness.endpoint_id} className="min-w-0">
+                  <WitnessCard witness={witness} />
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
+      {/* The sync reads witnesses, so the control that starts one lives here. */}
+      <GraphSyncCard />
+    </div>
   );
 }

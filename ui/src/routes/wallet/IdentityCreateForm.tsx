@@ -5,12 +5,15 @@ import type { CreateIdentityResponse, DeclaredKind } from "@/api/types";
 import { DeclaredKindNote } from "@/components/DeclaredKind";
 import { ErrorEnvelopeView } from "@/components/ErrorEnvelopeView";
 import { Identifier } from "@/components/Identifier";
+import { KeyValue, KeyValueTable } from "@/components/KeyValue";
 import type { ApiError } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { asApiError } from "@/hooks/useResource";
+
+import { KeysPanel } from "./KeysPanel";
 
 const KINDS: DeclaredKind[] = ["person", "organization", "agent", "service"];
 
@@ -46,13 +49,10 @@ export function IdentityCreateForm({ onCreated }: { onCreated: () => void }) {
 
   return (
     <div className="space-y-3">
-      <p className="text-xs text-muted-foreground">
-        A founder selects an identity root, its absence a raw root
-      </p>
       <div>
         <form onSubmit={submit} className="space-y-3" data-testid="identity-create-form">
           <div className="space-y-1">
-            <Label htmlFor="identity-create-alias">alias</Label>
+            <Label htmlFor="identity-create-alias">Name (only you see this)</Label>
             <Input
               id="identity-create-alias"
               data-testid="identity-create-alias"
@@ -62,7 +62,7 @@ export function IdentityCreateForm({ onCreated }: { onCreated: () => void }) {
             />
           </div>
           <div className="space-y-1">
-            <Label htmlFor="identity-create-declared-kind">declared_kind</Label>
+            <Label htmlFor="identity-create-declared-kind">What kind of thing this is</Label>
             <Select
               id="identity-create-declared-kind"
               data-testid="identity-create-declared-kind"
@@ -78,14 +78,18 @@ export function IdentityCreateForm({ onCreated }: { onCreated: () => void }) {
             <DeclaredKindNote testId="identity-create-declared-kind-note" />
           </div>
           <div className="space-y-1">
-            <Label htmlFor="identity-create-founder">founder (optional)</Label>
+            <Label htmlFor="identity-create-founder">Founder (optional)</Label>
             <Input
               id="identity-create-founder"
               data-testid="identity-create-founder"
               value={founder}
               onChange={(event) => setFounder(event.target.value)}
-              placeholder="identity id of the founding principal"
+              placeholder="identity id of whoever will sign for it"
             />
+            <p className="text-xs text-muted-foreground">
+              Leave this empty and the new identity gets a key of its own. Name a founder and that
+              identity signs for this one instead, which is how an organization works.
+            </p>
           </div>
           <Button type="submit" data-testid="identity-create-submit" disabled={pending}>
             {pending ? "creating" : "Create"}
@@ -97,13 +101,20 @@ export function IdentityCreateForm({ onCreated }: { onCreated: () => void }) {
           </div>
         )}
         {created && (
-          <div className="mt-3 space-y-1 text-xs" data-testid="identity-create-result">
-            <p data-testid="identity-create-result-identity-id">
-              <Identifier value={created.identity.identity_id} />
-            </p>
-            <p data-testid="identity-create-result-inception-event">
-              <Identifier value={created.inception_event} />
-            </p>
+          <div className="mt-3 space-y-3" data-testid="identity-create-result">
+            <KeyValueTable>
+              <KeyValue label="identity id" testId="identity-create-result-identity-id">
+                <Identifier value={created.identity.identity_id} />
+              </KeyValue>
+              <KeyValue label="first entry" testId="identity-create-result-inception-event">
+                <Identifier value={created.inception_event} />
+              </KeyValue>
+            </KeyValueTable>
+            {/* Creating an identity offers its keys to save, on the spot. */}
+            <div className="space-y-2 rounded-md border p-3">
+              <p className="text-sm font-medium">Save your keys</p>
+              <KeysPanel identityId={created.identity.identity_id} />
+            </div>
           </div>
         )}
       </div>

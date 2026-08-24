@@ -25,7 +25,7 @@ use std::sync::{Arc, Mutex as StdMutex};
 use data_encoding::BASE64;
 use iroh_base::{EndpointId, SecretKey};
 use mabel_core::artifacts::{AcceptanceFile, IdentityDescriptor, InvitationBundle};
-use mabel_core::fold::{InvitationStatus, LedgerState};
+use mabel_core::fold::{InvitationStatus, LedgerRoot, LedgerState};
 use mabel_core::sign::{
     BuildError, BuiltEvent, Position, Root, build_acceptance, build_inception,
     build_membership_acceptance, build_membership_invitation, build_membership_removal,
@@ -39,8 +39,8 @@ use mabel_proto::v0::event_body::Payload;
 
 use crate::api::documents::{
     Accepted, Admitted, Appended, Contact, CreatedIdentity, DeclaredKind as DocumentKind,
-    FailedCheck, Identity, Invited, LedgerPage, MembershipView, PreviousProfile, PrincipalEntry,
-    Profile, ProfileReplaced, Removed, Revoked, RoleName, RootName, Verification,
+    FailedCheck, Identity, IdentityKeys, Invited, LedgerPage, MembershipView, PreviousProfile,
+    PrincipalEntry, Profile, ProfileReplaced, Removed, Revoked, RoleName, RootName, Verification,
 };
 use crate::api::error::ServiceError;
 use crate::api::service::EventPageRequest;
@@ -381,6 +381,45 @@ impl WalletCore {
             event_count: loaded.event_count(),
             more: last < loaded.event_count(),
             events,
+        })
+    }
+
+    /// Both secret keys of one identity, for a person to save somewhere safe.
+    ///
+    /// The keys handed back are this identity's own. An identity that holds
+    /// none is refused rather than answered with its controller's key: the
+    /// controller's keys belong to the controller's own page.
+    ///
+    /// # Errors
+    ///
+    /// As [`WalletCore::load`], plus code 20 with reason `no_keys_held` when
+    /// this home holds no key of this identity's own, and the storage errors
+    /// of reading the two key files.
+    pub fn identity_keys(&self, identity: IdentityId) -> Result<IdentityKeys, ServiceError> {
+        let loaded = self.load(identity)?;
+        if !self.home.keys_itself(identity) {
+            return Err(no_keys_held(identity));
+        }
+        // An identity keyed by a file of its own was minted under a raw root,
+        // which always carries the commitment. Anything else is the keyless
+        // case reached by another road, and answers the same sentence.
+        let Some(LedgerRoot::Raw { reserve_commit, .. }) = loaded.state.root() else {
+            return Err(no_keys_held(identity));
+        };
+        let active = self
+            .home
+            .identity_own_active_key(identity)
+            .map_err(storage_error)?;
+        let reserve = self
+            .home
+            .identity_reserve_key(identity)
+            .map_err(storage_error)?;
+        Ok(IdentityKeys {
+            identity_id: ids::identity(identity),
+            active_secret_key: ids::bytes(&active.to_bytes()),
+            reserve_secret_key: ids::bytes(&reserve.to_bytes()),
+            active_key: ids::key(&active.public()),
+            reserve_commit: ids::bytes(&reserve_commit),
         })
     }
 
@@ -1321,6 +1360,16 @@ fn check_lock(lock: &AppendLock, ledger: LedgerId) -> Result<(), ServiceError> {
             lock.ledger()
         ),
     ))
+}
+
+/// The 409 an identity that holds no key of its own answers.
+#[must_use]
+pub fn no_keys_held(identity: IdentityId) -> ServiceError {
+    ServiceError::policy(
+        "no_keys_held",
+        format!("this home holds no key of its own for {identity}: its controllers sign for it"),
+    )
+    .with_detail("identity_id", identity.to_string())
 }
 
 /// The 404 a ledger this home does not hold answers.

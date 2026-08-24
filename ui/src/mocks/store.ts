@@ -23,6 +23,7 @@ import type {
   GraphResponse,
   GraphSyncResponse,
   Identity,
+  IdentityKeysResponse,
   IdentityListResponse,
   IdentityResponse,
   InvitationEntry,
@@ -63,11 +64,14 @@ import {
   ALICE,
   BOB,
   UNREACHABLE_WITNESS,
+  acmeEvents,
+  aliceEvents,
   createdIdentity,
   errors,
+  identityKeys,
+  noKeysHeldError,
   seedContact,
   seedEdges,
-  seedEvents,
   seedGraph,
   seedIdentities,
   seedLookup,
@@ -203,7 +207,12 @@ export function resetStore(): void {
   state = {
     identities,
     fetched: new Map(),
-    events: new Map([[ALICE, seedEvents()]]),
+    // Every seeded identity carries the chain its own document implies, so no
+    // page shows zero entries against a head sequence that is not zero.
+    events: new Map([
+      [ALICE, aliceEvents()],
+      [ACME, acmeEvents()],
+    ]),
     invitations: new Map(),
     contacts,
     graph: { ...seedGraph, roots: seedGraph.roots.map((root) => ({ ...root })) },
@@ -396,6 +405,28 @@ export function createIdentity(body: Partial<CreateIdentityRequest>): CreateIden
     },
   ]);
   return { ok: true, identity, inception_event: identityId };
+}
+
+/**
+ * The two secret keys of one identity. An identity holding no key of its own
+ * answers the frozen 409: its controllers sign for it, and their keys belong to
+ * their own pages.
+ */
+export function getIdentityKeys(identityId: string): IdentityKeysResponse {
+  const identity = find(identityId);
+  if (identity.active_key === undefined || identity.reserve_commit === undefined) {
+    failWith(noKeysHeldError.status, {
+      ...noKeysHeldError.body,
+      message: noKeysHeldError.body.message.replace(ACME, identityId),
+      details: { ...noKeysHeldError.body.details, identity_id: identityId },
+    });
+  }
+  return {
+    ...identityKeys,
+    identity_id: identityId,
+    active_key: identity.active_key,
+    reserve_commit: identity.reserve_commit,
+  };
 }
 
 export function getIdentityLedger(

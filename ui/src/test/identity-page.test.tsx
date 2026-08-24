@@ -56,7 +56,7 @@ describe("a foreign identity this wallet holds no ledger for", () => {
     expect(screen.queryByTestId("identity-own-badge")).not.toBeInTheDocument();
     expect(screen.queryByTestId("identity-actions")).not.toBeInTheDocument();
     expect(screen.getByTestId("identity-detail-ledger-summary")).toHaveTextContent(
-      "not stored in this node home",
+      "your wallet holds no copy of it",
     );
     expect(screen.getByTestId("identity-fetch-button")).toBeInTheDocument();
   });
@@ -101,7 +101,7 @@ describe("a foreign identity this wallet holds no ledger for", () => {
     await user.type(screen.getByTestId("contact-nickname"), "carol from the market");
     await user.click(screen.getByTestId("contact-save"));
 
-    expect(await screen.findByTestId("contact-result")).toHaveTextContent("saved at");
+    expect(await screen.findByTestId("contact-result")).toHaveTextContent("Saved ");
   });
 });
 
@@ -112,9 +112,9 @@ describe("how you know them", () => {
 
     expect(screen.getByTestId("lookup-from")).toHaveAttribute("data-identity-id", ACME);
     // Acme attests to nobody, so the honest answer from that root is no path.
-    expect(screen.getByTestId("lookup-degrees")).toHaveTextContent("none");
+    expect(screen.getByTestId("lookup-degrees")).toHaveTextContent("No connection found");
     expect(screen.getByTestId("lookup-degrees-none")).toHaveTextContent(
-      "no path was found within this crawl's caps",
+      "No connection found yet. Sync and try again.",
     );
   });
 
@@ -123,7 +123,7 @@ describe("how you know them", () => {
     renderApp(`/identities/${CAROL}`);
     await screen.findByTestId("lookup-result");
 
-    await waitFor(() => expect(screen.getByTestId("lookup-degrees")).toHaveTextContent("2 hops"));
+    await waitFor(() => expect(screen.getByTestId("lookup-degrees")).toHaveTextContent("2 steps"));
     const first = screen.getByTestId("lookup-hop-0-0");
     expect(within(first).getByTestId("lookup-hop-0-0-from")).toHaveAttribute(
       "data-identity-id",
@@ -133,7 +133,7 @@ describe("how you know them", () => {
       "data-identity-id",
       BOB,
     );
-    expect(within(first).getByTestId("lookup-hop-0-0-fetched")).toHaveTextContent("read ");
+    expect(within(first).getByTestId("lookup-hop-0-0-fetched")).toHaveTextContent("seen ");
     expect(screen.getByTestId("lookup-hop-0-1-to-link")).toHaveAttribute(
       "href",
       `/identities/${CAROL}`,
@@ -146,7 +146,7 @@ describe("how you know them", () => {
     await screen.findByTestId("lookup-reverse");
 
     expect(screen.getByTestId("lookup-reverse-label")).toHaveTextContent(
-      "who in this crawl attests to them, never who trusts them in the world",
+      "who your wallet has seen trusting them, not everyone who does",
     );
 
     await user.click(screen.getByTestId(`lookup-trust-expand-${BOB}`));
@@ -154,7 +154,7 @@ describe("how you know them", () => {
     const expansion = await screen.findByTestId(`lookup-trust-expansion-${BOB}`);
     await waitFor(() =>
       expect(within(expansion).getByTestId("lookup-reverse-label")).toHaveTextContent(
-        "best effort",
+        "Best effort",
       ),
     );
   });
@@ -181,7 +181,7 @@ describe("how you know them", () => {
     renderApp(`/identities/${CAROL}`);
 
     const equivocation = await screen.findByTestId("lookup-equivocation");
-    expect(equivocation).toHaveTextContent("two signed events at seq");
+    expect(equivocation).toHaveTextContent("Two different entries were signed at position");
     expect(screen.getByTestId("lookup-degrees-none")).toBeInTheDocument();
   });
 
@@ -190,10 +190,12 @@ describe("how you know them", () => {
     renderApp(`/identities/${CAROL}`);
 
     const banner = await screen.findByTestId("lookup-graph-stale");
-    expect(banner).toHaveTextContent("graph is stale, last synced");
+    expect(banner).toHaveTextContent("Your wallet last looked");
     expect(within(banner).getByTestId("lookup-graph-stale-sync")).toBeInTheDocument();
-    expect(screen.getByTestId("lookup-graph-truncated")).toHaveTextContent("truncated by depth");
-    expect(screen.getByTestId("lookup-hop-0-0-stale")).toHaveTextContent("stale");
+    expect(screen.getByTestId("lookup-graph-truncated")).toHaveTextContent(
+      "Your wallet may not have seen everything.",
+    );
+    expect(screen.getByTestId("lookup-hop-0-0-stale")).toHaveTextContent("may be out of date");
   });
 
   it("stops expanding at two levels", async () => {
@@ -209,7 +211,7 @@ describe("how you know them", () => {
     const second = await within(first).findByTestId(`lookup-trust-expansion-${CAROL}`);
     await waitFor(() =>
       expect(within(second).getByTestId(`lookup-trust-expand-limit-${BOB}`)).toHaveTextContent(
-        "two levels is the cap",
+        "Open their own page to go further.",
       ),
     );
     expect(within(second).queryByTestId(`lookup-trust-expand-${BOB}`)).not.toBeInTheDocument();

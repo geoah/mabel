@@ -17,8 +17,8 @@ function Unreachable({ endpointId, message }: { endpointId: string; message: str
   return (
     <Alert variant="destructive" data-testid="witness-unreachable">
       <p className="text-sm">
-        this node could not reach the witness while asking what it holds. That is a fact about
-        the connection, not about the ledgers it keeps.
+        Your wallet could not reach this witness. That is about the connection, not about the
+        records it keeps.
       </p>
       <p className="mt-1 text-xs">
         <Identifier value={endpointId} />
@@ -51,7 +51,7 @@ export function WitnessLedgersPage() {
     markers:
       ledger.fork_count > 0 ? (
         <span data-testid={`identity-card-fork-count-${ledger.ledger_id}`}>
-          {ledger.fork_count} fork {ledger.fork_count === 1 ? "record" : "records"}
+          {ledger.fork_count} {ledger.fork_count === 1 ? "conflict" : "conflicts"}
         </span>
       ) : null,
   }));
@@ -73,8 +73,8 @@ export function WitnessLedgersPage() {
             <Identifier value={endpointId} />
           </CardTitle>
           <CardDescription>
-            Asked over the sync protocol as this page loaded, and stored nowhere: a ledger missing
-            here may still exist on another witness
+            Asked when this page loaded, and saved nowhere. A record missing here may still be on
+            another witness.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -89,7 +89,7 @@ export function WitnessLedgersPage() {
             <IdentityCardList
               entries={entries}
               testId="identity-cards"
-              empty="this witness holds no ledger"
+              empty="This witness holds no record."
               emptyTestId="witness-ledgers-empty"
             />
           )}

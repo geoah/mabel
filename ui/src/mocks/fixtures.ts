@@ -9,6 +9,7 @@ import profileFixture from "@contracts/http/wallet-post-identity-profile.json";
 import verificationFixture from "@contracts/http/wallet-post-identity-verification.json";
 import contactFixture from "@contracts/http/wallet-get-identity-contact.json";
 import contactPutFixture from "@contracts/http/wallet-put-identity-contact.json";
+import identityKeysFixture from "@contracts/http/wallet-get-identity-keys.json";
 import lookupFixture from "@contracts/http/wallet-get-lookup.json";
 import graphFixture from "@contracts/http/wallet-get-graph.json";
 import createIdentityFixture from "@contracts/http/wallet-post-identities.json";
@@ -36,6 +37,7 @@ import type {
   ForkRecord,
   Graph,
   Identity,
+  IdentityKeysResponse,
   LedgerEvent,
   LedgerPageResponse,
   LedgerSummary,
@@ -100,6 +102,18 @@ export const contactRoundTrip = contactPutFixture.request as {
   nickname: string;
   note: string;
 };
+/**
+ * GET /api/identities/:identity_id/keys, the pair the frozen answer hands back.
+ * The mock reuses these two secrets for every raw-rooted identity it holds: it
+ * runs no crypto, so a secret it minted itself would say nothing more.
+ */
+export const identityKeys = identityKeysFixture.response as IdentityKeysResponse;
+/** code 20 at 409, the keys of an identity that holds none of its own. */
+export const noKeysHeldError = identityKeysFixture.errors[1] as {
+  status: number;
+  body: ErrorEnvelope;
+};
+
 /** GET /api/lookup/:identity_id, the two-hop answer from Alice to Carol. */
 export const seedLookup = lookupFixture.response as LookupResponse;
 /** GET /api/graph, the crawl generation this home last recorded. */
@@ -216,9 +230,137 @@ export const cliErrorCases = cliErrors.cases as {
   document: ErrorEnvelope;
 }[];
 
-/** Alice's four-event chain, the only seeded ledger. */
+/**
+ * The four entries the frozen page carries for Alice, which is what the witness
+ * holds: its own summary of her record stops at position 3.
+ */
 export function seedEvents(): LedgerEvent[] {
   return seedLedgerEvents.events.map((event) => ({ ...event }));
+}
+
+/**
+ * Alice's chain as her own wallet holds it: the four frozen entries plus the
+ * five the identity document implies. Her document reports nine entries and a
+ * head at 8, so a chain of four would render four entries against a head of
+ * eight, which is the thing decision 017 refuses to show.
+ *
+ * The added entries are the ones the folded state demands: her profile lands at
+ * position 7, where the document says its event is, and the attestation naming
+ * Bob lands at 8, where the document's head event is.
+ */
+export function aliceEvents(): LedgerEvent[] {
+  const alice = seedIdentities.find((identity) => identity.identity_id === ALICE)!;
+  const trusted = alice.trust.find((record) => !record.revoked)!;
+  const profile = alice.profile!;
+  const frozen = seedEvents();
+  const after = (
+    seq: number,
+    eventId: string,
+    payloadKind: string,
+    payload: Record<string, unknown>,
+  ): LedgerEvent => ({
+    event_id: eventId,
+    seq,
+    ledger_id: ALICE,
+    prev: "",
+    timestamp_ms: alice.created_at_ms + seq * 60000,
+    author_key: String(alice.active_key),
+    payload_kind: payloadKind,
+    payload,
+  });
+
+  const events = [
+    ...frozen,
+    // A name typed, corrected, then a website added: four replacements, because
+    // a profile update always carries both fields.
+    after(4, syntheticEventId("al", "e"), "profile_update", {
+      display_name: "Alice",
+      hostname: null,
+    }),
+    after(5, syntheticEventId("al", "f"), "profile_update", {
+      display_name: "Alice A.",
+      hostname: null,
+    }),
+    after(6, syntheticEventId("al", "g"), "profile_update", {
+      display_name: profile.display_name,
+      hostname: null,
+    }),
+    after(7, profile.event, "profile_update", {
+      display_name: profile.display_name,
+      hostname: profile.hostname,
+    }),
+    after(8, trusted.attestation_event, "trust_attestation", { subject: trusted.subject }),
+  ];
+  for (const event of events.slice(frozen.length)) {
+    event.prev = events[event.seq - 1].event_id;
+  }
+  return events;
+}
+
+/**
+ * Acme's chain, built to agree with the identity document the frozen list
+ * carries for it: five entries, head at 4, the witness it names, and the
+ * display name its profile reports, published by the last entry so
+ * `profile.seq` and `profile.event` land on the head.
+ *
+ * Acme is identity-rooted, so entry 0 is an inception naming its founder rather
+ * than a key of its own, and every entry is signed by that founder's key. The
+ * mock ran no crypto to make these, and they exist so a page about Acme shows a
+ * record instead of no entries against a head that is not zero.
+ */
+export function acmeEvents(): LedgerEvent[] {
+  const acme = seedIdentities.find((identity) => identity.identity_id === ACME)!;
+  const founder = acme.principals[0];
+  const shape = (
+    seq: number,
+    eventId: string,
+    payloadKind: string,
+    payload: Record<string, unknown>,
+  ): LedgerEvent => ({
+    event_id: eventId,
+    seq,
+    ledger_id: seq === 0 ? null : ACME,
+    prev: seq === 0 ? null : "",
+    timestamp_ms: acme.created_at_ms + seq * 60000,
+    author_key: founder.active_key,
+    payload_kind: payloadKind,
+    payload,
+  });
+
+  const events = [
+    // Entry 0 is the inception, and its event id is the identity id.
+    shape(0, ACME, "inception", {
+      declared_kind: acme.declared_kind,
+      nonce: INCEPTION_NONCE,
+      root: {
+        identity_root: {
+          founder: founder.identity,
+          founder_key: founder.active_key,
+          founder_inception: seedLedgerEvents.events[0].event_id,
+        },
+      },
+    }),
+    shape(1, syntheticEventId("ac", "b"), "witness_config", {
+      witnesses: [UNREACHABLE_WITNESS],
+    }),
+    shape(2, syntheticEventId("ac", "c"), "profile_update", {
+      display_name: "Acme",
+      hostname: null,
+    }),
+    shape(3, syntheticEventId("ac", "d"), "profile_update", {
+      display_name: "Acme Corp",
+      hostname: null,
+    }),
+    // The head, so profile.event and profile.seq of the document agree with it.
+    shape(4, acme.head_event, "profile_update", {
+      display_name: acme.profile!.display_name,
+      hostname: null,
+    }),
+  ];
+  for (const event of events.slice(1)) {
+    event.prev = events[event.seq - 1].event_id;
+  }
+  return events;
 }
 
 // The witness side: what one witness holds. The two frozen entries page in one

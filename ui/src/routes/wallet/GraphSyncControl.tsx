@@ -2,22 +2,20 @@ import { type ReactNode, useState } from "react";
 
 import { type ApiError, getGraph, syncGraph } from "@/api/client";
 import type { Graph } from "@/api/types";
-import { DeveloperOnly } from "@/components/DeveloperMode";
 import { ErrorEnvelopeView } from "@/components/ErrorEnvelopeView";
-import { Identifier } from "@/components/Identifier";
-import { KeyValue, KeyValueTable } from "@/components/KeyValue";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { asApiError, useResource } from "@/hooks/useResource";
 import { GRAPH_CONSENT_KEY, useConsent } from "@/lib/preferences";
-import { describeAge, formatTimestamp } from "@/lib/time";
+import { describeAge } from "@/lib/time";
 
 /**
  * What a sync tells the world, stated before the first one and remembered per
  * node home (proposal 003, Consequences).
  */
 const GRAPH_CONSENT_SENTENCES = [
-  "A graph sync tells each contacted witness which identities this wallet cares about.",
-  "It fetches ledgers this home does not hold, and keeps them in a crawl generation, not as replicas.",
+  "Every witness your wallet asks learns which people you are interested in.",
+  "Your wallet reads their records to answer how you know someone, and keeps no copy.",
 ];
 
 interface GraphSync {
@@ -92,7 +90,7 @@ function GraphSyncNotices({ sync, children }: { sync: GraphSync; children?: Reac
           ))}
           <div className="flex gap-2">
             <Button size="sm" data-testid="graph-sync-consent-confirm" onClick={sync.confirm}>
-              Synchronize
+              Look now
             </Button>
             <Button
               size="sm"
@@ -113,78 +111,59 @@ function GraphSyncNotices({ sync, children }: { sync: GraphSync; children?: Reac
 
 export function GraphSyncButton({ sync, testId }: { sync: GraphSync; testId: string }) {
   return (
-    <Button variant="outline" size="sm" data-testid={testId} disabled={sync.pending} onClick={sync.start}>
-      {sync.pending ? "synchronizing" : "Sync graph"}
+    <Button
+      variant="outline"
+      size="sm"
+      data-testid={testId}
+      disabled={sync.pending}
+      onClick={sync.start}
+    >
+      {sync.pending ? "looking" : "Look again"}
     </Button>
   );
 }
 
-/** The header control: the counts of the current crawl, and one manual sync. */
-export function GraphSyncControl() {
+/**
+ * The one place a sync starts from, on the witnesses page: the wallet learns
+ * about people by reading what witnesses hold, so the button lives with the
+ * witnesses. Nothing is automatic and there is no timer (proposal 003 section
+ * 3), so the card says when the last look happened and offers the next one.
+ */
+export function GraphSyncCard() {
   const sync = useGraphSync();
   const current = sync.graph;
 
   return (
-    <div className="relative" data-testid="graph-sync">
-      <div className="flex items-center gap-2">
-        {current && (
-          <span
-            data-testid="graph-sync-counts"
-            className="hidden text-xs text-muted-foreground sm:inline"
-          >
-            {current.node_count} identities, {current.edge_count} attestations
-          </span>
-        )}
+    <Card data-testid="graph-sync">
+      <CardHeader>
+        <CardTitle>Finding people through the people you trust</CardTitle>
+        <CardDescription>
+          Your wallet follows who trusts whom, one witness at a time, so a stranger&apos;s page can
+          tell you how you know them. It only looks when you press the button.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        <p data-testid="graph-sync-state" className="text-sm">
+          {current === null
+            ? "Your wallet has not looked yet."
+            : `Your wallet last looked ${describeAge(current.last_sync_ms)}.`}
+        </p>
         {current?.truncated && (
-          <span data-testid="graph-sync-truncated" className="hidden text-xs sm:inline">
-            truncated by {current.truncated_by}
-          </span>
+          <p data-testid="graph-sync-truncated" className="text-sm">
+            Your wallet may not have seen everything.
+          </p>
         )}
         <GraphSyncButton sync={sync} testId="graph-sync-button" />
-      </div>
-      {(sync.asking || sync.error) && (
-        <div className="absolute right-0 top-full z-30 mt-2 w-80">
-          <GraphSyncNotices sync={sync} />
-        </div>
-      )}
-      {current && (
-        <DeveloperOnly>
-          {/* Crawl provenance and sync freshness, in the flow so it hides nothing. */}
-          <div className="mt-2 w-72 rounded-md border bg-card p-2 text-left">
-            <KeyValueTable data-testid="graph-sync-provenance">
-              <KeyValue label="sync_id" testId="graph-sync-id">
-                <Identifier value={current.sync_id} full />
-              </KeyValue>
-              <KeyValue label="last_sync_ms" testId="graph-last-sync-ms">
-                {current.last_sync_ms}
-              </KeyValue>
-              <KeyValue label="depth" testId="graph-depth">
-                {current.depth}
-              </KeyValue>
-              <KeyValue label="fetch_count" testId="graph-fetch-count">
-                {current.fetch_count}
-              </KeyValue>
-              <KeyValue label="truncated_by" testId="graph-truncated-by">
-                {current.truncated_by ?? "null"}
-              </KeyValue>
-              <KeyValue label="stale" testId="graph-stale">
-                {String(current.stale)}
-              </KeyValue>
-              <KeyValue label="equivocations" testId="graph-equivocations">
-                {current.equivocations.length}
-              </KeyValue>
-            </KeyValueTable>
-          </div>
-        </DeveloperOnly>
-      )}
-    </div>
+        <GraphSyncNotices sync={sync} />
+      </CardContent>
+    </Card>
   );
 }
 
 /**
- * The banner a stale crawl raises, wherever a screen reads the graph. A crawl
- * is stale 24 hours after its last sync; nothing refreshes it on its own, so
- * the banner carries the button (proposal 003 section 3).
+ * The banner an aged answer raises, wherever a screen reads the graph. Nothing
+ * refreshes it on its own, so the banner carries the button (proposal 003
+ * section 3).
  */
 export function GraphStalenessBanner({
   stale,
@@ -206,8 +185,8 @@ export function GraphStalenessBanner({
       className="flex flex-wrap items-center gap-2 rounded-md border border-destructive p-2 text-sm"
     >
       <span>
-        graph is stale, last synced{" "}
-        {lastSyncMs === null ? "never" : `${describeAge(lastSyncMs)}, ${formatTimestamp(lastSyncMs)}`}
+        Your wallet last looked{" "}
+        {lastSyncMs === null ? "never" : describeAge(lastSyncMs)}. Look again for a fresher answer.
       </span>
       <GraphSyncButton sync={sync} testId={`${testId}-sync`} />
     </div>

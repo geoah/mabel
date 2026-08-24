@@ -1,15 +1,11 @@
 import { screen, waitFor } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
-import { DEVELOPER_MODE_KEY, GRAPH_CONSENT_KEY } from "@/lib/preferences";
-import { ALICE, seedGraph } from "@/mocks/fixtures";
+import { GRAPH_CONSENT_KEY } from "@/lib/preferences";
+import { ALICE } from "@/mocks/fixtures";
+import { server } from "@/mocks/server";
 
 import { renderApp } from "./render";
-
-async function openDeveloperMode(user: ReturnType<typeof renderApp>["user"]) {
-  await user.click(screen.getByTestId("app-menu-button"));
-  await user.click(screen.getByTestId("developer-mode-toggle"));
-}
 
 describe("navigation", () => {
   it("holds two entries and nothing else", async () => {
@@ -34,45 +30,28 @@ describe("navigation", () => {
     await screen.findByTestId("identity-cards");
   });
 
-  it("answers 'no such route' for the removed verify screen", async () => {
+  it("answers 'no such page' for the removed verify screen", async () => {
     renderApp("/wallet/verify");
 
     expect(await screen.findByTestId("route-not-found")).toBeInTheDocument();
   });
 });
 
-describe("developer mode", () => {
-  it("is off by default and holds the head event and the raw document", async () => {
-    renderApp(`/identities/${ALICE}`);
-    await screen.findByTestId("identity-detail");
+describe("the header", () => {
+  // Decision 017: no developer mode, and no counter the header cannot explain.
+  it("carries the app name and the nav, and no menu or counter", async () => {
+    renderApp("/wallet");
+    await screen.findByTestId("identity-cards");
 
-    expect(screen.getByTestId("identity-detail-head-seq")).toHaveTextContent("8");
-    expect(screen.queryByTestId("identity-detail-head-event")).not.toBeInTheDocument();
-    expect(screen.queryByTestId(`principal-key-${ALICE}`)).not.toBeInTheDocument();
-    expect(screen.queryByTestId("identity-detail-raw")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("verification-detail")).not.toBeInTheDocument();
+    expect(screen.getByTestId("app-title")).toHaveTextContent("mabel");
+    expect(screen.queryByTestId("app-menu-button")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("developer-mode-toggle")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("graph-sync-counts")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("graph-sync-button")).not.toBeInTheDocument();
+    expect(globalThis.localStorage.getItem("mabel.developer_mode")).toBeNull();
   });
 
-  it("reveals them from the header menu and remembers the toggle", async () => {
-    const { user } = renderApp(`/identities/${ALICE}`);
-    await screen.findByTestId("identity-detail");
-
-    await openDeveloperMode(user);
-
-    expect(globalThis.localStorage.getItem(DEVELOPER_MODE_KEY)).toBe("1");
-    expect(screen.getByTestId("identity-detail-head-event")).toBeInTheDocument();
-    expect(screen.getByTestId("identity-detail-created-at-ms")).toBeInTheDocument();
-    expect(screen.getByTestId("identity-detail-raw")).toHaveTextContent(ALICE);
-    expect(screen.getByTestId("verification-detail")).toHaveTextContent("_mabel.alice.example.");
-    expect(await screen.findByTestId("ledger-id")).toBeInTheDocument();
-
-    await user.click(screen.getByTestId("developer-mode-toggle"));
-
-    expect(globalThis.localStorage.getItem(DEVELOPER_MODE_KEY)).toBe("0");
-    expect(screen.queryByTestId("identity-detail-head-event")).not.toBeInTheDocument();
-  });
-
-  it("keeps every panel reachable while it is off", async () => {
+  it("keeps every panel on the page and prints no raw document", async () => {
     renderApp(`/identities/${ALICE}`);
     await screen.findByTestId("identity-detail");
 
@@ -85,30 +64,52 @@ describe("developer mode", () => {
       "sync-push",
       "ledger-panel",
       "identity-actions",
+      "identity-keys",
     ]) {
       expect(screen.getByTestId(panel)).toBeInTheDocument();
+    }
+    // The diagnostic surfaces are the CLI and the HTTP API, not a hidden panel.
+    for (const gone of [
+      "identity-detail-raw",
+      "identity-detail-head-event",
+      "identity-detail-created-at-ms",
+      "identity-detail-active-key",
+      "identity-detail-reserve-commit",
+      `principal-key-${ALICE}`,
+      "verification-stale",
+      "verification-unreachable",
+      "profile-event",
+      "profile-signing-principal",
+      "ledger-id",
+      "ledger-head-event",
+      "graph-sync-provenance",
+    ]) {
+      expect(screen.queryByTestId(gone)).not.toBeInTheDocument();
     }
   });
 });
 
-describe("graph sync", () => {
-  it("shows the counts of the crawl this home holds", async () => {
-    renderApp("/wallet");
+describe("finding people through the people you trust", () => {
+  it("lives on the witnesses page, not the header", async () => {
+    renderApp("/witnesses");
 
-    expect(await screen.findByTestId("graph-sync-counts")).toHaveTextContent(
-      `${seedGraph.node_count} identities, ${seedGraph.edge_count} attestations`,
+    const card = await screen.findByTestId("graph-sync");
+    expect(card).toHaveTextContent("It only looks when you press the button.");
+    expect(screen.getByTestId("graph-sync-state")).toHaveTextContent("Your wallet last looked");
+    expect(screen.getByTestId("graph-sync-truncated")).toHaveTextContent(
+      "Your wallet may not have seen everything.",
     );
-    expect(screen.getByTestId("graph-sync-truncated")).toHaveTextContent("truncated by depth");
+    expect(screen.getByTestId("graph-sync-button")).toBeInTheDocument();
   });
 
   it("asks for consent once, then synchronizes on the next click", async () => {
-    const { user } = renderApp("/wallet");
+    const { user } = renderApp("/witnesses");
     await screen.findByTestId("graph-sync-button");
 
     await user.click(screen.getByTestId("graph-sync-button"));
 
     const consent = screen.getByTestId("graph-sync-consent");
-    expect(consent).toHaveTextContent("which identities this wallet cares about");
+    expect(consent).toHaveTextContent("learns which people you are interested in");
     expect(globalThis.localStorage.getItem(GRAPH_CONSENT_KEY)).toBeNull();
 
     await user.click(screen.getByTestId("graph-sync-consent-confirm"));
@@ -121,17 +122,21 @@ describe("graph sync", () => {
     expect(screen.queryByTestId("graph-sync-consent")).not.toBeInTheDocument();
   });
 
-  it("mints a generation whose provenance developer mode shows", async () => {
-    globalThis.localStorage.setItem(DEVELOPER_MODE_KEY, "1");
-    globalThis.localStorage.setItem(GRAPH_CONSENT_KEY, "1");
-    const { user } = renderApp("/wallet");
-    await screen.findByTestId("graph-sync-id");
-    const before = screen.getByTestId("graph-sync-id").textContent;
+  it("drops the panel when the consent is declined, and syncs nothing", async () => {
+    const posted: string[] = [];
+    server.events.on("request:start", ({ request }) => {
+      if (request.method === "POST") {
+        posted.push(new URL(request.url).pathname);
+      }
+    });
+    const { user } = renderApp("/witnesses");
+    await screen.findByTestId("graph-sync-button");
 
     await user.click(screen.getByTestId("graph-sync-button"));
+    await user.click(screen.getByTestId("graph-sync-consent-cancel"));
 
-    await waitFor(() => expect(screen.getByTestId("graph-sync-id").textContent).not.toBe(before));
-    expect(screen.getByTestId("graph-truncated-by")).toHaveTextContent("depth");
-    expect(screen.getByTestId("graph-stale")).toHaveTextContent("false");
+    expect(screen.queryByTestId("graph-sync-consent")).not.toBeInTheDocument();
+    expect(globalThis.localStorage.getItem(GRAPH_CONSENT_KEY)).toBeNull();
+    expect(posted).toEqual([]);
   });
 });

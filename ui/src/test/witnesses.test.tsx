@@ -14,11 +14,11 @@ describe("the witness card list", () => {
     const card = screen.getByTestId(`witness-card-${REACHABLE_WITNESS}`);
     expect(card).toHaveTextContent(REACHABLE_WITNESS.slice(0, 8));
     expect(within(card).getByTestId(`witness-card-named-by-${REACHABLE_WITNESS}`)).toHaveTextContent(
-      "named by 1 identity",
+      "chosen by 1 identity of yours",
     );
     expect(
       within(card).getByTestId(`witness-card-default-${REACHABLE_WITNESS}`),
-    ).toHaveTextContent("node default");
+    ).toHaveTextContent("this node uses it by default");
     expect(card).toHaveTextContent(ALICE.slice(0, 8));
   });
 
@@ -45,7 +45,7 @@ describe("the witness card list", () => {
       "person",
     );
     expect(within(card).getByTestId(`identity-card-head-seq-${ALICE}`)).toHaveTextContent(
-      "head seq 3",
+      "at position 3",
     );
     // A card is the identity page, never a witness-only screen.
     expect(screen.getByTestId(`identity-card-link-${ALICE}`)).toHaveAttribute(
@@ -59,7 +59,7 @@ describe("the witness card list", () => {
     await screen.findByTestId("identity-cards");
 
     expect(screen.getByTestId(`identity-card-fork-count-${ALICE}`)).toHaveTextContent(
-      "1 fork record",
+      "1 conflict",
     );
     expect(
       screen.queryByTestId(`identity-card-fork-count-${ACME}`),
@@ -79,8 +79,8 @@ describe("the witness card list", () => {
     renderApp(`/witnesses/${UNREACHABLE_WITNESS}`);
 
     const panel = await screen.findByTestId("witness-unreachable");
-    expect(panel).toHaveTextContent("could not reach the witness");
-    expect(panel).toHaveTextContent("not about the ledgers it keeps");
+    expect(panel).toHaveTextContent("could not reach this witness");
+    expect(panel).toHaveTextContent("not about the records it keeps");
     expect(screen.getByTestId("witness-unreachable-message")).toHaveTextContent("Network error:");
     expect(screen.queryByTestId("identity-cards")).not.toBeInTheDocument();
   });

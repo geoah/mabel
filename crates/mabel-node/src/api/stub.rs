@@ -17,9 +17,9 @@ use serde_json::Value;
 
 use super::documents::{
     Accepted, Admitted, Appended, ContactView, CreatedIdentity, FetchedLedger, ForkList,
-    GraphSynced, GraphView, Id, Identity, IdentityList, IdentityView, Invited, LedgerList,
-    LedgerPage, LedgerView, Lookup, MembershipView, ProfileReplaced, Pushed, Removed, Resolved,
-    Revoked, VerificationChecked, WalletNode, WitnessLedgers, WitnessList, WitnessNode,
+    GraphSynced, GraphView, Id, Identity, IdentityKeys, IdentityList, IdentityView, Invited,
+    LedgerList, LedgerPage, LedgerView, Lookup, MembershipView, ProfileReplaced, Pushed, Removed,
+    Resolved, Revoked, VerificationChecked, WalletNode, WitnessLedgers, WitnessList, WitnessNode,
 };
 use super::error::ServiceError;
 use super::service::{
@@ -47,12 +47,13 @@ macro_rules! fixture {
 }
 
 /// Every frozen HTTP fixture, in the order `contracts/README.md` indexes them.
-pub const FIXTURES: [Fixture; 30] = [
+pub const FIXTURES: [Fixture; 31] = [
     fixture!("wallet-get-node"),
     fixture!("wallet-get-identities"),
     fixture!("wallet-post-identities"),
     fixture!("wallet-get-identity"),
     fixture!("wallet-get-identity-ledger"),
+    fixture!("wallet-get-identity-keys"),
     fixture!("wallet-post-identity-profile"),
     fixture!("wallet-post-identity-verification"),
     fixture!("wallet-get-identity-contact"),
@@ -217,6 +218,8 @@ pub enum WalletCall {
     Identity(Id),
     /// `GET /api/identities/{identity_id}/ledger`.
     IdentityLedger(Id, EventPageRequest),
+    /// `GET /api/identities/{identity_id}/keys`.
+    IdentityKeys(Id),
     /// `POST /api/identities/{identity_id}/witnesses`.
     SetWitnesses(Id, Vec<Id>),
     /// `POST /api/identities/{identity_id}/profile`.
@@ -275,6 +278,8 @@ pub struct StubWalletService {
     pub identity: Identity,
     /// `GET /api/identities/{identity_id}/ledger`.
     pub identity_ledger: LedgerPage,
+    /// `GET /api/identities/{identity_id}/keys`.
+    pub identity_keys: IdentityKeys,
     /// `POST /api/identities/{identity_id}/witnesses`.
     pub witnesses_appended: Appended,
     /// `POST /api/identities/{identity_id}/profile`.
@@ -343,6 +348,7 @@ impl StubWalletService {
             created_identity: Fixture::named("wallet-post-identities.json").parse_response(),
             identity: identity.identity,
             identity_ledger: Fixture::named("wallet-get-identity-ledger.json").parse_response(),
+            identity_keys: Fixture::named("wallet-get-identity-keys.json").parse_response(),
             witnesses_appended: Fixture::named("wallet-post-identity-witnesses.json")
                 .parse_response(),
             profile_replaced: Fixture::named("wallet-post-identity-profile.json").parse_response(),
@@ -431,6 +437,13 @@ impl WalletService for StubWalletService {
         self.answer(
             WalletCall::IdentityLedger(identity_id, page),
             self.identity_ledger.clone(),
+        )
+    }
+
+    fn identity_keys(&self, identity_id: Id) -> ServiceFuture<'_, IdentityKeys> {
+        self.answer(
+            WalletCall::IdentityKeys(identity_id),
+            self.identity_keys.clone(),
         )
     }
 

@@ -8,20 +8,21 @@ import { Identifier } from "@/components/Identifier";
 import { KeyValue, KeyValueTable } from "@/components/KeyValue";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useResource } from "@/hooks/useResource";
+import { formatTimestamp } from "@/lib/time";
 
 import { ForksPanel } from "./ForksPanel";
 import { WITNESS_HOLDINGS_NOTE, WITNESS_READ_ONLY_NOTE } from "./notes";
 
-/** The chain this witness stored for one ledger, one line per event. */
+/** The record this witness stored for one identity, one line per entry. */
 function WitnessLedgerEvents({ ledgerId }: { ledgerId: string }) {
   const page = useResource(() => getLedgerEvents(ledgerId, { limit: 512 }), [ledgerId]);
 
   return (
     <Card data-testid="ledger-panel">
       <CardHeader>
-        <CardTitle>Ledger</CardTitle>
+        <CardTitle>Record</CardTitle>
         <CardDescription>
-          One line per event: open a line for the event it records
+          Everything this identity has signed, oldest first. Open a line to read the entry.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
@@ -31,9 +32,9 @@ function WitnessLedgerEvents({ ledgerId }: { ledgerId: string }) {
           <>
             <EventLines events={page.data.events} />
             <p className="text-xs text-muted-foreground">
-              <span data-testid="ledger-event-count">{page.data.event_count}</span> events in this
-              ledger, head at seq{" "}
-              <span data-testid="ledger-head-seq">{page.data.head_seq}</span>
+              <span data-testid="ledger-event-count">{page.data.event_count}</span>{" "}
+              {page.data.event_count === 1 ? "entry" : "entries"} on this record, the newest at
+              position <span data-testid="ledger-head-seq">{page.data.head_seq}</span>.
             </p>
           </>
         )}
@@ -43,9 +44,9 @@ function WitnessLedgerEvents({ ledgerId }: { ledgerId: string }) {
 }
 
 /**
- * One ledger as this witness holds it, drawn as the identity page: the overview,
- * the chain and the fork records when there are any (proposal 004). Every
- * request the route issues is a read.
+ * One record as this witness holds it, drawn as the identity page: the overview,
+ * the entries and the conflicts when there are any (proposal 004). Every request
+ * the route issues is a read.
  */
 export function WitnessLedgerDetail() {
   const { ledgerId = "" } = useParams();
@@ -58,7 +59,7 @@ export function WitnessLedgerDetail() {
         className="inline-flex min-h-10 items-center text-sm underline"
         data-testid="witness-ledger-back"
       >
-        Ledgers
+        Records
       </Link>
       {ledger.loading && <p data-testid="witness-ledger-detail-loading">loading</p>}
       {ledger.error && (
@@ -77,7 +78,7 @@ export function WitnessLedgerDetail() {
             </CardHeader>
             <CardContent className="space-y-2">
               <KeyValueTable>
-                <KeyValue label="ledger_id" testId="witness-detail-ledger-id">
+                <KeyValue label="record id" testId="witness-detail-ledger-id">
                   <Identifier value={ledger.data.entry.ledger_id} />
                 </KeyValue>
                 <KeyValue label="declared kind" testId="witness-detail-declared-kind-row">
@@ -86,32 +87,33 @@ export function WitnessLedgerDetail() {
                     testId="witness-detail-declared-kind"
                   />
                 </KeyValue>
-                <KeyValue label="ledger" testId="witness-detail-ledger-summary">
+                <KeyValue label="record" testId="witness-detail-ledger-summary">
                   <span data-testid="witness-detail-event-count">
                     {ledger.data.entry.event_count}
                   </span>{" "}
-                  events, head at seq{" "}
+                  {ledger.data.entry.event_count === 1 ? "entry" : "entries"}, the newest at
+                  position{" "}
                   <span data-testid="witness-detail-head-seq">{ledger.data.entry.head_seq}</span>
                 </KeyValue>
-                <KeyValue label="head_event" testId="witness-detail-head-event">
+                <KeyValue label="newest entry" testId="witness-detail-head-event">
                   <Identifier value={ledger.data.entry.head_event} />
                 </KeyValue>
-                <KeyValue label="fork records" testId="witness-detail-fork-count">
+                <KeyValue label="conflicts" testId="witness-detail-fork-count">
                   {ledger.data.entry.fork_count}
                   {ledger.data.entry.forks_truncated
-                    ? ", and this witness stopped recording them, so that count is a floor"
+                    ? ", and this witness stopped recording more, so there may be others"
                     : ""}
                 </KeyValue>
                 <KeyValue label="first seen" testId="witness-detail-first-seen-ms">
-                  {ledger.data.entry.first_seen_ms}
+                  {formatTimestamp(ledger.data.entry.first_seen_ms)}
                 </KeyValue>
-                <KeyValue label="updated" testId="witness-detail-updated-ms">
-                  {ledger.data.entry.updated_ms}
+                <KeyValue label="last updated" testId="witness-detail-updated-ms">
+                  {formatTimestamp(ledger.data.entry.updated_ms)}
                 </KeyValue>
-                <KeyValue label="source_endpoint" testId="witness-detail-source-endpoint">
+                <KeyValue label="learned from" testId="witness-detail-source-endpoint">
                   <Identifier value={ledger.data.entry.source_endpoint} />
                 </KeyValue>
-                <KeyValue label="witnesses" testId="witness-detail-witnesses">
+                <KeyValue label="who keeps a copy" testId="witness-detail-witnesses">
                   {ledger.data.witnesses.length === 0 ? (
                     "none"
                   ) : (

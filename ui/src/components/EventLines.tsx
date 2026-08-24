@@ -1,7 +1,6 @@
 import { useState } from "react";
 
 import type { LedgerEvent } from "@/api/types";
-import { DeveloperOnly } from "@/components/DeveloperMode";
 import { Identifier } from "@/components/Identifier";
 import { KeyValue, KeyValueTable } from "@/components/KeyValue";
 import {
@@ -15,45 +14,34 @@ import {
 import { formatTimestamp } from "@/lib/time";
 
 /**
- * What each payload kind did to the ledger, in one clause. A kind this build
- * does not know renders without a gloss rather than guessing at one.
+ * What each entry did to the record, in one clause a reader can act on. A kind
+ * this build does not know renders without a gloss rather than guessing at one.
  */
 const GLOSS: Record<string, string> = {
-  inception: "created this ledger",
-  profile_update: "replaced the display name and hostname",
-  witness_config: "replaced the witness set",
-  trust_attestation: "attested trust in an identity",
-  trust_revocation: "revoked an earlier attestation",
-  membership_invitation: "invited an identity",
-  membership_acceptance: "admitted an invited identity",
-  membership_removal: "removed a principal",
+  inception: "created this identity",
+  profile_update: "changed the public name and website",
+  witness_config: "chose who keeps a copy",
+  trust_attestation: "said it trusts someone",
+  trust_revocation: "took back trusting someone",
+  membership_invitation: "invited someone to help control this identity",
+  membership_acceptance: "confirmed someone as a controller",
+  membership_removal: "removed someone",
 };
 
-/** One event, opened: the fields the chain carries, payload last. */
+/** One entry, opened: the fields the record carries, contents last. */
 function EventDetail({ event }: { event: LedgerEvent }) {
   return (
     <KeyValueTable>
-      <KeyValue label="event_id" testId={`event-id-${event.seq}`}>
+      <KeyValue label="entry id" testId={`event-id-${event.seq}`}>
         <Identifier value={event.event_id} />
       </KeyValue>
-      <KeyValue label="prev" testId={`event-prev-${event.seq}`}>
+      <KeyValue label="the entry before it" testId={`event-prev-${event.seq}`}>
         <Identifier value={event.prev} />
       </KeyValue>
-      <KeyValue label="timestamp" testId={`event-timestamp-${event.seq}`}>
+      <KeyValue label="signed at" testId={`event-timestamp-${event.seq}`}>
         {formatTimestamp(event.timestamp_ms)}
       </KeyValue>
-      <DeveloperOnly>
-        <KeyValue label="timestamp_ms" testId={`event-timestamp-ms-${event.seq}`}>
-          {event.timestamp_ms}
-        </KeyValue>
-        <KeyValue label="author_key" testId={`event-author-key-${event.seq}`}>
-          <Identifier value={event.author_key} />
-        </KeyValue>
-        <KeyValue label="ledger_id" testId={`event-ledger-id-${event.seq}`}>
-          <Identifier value={event.ledger_id} />
-        </KeyValue>
-      </DeveloperOnly>
-      <KeyValue label="payload" testId={`event-payload-${event.seq}`}>
+      <KeyValue label="what it says" testId={`event-payload-${event.seq}`}>
         <span className="font-mono text-xs break-all">{JSON.stringify(event.payload)}</span>
       </KeyValue>
     </KeyValueTable>
@@ -61,10 +49,10 @@ function EventDetail({ event }: { event: LedgerEvent }) {
 }
 
 /**
- * The ledger as decision 014 asks for it: one line per event carrying its
- * sequence and its type, each opening into the event detail. The wallet's own
- * ledger and a witness's copy of it render through this one component, because
- * the chain is the same chain.
+ * The record as decision 014 asks for it: one line per entry carrying its
+ * position and what it did, each opening into the entry itself. The wallet's own
+ * record and a witness's copy of it render through this one component, because
+ * the record is the same record.
  */
 export function EventLines({ events }: { events: LedgerEvent[] }) {
   const [opened, setOpened] = useState<ReadonlySet<number>>(new Set());
@@ -83,8 +71,8 @@ export function EventLines({ events }: { events: LedgerEvent[] }) {
     <Table stack="none" data-testid="ledger-events">
       <TableHeader>
         <TableRow>
-          <TableHead className="w-12">seq</TableHead>
-          <TableHead>event</TableHead>
+          <TableHead className="w-12">at</TableHead>
+          <TableHead>what happened</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -93,7 +81,7 @@ export function EventLines({ events }: { events: LedgerEvent[] }) {
           return [
             <TableRow key={event.event_id} data-testid={`ledger-event-${event.seq}`}>
               <TableCell
-                label="seq"
+                label="at"
                 data-testid={`event-seq-${event.seq}`}
                 className="align-top font-mono text-xs"
               >

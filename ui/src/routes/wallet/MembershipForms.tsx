@@ -25,13 +25,13 @@ import { Label } from "@/components/ui/label";
 import { asApiError } from "@/hooks/useResource";
 
 /**
- * The membership screens ticket 019 specified, rebuilt on the actions layout
- * and calling the ticket 021 routes. Every artifact crosses as base64 of the
- * bytes the CLI writes, and the node does all the signing: the browser holds no
- * keys (proposal 001 section 10).
+ * Bringing other people onto one identity: you invite them with a file, they
+ * accept and hand a file back, and you confirm it. Every file crosses as base64
+ * of the bytes the CLI writes, and the node does all the signing: the browser
+ * holds no keys (proposal 001 section 10).
  */
 
-/** Who signs: the controllers this ledger records, the root first. */
+/** Who signs: the controllers this identity records, the founder first. */
 function SignerSelect({
   identity,
   memberships,
@@ -50,7 +50,7 @@ function SignerSelect({
 
   return (
     <div className="space-y-1">
-      <Label htmlFor={testId}>by (the controller that signs)</Label>
+      <Label htmlFor={testId}>Who signs</Label>
       <select
         id={testId}
         data-testid={testId}
@@ -79,7 +79,7 @@ function RoleSelect({
 }) {
   return (
     <div className="space-y-1">
-      <Label htmlFor={testId}>role</Label>
+      <Label htmlFor={testId}>What they may do</Label>
       <select
         id={testId}
         data-testid={testId}
@@ -87,14 +87,14 @@ function RoleSelect({
         onChange={(event) => onChange(event.target.value as Role)}
         className="h-10 w-full rounded-md border bg-transparent px-2 text-sm shadow-xs focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none"
       >
-        <option value="controller">controller, may append to the ledger</option>
-        <option value="member">member, recorded with no signing authority</option>
+        <option value="controller">controller: may act for this identity</option>
+        <option value="member">member: listed here, may not act for it</option>
       </select>
     </div>
   );
 }
 
-/** An artifact the person has to carry to the other wallet. */
+/** A file the person has to carry to the other wallet. */
 function Artifact({
   label,
   value,
@@ -137,7 +137,7 @@ function Result({ testId, children }: { testId: string; children: ReactNode }) {
   );
 }
 
-/** Ticket 021's `POST .../memberships/invitations`. */
+/** Inviting: appends the invitation and writes the file to hand over. */
 export function InviteForm({
   identity,
   memberships,
@@ -188,32 +188,32 @@ export function InviteForm({
         />
         <RoleSelect value={role} onChange={setRole} testId="invite-role" />
         <Base64Upload
-          label="invitee descriptor"
+          label="Their identity file"
           testId="invite-descriptor"
           value={descriptor}
           onChange={setDescriptor}
-          placeholder="base64 of the descriptor the invitee exported"
+          placeholder="paste the file they sent you, or pick it below"
         />
         <Button type="submit" data-testid="invite-submit" disabled={pending}>
-          {pending ? "appending" : "Invite"}
+          {pending ? "inviting" : "Invite"}
         </Button>
       </form>
       {error && <ErrorEnvelopeView error={error} testId="invite-error" />}
       {invited && (
         <Result testId="invite-result">
           <KeyValueTable>
-            <KeyValue label="invitee" testId="invite-result-invitee">
+            <KeyValue label="you invited" testId="invite-result-invitee">
               <Identifier value={invited.invitee} />
             </KeyValue>
-            <KeyValue label="role" testId="invite-result-role">
+            <KeyValue label="as" testId="invite-result-role">
               {invited.role}
             </KeyValue>
-            <KeyValue label="invited at seq" testId="invite-result-seq">
+            <KeyValue label="recorded at position" testId="invite-result-seq">
               {invited.invitation_seq}
             </KeyValue>
           </KeyValueTable>
           <Artifact
-            label="invitation bundle, for the invitee"
+            label="An invitation file to send them"
             value={invited.invitation_bundle_base64}
             filename="invitation.bundle"
             testId="invite-bundle"
@@ -262,11 +262,11 @@ export function AcceptForm({ identity }: { identity: Identity }) {
     <div className="space-y-3">
       <form onSubmit={submit} className="space-y-2" data-testid="accept-form">
         <Base64Upload
-          label="invitation bundle"
+          label="The invitation file they sent you"
           testId="accept-bundle"
           value={bundle}
           onChange={setBundle}
-          placeholder="base64 of the bundle the inviter sent"
+          placeholder="paste the file they sent you, or pick it below"
         />
         <Button type="submit" data-testid="accept-submit" disabled={pending}>
           {pending ? "reading" : "Read the invitation"}
@@ -276,19 +276,21 @@ export function AcceptForm({ identity }: { identity: Identity }) {
       {accepted && (
         <Result testId="accept-result">
           <KeyValueTable>
-            <KeyValue label="ledger" testId="accept-ledger-id">
+            <KeyValue label="the identity inviting you" testId="accept-ledger-id">
               <Identifier value={accepted.ledger_id} />
             </KeyValue>
             <KeyValue label="declared kind" testId="accept-declared-kind">
               {accepted.declared_kind}
             </KeyValue>
-            <KeyValue label="root" testId="accept-root">
-              {accepted.root}
+            <KeyValue label="how it signs" testId="accept-root">
+              {accepted.root === "identity"
+                ? "through its controllers, holding no key of its own"
+                : "with a key of its own"}
             </KeyValue>
-            <KeyValue label="role offered" testId="accept-role">
+            <KeyValue label="you were offered" testId="accept-role">
               {accepted.role}
             </KeyValue>
-            <KeyValue label="controllers" testId="accept-controllers">
+            <KeyValue label="who controls it now" testId="accept-controllers">
               <span className="space-y-1">
                 {accepted.controllers.map((controller) => (
                   <span key={controller.identity} className="block">
@@ -313,11 +315,11 @@ export function AcceptForm({ identity }: { identity: Identity }) {
               data-testid="accept-acknowledge"
               onClick={() => setAcknowledged(true)}
             >
-              I understand, show the acceptance
+              I understand, show the file
             </Button>
           ) : (
             <Artifact
-              label="acceptance, for a controller of that ledger"
+              label="A file to send back to whoever invited you"
               value={accepted.acceptance_base64}
               filename="acceptance.bin"
               testId="accept-acceptance"
@@ -329,7 +331,7 @@ export function AcceptForm({ identity }: { identity: Identity }) {
   );
 }
 
-/** Ticket 021's `POST .../memberships/admissions`. */
+/** Confirming: reads the file the invitee handed back and records them. */
 export function AdmitForm({
   identity,
   memberships,
@@ -374,27 +376,27 @@ export function AdmitForm({
           testId="admit-by"
         />
         <Base64Upload
-          label="acceptance"
+          label="The file they sent back"
           testId="admit-acceptance"
           value={acceptance}
           onChange={setAcceptance}
-          placeholder="base64 of the acceptance the invitee sent back"
+          placeholder="paste the file they sent back, or pick it below"
         />
         <Button type="submit" data-testid="admit-submit" disabled={pending}>
-          {pending ? "appending" : "Admit"}
+          {pending ? "confirming" : "Confirm"}
         </Button>
       </form>
       {error && <ErrorEnvelopeView error={error} testId="admit-error" />}
       {admitted && (
         <Result testId="admit-result">
           <KeyValueTable>
-            <KeyValue label="admitted" testId="admit-result-invitee">
+            <KeyValue label="you confirmed" testId="admit-result-invitee">
               <Identifier value={admitted.invitee} />
             </KeyValue>
-            <KeyValue label="role" testId="admit-result-role">
+            <KeyValue label="as" testId="admit-result-role">
               {admitted.role}
             </KeyValue>
-            <KeyValue label="at seq" testId="admit-result-seq">
+            <KeyValue label="recorded at position" testId="admit-result-seq">
               {admitted.acceptance_seq}
             </KeyValue>
           </KeyValueTable>
@@ -404,7 +406,7 @@ export function AdmitForm({
   );
 }
 
-/** Ticket 021's `POST .../memberships/removals`. */
+/** Removing: takes someone off the identity, or cancels their invitation. */
 export function RemoveForm({
   identity,
   memberships,
@@ -455,7 +457,7 @@ export function RemoveForm({
           testId="remove-by"
         />
         <div className="space-y-1">
-          <Label htmlFor="remove-target">target</Label>
+          <Label htmlFor="remove-target">Who to remove</Label>
           <select
             id="remove-target"
             data-testid="remove-target"
@@ -463,7 +465,7 @@ export function RemoveForm({
             onChange={(event) => setTarget(event.target.value)}
             className="h-10 w-full rounded-md border bg-transparent px-2 font-mono text-xs shadow-xs focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none"
           >
-            <option value="">choose a principal or an open invitation</option>
+            <option value="">choose someone, or an invitation they never accepted</option>
             {[...new Set(removable)].map((identityId) => (
               <option key={identityId} value={identityId}>
                 {identityId}
@@ -477,23 +479,27 @@ export function RemoveForm({
           data-testid="remove-submit"
           disabled={pending || target === ""}
         >
-          {pending ? "appending" : "Remove"}
+          {pending ? "removing" : "Remove"}
         </Button>
       </form>
       {error && <ErrorEnvelopeView error={error} testId="remove-error" />}
       {removed && (
         <Result testId="remove-result">
           <KeyValueTable>
-            <KeyValue label="target" testId="remove-result-target">
+            <KeyValue label="removed" testId="remove-result-target">
               <Identifier value={removed.target} />
             </KeyValue>
-            <KeyValue label="principal removed" testId="remove-result-principal">
-              {String(removed.principal_removed)}
+            <KeyValue label="taken off this identity" testId="remove-result-principal">
+              {removed.principal_removed ? "yes" : "no"}
             </KeyValue>
             <KeyValue label="invitation cancelled" testId="remove-result-invitation">
-              <Identifier value={removed.invitation_cancelled} />
+              {removed.invitation_cancelled === null ? (
+                "none"
+              ) : (
+                <Identifier value={removed.invitation_cancelled} />
+              )}
             </KeyValue>
-            <KeyValue label="at seq" testId="remove-result-seq">
+            <KeyValue label="recorded at position" testId="remove-result-seq">
               {removed.removal_seq}
             </KeyValue>
           </KeyValueTable>

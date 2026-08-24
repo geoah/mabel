@@ -87,7 +87,7 @@ describe("membership", () => {
     await user.click(screen.getByTestId("remove-submit"));
 
     await screen.findByTestId("remove-result");
-    expect(screen.getByTestId("remove-result-principal")).toHaveTextContent("true");
+    expect(screen.getByTestId("remove-result-principal")).toHaveTextContent("yes");
     await waitFor(() =>
       expect(screen.queryByTestId(`principal-row-${ACME}`)).not.toBeInTheDocument(),
     );

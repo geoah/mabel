@@ -25,7 +25,7 @@ function withVerification(status: VerificationStatus, stale = false): Identity {
 function overview(identity: Identity) {
   return renderComponent(
     <MemoryRouter>
-      <OverviewCard identity={identity} raw={{ ok: true }} />
+      <OverviewCard identity={identity} />
     </MemoryRouter>,
   );
 }
@@ -44,7 +44,7 @@ describe("overview table", () => {
     expect(mark).toHaveAttribute("data-verification", state);
     expect(mark).toHaveTextContent("alice.example");
     expect(screen.getByTestId("identity-detail-verification-note")).toHaveTextContent(
-      "advisory",
+      "It grants nothing.",
     );
   });
 
@@ -54,7 +54,7 @@ describe("overview table", () => {
     expect(
       screen.queryByTestId("identity-detail-hostname-verification"),
     ).not.toBeInTheDocument();
-    expect(screen.getByTestId("identity-detail-hostname")).toHaveTextContent("none claimed");
+    expect(screen.getByTestId("identity-detail-hostname")).toHaveTextContent("none");
   });
 
   it("holds the address book fields on one line each, with the counts", async () => {
@@ -64,15 +64,45 @@ describe("overview table", () => {
     // Every row is a key and a value on one line: the label column and the
     // value column are siblings, never stacked (decision 014).
     const row = screen.getByTestId("identity-detail-identity-id-row");
-    expect(within(row).getByText("identity_id").tagName).toBe("DT");
+    expect(within(row).getByText("identity id").tagName).toBe("DT");
     expect(screen.getByTestId("identity-detail-created")).toHaveTextContent("2023-11-14");
     expect(screen.getByTestId("identity-detail-declared-kind")).toHaveTextContent("person");
     expect(screen.getByTestId("identity-detail-event-count")).toHaveTextContent("9");
     expect(screen.getByTestId("identity-detail-head-seq")).toHaveTextContent("8");
-    expect(screen.getByTestId("identity-detail-trusted-count")).toHaveTextContent("1");
+    expect(screen.getByTestId("identity-detail-trusted-count")).toHaveTextContent("1 identity");
     expect(screen.getByTestId("identity-detail-open-invitations")).toHaveTextContent("0");
-    // The raw document and the head event stay behind developer mode.
-    expect(screen.queryByTestId("identity-detail-raw")).not.toBeInTheDocument();
+  });
+
+  // The two roots differ in one fact, and it is a sentence, never a null.
+  it("says in words that a raw-rooted identity holds a key of its own", () => {
+    overview(alice);
+
+    expect(screen.getByTestId("identity-detail-keys")).toHaveTextContent(
+      "this identity signs with a key of its own, and holds a spare to replace it with",
+    );
+  });
+
+  it("says in words that an identity-rooted one is signed for by its controllers", async () => {
+    renderApp(`/identities/${ACME}`);
+    await screen.findByTestId("identity-detail");
+
+    expect(screen.getByTestId("identity-detail-keys")).toHaveTextContent(
+      "this identity holds no key of its own; its controllers sign for it",
+    );
+    expect(screen.getByTestId("identity-detail-keys")).not.toHaveTextContent("null");
+  });
+
+  it("carries the owner badge beside the name, not in the back-link row", async () => {
+    renderApp(`/identities/${ALICE}`);
+    await screen.findByTestId("identity-detail");
+
+    const badge = screen.getByTestId("identity-own-badge");
+    expect(badge).toHaveTextContent("your identity");
+    // Beside the name in the card heading, not in the row the back link owns.
+    expect(screen.getByTestId("identity-detail-resolved").parentElement?.contains(badge)).toBe(
+      true,
+    );
+    expect(screen.getByTestId("identity-back").contains(badge)).toBe(false);
   });
 });
 
@@ -83,7 +113,7 @@ describe("ledger lines", () => {
 
     expect(screen.getByTestId("event-seq-0")).toHaveTextContent("0");
     expect(screen.getByTestId("event-payload-kind-0")).toHaveTextContent("inception");
-    expect(screen.getByTestId("event-gloss-0")).toHaveTextContent("created this ledger");
+    expect(screen.getByTestId("event-gloss-0")).toHaveTextContent("created this identity");
     expect(screen.queryByTestId("event-payload-0")).not.toBeInTheDocument();
 
     await user.click(screen.getByTestId("event-expand-0"));
@@ -115,7 +145,7 @@ describe("state and actions", () => {
 
     const [revoked, unrevoked] = alice.trust;
     expect(screen.getByTestId(`trust-state-${unrevoked.attestation_event}`)).toHaveTextContent(
-      "unrevoked",
+      `trusted since position ${unrevoked.attestation_seq}`,
     );
     expect(within(screen.getByTestId("trust-list")).queryByTestId(
       `trust-row-${revoked.attestation_event}`,
@@ -149,23 +179,36 @@ describe("state and actions", () => {
       "action-push",
       "action-profile",
       "action-verification",
+      "action-keys",
       "action-contact",
       "action-invite",
       "action-accept",
       "action-admit",
       "action-remove",
-      "action-graph",
     ];
     for (const action of actions) {
       const summary = screen.getByTestId(`${action}-summary`);
       // A title and a description, so the closed list says what each one does.
       expect(summary.textContent ?? "").toMatch(/\w.*\./);
+      // Every one of them starts closed (decision 017).
+      expect(screen.getByTestId(action)).not.toHaveAttribute("open");
     }
-    // The three a story runs on every ledger are open without a click.
-    expect(screen.getByTestId("action-trust")).toHaveAttribute("open");
-    expect(screen.getByTestId("action-witnesses")).toHaveAttribute("open");
-    expect(screen.getByTestId("action-push")).toHaveAttribute("open");
-    expect(screen.getByTestId("action-invite")).not.toHaveAttribute("open");
+    // The sync moved to the witnesses page, so no action points at the header.
+    expect(screen.queryByTestId("action-graph")).not.toBeInTheDocument();
+  });
+
+  it("names each action by the task it performs, not by the payload it signs", async () => {
+    renderApp(`/identities/${ALICE}`);
+    await screen.findByTestId("identity-actions");
+
+    expect(screen.getByTestId("action-invite-summary")).toHaveTextContent(
+      "Invite someone to help control this identity",
+    );
+    expect(screen.getByTestId("action-invite-summary")).toHaveTextContent(
+      "You give them a file, they accept and send it back, and you confirm.",
+    );
+    const words = screen.getByTestId("identity-actions").textContent ?? "";
+    expect(words).not.toMatch(/attestation|descriptor|bundle|append/i);
   });
 
   it("draws no principals card for a ledger holding nothing but its root", async () => {

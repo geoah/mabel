@@ -2,7 +2,6 @@ import { type FormEvent, useCallback, useState } from "react";
 
 import { addTrust, type ApiError, revokeTrust } from "@/api/client";
 import type { Identity, ResolvedIdentity as ResolvedIdentityDocument, TrustRecord } from "@/api/types";
-import { DeveloperOnly } from "@/components/DeveloperMode";
 import { ErrorEnvelopeView } from "@/components/ErrorEnvelopeView";
 import { Identifier } from "@/components/Identifier";
 import {
@@ -71,7 +70,7 @@ export function useTrustActions(issuer: string, onAppended: () => void): TrustAc
   return { add, revoke, pending, appended, error };
 }
 
-/** The action: one attestation naming one subject. */
+/** The action: saying, once and in public, that you trust one identity. */
 export function TrustAddForm({ actions }: { actions: TrustActions }) {
   const [subject, setSubject] = useState("");
 
@@ -88,17 +87,17 @@ export function TrustAddForm({ actions }: { actions: TrustActions }) {
     <div className="space-y-3">
       <form onSubmit={submit} className="space-y-2" data-testid="trust-add-form">
         <div className="space-y-1">
-          <Label htmlFor="trust-add-subject">subject</Label>
+          <Label htmlFor="trust-add-subject">Who do you trust</Label>
           <Input
             id="trust-add-subject"
             data-testid="trust-add-subject"
             value={subject}
             onChange={(event) => setSubject(event.target.value)}
-            placeholder="identity id of the subject"
+            placeholder="their identity id"
           />
         </div>
         <Button type="submit" data-testid="trust-add-submit" disabled={actions.pending}>
-          {actions.pending ? "appending" : "Attest trust"}
+          {actions.pending ? "saving" : "I trust them"}
         </Button>
       </form>
       {actions.error && <ErrorEnvelopeView error={actions.error} testId="trust-error" />}
@@ -129,7 +128,9 @@ function TrustRow({
         data-testid={`trust-state-${record.attestation_event}`}
         className="text-xs text-muted-foreground"
       >
-        {record.revoked ? `revoked at seq ${record.revocation_seq}` : "unrevoked"}
+        {record.revoked
+          ? `taken back at position ${record.revocation_seq}`
+          : `trusted since position ${record.attestation_seq}`}
       </span>
       <Button
         variant="outline"
@@ -139,25 +140,16 @@ function TrustRow({
         onClick={() => void actions.revoke(record.attestation_event)}
         data-testid={`trust-revoke-${record.attestation_event}`}
       >
-        Revoke
+        Take it back
       </Button>
-      <DeveloperOnly>
-        <span
-          data-testid={`trust-attestation-seq-${record.attestation_event}`}
-          className="w-full text-xs text-muted-foreground"
-        >
-          attested at seq {record.attestation_seq}, event{" "}
-          <Identifier value={record.attestation_event} />
-        </span>
-      </DeveloperOnly>
     </li>
   );
 }
 
 /**
  * The state: who this identity trusts, by resolved name, each row linking to
- * the lookup that answers how the wallet knows them. Revoked attestations stay
- * in the chain forever, so they stay on the screen, folded away.
+ * the answer for how the wallet knows them. Trust taken back stays on the
+ * record forever, so it stays on the screen, folded away.
  */
 export function TrustPanel({
   identity,
@@ -185,16 +177,17 @@ export function TrustPanel({
   return (
     <Card data-testid="trust-panel">
       <CardHeader>
-        <CardTitle>{owner === null ? "Trusted" : `Who ${owner} trusts`}</CardTitle>
+        <CardTitle>{owner === null ? "Who this identity trusts" : `Who ${owner} trusts`}</CardTitle>
         <CardDescription>
-          One unrevoked attestation per subject, each signed into this ledger
+          Everyone this identity has said it trusts. It is on the identity&apos;s public record,
+          and so is taking it back.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         <ResolvedIdentityScope identities={identity.trust.map((record) => resolved(record.subject))}>
           {unrevoked.length === 0 ? (
             <p data-testid="trust-list-empty" className="text-sm">
-              this identity trusts nobody yet
+              This identity has not said it trusts anyone yet.
             </p>
           ) : (
             <ul data-testid="trust-list" className="divide-y">
@@ -214,8 +207,7 @@ export function TrustPanel({
                 data-testid="trust-revoked-summary"
                 className="flex min-h-11 cursor-pointer list-none items-center px-3 text-xs text-muted-foreground marker:content-none hover:bg-accent"
               >
-                {revoked.length} revoked {revoked.length === 1 ? "attestation" : "attestations"},
-                still in the chain
+                {revoked.length} taken back, still on the record
               </summary>
               <ul className="divide-y border-t px-3">
                 {revoked.map((record) => (
@@ -232,7 +224,7 @@ export function TrustPanel({
         </ResolvedIdentityScope>
         {actions.appended && (
           <p data-testid="trust-appended-event" className="text-xs">
-            appended <Identifier value={actions.appended} />
+            Saved as entry <Identifier value={actions.appended} />
           </p>
         )}
       </CardContent>

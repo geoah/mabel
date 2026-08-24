@@ -1,0 +1,39 @@
+{
+  "route": "/api/identities/:identity_id/keys",
+  "method": "GET",
+  "request": null,
+  "response": {
+    "ok": true,
+    "identity_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+    "active_secret_key": "ceirceirceirceirceirceirceirceirceirceirceirceirceiq",
+    "reserve_secret_key": "gmztgmztgmztgmztgmztgmztgmztgmztgmztgmztgmztgmztgmzq",
+    "active_key": "2bflemtufo2kwoqtnc6umfpe43icesvxdiawxl4fecrtfslxq43q",
+    "reserve_commit": "4hvnmdhctangrg6jmqkyzf6ropi5do6lqdcw37eqoryzhoqg2maq"
+  },
+  "errors": [
+    {
+      "status": 404,
+      "body": {
+        "ok": false,
+        "code": 2,
+        "message": "this home holds no ledger jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq",
+        "details": {
+          "reason": "unknown_ledger",
+          "ledger_id": "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq"
+        }
+      }
+    },
+    {
+      "status": 409,
+      "body": {
+        "ok": false,
+        "code": 20,
+        "message": "Policy error: this home holds no key of its own for 2okqwhextnpkpmydrgrkk563vbehcklffwfzidxlh5dslawjmn6a: its controllers sign for it",
+        "details": {
+          "reason": "no_keys_held",
+          "identity_id": "2okqwhextnpkpmydrgrkk563vbehcklffwfzidxlh5dslawjmn6a"
+        }
+      }
+    }
+  ]
+}

@@ -501,6 +501,23 @@ export interface CreateIdentityResponse {
   inception_event: string;
 }
 
+/**
+ * GET /api/identities/:identity_id/keys. Every value is the same lowercase
+ * base32 as every other key field in these documents, the two secrets included:
+ * on disk the key files hold the same bytes as hex, and this document matches
+ * the documents rather than the files (contracts/README.md, "Ids and byte
+ * fields"). An identity holding no key of its own answers 409 no_keys_held
+ * instead, so a 200 always carries all four values.
+ */
+export interface IdentityKeysResponse {
+  ok: true;
+  identity_id: string;
+  active_secret_key: string;
+  reserve_secret_key: string;
+  active_key: string;
+  reserve_commit: string;
+}
+
 /** GET /api/identities/:identity_id/ledger?since=&limit=. since is inclusive. */
 export interface LedgerPageResponse {
   ok: true;

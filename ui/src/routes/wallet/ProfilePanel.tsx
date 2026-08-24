@@ -3,9 +3,7 @@ import { type FormEvent, useState } from "react";
 import { type ApiError, replaceProfile } from "@/api/client";
 import type { Identity, ProfileFields, ReplaceProfileResponse } from "@/api/types";
 import { ErrorEnvelopeView } from "@/components/ErrorEnvelopeView";
-import { Identifier } from "@/components/Identifier";
 import { KeyValue, KeyValueTable } from "@/components/KeyValue";
-import { DeveloperOnly } from "@/components/DeveloperMode";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,8 +15,8 @@ import { HOSTNAME_CONSENT_KEY, useConsent } from "@/lib/preferences";
  * remembered per node home (proposal 003, Consequences).
  */
 const HOSTNAME_CONSENT_SENTENCES = [
-  "Every display name and hostname ever set stays readable forever by anyone who can name the ledger id.",
-  "The chain is the full history and replicas keep their copies, so a later change hides nothing.",
+  "Every name and website you set here stays readable forever by anyone who knows this identity's id.",
+  "Changing it later hides nothing: the old ones stay on the record, and copies are already out there.",
 ];
 
 function trimmedOrNull(value: string): string | null {
@@ -27,7 +25,7 @@ function trimmedOrNull(value: string): string | null {
 }
 
 function shown(value: string | null): string {
-  return value ?? "null";
+  return value ?? "none";
 }
 
 /**
@@ -94,27 +92,19 @@ export function ProfilePanel({
   return (
     <div data-testid="profile-panel" className="space-y-3">
       <KeyValueTable>
-        <KeyValue label="display_name" testId="profile-current-display-name">
+        <KeyValue label="public name now" testId="profile-current-display-name">
           {shown(current.display_name)}
         </KeyValue>
-        <KeyValue label="hostname" testId="profile-current-hostname">
+        <KeyValue label="website now" testId="profile-current-hostname">
           <span className="font-mono text-xs">{shown(current.hostname)}</span>
         </KeyValue>
-        <DeveloperOnly>
-          <KeyValue label="profile_event" testId="profile-event">
-            <Identifier value={identity.profile?.event ?? null} />
-          </KeyValue>
-          <KeyValue label="profile_seq" testId="profile-seq">
-            {identity.profile?.seq ?? "null"}
-          </KeyValue>
-          <KeyValue label="signing_principal" testId="profile-signing-principal">
-            <Identifier value={identity.profile?.signing_principal.key ?? null} />
-          </KeyValue>
-        </DeveloperOnly>
       </KeyValueTable>
+      <p className="text-xs text-muted-foreground">
+        Both are replaced together. Leaving a box empty clears that one.
+      </p>
       <form onSubmit={propose} className="space-y-2" data-testid="profile-replace-form">
         <div className="space-y-1">
-          <Label htmlFor="profile-display-name">display_name</Label>
+          <Label htmlFor="profile-display-name">Public name</Label>
           <Input
             id="profile-display-name"
             data-testid="profile-display-name"
@@ -124,7 +114,7 @@ export function ProfilePanel({
           />
         </div>
         <div className="space-y-1">
-          <Label htmlFor="profile-hostname">hostname</Label>
+          <Label htmlFor="profile-hostname">Website</Label>
           <Input
             id="profile-hostname"
             data-testid="profile-hostname"
@@ -134,13 +124,13 @@ export function ProfilePanel({
           />
         </div>
         <Button type="submit" data-testid="profile-replace-submit" disabled={pending}>
-          Replace profile
+          Review the change
         </Button>
       </form>
       {proposed && (
         <div className="space-y-2 rounded-md border p-2" data-testid="profile-diff">
           <KeyValueTable>
-            <KeyValue label="display_name" testId="profile-diff-display-name">
+            <KeyValue label="public name" testId="profile-diff-display-name">
               <span data-testid="profile-diff-display-name-before">
                 {shown(current.display_name)}
               </span>{" "}
@@ -149,7 +139,7 @@ export function ProfilePanel({
                 {shown(proposed.display_name)}
               </span>
             </KeyValue>
-            <KeyValue label="hostname" testId="profile-diff-hostname">
+            <KeyValue label="website" testId="profile-diff-hostname">
               <span data-testid="profile-diff-hostname-before" className="font-mono text-xs">
                 {shown(current.hostname)}
               </span>{" "}
@@ -192,7 +182,7 @@ export function ProfilePanel({
       {error && <ErrorEnvelopeView error={error} testId="profile-error" />}
       {replaced && (
         <p data-testid="profile-replace-result" className="text-xs">
-          replaced at seq {replaced.profile.seq}
+          Saved at position {replaced.profile.seq}.
         </p>
       )}
     </div>

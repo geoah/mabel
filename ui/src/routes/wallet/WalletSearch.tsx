@@ -18,10 +18,10 @@ const IDENTITY_ID = /^[a-z2-7]{52}$/i;
  * about the identity. The lookup navigates; it verifies nothing.
  */
 const STATUS_SENTENCE: Record<ResolveStatus, string> = {
-  no_record: "holds no mabel record",
-  mismatched_records: "holds records and none of them parses as an identity id",
-  unreachable: "could not be answered by the resolver",
-  resolved: "answered resolved without naming an identity id",
+  no_record: "names no identity",
+  mismatched_records: "answered, and nothing it said is an identity id",
+  unreachable: "gave no answer",
+  resolved: "answered without naming an identity",
 };
 
 /**
@@ -67,12 +67,12 @@ export function WalletSearch() {
     <Card data-testid="wallet-search">
       <CardHeader>
         <CardTitle>Open an identity</CardTitle>
-        <CardDescription>An identity id, or a hostname to resolve through DNS</CardDescription>
+        <CardDescription>Paste an identity id, or type a website to look up in DNS</CardDescription>
       </CardHeader>
       <CardContent className="space-y-2">
         <form onSubmit={submit} className="flex flex-wrap items-end gap-2" data-testid="wallet-search-form">
           <div className="min-w-0 flex-1 space-y-1">
-            <Label htmlFor="wallet-search-input">identity id or hostname</Label>
+            <Label htmlFor="wallet-search-input">Identity id or website</Label>
             <Input
               id="wallet-search-input"
               data-testid="wallet-search-input"

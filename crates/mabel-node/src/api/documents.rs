@@ -612,6 +612,35 @@ pub struct IdentityView {
     pub identity: Identity,
 }
 
+/// `GET /api/identities/:identity_id/keys`: both secret keys of one identity,
+/// for a person to write down or copy into a password manager.
+///
+/// Only an identity that holds a key of its own has keys to hand back. A
+/// keyless identity-rooted ledger answers code 20 with reason `no_keys_held`
+/// instead, so every field here is present on a 200 and none is nullable.
+///
+/// All four key values are lowercase RFC 4648 base32 without padding, 52
+/// characters for 32 bytes, the one spelling every byte field in this module
+/// uses (`contracts/README.md`, "Ids and byte fields"). The two secrets are
+/// the raw 32 secret-key bytes in that encoding. On disk
+/// `identities/<id>/active.key` holds the same bytes as lowercase hex; this
+/// document matches the other documents, not the file.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct IdentityKeys {
+    /// The identity these keys belong to.
+    pub identity_id: Id,
+    /// The 32 secret bytes of the key that signs this identity's events.
+    pub active_secret_key: Id,
+    /// The 32 secret bytes of the key the inception committed to and the POC
+    /// never uses.
+    pub reserve_secret_key: Id,
+    /// The public key of `active_secret_key`, as the ledger's events carry it.
+    pub active_key: Id,
+    /// The commitment the inception froze for the reserve key.
+    pub reserve_commit: Id,
+}
+
 /// One page of events, from `GET /api/identities/:identity_id/ledger` and from
 /// `GET /api/ledgers/:ledger_id/events`. Both routes return this shape.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

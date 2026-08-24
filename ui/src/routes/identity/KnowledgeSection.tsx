@@ -7,7 +7,6 @@ import type {
   LookupResponse,
   ResolvedIdentity as ResolvedIdentityDocument,
 } from "@/api/types";
-import { DeveloperOnly } from "@/components/DeveloperMode";
 import { ErrorEnvelopeView } from "@/components/ErrorEnvelopeView";
 import { Identifier } from "@/components/Identifier";
 import { KeyValue, KeyValueTable } from "@/components/KeyValue";
@@ -15,7 +14,7 @@ import { ResolvedIdentity, ResolvedIdentityScope } from "@/components/ResolvedId
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useResource } from "@/hooks/useResource";
-import { describeAge, formatTimestamp } from "@/lib/time";
+import { describeAge } from "@/lib/time";
 import { GraphStalenessBanner, useGraphSync } from "@/routes/wallet/GraphSyncControl";
 
 /**
@@ -26,13 +25,13 @@ import { GraphStalenessBanner, useGraphSync } from "@/routes/wallet/GraphSyncCon
 export const MAX_LEVEL = 2;
 
 /**
- * The reverse list is never "who trusts them". It is who, in this one crawl,
- * was seen attesting to them, and it says so wherever it is drawn.
+ * The reverse list is never "who trusts them". It is who your wallet happens to
+ * have seen trusting them, and it says so wherever it is drawn.
  */
 export const REVERSE_LABEL =
-  "best effort: who in this crawl attests to them, never who trusts them in the world";
+  "Best effort: who your wallet has seen trusting them, not everyone who does";
 
-/** Two signed events at one sequence, with the source that served each branch. */
+/** Two signed entries at one position, drawn wherever the crawl recorded one. */
 export function EquivocationNotice({
   equivocation,
   testId,
@@ -46,19 +45,14 @@ export function EquivocationNotice({
       className="w-full space-y-1 rounded-md border border-destructive p-2 text-xs"
     >
       <p>
-        two signed events at seq{" "}
-        <span data-testid={`${testId}-seq`}>{equivocation.at_seq}</span>, recorded by this crawl
-        and never resolved to one branch
+        Two different entries were signed at position{" "}
+        <span data-testid={`${testId}-seq`}>{equivocation.at_seq}</span>. Your wallet cannot tell
+        which one is the real record.
       </p>
       <ul className="space-y-1">
         {equivocation.branches.map((branch) => (
           <li key={branch.event} data-testid={`${testId}-branch-${branch.event}`}>
             <Identifier value={branch.event} />
-            <DeveloperOnly>
-              <span className="ml-2 text-muted-foreground">
-                {branch.source.kind} <Identifier value={branch.source.endpoint} />
-              </span>
-            </DeveloperOnly>
           </li>
         ))}
       </ul>
@@ -66,7 +60,7 @@ export function EquivocationNotice({
   );
 }
 
-/** One edge of a path: who attested, to whom, and how fresh that reading is. */
+/** One step of a chain: who trusts whom, and how fresh that reading is. */
 function Hop({ hop, testId }: { hop: LookupHop; testId: string }) {
   return (
     <li data-testid={testId} className="flex flex-wrap items-center gap-x-2 gap-y-1 py-2">
@@ -78,19 +72,13 @@ function Hop({ hop, testId }: { hop: LookupHop; testId: string }) {
         to={`/identities/${hop.to.identity_id}`}
       />
       <span data-testid={`${testId}-fetched`} className="text-xs text-muted-foreground">
-        read {describeAge(hop.fetched_at_ms)}
+        seen {describeAge(hop.fetched_at_ms)}
       </span>
       {hop.stale && (
         <span data-testid={`${testId}-stale`} className="text-xs italic">
-          stale
+          may be out of date
         </span>
       )}
-      <DeveloperOnly>
-        <span className="w-full text-xs text-muted-foreground">
-          attestation <Identifier value={hop.attestation_event} /> at{" "}
-          {formatTimestamp(hop.fetched_at_ms)}
-        </span>
-      </DeveloperOnly>
       {hop.equivocation && (
         <EquivocationNotice equivocation={hop.equivocation} testId={`${testId}-equivocation`} />
       )}
@@ -137,7 +125,7 @@ function EntryRow({
             data-testid={`lookup-${kind}-expand-limit-${identity.identity_id}`}
             className="ml-auto text-xs text-muted-foreground"
           >
-            two levels is the cap; open this name for its own page
+            Open their own page to go further.
           </span>
         )}
       </div>
@@ -180,18 +168,19 @@ function Degrees({ response, level }: { response: LookupResponse; level: number 
   const suffix = level === 0 ? "" : `-${response.identity.identity_id}`;
   return (
     <>
-      <KeyValueTable>
-        <KeyValue label="shortest path found in this crawl" testId={`lookup-degrees${suffix}`}>
-          {response.degrees === null
-            ? "none"
-            : `${response.degrees} ${response.degrees === 1 ? "hop" : "hops"}`}
-        </KeyValue>
-      </KeyValueTable>
-      {response.degrees === null && (
+      {/* One statement, either way: the row when there is a distance to give,
+          the sentence when there is not. */}
+      {response.degrees === null ? (
         <p data-testid={`lookup-degrees-none${suffix}`} className="text-sm">
-          no path was found within this crawl's caps. That is an answer about this crawl, not
-          about the world: it is not a statement that no relationship exists.
+          <span data-testid={`lookup-degrees${suffix}`}>No connection found</span> yet. Sync and
+          try again.
         </p>
+      ) : (
+        <KeyValueTable>
+          <KeyValue label="how far away" testId={`lookup-degrees${suffix}`}>
+            {response.degrees} {response.degrees === 1 ? "step" : "steps"}
+          </KeyValue>
+        </KeyValueTable>
       )}
     </>
   );
@@ -249,7 +238,7 @@ export function KnowledgeBody({
           <p className="text-xs text-muted-foreground">who they trust</p>
           {response.trust.length === 0 ? (
             <p data-testid="lookup-trust-empty" className="text-sm">
-              this crawl read no attestation of theirs
+              Your wallet has not seen them trust anyone.
             </p>
           ) : (
             <ul data-testid="lookup-trust" className="divide-y">
@@ -271,7 +260,7 @@ export function KnowledgeBody({
           </p>
           {response.reverse.entries.length === 0 ? (
             <p data-testid="lookup-reverse-empty" className="text-sm">
-              this crawl saw nobody attesting to them
+              Your wallet has not seen anyone trust them.
             </p>
           ) : (
             <ul data-testid="lookup-reverse" className="divide-y">
@@ -294,8 +283,9 @@ export function KnowledgeBody({
 
 /**
  * How you know them: the section a foreign identity's page carries. It answers
- * from one local root, in named hops with the freshness of each, and it says
- * what the crawl did not reach rather than implying it does not exist.
+ * from one of your own identities, in named steps with the freshness of each,
+ * and it says what your wallet has not seen rather than implying it does not
+ * exist.
  */
 export function KnowledgeSection({ response }: { response: LookupResponse }) {
   const sync = useGraphSync();
@@ -313,7 +303,7 @@ export function KnowledgeSection({ response }: { response: LookupResponse }) {
         <CardTitle>How you know them</CardTitle>
         <CardDescription>
           <span className="inline-flex flex-wrap items-baseline gap-2">
-            answered from
+            following trust out from your
             <ResolvedIdentity identity={response.from} testId="lookup-from" />
           </span>
         </CardDescription>
@@ -326,18 +316,9 @@ export function KnowledgeSection({ response }: { response: LookupResponse }) {
           testId="lookup-graph-stale"
         />
         {response.graph_truncated && (
-          <details data-testid="lookup-graph-truncated" className="rounded-md border">
-            <summary className="flex min-h-11 cursor-pointer list-none items-center px-3 py-2 text-sm marker:content-none hover:bg-accent">
-              <span>
-                the crawl behind this answer stopped early, truncated by{" "}
-                <span className="font-mono text-xs">{response.truncated_by}</span>
-              </span>
-            </summary>
-            <p className="border-t px-3 py-2 text-sm">
-              A truncated crawl reached fewer identities than exist. A missing path here means
-              this crawl found none, not that none exists.
-            </p>
-          </details>
+          <p data-testid="lookup-graph-truncated" className="text-sm">
+            Your wallet may not have seen everything.
+          </p>
         )}
         {response.equivocation && !onAPath && (
           <EquivocationNotice equivocation={response.equivocation} testId="lookup-equivocation" />

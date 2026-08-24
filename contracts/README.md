@@ -29,6 +29,7 @@ contact, lookup and graph surfaces.
 | `http/wallet-post-identities.json` | `POST /api/identities` |
 | `http/wallet-get-identity.json` | `GET /api/identities/:identity_id` |
 | `http/wallet-get-identity-ledger.json` | `GET /api/identities/:identity_id/ledger?since=` |
+| `http/wallet-get-identity-keys.json` | `GET /api/identities/:identity_id/keys` |
 | `http/wallet-post-identity-profile.json` | `POST /api/identities/:identity_id/profile` |
 | `http/wallet-post-identity-verification.json` | `POST /api/identities/:identity_id/verification` |
 | `http/wallet-get-identity-contact.json` | `GET /api/identities/:identity_id/contact` |
@@ -106,7 +107,16 @@ applies to JSON fields and route paths, so `organization` never appears as
 base32 without padding: 32-byte values (identity ids, ledger ids, event ids,
 public keys, endpoint ids) are 52 characters, a 16-byte nonce is 26. Parsing
 is case-insensitive. `node.json` on disk is the exception, because
-`iroh_base::EndpointId` serializes as hex there.
+`iroh_base::EndpointId` serializes as hex there. `GET
+/api/identities/:identity_id/keys` renders `active_secret_key` and
+`reserve_secret_key`, the 32 raw secret-key bytes, in that same base32, not in
+the hex `identities/<id>/active.key` holds on disk: every key value that
+crosses an API document is base32, whatever the file it came from. The two
+secrets in that fixture are 32 bytes of `0x11` and 32 bytes of `0x33`; the
+first is the key `test-vectors/01-raw-root-inception.json` signs Alice's
+inception with, so `active_secret_key` and `active_key` are a real pair, while
+the reserve secret is a stand-in because a commitment does not yield its
+preimage.
 
 **Artifacts over JSON.** The three file artifacts of proposal 001 section 3.8
 (`IdentityDescriptor`, `InvitationBundle`, `AcceptanceFile`) cross the HTTP

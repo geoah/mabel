@@ -28,6 +28,7 @@ pub(super) fn router(service: Service) -> Router {
         .route("/identities", get(identities).post(create_identity))
         .route("/identities/{identity_id}", get(identity))
         .route("/identities/{identity_id}/ledger", get(identity_ledger))
+        .route("/identities/{identity_id}/keys", get(identity_keys))
         .route("/identities/{identity_id}/profile", post(replace_profile))
         .route(
             "/identities/{identity_id}/verification",
@@ -102,6 +103,14 @@ async fn identity_ledger(
     let identity_id = parse::id(IdKind::Identity, &identity_id)?;
     let page = parse::event_page(&query(parameters)?)?;
     Ok(success(service.identity_ledger(identity_id, page).await?))
+}
+
+async fn identity_keys(
+    State(service): State<Service>,
+    Path(identity_id): Path<String>,
+) -> Result<Response, ServiceError> {
+    let identity_id = parse::id(IdKind::Identity, &identity_id)?;
+    Ok(success(service.identity_keys(identity_id).await?))
 }
 
 async fn replace_profile(

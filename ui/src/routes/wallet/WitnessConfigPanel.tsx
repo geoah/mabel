@@ -10,8 +10,8 @@ import { Label } from "@/components/ui/label";
 import { asApiError } from "@/hooks/useResource";
 
 /**
- * POST /api/identities/:identity_id/witnesses replaces the whole witness set, so
- * adding one endpoint sends the current list plus the new id.
+ * Who keeps a copy of this identity's record. The route replaces the whole set,
+ * so adding one witness sends the current list plus the new id.
  */
 export function WitnessConfigPanel({
   identity,
@@ -48,7 +48,7 @@ export function WitnessConfigPanel({
     <div data-testid="witness-config" className="space-y-3">
       {identity.witnesses.length === 0 ? (
         <p data-testid="witness-list-empty" className="text-sm">
-          no witnesses configured
+          No witness keeps a copy of this record yet.
         </p>
       ) : (
         <ul data-testid="witness-list" className="space-y-1">
@@ -61,7 +61,7 @@ export function WitnessConfigPanel({
       )}
       <form onSubmit={submit} className="space-y-2" data-testid="witness-add-form">
         <div className="space-y-1">
-          <Label htmlFor="witness-add-endpoint">endpoint id</Label>
+          <Label htmlFor="witness-add-endpoint">Witness id</Label>
           <Input
             id="witness-add-endpoint"
             data-testid="witness-add-endpoint"
@@ -71,12 +71,12 @@ export function WitnessConfigPanel({
           />
         </div>
         <Button type="submit" data-testid="witness-add-submit" disabled={pending}>
-          {pending ? "appending" : "Add witness"}
+          {pending ? "adding" : "Add witness"}
         </Button>
       </form>
       {headSeq !== null && (
         <p data-testid="witness-add-head-seq" className="text-xs">
-          head_seq {headSeq}
+          Saved at position {headSeq}.
         </p>
       )}
       {error && <ErrorEnvelopeView error={error} testId="witness-add-error" />}

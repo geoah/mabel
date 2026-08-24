@@ -19,9 +19,10 @@ use mabel_core::{IdentityId, LedgerId};
 
 use crate::api::documents::{
     Accepted, Admitted, Appended, ContactView, CreatedIdentity, DeclaredKind, FetchedLedger,
-    GraphSynced, GraphView, Id, Identity, Invited, LedgerPage, Lookup, MembershipView,
-    ProfileReplaced, Pushed, Relay, Removed, ResolveStatus, Resolved, Revoked, Role,
-    VerificationChecked, WalletNode, WitnessEntry, WitnessLedgerEntry, WitnessLedgers, WitnessList,
+    GraphSynced, GraphView, Id, Identity, IdentityKeys, Invited, LedgerPage, Lookup,
+    MembershipView, ProfileReplaced, Pushed, Relay, Removed, ResolveStatus, Resolved, Revoked,
+    Role, VerificationChecked, WalletNode, WitnessEntry, WitnessLedgerEntry, WitnessLedgers,
+    WitnessList,
 };
 use crate::api::error::ServiceError;
 use crate::api::service::{
@@ -421,6 +422,10 @@ impl WalletService for WalletApiService {
         page: EventPageRequest,
     ) -> ServiceFuture<'_, LedgerPage> {
         self.blocking(move |core| core.identity_ledger(ids::parse_identity(&identity_id)?, page))
+    }
+
+    fn identity_keys(&self, identity_id: Id) -> ServiceFuture<'_, IdentityKeys> {
+        self.blocking(move |core| core.identity_keys(ids::parse_identity(&identity_id)?))
     }
 
     fn set_witnesses(&self, identity_id: Id, witnesses: Vec<Id>) -> ServiceFuture<'_, Appended> {

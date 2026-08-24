@@ -1,12 +1,8 @@
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 
 import { getIdentityLedger } from "@/api/client";
-import { DeclaredKindNote, DeclaredKindValue } from "@/components/DeclaredKind";
-import { DeveloperOnly } from "@/components/DeveloperMode";
 import { ErrorEnvelopeView } from "@/components/ErrorEnvelopeView";
 import { EventLines } from "@/components/EventLines";
-import { Identifier } from "@/components/Identifier";
-import { KeyValue, KeyValueTable } from "@/components/KeyValue";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -16,10 +12,24 @@ import { useResource } from "@/hooks/useResource";
 const DEFAULT_LIMIT = 8;
 
 /**
- * The ledger of one identity, one line per event. `?since=` is inclusive, so a
+ * The record of one identity, one line per entry. `?since=` is inclusive, so a
  * page starts at `seq === since`.
+ *
+ * A summary can arrive without the entries behind it: the node answers a head
+ * position for a ledger it knows of and no events for one it never fetched. The
+ * panel says which of the two it is holding rather than printing zero entries
+ * against a head position that is not zero (decision 017).
  */
-export function LedgerPanel({ identityId, version }: { identityId: string; version: number }) {
+export function LedgerPanel({
+  identityId,
+  version,
+  fetch,
+}: {
+  identityId: string;
+  version: number;
+  /** A control that asks a witness for the missing entries, when one applies. */
+  fetch?: ReactNode;
+}) {
   const [since, setSince] = useState(0);
   const [limit, setLimit] = useState(DEFAULT_LIMIT);
   const [sinceInput, setSinceInput] = useState("0");
@@ -28,28 +38,55 @@ export function LedgerPanel({ identityId, version }: { identityId: string; versi
     () => getIdentityLedger(identityId, { since, limit }),
     [identityId, since, limit, version],
   );
+  const held = page.data?.event_count ?? 0;
+  // head_seq counts from zero, so a complete record holds head_seq + 1 entries.
+  const total = (page.data?.head_seq ?? 0) + 1;
 
   return (
     <Card data-testid="ledger-panel">
       <CardHeader>
-        <CardTitle>Ledger</CardTitle>
+        <CardTitle>Record</CardTitle>
         <CardDescription>
-          One line per event: open a line for the event it records
+          Everything this identity has signed, oldest first. Open a line to read the entry.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         {page.loading && <p data-testid="ledger-loading">loading</p>}
         {page.error && <ErrorEnvelopeView error={page.error} testId="ledger-error" />}
-        {page.data && (
+        {page.data && held === 0 && (
+          <>
+            <p data-testid="ledger-not-fetched" className="text-sm">
+              Your wallet knows this record reaches position {page.data.head_seq} but has not
+              fetched any of its entries.
+            </p>
+            {fetch}
+          </>
+        )}
+        {page.data && held > 0 && (
           <>
             <EventLines events={page.data.events} />
-            <p className="text-xs text-muted-foreground">
-              <span data-testid="ledger-event-count">{page.data.event_count}</span> events in this
-              ledger, head at seq{" "}
-              <span data-testid="ledger-head-seq">{page.data.head_seq}</span>, showing from seq{" "}
-              <span data-testid="ledger-page-since">{page.data.since}</span>, more{" "}
-              <span data-testid="ledger-more">{String(page.data.more)}</span>
-            </p>
+            {held < total ? (
+              <>
+                <p data-testid="ledger-partial" className="text-sm">
+                  Your wallet holds{" "}
+                  <span data-testid="ledger-event-count">{held}</span> of the {total} entries on
+                  this record, the newest at position{" "}
+                  <span data-testid="ledger-head-seq">{page.data.head_seq}</span>. Fetching again
+                  asks a witness for the rest.
+                </p>
+                {fetch}
+              </>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                <span data-testid="ledger-event-count">{held}</span>{" "}
+                {held === 1 ? "entry" : "entries"} on this record, the newest at position{" "}
+                <span data-testid="ledger-head-seq">{page.data.head_seq}</span>. Showing from
+                position <span data-testid="ledger-page-since">{page.data.since}</span>.{" "}
+                <span data-testid="ledger-more">
+                  {page.data.more ? "There are more after these." : "These are the last of them."}
+                </span>
+              </p>
+            )}
             <div className="flex flex-wrap items-end gap-x-4 gap-y-2">
               <div className="flex gap-2">
                 <Button
@@ -81,7 +118,7 @@ export function LedgerPanel({ identityId, version }: { identityId: string; versi
               </div>
               <div className="flex items-end gap-2">
                 <div className="space-y-1">
-                  <Label htmlFor="ledger-since">since</Label>
+                  <Label htmlFor="ledger-since">from position</Label>
                   <Input
                     id="ledger-since"
                     data-testid="ledger-since"
@@ -91,7 +128,7 @@ export function LedgerPanel({ identityId, version }: { identityId: string; versi
                   />
                 </div>
                 <div className="space-y-1">
-                  <Label htmlFor="ledger-limit">limit</Label>
+                  <Label htmlFor="ledger-limit">how many</Label>
                   <Input
                     id="ledger-limit"
                     data-testid="ledger-limit"
@@ -113,23 +150,6 @@ export function LedgerPanel({ identityId, version }: { identityId: string; versi
                 </Button>
               </div>
             </div>
-            <DeveloperOnly>
-              <KeyValueTable>
-                <KeyValue label="declared kind" testId="ledger-declared-kind-row">
-                  <DeclaredKindValue
-                    kind={page.data.declared_kind}
-                    testId="ledger-declared-kind"
-                  />
-                </KeyValue>
-                <KeyValue label="ledger_id" testId="ledger-id">
-                  <Identifier value={page.data.ledger_id} />
-                </KeyValue>
-                <KeyValue label="head_event" testId="ledger-head-event">
-                  <Identifier value={page.data.head_event} />
-                </KeyValue>
-              </KeyValueTable>
-              <DeclaredKindNote testId="ledger-declared-kind-note" />
-            </DeveloperOnly>
           </>
         )}
       </CardContent>

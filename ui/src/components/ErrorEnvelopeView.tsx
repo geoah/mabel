@@ -1,15 +1,19 @@
 import type { ApiError } from "@/api/client";
 import { Alert } from "@/components/ui/alert";
 
-/** The exit-code classes of contracts/README.md, "The envelope". */
+/**
+ * What each exit-code class of contracts/README.md, "The envelope", means to
+ * the person who hit it. The code and the reason stay on screen beside this
+ * sentence, because that is what a bug report needs.
+ */
 const CODE_MEANING: Record<number, string> = {
-  2: "usage, unknown route or parameter, rejected by the loopback rules",
-  10: "invalid schema or malformed input",
-  20: "cryptographic, chain or policy failure",
-  30: "peer or network unavailable",
-  50: "stale state, a conflicting event or a replay",
-  60: "insecure key file permissions",
-  70: "unsupported feature or version",
+  2: "The node did not understand the request, or refused it because it did not come from this computer.",
+  10: "Something in the request was the wrong shape.",
+  20: "A signature, the record itself or a rule refused this.",
+  30: "The other side could not be reached.",
+  50: "Something changed this record first. Reload the page and try again.",
+  60: "A key file on this computer can be read by other users. Fix its permissions.",
+  70: "This version of mabel cannot do that.",
 };
 
 function renderDetail(value: unknown): string {
@@ -42,7 +46,7 @@ export function ErrorEnvelopeView({ error, testId = "error-envelope" }: {
         {error.message}
       </p>
       <p data-testid="error-code-meaning" className="mt-1 text-xs">
-        {CODE_MEANING[error.code] ?? "unknown code"}
+        {CODE_MEANING[error.code] ?? "The node reported a kind of failure this build does not recognise."}
       </p>
       {detailKeys.length > 0 && (
         <dl

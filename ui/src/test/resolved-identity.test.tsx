@@ -138,9 +138,9 @@ describe("ResolvedIdentity", () => {
     const mark = screen.getByTestId("who-verification");
     expect(mark).toHaveAttribute("data-verification", state);
     // The glyph never travels alone: the hostname it is about is beside it, in
-    // the monospace style, and the tooltip repeats the advisory sentence.
+    // the monospace style, and the tooltip repeats the standing sentence.
     expect(within(mark).getByText("alice.example").className).toMatch(/font-mono/);
-    expect(mark.getAttribute("title")).toContain("advisory");
+    expect(mark.getAttribute("title")).toContain("It grants nothing.");
     expect(mark).toHaveTextContent(state);
   });
 

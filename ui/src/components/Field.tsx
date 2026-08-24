@@ -40,7 +40,7 @@ export function Field({ label, testId, mono = false, children }: FieldProps) {
   );
 }
 
-/** Renders null as an em-free placeholder so a null field is still visible. */
+/** Renders an absent value as a word, so an empty field is still visible. */
 export function Nullable({ value }: { value: string | number | null | undefined }) {
-  return <>{value === null || value === undefined ? "null" : String(value)}</>;
+  return <>{value === null || value === undefined ? "none" : String(value)}</>;
 }

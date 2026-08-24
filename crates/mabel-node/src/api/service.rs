@@ -16,9 +16,9 @@ use std::pin::Pin;
 
 use super::documents::{
     Accepted, Admitted, Appended, ContactView, CreatedIdentity, DeclaredKind, FetchedLedger,
-    ForkList, GraphSynced, GraphView, Id, Identity, Invited, LedgerList, LedgerPage, LedgerView,
-    Lookup, MembershipView, ProfileReplaced, Pushed, Removed, Resolved, Revoked, RoleName,
-    VerificationChecked, WalletNode, WitnessLedgers, WitnessList, WitnessNode,
+    ForkList, GraphSynced, GraphView, Id, Identity, IdentityKeys, Invited, LedgerList, LedgerPage,
+    LedgerView, Lookup, MembershipView, ProfileReplaced, Pushed, Removed, Resolved, Revoked,
+    RoleName, VerificationChecked, WalletNode, WitnessLedgers, WitnessList, WitnessNode,
 };
 use super::error::ServiceError;
 
@@ -198,6 +198,9 @@ pub trait WalletService: Send + Sync + 'static {
         identity_id: Id,
         page: EventPageRequest,
     ) -> ServiceFuture<'_, LedgerPage>;
+
+    /// `GET /api/identities/{identity_id}/keys`.
+    fn identity_keys(&self, identity_id: Id) -> ServiceFuture<'_, IdentityKeys>;
 
     /// `POST /api/identities/{identity_id}/witnesses`.
     fn set_witnesses(&self, identity_id: Id, witnesses: Vec<Id>) -> ServiceFuture<'_, Appended>;

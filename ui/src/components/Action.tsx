@@ -3,13 +3,13 @@ import { type ReactNode, useState } from "react";
 import { cn } from "@/lib/utils";
 
 /**
- * One operation in the actions section (decision 014): a name, a one-line
- * description of what it does, and the form it opens into. The description is
- * on the closed row, so the section reads as a list of what this wallet can do
- * without opening anything.
+ * One task in the actions section: a name saying what the reader gets to do, a
+ * one-line description of how it goes, and the form it opens into. The
+ * description is on the closed row, so the section reads as a list of what this
+ * wallet can do without opening anything.
  *
- * The three operations a story drives every time (attest, add a witness, push)
- * open by default; the rest stay shut so the page stays a page.
+ * Everything is closed by default. `defaultOpen` exists for a panel that is the
+ * only thing on its screen, and no action on the identity page uses it.
  */
 export function Action({
   title,

@@ -20,8 +20,9 @@ import {
 import { asApiError } from "@/hooks/useResource";
 
 /**
- * A push where at least one witness accepted succeeds and reports the failures
- * per endpoint; a push where every witness failed answers code 30.
+ * Handing the record to the witnesses. One witness accepting is enough to
+ * succeed, and the table reports what every one of them said; a send where all
+ * of them failed answers code 30.
  */
 export function SyncPushPanel({ identityId }: { identityId: string }) {
   const [to, setTo] = useState("");
@@ -47,42 +48,43 @@ export function SyncPushPanel({ identityId }: { identityId: string }) {
     <div data-testid="sync-push" className="space-y-3">
       <form onSubmit={submit} className="space-y-2" data-testid="sync-push-form">
         <div className="space-y-1">
-          <Label htmlFor="sync-push-to">to (optional endpoint id)</Label>
+          <Label htmlFor="sync-push-to">One witness only (optional)</Label>
           <Input
             id="sync-push-to"
             data-testid="sync-push-to"
             value={to}
             onChange={(event) => setTo(event.target.value)}
+            placeholder="leave empty to send to all of them"
           />
         </div>
         <Button type="submit" data-testid="sync-push-submit" disabled={pending}>
-          {pending ? "pushing" : "Push"}
+          {pending ? "sending" : "Send"}
         </Button>
       </form>
       {error && <ErrorEnvelopeView error={error} testId="sync-push-error" />}
       {report && (
         <div className="space-y-2" data-testid="sync-push-report">
           <KeyValueTable>
-            <KeyValue label="ledger_id" testId="sync-push-ledger-id">
+            <KeyValue label="identity" testId="sync-push-ledger-id">
               <Identifier value={report.ledger_id} />
             </KeyValue>
-            <KeyValue label="head_seq" testId="sync-push-head-seq">
+            <KeyValue label="newest position" testId="sync-push-head-seq">
               {report.head_seq}
             </KeyValue>
-            <KeyValue label="head_event" testId="sync-push-head-event">
+            <KeyValue label="newest entry" testId="sync-push-head-event">
               <Identifier value={report.head_event} />
             </KeyValue>
           </KeyValueTable>
           <Table stack="lg" data-testid="sync-push-results">
             <TableHeader>
               <TableRow>
-                <TableHead>endpoint</TableHead>
-                <TableHead>status</TableHead>
-                <TableHead>head_seq</TableHead>
-                <TableHead>stored</TableHead>
-                <TableHead>reject_code</TableHead>
-                <TableHead>at_seq</TableHead>
-                <TableHead>message</TableHead>
+                <TableHead>witness</TableHead>
+                <TableHead>what it said</TableHead>
+                <TableHead>its newest position</TableHead>
+                <TableHead>entries it stored</TableHead>
+                <TableHead>why it refused</TableHead>
+                <TableHead>at position</TableHead>
+                <TableHead>detail</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -91,29 +93,29 @@ export function SyncPushPanel({ identityId }: { identityId: string }) {
                   key={result.endpoint}
                   data-testid={`sync-push-result-${result.endpoint}`}
                 >
-                  <TableCell label="endpoint">
+                  <TableCell label="witness">
                     <Identifier value={result.endpoint} />
                   </TableCell>
-                  <TableCell label="status" data-testid={`push-status-${result.endpoint}`}>
+                  <TableCell label="what it said" data-testid={`push-status-${result.endpoint}`}>
                     {result.status}
                   </TableCell>
-                  <TableCell label="head_seq" data-testid={`push-head-seq-${result.endpoint}`}>
+                  <TableCell label="its newest position" data-testid={`push-head-seq-${result.endpoint}`}>
                     <Nullable value={result.head_seq} />
                   </TableCell>
-                  <TableCell label="stored" data-testid={`push-stored-${result.endpoint}`}>
+                  <TableCell label="entries it stored" data-testid={`push-stored-${result.endpoint}`}>
                     {result.stored}
                   </TableCell>
                   <TableCell
-                    label="reject_code"
+                    label="why it refused"
                     data-testid={`push-reject-code-${result.endpoint}`}
                   >
                     <Nullable value={result.reject_code} />
                   </TableCell>
-                  <TableCell label="at_seq" data-testid={`push-at-seq-${result.endpoint}`}>
+                  <TableCell label="at position" data-testid={`push-at-seq-${result.endpoint}`}>
                     <Nullable value={result.at_seq} />
                   </TableCell>
                   <TableCell
-                    label="message"
+                    label="detail"
                     data-testid={`push-message-${result.endpoint}`}
                     className="text-xs"
                   >

@@ -289,6 +289,63 @@ async fn wallet_get_identity_ledger_matches_the_fixture_and_passes_since_through
 }
 
 #[tokio::test]
+async fn wallet_get_identity_keys_matches_the_fixture() {
+    let name = "wallet-get-identity-keys.json";
+    let stub = Arc::new(StubWalletService::new());
+    let (status, body) = run_wallet(name, &stub).await;
+    expect_response(name, status, &body);
+    assert_eq!(stub.call(), WalletCall::IdentityKeys(id(ALICE)));
+
+    // A 200 carries all four key values, the two secrets included, in the one
+    // base32 spelling every byte field uses: 52 characters for 32 bytes
+    // (`contracts/README.md`, "Ids and byte fields").
+    for key in [
+        "active_secret_key",
+        "reserve_secret_key",
+        "active_key",
+        "reserve_commit",
+    ] {
+        let value = body[key]
+            .as_str()
+            .unwrap_or_else(|| panic!("{key}: {body}"));
+        assert_eq!(value.len(), 52, "{key}");
+        assert_eq!(value, value.to_ascii_lowercase(), "{key}");
+    }
+}
+
+#[tokio::test]
+async fn wallet_get_identity_keys_answers_the_fixture_rejections() {
+    let name = "wallet-get-identity-keys.json";
+    for reason in ["unknown_ledger", "no_keys_held"] {
+        let (expected_status, expected) = fixture_error(name, reason);
+        let stub = Arc::new(StubWalletService::new());
+        stub.fail_with(error_from_fixture(expected_status, &expected));
+        let (status, body) = run_wallet(name, &stub).await;
+        assert_eq!(status, expected_status, "{reason}");
+        assert_eq!(body, expected, "{reason}");
+    }
+}
+
+#[tokio::test]
+async fn a_keyless_identity_has_no_keys_to_hand_back() {
+    // The keys of a keyless identity's controller belong to the controller's
+    // own page, so this route refuses rather than resolving the link.
+    let name = "wallet-get-identity-keys.json";
+    let (expected_status, expected) = fixture_error(name, "no_keys_held");
+    assert_eq!(expected_status, StatusCode::CONFLICT);
+    assert_eq!(expected["code"], json!(20));
+    assert_eq!(expected["details"]["identity_id"], json!(ACME));
+
+    let stub = Arc::new(StubWalletService::new());
+    stub.fail_with(error_from_fixture(expected_status, &expected));
+    let request = request("GET", &format!("/api/identities/{ACME}/keys"), &Value::Null);
+    let (status, body) = send(wallet(&stub), request).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(body, expected);
+    assert_eq!(stub.call(), WalletCall::IdentityKeys(id(ACME)));
+}
+
+#[tokio::test]
 async fn wallet_post_identity_profile_matches_the_fixture_and_requires_both_keys() {
     let name = "wallet-post-identity-profile.json";
     let stub = Arc::new(StubWalletService::new());

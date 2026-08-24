@@ -5,10 +5,11 @@ import { Field, FieldGrid } from "@/components/Field";
 import { Identifier } from "@/components/Identifier";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useResource } from "@/hooks/useResource";
+import { formatTimestamp } from "@/lib/time";
 
 import { FORK_EVIDENCE_NOTE } from "./notes";
 
-/** One of the two events at the forked sequence, with every field it carries. */
+/** One of the two entries at the conflicting position, with every field it carries. */
 function ForkEventPane({
   event,
   side,
@@ -21,28 +22,30 @@ function ForkEventPane({
   return (
     <div className="rounded-md border p-3" data-testid={testId}>
       <p className="mb-2 text-xs font-medium">
-        {side === "kept" ? "kept, the event stored first" : "conflicting, recorded not stored"}
+        {side === "kept"
+          ? "kept: the entry this witness stored first"
+          : "conflicting: recorded as evidence, not stored"}
       </p>
       <FieldGrid className="sm:grid-cols-[7rem_minmax(0,1fr)]">
-        <Field label="event_id" testId={`${testId}-event-id`}>
+        <Field label="entry id" testId={`${testId}-event-id`}>
           <Identifier value={event.event_id} />
         </Field>
-        <Field label="seq" testId={`${testId}-seq`}>
+        <Field label="position" testId={`${testId}-seq`}>
           {event.seq}
         </Field>
-        <Field label="prev" testId={`${testId}-prev`}>
+        <Field label="the entry before it" testId={`${testId}-prev`}>
           <Identifier value={event.prev} />
         </Field>
-        <Field label="timestamp_ms" testId={`${testId}-timestamp-ms`}>
-          {event.timestamp_ms}
+        <Field label="signed at" testId={`${testId}-timestamp-ms`}>
+          {formatTimestamp(event.timestamp_ms)}
         </Field>
-        <Field label="author_key" testId={`${testId}-author-key`}>
+        <Field label="signed with" testId={`${testId}-author-key`}>
           <Identifier value={event.author_key} />
         </Field>
-        <Field label="payload_kind" testId={`${testId}-payload-kind`}>
+        <Field label="kind" testId={`${testId}-payload-kind`}>
           {event.payload_kind}
         </Field>
-        <Field label="payload" testId={`${testId}-payload`} mono>
+        <Field label="what it says" testId={`${testId}-payload`} mono>
           {JSON.stringify(event.payload)}
         </Field>
       </FieldGrid>
@@ -50,19 +53,19 @@ function ForkEventPane({
   );
 }
 
-/** One ForkRecord: its provenance, its statement and both events side by side. */
+/** One conflict: where it came from, what the node says about it, and both entries. */
 function ForkRecordView({ record }: { record: ForkRecord }) {
   const key = `${record.ledger_id}-${record.seq}`;
   return (
     <div className="space-y-3 rounded-md border p-3" data-testid={`fork-record-${key}`}>
       <FieldGrid>
-        <Field label="seq" testId={`fork-seq-${key}`}>
+        <Field label="position" testId={`fork-seq-${key}`}>
           {record.seq}
         </Field>
-        <Field label="observed_ms" testId={`fork-observed-ms-${key}`}>
-          {record.observed_ms}
+        <Field label="noticed at" testId={`fork-observed-ms-${key}`}>
+          {formatTimestamp(record.observed_ms)}
         </Field>
-        <Field label="source_endpoint" testId={`fork-source-endpoint-${key}`}>
+        <Field label="learned from" testId={`fork-source-endpoint-${key}`}>
           <Identifier value={record.source_endpoint} />
         </Field>
       </FieldGrid>
@@ -82,10 +85,10 @@ function ForkRecordView({ record }: { record: ForkRecord }) {
 }
 
 /**
- * The fork records one ledger carries, drawn on its identity page and nowhere
- * else (proposal 004). Both events of a record are shown, so a reader checks
- * the conflict without a second request (proposal 001 section 5). A ledger with
- * no records renders nothing at all.
+ * The conflicts one record carries, drawn on its identity page and nowhere else
+ * (proposal 004). Both entries are shown, so a reader checks the conflict
+ * without a second request (proposal 001 section 5). A record with no conflicts
+ * renders nothing at all.
  */
 export function ForksPanel({ ledgerId }: { ledgerId: string }) {
   const page = useResource(() => listForks({ ledger_id: ledgerId, limit: 64 }), [ledgerId]);
@@ -97,7 +100,7 @@ export function ForksPanel({ ledgerId }: { ledgerId: string }) {
   return (
     <Card data-testid="witness-forks">
       <CardHeader>
-        <CardTitle>Forks</CardTitle>
+        <CardTitle>Conflicts</CardTitle>
         <CardDescription data-testid="fork-evidence-note">{FORK_EVIDENCE_NOTE}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">

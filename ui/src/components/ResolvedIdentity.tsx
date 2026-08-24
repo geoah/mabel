@@ -77,9 +77,9 @@ export function ResolvedIdentityScope({
   );
 }
 
-/** The same advisory sentence the declared kind carries (decision 015). */
+/** The same standing caveat the declared kind carries (decision 015). */
 export const VERIFICATION_NOTE =
-  "hostname verification is advisory: it gates no authorization and no ledger validity";
+  "A matching website shows only that whoever set up its DNS named this identity. It grants nothing.";
 
 export function VerificationNote({ testId }: { testId: string }) {
   return (
@@ -102,27 +102,27 @@ const MARKS: Record<Exclude<VerificationState, "unclaimed">, Mark> = {
   verified: {
     glyph: "✓",
     tone: "text-foreground",
-    sentence: "the TXT record at _mabel.HOSTNAME names this identity",
+    sentence: "HOSTNAME names this identity in its DNS records",
   },
   "stale-verified": {
     glyph: "✓",
     tone: "text-muted-foreground",
-    sentence: "verified more than a day ago and not rechecked since",
+    sentence: "HOSTNAME matched more than a day ago, and has not been checked since",
   },
   mismatched: {
     glyph: "⚠",
     tone: "text-destructive",
-    sentence: "the TXT record at _mabel.HOSTNAME names a different identity",
+    sentence: "HOSTNAME names a different identity in its DNS records",
   },
   unverified: {
-    glyph: "·",
+    glyph: "○",
     tone: "text-muted-foreground",
-    sentence: "no mabel record at _mabel.HOSTNAME, or this node has not checked yet",
+    sentence: "HOSTNAME names no identity, or your wallet has not checked yet",
   },
   unreachable: {
     glyph: "?",
     tone: "text-muted-foreground",
-    sentence: "the resolver could not answer for _mabel.HOSTNAME",
+    sentence: "DNS gave no answer for HOSTNAME",
   },
 };
 
@@ -165,7 +165,7 @@ export function VerificationMark({
       <span aria-hidden="true">{mark.glyph}</span>
       <span className="sr-only">{state}</span>
       <span className="font-mono">{hostname}</span>
-      {state === "stale-verified" && <span className="italic">stale</span>}
+      {state === "stale-verified" && <span className="italic">may be out of date</span>}
     </span>
   );
 }
