@@ -1,23 +1,37 @@
 import { NavLink, Navigate, Route, Routes, useParams } from "react-router";
 
 import { getNode } from "@/api/client";
+import {
+  NavigationMenu,
+  NavigationMenuItem,
+  NavigationMenuLink,
+  NavigationMenuList,
+} from "@/components/ui/navigation-menu";
 import { useResource } from "@/hooks/useResource";
 import { cn } from "@/lib/utils";
 import { IdentityPage } from "@/routes/identity/IdentityPage";
+import { NodePage } from "@/routes/node/NodePage";
 import { WalletHome } from "@/routes/wallet/WalletHome";
 import { WitnessHome } from "@/routes/witness/WitnessHome";
 import { WitnessLedgerDetail } from "@/routes/witness/WitnessLedgerDetail";
 import { WitnessLedgersPage } from "@/routes/witnesses/WitnessLedgersPage";
 import { WitnessesPage } from "@/routes/witnesses/WitnessesPage";
 
-/** Two entries, and no third: the wallet is a list of identities and a list of witnesses. */
+/**
+ * Three entries, and no fourth: the identities this wallet holds, the witnesses
+ * it knows, and the program doing the work.
+ */
 const WALLET_LINKS = [
   { to: "/wallet", label: "Wallet", testId: "nav-wallet" },
   { to: "/witnesses", label: "Witnesses", testId: "nav-witnesses" },
+  { to: "/node", label: "Node", testId: "nav-node" },
 ];
 
-/** A witness node serves no wallet, so its nav names the one screen it has. */
-const WITNESS_LINKS = [{ to: "/witness", label: "Records", testId: "nav-witness" }];
+/** A witness node serves no wallet, so its nav names the records it keeps. */
+const WITNESS_LINKS = [
+  { to: "/witness", label: "Records", testId: "nav-witness" },
+  { to: "/node", label: "Node", testId: "nav-node" },
+];
 
 /** The two routes the wallet kept from before proposal 004, pointed at the identity page. */
 function RedirectToIdentity() {
@@ -47,32 +61,44 @@ export function App() {
         </span>
         {/*
           One nav element at every width: a row in the header on md+, a fixed
-          bottom bar below it, where a thumb reaches it.
+          bottom bar below it, where a thumb reaches it. The entries share the
+          width of a phone, so three of them fit without scrolling sideways.
         */}
-        <nav className="flex max-md:fixed max-md:inset-x-0 max-md:bottom-0 max-md:z-20 max-md:border-t max-md:bg-background md:gap-3">
-          {links.map((link) => (
-            <NavLink
-              key={link.to}
-              to={link.to}
-              end={link.to === "/wallet"}
-              data-testid={link.testId}
-              className={({ isActive }) =>
-                cn(
-                  "flex min-h-11 items-center justify-center px-3 text-sm max-md:flex-1 md:min-h-0 md:px-0",
-                  isActive ? "font-medium underline" : "text-muted-foreground",
-                )
-              }
-            >
-              {link.label}
-            </NavLink>
-          ))}
-        </nav>
+        <NavigationMenu
+          className={cn(
+            "max-md:fixed max-md:inset-x-0 max-md:bottom-0 max-md:z-20 max-md:max-w-none",
+            "max-md:border-t max-md:bg-background",
+          )}
+        >
+          <NavigationMenuList className="max-md:w-full max-md:gap-0">
+            {links.map((link) => (
+              <NavigationMenuItem key={link.to} className="max-md:flex-1">
+                <NavigationMenuLink asChild>
+                  <NavLink
+                    to={link.to}
+                    end={link.to === "/wallet"}
+                    data-testid={link.testId}
+                    className={cn(
+                      "flex min-h-11 items-center justify-center px-2 text-sm text-muted-foreground",
+                      "md:min-h-9 md:px-3",
+                      "aria-[current=page]:font-medium aria-[current=page]:text-foreground",
+                      "aria-[current=page]:underline",
+                    )}
+                  >
+                    {link.label}
+                  </NavLink>
+                </NavigationMenuLink>
+              </NavigationMenuItem>
+            ))}
+          </NavigationMenuList>
+        </NavigationMenu>
       </header>
       <Routes>
         <Route path="/" element={<Navigate to={witness ? "/witness" : "/wallet"} replace />} />
         <Route path="/wallet" element={<WalletHome />} />
         <Route path="/identities/:identityId" element={<IdentityPage />} />
         <Route path="/witnesses" element={<WitnessesPage />} />
+        <Route path="/node" element={<NodePage />} />
         <Route path="/witnesses/:endpointId" element={<WitnessLedgersPage />} />
         <Route path="/witness" element={<WitnessHome />} />
         <Route path="/witness/ledgers/:ledgerId" element={<WitnessLedgerDetail />} />

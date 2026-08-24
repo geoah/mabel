@@ -1,5 +1,3 @@
-import { useState } from "react";
-
 import { lookup } from "@/api/client";
 import type {
   Equivocation,
@@ -11,8 +9,13 @@ import { ErrorEnvelopeView } from "@/components/ErrorEnvelopeView";
 import { Identifier } from "@/components/Identifier";
 import { KeyValue, KeyValueTable } from "@/components/KeyValue";
 import { IdentityInline, IdentityListScope } from "@/components/identity";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Collapsible,
+  CollapsibleChevron,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import { useResource } from "@/hooks/useResource";
 import { describeAge } from "@/lib/time";
 import { GraphStalenessBanner, useGraphSync } from "@/routes/wallet/GraphSyncControl";
@@ -98,40 +101,45 @@ function EntryRow({
   level: number;
   kind: "trust" | "reverse";
 }) {
-  const [open, setOpen] = useState(false);
   const expandable = level < MAX_LEVEL;
 
   return (
-    <li data-testid={`lookup-${kind}-row-${identity.identity_id}`} className="space-y-1 py-2">
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-        <IdentityInline
-          identity={identity}
-          testId={`lookup-${kind}-name-${identity.identity_id}`}
-          to={`/identities/${identity.identity_id}`}
-        />
-        {expandable ? (
-          <Button
-            variant="outline"
-            size="sm"
-            className="ml-auto"
-            data-testid={`lookup-${kind}-expand-${identity.identity_id}`}
-            aria-expanded={open}
-            onClick={() => setOpen(!open)}
-          >
-            {open ? "Close" : "Expand"}
-          </Button>
-        ) : (
-          <span
-            data-testid={`lookup-${kind}-expand-limit-${identity.identity_id}`}
-            className="ml-auto text-xs text-muted-foreground"
-          >
-            Open their own page to go further.
-          </span>
+    <li data-testid={`lookup-${kind}-row-${identity.identity_id}`} className="py-2">
+      <Collapsible className="space-y-1">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <IdentityInline
+            identity={identity}
+            testId={`lookup-${kind}-name-${identity.identity_id}`}
+            to={`/identities/${identity.identity_id}`}
+          />
+          {expandable ? (
+            <CollapsibleTrigger
+              data-testid={`lookup-${kind}-expand-${identity.identity_id}`}
+              className="ml-auto flex min-h-9 items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+            >
+              <CollapsibleChevron />
+              <span>How you know them</span>
+            </CollapsibleTrigger>
+          ) : (
+            <span
+              data-testid={`lookup-${kind}-expand-limit-${identity.identity_id}`}
+              className="ml-auto text-xs text-muted-foreground"
+            >
+              Open their own page to go further.
+            </span>
+          )}
+        </div>
+        {expandable && (
+          <CollapsibleContent>
+            <Expansion
+              identityId={identity.identity_id}
+              from={from}
+              level={level + 1}
+              kind={kind}
+            />
+          </CollapsibleContent>
         )}
-      </div>
-      {open && expandable && (
-        <Expansion identityId={identity.identity_id} from={from} level={level + 1} kind={kind} />
-      )}
+      </Collapsible>
     </li>
   );
 }

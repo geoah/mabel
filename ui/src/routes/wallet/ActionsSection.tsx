@@ -3,12 +3,12 @@ import { Action } from "@/components/Action";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 import { ContactPanel } from "./ContactPanel";
+import { HandlePanel } from "./HandlePanel";
 import { KeysPanel } from "./KeysPanel";
 import { AcceptForm, AdmitForm, InviteForm, RemoveForm } from "./MembershipForms";
 import { ProfilePanel } from "./ProfilePanel";
 import { SyncPushPanel } from "./SyncPushPanel";
-import { type TrustActions, TrustAddForm } from "./TrustPanel";
-import { VerificationPanel } from "./VerificationPanel";
+import { type TrustActions, TrustAddForm, TrustRevokeForm } from "./TrustPanel";
 import { WitnessConfigPanel } from "./WitnessConfigPanel";
 
 /**
@@ -48,12 +48,9 @@ export function ActionsSection({
         <Action
           testId="action-revoke"
           title="Take back trust"
-          description="Use the button beside their name in the list above."
+          description="Name the identity you no longer trust. Both entries stay on the record."
         >
-          <p className="text-sm">
-            Taking it back does not erase it. Both the trust and the change stay on the record, so
-            anyone reading it sees both.
-          </p>
+          <TrustRevokeForm identity={identity} actions={trust} />
         </Action>
         <Action
           testId="action-witnesses"
@@ -71,17 +68,17 @@ export function ActionsSection({
         </Action>
         <Action
           testId="action-profile"
-          title="Change the public name, email and website"
-          description="Set what other people see. All three are replaced together, and the old ones stay on the record."
+          title="Change the public name and email"
+          description="Set what other people see. Both are replaced together, and the old ones stay on the record."
         >
           <ProfilePanel identity={identity} onAppended={onAppended} />
         </Action>
         <Action
-          testId="action-verification"
-          title="Check the website"
-          description="Ask DNS whether the website this identity claims names it back."
+          testId="action-handle"
+          title="Set the handle people can look you up by"
+          description="A handle is a domain name that points at this identity in DNS. This shows the line to add and checks it."
         >
-          <VerificationPanel identity={identity} onChecked={onAppended} />
+          <HandlePanel identity={identity} onAppended={onAppended} />
         </Action>
         <Action
           testId="action-keys"

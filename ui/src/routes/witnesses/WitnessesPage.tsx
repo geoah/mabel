@@ -1,9 +1,8 @@
-import { Link } from "react-router";
-
 import { listWitnesses } from "@/api/client";
 import type { WitnessSummary } from "@/api/types";
 import { ErrorEnvelopeView } from "@/components/ErrorEnvelopeView";
 import { Identifier } from "@/components/Identifier";
+import { WitnessCard } from "@/components/WitnessCard";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useResource } from "@/hooks/useResource";
@@ -13,39 +12,35 @@ import { GraphSyncCard } from "@/routes/wallet/GraphSyncControl";
  * One witness endpoint and where this wallet knows it from: the ledgers whose
  * folded witness config names it, and whether node.json carries it as a default.
  */
-function WitnessCard({ witness }: { witness: WitnessSummary }) {
+function KnownWitnessCard({ witness }: { witness: WitnessSummary }) {
   const endpoint = witness.endpoint_id;
   return (
-    <Card
-      data-testid={`witness-card-${endpoint}`}
-      className="overflow-hidden transition-colors hover:border-foreground/30 hover:bg-accent"
+    <WitnessCard
+      endpointId={endpoint}
+      testIdPrefix="witness-card"
+      badge={
+        witness.is_node_default ? (
+          <Badge variant="secondary" data-testid={`witness-card-default-${endpoint}`}>
+            this node uses it by default
+          </Badge>
+        ) : undefined
+      }
     >
-      <Link
-        to={`/witnesses/${endpoint}`}
-        data-testid={`witness-card-link-${endpoint}`}
-        className="flex min-h-16 flex-col justify-center gap-1.5 p-3 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring sm:p-4"
+      <p
+        data-testid={`witness-card-named-by-${endpoint}`}
+        className="text-xs text-muted-foreground"
       >
-        <Identifier value={endpoint} plain />
-        <span className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-          <span data-testid={`witness-card-named-by-${endpoint}`}>
-            chosen by {witness.named_by.length}{" "}
-            {witness.named_by.length === 1 ? "identity" : "identities"} of yours
-          </span>
-          {witness.is_node_default && (
-            <Badge variant="secondary" data-testid={`witness-card-default-${endpoint}`}>
-              this node uses it by default
-            </Badge>
-          )}
+        chosen by {witness.named_by.length}{" "}
+        {witness.named_by.length === 1 ? "identity" : "identities"} of yours
+      </p>
+      {witness.named_by.length > 0 && (
+        <span className="flex flex-col gap-0.5">
+          {witness.named_by.map((identityId) => (
+            <Identifier key={identityId} value={identityId} plain />
+          ))}
         </span>
-        {witness.named_by.length > 0 && (
-          <span className="flex flex-col gap-0.5">
-            {witness.named_by.map((identityId) => (
-              <Identifier key={identityId} value={identityId} plain />
-            ))}
-          </span>
-        )}
-      </Link>
-    </Card>
+      )}
+    </WitnessCard>
   );
 }
 
@@ -79,7 +74,7 @@ export function WitnessesPage() {
             <ul data-testid="witness-cards" className="grid gap-2">
               {witnesses.data.witnesses.map((witness) => (
                 <li key={witness.endpoint_id} className="min-w-0">
-                  <WitnessCard witness={witness} />
+                  <KnownWitnessCard witness={witness} />
                 </li>
               ))}
             </ul>

@@ -7,6 +7,15 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Pagination,
+  PaginationContent,
+  PaginationEllipsis,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from "@/components/ui/pagination";
 import { useResource } from "@/hooks/useResource";
 
 const DEFAULT_LIMIT = 8;
@@ -18,6 +27,26 @@ const DEFAULT_LIMIT = 8;
  */
 function pageRange(first: number, last: number, total: number): string {
   return `Showing positions ${first} to ${last} of ${total}.`;
+}
+
+/**
+ * Which page numbers the bar draws: the first, the last, and the current one
+ * with its neighbours. A gap between two of them is an ellipsis. The numbers are
+ * one-based, because a page number is not a position on the record.
+ */
+function pageNumbers(current: number, count: number): (number | "gap")[] {
+  const wanted = new Set([1, count, current, current - 1, current + 1]);
+  const shown = [...wanted].filter((page) => page >= 1 && page <= count).sort((a, b) => a - b);
+  const drawn: (number | "gap")[] = [];
+  let previous = 0;
+  for (const page of shown) {
+    if (previous !== 0 && page - previous > 1) {
+      drawn.push("gap");
+    }
+    drawn.push(page);
+    previous = page;
+  }
+  return drawn;
 }
 
 /**
@@ -51,6 +80,13 @@ export function LedgerPanel({
   // head_seq counts from zero, so a complete record holds head_seq + 1 entries.
   const total = (page.data?.head_seq ?? 0) + 1;
   const events = page.data?.events ?? [];
+  const pageCount = Math.max(1, Math.ceil(total / Math.max(1, limit)));
+
+  /** Moves to a position, and says so in the box that names one. */
+  function goTo(position: number) {
+    setSince(position);
+    setSinceInput(String(position));
+  }
 
   return (
     <Card data-testid="ledger-panel">
@@ -94,43 +130,45 @@ export function LedgerPanel({
                 <span data-testid="ledger-head-seq">{page.data.head_seq}</span>.
               </p>
             )}
-            {/* The footer: where you are, and the two buttons that move. */}
-            <div
-              data-testid="ledger-footer"
-              className="flex flex-wrap items-end gap-x-4 gap-y-2 border-t pt-3"
-            >
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={since === 0}
-                  data-testid="ledger-previous"
-                  onClick={() => {
-                    const next = Math.max(0, since - limit);
-                    setSince(next);
-                    setSinceInput(String(next));
-                  }}
-                >
-                  Previous
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={!page.data.more}
-                  data-testid="ledger-next"
-                  onClick={() => {
-                    const next = since + limit;
-                    setSince(next);
-                    setSinceInput(String(next));
-                  }}
-                >
-                  Next
-                </Button>
-              </div>
+            {/* The footer: which page you are on, and where that page sits. */}
+            <div data-testid="ledger-footer" className="space-y-2 border-t pt-3">
+              <Pagination>
+                <PaginationContent>
+                  <PaginationItem>
+                    <PaginationPrevious
+                      data-testid="ledger-previous"
+                      disabled={since === 0}
+                      onClick={() => goTo(Math.max(0, since - limit))}
+                    />
+                  </PaginationItem>
+                  {pageNumbers(Math.floor(since / limit) + 1, pageCount).map((shown, index) => (
+                    <PaginationItem key={shown === "gap" ? `gap-${index}` : shown}>
+                      {shown === "gap" ? (
+                        <PaginationEllipsis />
+                      ) : (
+                        <PaginationLink
+                          data-testid={`ledger-page-${shown}`}
+                          isActive={shown === Math.floor(since / limit) + 1}
+                          onClick={() => goTo((shown - 1) * limit)}
+                        >
+                          {shown}
+                        </PaginationLink>
+                      )}
+                    </PaginationItem>
+                  ))}
+                  <PaginationItem>
+                    <PaginationNext
+                      data-testid="ledger-next"
+                      disabled={!page.data.more}
+                      onClick={() => goTo(since + limit)}
+                    />
+                  </PaginationItem>
+                </PaginationContent>
+              </Pagination>
               <p data-testid="ledger-range" className="text-xs text-muted-foreground">
                 {pageRange(events[0].seq, events[events.length - 1].seq, total)}
               </p>
-              <div className="flex items-end gap-2">
+              <div className="flex flex-wrap items-end gap-2">
                 <div className="space-y-1">
                   <Label htmlFor="ledger-since">from position</Label>
                   <Input

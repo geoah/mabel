@@ -79,7 +79,11 @@ function CopyButton({ value }: { value: string }) {
       aria-label={copied ? "copied" : "copy"}
       title={copied ? "copied" : "copy"}
       data-copied={copied}
-      onClick={() => void copy()}
+      // A copy button inside a clickable card copies and nothing else.
+      onClick={(event) => {
+        event.stopPropagation();
+        void copy();
+      }}
       onBlur={() => setCopied(false)}
       onPointerLeave={() => setCopied(false)}
       className={cn(
@@ -171,7 +175,10 @@ export function Identifier({
           type="button"
           title={value}
           aria-expanded={expanded}
-          onClick={() => setExpanded(!expanded)}
+          onClick={(event) => {
+            event.stopPropagation();
+            setExpanded(!expanded);
+          }}
           className="min-w-0 text-left underline decoration-dotted decoration-from-font underline-offset-2 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
         >
           {body}

@@ -1,15 +1,15 @@
 import { screen, waitFor } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
-import { HOSTNAME_CONSENT_KEY } from "@/lib/preferences";
 import { ACME, ALICE } from "@/mocks/fixtures";
+import { server } from "@/mocks/server";
 
-import { renderApp } from "./render";
+import { openAction, renderApp } from "./render";
 
 describe("profile replacement", () => {
   it("shows the before-and-after diff and waits for a confirmation", async () => {
     const { user } = renderApp(`/identities/${ALICE}`);
-    await screen.findByTestId("profile-panel");
+    await openAction(user, "action-profile");
 
     await user.clear(screen.getByTestId("profile-display-name"));
     await user.type(screen.getByTestId("profile-display-name"), "Alice A.");
@@ -19,7 +19,9 @@ describe("profile replacement", () => {
       "Alice Ashworth",
     );
     expect(screen.getByTestId("profile-diff-display-name-after")).toHaveTextContent("Alice A.");
-    expect(screen.getByTestId("profile-diff-hostname-after")).toHaveTextContent("alice.example");
+    // The handle has its own action, so this form neither shows nor changes it.
+    expect(screen.queryByTestId("profile-diff-hostname")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("profile-hostname")).not.toBeInTheDocument();
     // Nothing is signed before the confirmation.
     expect(screen.getByTestId("profile-current-display-name")).toHaveTextContent(
       "Alice Ashworth",
@@ -34,9 +36,34 @@ describe("profile replacement", () => {
     expect(screen.getByTestId("identity-detail-resolved-name")).toHaveTextContent("Alice A.");
   });
 
+  it("keeps the handle this identity publishes while it replaces the name", async () => {
+    const bodies: unknown[] = [];
+    server.events.on("request:start", async ({ request }) => {
+      if (request.method === "POST" && request.url.endsWith("/profile")) {
+        bodies.push(await request.clone().json());
+      }
+    });
+
+    const { user } = renderApp(`/identities/${ALICE}`);
+    await openAction(user, "action-profile");
+
+    await user.clear(screen.getByTestId("profile-display-name"));
+    await user.type(screen.getByTestId("profile-display-name"), "Alice A.");
+    await user.click(screen.getByTestId("profile-replace-submit"));
+    await user.click(screen.getByTestId("profile-replace-confirm"));
+
+    // The route replaces the whole profile, so the handle travels with it.
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]).toEqual({
+      display_name: "Alice A.",
+      hostname: "alice.example",
+      email: "alice@alice.example",
+    });
+  });
+
   it("drops the diff and changes nothing when the confirmation is cancelled", async () => {
     const { user } = renderApp(`/identities/${ALICE}`);
-    await screen.findByTestId("profile-panel");
+    await openAction(user, "action-profile");
 
     await user.clear(screen.getByTestId("profile-display-name"));
     await user.type(screen.getByTestId("profile-display-name"), "Alice A.");
@@ -51,7 +78,7 @@ describe("profile replacement", () => {
 
   it("refuses a replacement that would change nothing", async () => {
     const { user } = renderApp(`/identities/${ALICE}`);
-    await screen.findByTestId("profile-panel");
+    await openAction(user, "action-profile");
 
     await user.click(screen.getByTestId("profile-replace-submit"));
     await user.click(screen.getByTestId("profile-replace-confirm"));
@@ -60,85 +87,12 @@ describe("profile replacement", () => {
     expect(screen.getByTestId("error-reason")).toHaveTextContent("no_op_profile_update");
     expect(screen.getByTestId("error-status")).toHaveTextContent("status 409");
   });
-
-  it("states what a hostname publishes, once, before the first one", async () => {
-    const { user } = renderApp(`/identities/${ACME}`);
-    await screen.findByTestId("profile-panel");
-
-    await user.type(screen.getByTestId("profile-hostname"), "acme.example");
-    await user.click(screen.getByTestId("profile-replace-submit"));
-
-    expect(screen.getByTestId("profile-hostname-consent")).toHaveTextContent(
-      "stays readable forever",
-    );
-    expect(screen.getByTestId("profile-replace-confirm")).toHaveTextContent("Publish and replace");
-    expect(globalThis.localStorage.getItem(HOSTNAME_CONSENT_KEY)).toBeNull();
-
-    await user.click(screen.getByTestId("profile-replace-confirm"));
-
-    await waitFor(() =>
-      expect(globalThis.localStorage.getItem(HOSTNAME_CONSENT_KEY)).toBe("1"),
-    );
-    // A claim this node has not checked reads unverified, never a plain check.
-    await waitFor(() =>
-      expect(screen.getByTestId("verification-mark")).toHaveAttribute(
-        "data-verification",
-        "unverified",
-      ),
-    );
-  });
-
-  it("asks for the consent only once per node home", async () => {
-    globalThis.localStorage.setItem(HOSTNAME_CONSENT_KEY, "1");
-    const { user } = renderApp(`/identities/${ACME}`);
-    await screen.findByTestId("profile-panel");
-
-    await user.type(screen.getByTestId("profile-hostname"), "acme.example");
-    await user.click(screen.getByTestId("profile-replace-submit"));
-
-    expect(screen.queryByTestId("profile-hostname-consent")).not.toBeInTheDocument();
-    expect(screen.getByTestId("profile-replace-confirm")).toHaveTextContent("Confirm");
-  });
-});
-
-describe("verification", () => {
-  it("forces a check and reports the fresh verdict", async () => {
-    const { user } = renderApp(`/identities/${ALICE}`);
-    await screen.findByTestId("verification-panel");
-
-    expect(screen.getByTestId("verification-mark")).toHaveAttribute(
-      "data-verification",
-      "verified",
-    );
-
-    await user.click(screen.getByTestId("verification-check"));
-
-    await waitFor(() =>
-      expect(screen.getByTestId("verification-mark")).toHaveTextContent("alice.example"),
-    );
-    // Proposal 005 removed the standing DNS advisory sentence outright.
-    expect(screen.queryByTestId("verification-note")).not.toBeInTheDocument();
-  });
-
-  it("refuses a check on an identity that claims no hostname", async () => {
-    const { user } = renderApp(`/identities/${ACME}`);
-    await screen.findByTestId("verification-panel");
-
-    expect(screen.getByTestId("verification-status")).toHaveTextContent(
-      "this identity claims no website",
-    );
-
-    await user.click(screen.getByTestId("verification-check"));
-
-    expect(await screen.findByTestId("verification-error")).toBeInTheDocument();
-    expect(screen.getByTestId("error-reason")).toHaveTextContent("no_hostname_claimed");
-  });
 });
 
 describe("contact", () => {
   it("round-trips the private note through the contact route", async () => {
     const { user } = renderApp(`/identities/${ALICE}`);
-    await screen.findByTestId("contact-panel");
+    await openAction(user, "action-contact");
 
     expect(screen.getByTestId("identity-detail-contact")).toHaveTextContent("none");
 
@@ -155,8 +109,8 @@ describe("contact", () => {
   });
 
   it("reports a nickname past its byte cap", async () => {
-    const { user } = renderApp(`/identities/${ALICE}`);
-    await screen.findByTestId("contact-panel");
+    const { user } = renderApp(`/identities/${ACME}`);
+    await openAction(user, "action-contact");
 
     await user.type(screen.getByTestId("contact-nickname"), "n".repeat(65));
     await user.click(screen.getByTestId("contact-save"));

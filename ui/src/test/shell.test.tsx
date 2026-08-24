@@ -5,26 +5,60 @@ import { GRAPH_CONSENT_KEY } from "@/lib/preferences";
 import { ALICE } from "@/mocks/fixtures";
 import { server } from "@/mocks/server";
 
-import { renderApp } from "./render";
+import { openAction, renderApp } from "./render";
 
 describe("navigation", () => {
-  it("holds two entries and nothing else", async () => {
+  it("holds three entries and nothing else", async () => {
     renderApp("/wallet");
     await screen.findByTestId("identity-cards");
 
     expect(screen.getByTestId("nav-wallet")).toHaveTextContent("Wallet");
     expect(screen.getByTestId("nav-witnesses")).toHaveTextContent("Witnesses");
-    expect(screen.getAllByRole("link", { name: /^(Wallet|Witnesses)$/ })).toHaveLength(2);
+    expect(screen.getByTestId("nav-node")).toHaveTextContent("Node");
+    expect(screen.getAllByRole("link", { name: /^(Wallet|Witnesses|Node)$/ })).toHaveLength(3);
     expect(screen.queryByTestId("nav-lookup")).not.toBeInTheDocument();
     expect(screen.queryByTestId("nav-verify")).not.toBeInTheDocument();
   });
 
-  it("walks from the wallet to the witnesses and back", async () => {
+  it("is one navigation menu whose entries are links", async () => {
+    renderApp("/wallet");
+    await screen.findByTestId("identity-cards");
+
+    const menu = screen.getByRole("navigation");
+    expect(menu).toHaveAttribute("data-slot", "navigation-menu");
+    expect(screen.getByTestId("nav-wallet")).toHaveAttribute(
+      "data-slot",
+      "navigation-menu-link",
+    );
+    // The entry for the screen you are on says so, and it is the only one.
+    expect(screen.getByTestId("nav-wallet")).toHaveAttribute("aria-current", "page");
+    expect(screen.getByTestId("nav-node")).not.toHaveAttribute("aria-current");
+  });
+
+  it("walks the entries with the arrow keys", async () => {
+    const { user } = renderApp("/wallet");
+    await screen.findByTestId("identity-cards");
+
+    screen.getByTestId("nav-wallet").focus();
+    await user.keyboard("{ArrowRight}");
+    expect(screen.getByTestId("nav-witnesses")).toHaveFocus();
+
+    await user.keyboard("{End}");
+    expect(screen.getByTestId("nav-node")).toHaveFocus();
+
+    await user.keyboard("{Home}");
+    expect(screen.getByTestId("nav-wallet")).toHaveFocus();
+  });
+
+  it("walks from the wallet to the witnesses and the node and back", async () => {
     const { user } = renderApp("/wallet");
     await screen.findByTestId("identity-cards");
 
     await user.click(screen.getByTestId("nav-witnesses"));
     await screen.findByTestId("witness-cards");
+
+    await user.click(screen.getByTestId("nav-node"));
+    await screen.findByTestId("node-page");
 
     await user.click(screen.getByTestId("nav-wallet"));
     await screen.findByTestId("identity-cards");
@@ -52,20 +86,24 @@ describe("the header", () => {
   });
 
   it("keeps every panel on the page and prints no raw document", async () => {
-    renderApp(`/identities/${ALICE}`);
+    const { user } = renderApp(`/identities/${ALICE}`);
     await screen.findByTestId("identity-detail");
 
-    for (const panel of [
-      "profile-panel",
-      "verification-panel",
-      "contact-panel",
-      "witness-config",
-      "trust-panel",
-      "sync-push",
-      "ledger-panel",
-      "identity-actions",
-      "identity-keys",
+    // The state of the identity is on the page; every action holds its panel
+    // once it is opened.
+    for (const panel of ["trust-panel", "ledger-panel", "identity-actions"]) {
+      expect(screen.getByTestId(panel)).toBeInTheDocument();
+    }
+    for (const [action, panel] of [
+      ["action-profile", "profile-panel"],
+      ["action-handle", "handle-panel"],
+      ["action-handle", "verification-panel"],
+      ["action-contact", "contact-panel"],
+      ["action-witnesses", "witness-config"],
+      ["action-push", "sync-push"],
+      ["action-keys", "identity-keys"],
     ]) {
+      await openAction(user, action);
       expect(screen.getByTestId(panel)).toBeInTheDocument();
     }
     // The diagnostic surfaces are the CLI and the HTTP API, not a hidden panel.

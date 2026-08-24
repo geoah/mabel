@@ -1,8 +1,12 @@
-import { useState } from "react";
-
 import type { LedgerEvent } from "@/api/types";
 import { Identifier } from "@/components/Identifier";
 import { KeyValue, KeyValueTable } from "@/components/KeyValue";
+import {
+  Collapsible,
+  CollapsibleChevron,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import { formatTimestamp } from "@/lib/time";
 
 /**
@@ -11,7 +15,7 @@ import { formatTimestamp } from "@/lib/time";
  */
 const GLOSS: Record<string, string> = {
   inception: "created this identity",
-  profile_update: "changed the public name, email and website",
+  profile_update: "changed the public name, email and handle",
   witness_config: "chose who keeps a copy",
   trust_attestation: "said it trusts someone",
   trust_revocation: "took back trusting someone",
@@ -47,34 +51,16 @@ function EventDetail({ event }: { event: LedgerEvent }) {
  * through this one component, because it is the same ledger.
  */
 export function EventLines({ events }: { events: LedgerEvent[] }) {
-  const [opened, setOpened] = useState<ReadonlySet<number>>(new Set());
-
-  function toggle(seq: number) {
-    setOpened((current) => {
-      const next = new Set(current);
-      if (!next.delete(seq)) {
-        next.add(seq);
-      }
-      return next;
-    });
-  }
-
   return (
     <ul data-testid="ledger-events" className="divide-y">
-      {events.map((event) => {
-        const open = opened.has(event.seq);
-        return (
-          <li key={event.event_id} data-testid={`ledger-event-${event.seq}`}>
-            <button
-              type="button"
+      {events.map((event) => (
+        <li key={event.event_id} data-testid={`ledger-event-${event.seq}`}>
+          <Collapsible>
+            <CollapsibleTrigger
               data-testid={`event-expand-${event.seq}`}
-              aria-expanded={open}
-              onClick={() => toggle(event.seq)}
-              className="flex w-full items-baseline gap-2 py-1 text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              className="flex w-full items-baseline gap-2 py-1 text-left"
             >
-              <span aria-hidden="true" className="w-3 shrink-0 text-muted-foreground">
-                {open ? "−" : "+"}
-              </span>
+              <CollapsibleChevron className="translate-y-0.5" />
               <span
                 data-testid={`event-seq-${event.seq}`}
                 className="w-6 shrink-0 font-mono text-xs text-muted-foreground"
@@ -92,18 +78,16 @@ export function EventLines({ events }: { events: LedgerEvent[] }) {
                   {event.payload_kind}
                 </span>
               </span>
-            </button>
-            {open && (
-              <div
-                data-testid={`event-detail-${event.seq}`}
-                className="rounded-md bg-muted/40 px-2 py-1"
-              >
-                <EventDetail event={event} />
-              </div>
-            )}
-          </li>
-        );
-      })}
+            </CollapsibleTrigger>
+            <CollapsibleContent
+              data-testid={`event-detail-${event.seq}`}
+              className="rounded-md bg-muted/40 px-2 py-1"
+            >
+              <EventDetail event={event} />
+            </CollapsibleContent>
+          </Collapsible>
+        </li>
+      ))}
     </ul>
   );
 }

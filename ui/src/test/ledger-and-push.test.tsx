@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { ACME, ALICE, seedIdentities } from "@/mocks/fixtures";
 import { server } from "@/mocks/server";
 
-import { renderApp } from "./render";
+import { openAction, renderApp } from "./render";
 
 const alice = seedIdentities.find((identity) => identity.identity_id === ALICE)!;
 
@@ -117,6 +117,7 @@ describe("identity detail", () => {
   it("reports one row per witness on a push", async () => {
     const { user } = renderApp(`/identities/${ALICE}`);
     await screen.findByTestId("identity-detail");
+    await openAction(user, "action-push");
 
     await user.click(screen.getByTestId("sync-push-submit"));
 
@@ -135,6 +136,8 @@ describe("identity detail", () => {
   it("adds a witness endpoint to the set the route replaces", async () => {
     const endpoint = "b".repeat(52);
     const { user } = renderApp(`/identities/${ALICE}`);
+    await screen.findByTestId("identity-actions");
+    await openAction(user, "action-witnesses");
     await screen.findByTestId("witness-list");
 
     await user.type(screen.getByTestId("witness-add-endpoint"), endpoint);

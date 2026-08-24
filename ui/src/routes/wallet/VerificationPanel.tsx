@@ -10,7 +10,7 @@ import { asApiError } from "@/hooks/useResource";
 import { formatTimestamp } from "@/lib/time";
 
 /**
- * Whether the website this identity claims names it back in DNS. Checking is
+ * Whether the handle this identity claims names it back in DNS. Checking is
  * manual: the GET routes answer from the cache, and this button forces one
  * check and waits for it (proposal 003 section 2). The verdict is advisory and
  * gates nothing (decision 015).
@@ -44,9 +44,9 @@ export function VerificationPanel({
   return (
     <div data-testid="verification-panel" className="space-y-3">
       <KeyValueTable>
-        <KeyValue label="website" testId="verification-status">
+        <KeyValue label="handle" testId="verification-status">
           {verification.status === "unclaimed" || verification.hostname === null ? (
-            "this identity claims no website"
+            "this identity claims no handle"
           ) : (
             <VerificationMark
               status={verification.status}

@@ -97,6 +97,36 @@ const SCREENS = [
     },
   },
   {
+    // The handle action: the line to add to DNS, and the check beside it.
+    name: "identity-own-handle",
+    path: `/identities/${ALICE}`,
+    ready: "action-handle-summary",
+    async act(page) {
+      await page.getByTestId("action-handle-summary").click();
+      await page.getByTestId("handle-form").waitFor();
+    },
+  },
+  {
+    // Taking back trust is a form naming the identity, not a row button.
+    name: "identity-own-revoke",
+    path: `/identities/${ALICE}`,
+    ready: "action-revoke-summary",
+    async act(page) {
+      await page.getByTestId("action-revoke-summary").click();
+      await page.getByTestId("trust-revoke-form").waitFor();
+    },
+  },
+  {
+    // The witnesses one identity chose, as cards with whole endpoint ids.
+    name: "identity-own-witnesses",
+    path: `/identities/${ALICE}`,
+    ready: "action-witnesses-summary",
+    async act(page) {
+      await page.getByTestId("action-witnesses-summary").click();
+      await page.getByTestId("witness-list").waitFor();
+    },
+  },
+  {
     name: "identity-own-keys",
     path: `/identities/${ALICE}`,
     ready: "action-keys-summary",
@@ -148,6 +178,7 @@ const SCREENS = [
       await page.getByTestId("ledger-events").waitFor();
     },
   },
+  { name: "node", path: "/node", ready: "node-page" },
   { name: "witnesses", path: "/witnesses", ready: "graph-sync-button" },
   {
     // The sync consent, which moved off the header onto this page.

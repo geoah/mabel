@@ -4,10 +4,10 @@ import { useNavigate } from "react-router";
 import { type ApiError, resolveHostname } from "@/api/client";
 import type { ResolveStatus } from "@/api/types";
 import { ErrorEnvelopeView } from "@/components/ErrorEnvelopeView";
+import { InlineField, InlineForm } from "@/components/InlineForm";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { asApiError } from "@/hooks/useResource";
 
 /** A 52-character lowercase base32 identity id and nothing else. */
@@ -67,12 +67,11 @@ export function WalletSearch() {
     <Card data-testid="wallet-search">
       <CardHeader>
         <CardTitle>Open an identity</CardTitle>
-        <CardDescription>Paste an identity id, or type a website to look up in DNS</CardDescription>
+        <CardDescription>Paste an identity id, or type a handle to look up in DNS</CardDescription>
       </CardHeader>
       <CardContent className="space-y-2">
-        <form onSubmit={submit} className="flex flex-wrap items-end gap-2" data-testid="wallet-search-form">
-          <div className="min-w-0 flex-1 space-y-1">
-            <Label htmlFor="wallet-search-input">Identity id or website</Label>
+        <InlineForm onSubmit={submit} data-testid="wallet-search-form">
+          <InlineField label="Identity id or handle" htmlFor="wallet-search-input">
             <Input
               id="wallet-search-input"
               data-testid="wallet-search-input"
@@ -81,11 +80,11 @@ export function WalletSearch() {
               placeholder="52 base32 characters, or alice.example"
               className="font-mono text-xs"
             />
-          </div>
+          </InlineField>
           <Button type="submit" data-testid="wallet-search-submit" disabled={pending}>
             {pending ? "resolving" : "Open"}
           </Button>
-        </form>
+        </InlineForm>
         {status !== null && (
           <p data-testid="wallet-search-status" data-status={status.status} className="text-sm">
             <span className="font-mono text-xs">_mabel.{status.hostname}.</span>{" "}

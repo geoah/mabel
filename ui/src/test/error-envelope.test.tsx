@@ -7,7 +7,7 @@ import { ErrorEnvelopeView } from "@/components/ErrorEnvelopeView";
 import { ACME, ALICE, cliErrorCases, errors } from "@/mocks/fixtures";
 import { server } from "@/mocks/server";
 
-import { renderApp, renderComponent } from "./render";
+import { openAction, renderApp, renderComponent } from "./render";
 
 describe("error envelope", () => {
   // contracts/cli/errors.json holds one case per exit code and layer prefix, and
@@ -40,6 +40,7 @@ describe("error envelope", () => {
     // acme carries an empty witness set in the fixtures.
     const { user } = renderApp(`/identities/${ACME}`);
     await screen.findByTestId("identity-detail");
+    await openAction(user, "action-push");
 
     await user.click(screen.getByTestId("sync-push-submit"));
 
@@ -60,6 +61,7 @@ describe("error envelope", () => {
 
     const { user } = renderApp(`/identities/${ALICE}`);
     await screen.findByTestId("identity-detail");
+    await openAction(user, "action-witnesses");
     await user.type(screen.getByTestId("witness-add-endpoint"), "a".repeat(52));
     await user.click(screen.getByTestId("witness-add-submit"));
 

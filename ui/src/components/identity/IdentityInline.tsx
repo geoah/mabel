@@ -22,7 +22,7 @@ interface IdentityInlineProps {
 
 /**
  * One identity on one line: the name it publishes or the one you gave it, the
- * verdict on the website it claims, its pill, and its id with a button that
+ * verdict on the handle it claims, its pill, and its id with a button that
  * copies it. Every sentence, list row, path hop and tight row that names an
  * identity renders this, so no screen invents its own spelling of a name and an
  * id (proposal 005).

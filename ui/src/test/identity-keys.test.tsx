@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { ACME, ALICE, identityKeys } from "@/mocks/fixtures";
 
-import { renderApp } from "./render";
+import { openAction, renderApp } from "./render";
 
 /**
  * Decision 017: creating an identity offers the person their two secret keys to
@@ -61,8 +61,9 @@ describe("save your keys", () => {
   });
 
   it("warns what the keys are worth and that the wallet keeps its own copy", async () => {
-    renderApp(`/identities/${ALICE}`);
+    const { user } = renderApp(`/identities/${ALICE}`);
     await screen.findByTestId("identity-actions");
+    await openAction(user, "action-keys");
 
     const warning = await screen.findByTestId("identity-keys-warning");
     expect(warning).toHaveTextContent("Anyone who has these two keys controls this identity");
@@ -74,17 +75,19 @@ describe("save your keys", () => {
     const { user } = renderApp(`/identities/${ALICE}`);
     await screen.findByTestId("identity-actions");
 
-    expect(screen.getByTestId("action-keys")).not.toHaveAttribute("open");
+    expect(screen.getByTestId("action-keys")).toHaveAttribute("data-state", "closed");
+    expect(screen.queryByTestId("identity-keys")).not.toBeInTheDocument();
 
     await user.click(screen.getByTestId("action-keys-summary"));
 
-    expect(screen.getByTestId("action-keys")).toHaveAttribute("open");
+    expect(screen.getByTestId("action-keys")).toHaveAttribute("data-state", "open");
     expect(screen.getByTestId("identity-keys-active")).toBeVisible();
   });
 
   it("says in words that an identity-rooted ledger holds no keys to hand back", async () => {
-    renderApp(`/identities/${ACME}`);
+    const { user } = renderApp(`/identities/${ACME}`);
     await screen.findByTestId("identity-actions");
+    await openAction(user, "action-keys");
 
     expect(await screen.findByTestId("identity-keys-none")).toHaveTextContent(
       "This identity holds no key of its own. Its controllers sign for it",

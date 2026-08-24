@@ -11,6 +11,12 @@ import {
   trustedSubjects,
 } from "@/components/identity";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Collapsible,
+  CollapsibleChevron,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import { useResource } from "@/hooks/useResource";
 
 import { IdentityCreateForm } from "./IdentityCreateForm";
@@ -64,17 +70,18 @@ export function WalletHome() {
             )}
           </CardContent>
         </Card>
-        <details data-testid="identity-create" className="rounded-lg border bg-card">
-          <summary
+        <Collapsible data-testid="identity-create" className="rounded-lg border bg-card">
+          <CollapsibleTrigger
             data-testid="identity-create-summary"
-            className="flex min-h-11 cursor-pointer list-none items-center px-3 text-sm font-medium marker:content-none hover:bg-accent sm:px-4"
+            className="flex w-full min-h-11 items-center gap-2 px-3 text-left text-sm font-medium hover:bg-accent sm:px-4"
           >
+            <CollapsibleChevron />
             Create an identity
-          </summary>
-          <div className="border-t p-3 sm:p-4">
+          </CollapsibleTrigger>
+          <CollapsibleContent className="border-t p-3 sm:p-4">
             <IdentityCreateForm onCreated={identities.reload} />
-          </div>
-        </details>
+          </CollapsibleContent>
+        </Collapsible>
       </div>
     </IdentityPillScope>
   );

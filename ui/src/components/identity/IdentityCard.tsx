@@ -1,4 +1,5 @@
-import { type ReactNode, useState } from "react";
+import { type MouseEvent, type ReactNode, useState } from "react";
+import { useNavigate } from "react-router";
 
 import type {
   Contact,
@@ -11,10 +12,26 @@ import type {
 import { DeclaredKindValue } from "@/components/DeclaredKind";
 import { KeyValue, KeyValueTable } from "@/components/KeyValue";
 import { Card } from "@/components/ui/card";
+import {
+  Collapsible,
+  CollapsibleChevron,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import {
+  Item,
+  ItemActions,
+  ItemContent,
+  ItemDescription,
+  ItemHeader,
+  ItemTitle,
+} from "@/components/ui/item";
 import { formatDate } from "@/lib/time";
+import { cn } from "@/lib/utils";
 
 import { IdentityInline } from "./IdentityInline";
 import { bareIdentity, IdentityListScope, resolvedFrom, VerificationMark } from "./names";
+import { IdentityPillBadge, usePill } from "./pill";
 
 /**
  * What the expanded card adds: the record itself, which only a screen holding
@@ -167,7 +184,7 @@ function RecordRows({
       <KeyValue label="created" testId={testIds("created")}>
         {formatDate(record.createdAtMs)}
       </KeyValue>
-      <KeyValue label="website" testId={testIds("hostname")}>
+      <KeyValue label="handle" testId={testIds("hostname")}>
         {record.verification.hostname === null ? (
           "none"
         ) : (
@@ -227,10 +244,17 @@ function RecordRows({
 }
 
 /**
- * One identity as a card: three or four lines by default, an expand control that
- * opens the record in place, and that same open block without the toggle as the
- * identity page's top section. One component, three states, so a list entry and
- * a page heading cannot drift apart (proposal 005).
+ * One identity as a card, built on the item component: the kind on the first
+ * small line, then the name with its id, and the pill in the top right corner.
+ * An expand control opens the record in place, and the same open block without
+ * the toggle is the identity page's top section. One component, three states, so
+ * a list entry and a page heading cannot drift apart (proposal 005).
+ *
+ * A card that routes somewhere is clickable across its whole surface. The id
+ * link inside it is the real anchor, so the keyboard and a screen reader reach
+ * the same page without the card pretending to be a link; a click that lands on
+ * any link or button inside the card is that control's click and never the
+ * card's.
  */
 export function IdentityCard({
   facts,
@@ -251,54 +275,108 @@ export function IdentityCard({
   resolvePrincipal?: (identityId: string) => ResolvedIdentityDocument;
 }) {
   const page = state === "page";
+  const navigate = useNavigate();
+  const pill = usePill(facts.resolved.identity_id);
+  const to = page ? null : facts.to;
+  // The card holds the open state, because the short line above the name is the
+  // closed card's version of a row the open one carries in full.
   const [open, setOpen] = useState(state === "expanded");
   const shown = page || open;
+  // The short line beside the kind: the closed card's version of a row the open
+  // one carries in full. The line itself is drawn only when it holds something.
+  const shortLine = !shown && (facts.headSeq !== null || facts.record === null);
+  const kindLine =
+    facts.declaredKind !== null ||
+    shortLine ||
+    (markers !== undefined && markers !== null && markers !== false);
+
+  function openPage(event: MouseEvent<HTMLDivElement>) {
+    if (to === null) {
+      return;
+    }
+    // Every link and every button inside the card keeps its own click: the copy
+    // button copies, the expand control expands, a principal's link opens that
+    // principal.
+    if ((event.target as HTMLElement).closest("a,button")) {
+      return;
+    }
+    void navigate(to);
+  }
 
   return (
-    <Card data-testid={testIds("")} className="space-y-2 p-3 sm:p-4">
-      <IdentityInline
-        identity={facts.resolved}
-        stale={facts.stale}
-        testId={testIds("name")}
-        linkTestId={linkTestId}
-        to={facts.to ?? undefined}
-      />
-      {facts.email !== null && (
-        <p data-testid={testIds("email")} className="text-sm break-all">
-          {facts.email}
-        </p>
+    <Card
+      data-testid={testIds("")}
+      onClick={openPage}
+      className={cn(
+        "p-3 sm:p-4",
+        to !== null && "cursor-pointer transition-colors hover:border-foreground/30 hover:bg-accent",
       )}
-      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-        {facts.declaredKind !== null && (
-          <DeclaredKindValue kind={facts.declaredKind} testId={testIds("declared-kind")} />
+    >
+      <Collapsible open={shown} onOpenChange={setOpen}>
+        <Item size="flush" className="items-start">
+          {/* The first line of the card: the kind, and the pill in the corner. */}
+          <ItemHeader>
+            {kindLine && (
+              <ItemDescription
+                data-testid={testIds("kind-line")}
+                className="flex flex-wrap items-center gap-x-2 gap-y-1"
+              >
+                {facts.declaredKind !== null && (
+                  <DeclaredKindValue kind={facts.declaredKind} testId={testIds("declared-kind")} />
+                )}
+                {/* The open block says both of these in full, so the line holding
+                    the short version is drawn only while the card is closed. */}
+                {shortLine && facts.headSeq !== null && (
+                  <span data-testid={testIds("head-seq")}>at position {facts.headSeq}</span>
+                )}
+                {shortLine && facts.headSeq === null && facts.record === null && (
+                  <span data-testid={testIds("unheld")}>no copy of its record here</span>
+                )}
+                {markers}
+              </ItemDescription>
+            )}
+            {pill !== null && (
+              <ItemActions className="ml-auto">
+                <IdentityPillBadge pill={pill} testId={`${testIds("name")}-pill`} />
+              </ItemActions>
+            )}
+          </ItemHeader>
+          <ItemContent>
+            <ItemTitle className="flex-wrap">
+              <IdentityInline
+                identity={facts.resolved}
+                stale={facts.stale}
+                testId={testIds("name")}
+                linkTestId={linkTestId}
+                to={facts.to ?? undefined}
+                // The card draws the pill itself, in its top right corner.
+                pill={null}
+              />
+            </ItemTitle>
+            {facts.email !== null && (
+              <p data-testid={testIds("email")} className="text-sm break-all">
+                {facts.email}
+              </p>
+            )}
+          </ItemContent>
+        </Item>
+        {!page && (
+          <CollapsibleTrigger
+            data-testid={testIds("expand")}
+            onClick={(event) => event.stopPropagation()}
+            className="mt-2 flex min-h-9 items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+          >
+            <CollapsibleChevron />
+            <span>Show the record</span>
+          </CollapsibleTrigger>
         )}
-        {/* The open block says both of these in full, so the line holding the
-            short version is drawn only while the card is closed. */}
-        {!shown && facts.headSeq !== null && (
-          <span data-testid={testIds("head-seq")}>at position {facts.headSeq}</span>
-        )}
-        {!shown && facts.headSeq === null && facts.record === null && (
-          <span data-testid={testIds("unheld")}>no copy of its record here</span>
-        )}
-        {markers}
-      </div>
-      {!page && (
-        <button
-          type="button"
-          data-testid={testIds("expand")}
-          aria-expanded={open}
-          onClick={() => setOpen(!open)}
-          className="flex min-h-9 items-center gap-1.5 text-xs underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        <CollapsibleContent
+          data-testid={testIds("details")}
+          className={cn("border-t pt-2", !page && "mt-2")}
         >
-          <span aria-hidden="true">{open ? "−" : "+"}</span>
-          {open ? "Show less" : "Show more"}
-        </button>
-      )}
-      {shown && (
-        <div data-testid={testIds("details")} className="border-t pt-2">
           <RecordRows facts={facts} testIds={testIds} resolvePrincipal={resolvePrincipal} />
-        </div>
-      )}
+        </CollapsibleContent>
+      </Collapsible>
     </Card>
   );
 }

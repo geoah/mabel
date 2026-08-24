@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { ACME, ALICE, seedIdentities } from "@/mocks/fixtures";
 
-import { renderApp } from "./render";
+import { openAction, renderApp } from "./render";
 
 /**
  * The membership flow ticket 019 specified, driven end to end against the mock
@@ -26,14 +26,17 @@ function artifact(testId: string): string {
   return (screen.getByTestId(testId) as HTMLTextAreaElement).value;
 }
 
-async function open(route: string) {
+async function open(route: string, ...actions: string[]) {
   const rendered = renderApp(route);
   await screen.findByTestId("identity-actions");
+  for (const action of actions) {
+    await openAction(rendered.user, action);
+  }
   return rendered;
 }
 
 async function invite(): Promise<string> {
-  const { user } = await open(`/identities/${ALICE}`);
+  const { user } = await open(`/identities/${ALICE}`, "action-invite");
   fill("invite-descriptor", DESCRIPTOR);
   await user.click(screen.getByTestId("invite-submit"));
 
@@ -44,7 +47,7 @@ async function invite(): Promise<string> {
 }
 
 async function accept(bundle: string): Promise<string> {
-  const { user } = await open(`/identities/${ACME}`);
+  const { user } = await open(`/identities/${ACME}`, "action-accept");
   fill("accept-bundle", bundle);
   await user.click(screen.getByTestId("accept-submit"));
 
@@ -73,7 +76,7 @@ describe("membership", () => {
     expect(acceptance.length).toBeGreaterThan(0);
     cleanup();
 
-    const { user } = await open(`/identities/${ALICE}`);
+    const { user } = await open(`/identities/${ALICE}`, "action-admit", "action-remove");
     fill("admit-acceptance", acceptance);
     await user.click(screen.getByTestId("admit-submit"));
 
@@ -101,7 +104,7 @@ describe("membership", () => {
     const acceptance = await accept(bundle);
     cleanup();
 
-    const { user } = await open(`/identities/${ALICE}`);
+    const { user } = await open(`/identities/${ALICE}`, "action-admit");
     fill("admit-acceptance", acceptance);
     await user.click(screen.getByTestId("admit-submit"));
     await screen.findByTestId("admit-result");
@@ -121,7 +124,7 @@ describe("membership", () => {
 
     // The bundle invites Acme; reading it in Alice's own wallet is not the
     // invitee, which the node answers before it signs anything.
-    const { user } = await open(`/identities/${ALICE}`);
+    const { user } = await open(`/identities/${ALICE}`, "action-accept");
     fill("accept-bundle", bundle);
     await user.click(screen.getByTestId("accept-submit"));
 

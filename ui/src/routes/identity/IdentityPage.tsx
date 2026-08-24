@@ -154,6 +154,9 @@ export function IdentityPage() {
               testIds={pageTestIds}
               resolvePrincipal={(principal) => named(names, principal)}
             />
+            {/* Who they trust comes before the record: it is what a reader of an
+                address book came for, and the record is the evidence under it. */}
+            <TrustPanel identity={held} names={names} actions={trust} />
             <LedgerPanel
               identityId={held.identity_id}
               version={version}
@@ -169,7 +172,6 @@ export function IdentityPage() {
                 )
               }
             />
-            <TrustPanel identity={held} names={names} actions={trust} />
             <PrincipalsPanel identity={held} memberships={memberships.data} names={names} />
           </>
         )}

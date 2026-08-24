@@ -3,10 +3,10 @@ import { type FormEvent, useState } from "react";
 import { type ApiError, setIdentityWitnesses } from "@/api/client";
 import type { Identity } from "@/api/types";
 import { ErrorEnvelopeView } from "@/components/ErrorEnvelopeView";
-import { Identifier } from "@/components/Identifier";
+import { InlineField, InlineForm } from "@/components/InlineForm";
+import { WitnessCard } from "@/components/WitnessCard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { asApiError } from "@/hooks/useResource";
 
 /**
@@ -51,29 +51,31 @@ export function WitnessConfigPanel({
           No witness keeps a copy of this record yet.
         </p>
       ) : (
-        <ul data-testid="witness-list" className="space-y-1">
+        <ul data-testid="witness-list" className="grid gap-2">
           {identity.witnesses.map((id) => (
-            <li key={id} data-testid={`witness-row-${id}`}>
-              <Identifier value={id} />
+            <li key={id} className="min-w-0">
+              {/* The same card the list of witnesses draws, opening the same
+                  page: a witness is one thing, wherever it is named. */}
+              <WitnessCard endpointId={id} testIdPrefix="witness-row" />
             </li>
           ))}
         </ul>
       )}
-      <form onSubmit={submit} className="space-y-2" data-testid="witness-add-form">
-        <div className="space-y-1">
-          <Label htmlFor="witness-add-endpoint">Witness id</Label>
+      <InlineForm onSubmit={submit} data-testid="witness-add-form">
+        <InlineField label="Witness id" htmlFor="witness-add-endpoint">
           <Input
             id="witness-add-endpoint"
             data-testid="witness-add-endpoint"
             value={endpoint}
             onChange={(event) => setEndpoint(event.target.value)}
             placeholder="52 base32 characters"
+            className="font-mono text-xs"
           />
-        </div>
+        </InlineField>
         <Button type="submit" data-testid="witness-add-submit" disabled={pending}>
           {pending ? "adding" : "Add witness"}
         </Button>
-      </form>
+      </InlineForm>
       {headSeq !== null && (
         <p data-testid="witness-add-head-seq" className="text-xs">
           Saved at position {headSeq}.

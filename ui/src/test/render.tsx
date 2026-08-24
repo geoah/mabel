@@ -1,5 +1,6 @@
-import { render } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import type { UserEvent } from "@testing-library/user-event";
 import type { ReactElement } from "react";
 import { MemoryRouter } from "react-router";
 
@@ -14,6 +15,19 @@ export function renderApp(route: string) {
     </MemoryRouter>,
   );
   return { user, ...result };
+}
+
+/**
+ * Opens one action of the actions section. Every action starts closed and holds
+ * its form only while it is open, so a test that fills a form opens it first,
+ * the way a reader does.
+ */
+export async function openAction(user: UserEvent, testId: string): Promise<HTMLElement> {
+  const summary = await screen.findByTestId(`${testId}-summary`);
+  if (summary.getAttribute("data-state") !== "open") {
+    await user.click(summary);
+  }
+  return screen.getByTestId(testId);
 }
 
 /** Mounts one component, for views with no route of their own. */

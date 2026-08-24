@@ -6,7 +6,7 @@ import type { LookupResponse } from "@/api/types";
 import { ACME, ALICE, BOB, CAROL, seedGraph, seedLookup } from "@/mocks/fixtures";
 import { server } from "@/mocks/server";
 
-import { renderApp } from "./render";
+import { openAction, renderApp } from "./render";
 
 /** The frozen answer with the whole crawl aged past the 24-hour rule. */
 function staleAnswer(): LookupResponse {
@@ -99,6 +99,7 @@ describe("a foreign identity this wallet holds no ledger for", () => {
   it("offers the contact note for an id whose ledger it does not hold", async () => {
     const { user } = renderApp(`/identities/${CAROL}`);
     await screen.findByTestId("lookup-contact");
+    await openAction(user, "lookup-contact");
 
     await user.type(screen.getByTestId("contact-nickname"), "carol from the market");
     await user.click(screen.getByTestId("contact-save"));

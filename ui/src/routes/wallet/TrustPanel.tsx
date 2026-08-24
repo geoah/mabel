@@ -1,28 +1,31 @@
 import { type FormEvent, useCallback, useState } from "react";
 
 import { addTrust, type ApiError, revokeTrust } from "@/api/client";
-import type { Identity, ResolvedIdentity as ResolvedIdentityDocument, TrustRecord } from "@/api/types";
+import type { Identity } from "@/api/types";
 import { ErrorEnvelopeView } from "@/components/ErrorEnvelopeView";
 import {
-  IdentityInline,
-  IdentityListScope,
+  factsFromResolved,
+  type IdentityCardEntry,
+  IdentityCardList,
   resolveName,
   resolvedFrom,
 } from "@/components/identity";
 import { Identifier } from "@/components/Identifier";
+import { InlineField, InlineForm } from "@/components/InlineForm";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { named, type ResolvedNames } from "@/hooks/useResolvedNames";
 import { asApiError } from "@/hooks/useResource";
 
 /**
  * Attesting and revoking are one operation pair over one ledger, so they share
- * one pending flag, one error and one "what was appended" line. The form lives
- * in the actions section and the revoke buttons live on the rows of the trust
- * list, which is why the state is lifted here rather than held in either.
+ * one pending flag and one "what was appended" line. Which of the two ran last
+ * is recorded, so a refusal is reported by the form that caused it and not by
+ * its sibling.
  */
+export type TrustOperation = "add" | "revoke";
+
 export interface TrustActions {
   /** Resolves true when the append landed, so a form knows whether to clear. */
   add: (subject: string) => Promise<boolean>;
@@ -30,16 +33,20 @@ export interface TrustActions {
   pending: boolean;
   appended: string | null;
   error: ApiError | null;
+  /** Which form the pending flag, the error and the appended line belong to. */
+  last: TrustOperation | null;
 }
 
 export function useTrustActions(issuer: string, onAppended: () => void): TrustActions {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<ApiError | null>(null);
   const [appended, setAppended] = useState<string | null>(null);
+  const [last, setLast] = useState<TrustOperation | null>(null);
 
   const run = useCallback(
-    async (append: () => Promise<string>) => {
+    async (operation: TrustOperation, append: () => Promise<string>) => {
       setPending(true);
+      setLast(operation);
       setError(null);
       setAppended(null);
       try {
@@ -58,17 +65,20 @@ export function useTrustActions(issuer: string, onAppended: () => void): TrustAc
 
   const add = useCallback(
     (subject: string) =>
-      run(async () => (await addTrust({ issuer, subject })).event.event_id),
+      run("add", async () => (await addTrust({ issuer, subject })).event.event_id),
     [issuer, run],
   );
 
   const revoke = useCallback(
     (attestationEvent: string) =>
-      run(async () => (await revokeTrust(attestationEvent, { issuer })).event.event_id),
+      run(
+        "revoke",
+        async () => (await revokeTrust(attestationEvent, { issuer })).event.event_id,
+      ),
     [issuer, run],
   );
 
-  return { add, revoke, pending, appended, error };
+  return { add, revoke, pending, appended, error, last };
 }
 
 /** The action: saying, once and in public, that you trust one identity. */
@@ -86,71 +96,105 @@ export function TrustAddForm({ actions }: { actions: TrustActions }) {
 
   return (
     <div className="space-y-3">
-      <form onSubmit={submit} className="space-y-2" data-testid="trust-add-form">
-        <div className="space-y-1">
-          <Label htmlFor="trust-add-subject">Who do you trust</Label>
+      <InlineForm onSubmit={submit} data-testid="trust-add-form">
+        <InlineField label="Who do you trust" htmlFor="trust-add-subject">
           <Input
             id="trust-add-subject"
             data-testid="trust-add-subject"
             value={subject}
             onChange={(event) => setSubject(event.target.value)}
             placeholder="their identity id"
+            className="font-mono text-xs"
           />
-        </div>
+        </InlineField>
         <Button type="submit" data-testid="trust-add-submit" disabled={actions.pending}>
-          {actions.pending ? "saving" : "I trust them"}
+          {actions.pending && actions.last === "add" ? "saving" : "I trust them"}
         </Button>
-      </form>
-      {actions.error && <ErrorEnvelopeView error={actions.error} testId="trust-error" />}
+      </InlineForm>
+      {actions.error && actions.last === "add" && (
+        <ErrorEnvelopeView error={actions.error} testId="trust-error" />
+      )}
     </div>
   );
 }
 
-function TrustRow({
-  record,
-  resolved,
+/**
+ * The action: taking back trust you said in public. You name the identity, not
+ * the entry: the entry that said it is on the record this page already holds, so
+ * the form finds it and takes that one back. An id this identity does not trust
+ * right now is refused here, before anything is signed.
+ */
+export function TrustRevokeForm({
+  identity,
   actions,
 }: {
-  record: TrustRecord;
-  resolved: ResolvedIdentityDocument;
+  identity: Identity;
   actions: TrustActions;
 }) {
+  const [subject, setSubject] = useState("");
+  const [missing, setMissing] = useState(false);
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    const wanted = subject.trim();
+    setMissing(false);
+    const standing = identity.trust.find(
+      (record) => !record.revoked && record.subject === wanted,
+    );
+    if (standing === undefined) {
+      setMissing(true);
+      return;
+    }
+    if (await actions.revoke(standing.attestation_event)) {
+      setSubject("");
+    }
+  }
+
   return (
-    <li
-      data-testid={`trust-row-${record.attestation_event}`}
-      className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2"
-    >
-      <IdentityInline
-        identity={resolved}
-        testId={`trust-subject-${record.attestation_event}`}
-        to={`/identities/${record.subject}`}
-      />
-      {/* Two words, and no position: where on the record it happened is not
-          something a reader of an address book acts on (proposal 005). */}
-      <span
-        data-testid={`trust-state-${record.attestation_event}`}
-        className="text-xs text-muted-foreground"
-      >
-        {record.revoked ? "taken back" : "trusted"}
-      </span>
-      <Button
-        variant="outline"
-        size="sm"
-        className="ml-auto"
-        disabled={actions.pending || record.revoked}
-        onClick={() => void actions.revoke(record.attestation_event)}
-        data-testid={`trust-revoke-${record.attestation_event}`}
-      >
-        Take it back
-      </Button>
-    </li>
+    <div className="space-y-3">
+      <p className="text-sm">
+        Taking it back does not erase it. Both the trust and the change stay on the record, so
+        anyone reading it sees both.
+      </p>
+      <InlineForm onSubmit={submit} data-testid="trust-revoke-form">
+        <InlineField label="Whose trust do you take back" htmlFor="trust-revoke-subject">
+          <Input
+            id="trust-revoke-subject"
+            data-testid="trust-revoke-subject"
+            value={subject}
+            onChange={(event) => {
+              setMissing(false);
+              setSubject(event.target.value);
+            }}
+            placeholder="their identity id"
+            className="font-mono text-xs"
+          />
+        </InlineField>
+        <Button
+          type="submit"
+          variant="outline"
+          data-testid="trust-revoke-submit"
+          disabled={actions.pending}
+        >
+          {actions.pending && actions.last === "revoke" ? "saving" : "Take it back"}
+        </Button>
+      </InlineForm>
+      {missing && (
+        <p data-testid="trust-revoke-none" className="text-sm">
+          This identity does not trust that id right now, so there is nothing to take back.
+        </p>
+      )}
+      {actions.error && actions.last === "revoke" && (
+        <ErrorEnvelopeView error={actions.error} testId="trust-revoke-error" />
+      )}
+    </div>
   );
 }
 
 /**
- * The state: who this identity trusts, by resolved name, each row linking to
- * the answer for how the wallet knows them. Trust taken back stays on the
- * record forever, so it stays on the screen, folded away.
+ * The state: who this identity trusts, one full card each, the same card every
+ * other list of identities draws. Trust taken back is not drawn here at all: it
+ * stays on the record forever, and the record is where it is read.
  */
 export function TrustPanel({
   identity,
@@ -163,58 +207,30 @@ export function TrustPanel({
   actions: TrustActions;
 }) {
   const owner = resolveName(resolvedFrom(identity)).name;
-  const resolved = (subject: string): ResolvedIdentityDocument => named(names, subject);
-  const unrevoked = identity.trust.filter((record) => !record.revoked);
-  const revoked = identity.trust.filter((record) => record.revoked);
+  const entries: IdentityCardEntry[] = identity.trust
+    .filter((record) => !record.revoked)
+    .map((record) => ({
+      facts: factsFromResolved(named(names, record.subject), {
+        to: `/identities/${record.subject}`,
+      }),
+    }));
 
   return (
     <Card data-testid="trust-panel">
       <CardHeader>
         <CardTitle>{owner === null ? "Who this identity trusts" : `Who ${owner} trusts`}</CardTitle>
         <CardDescription>
-          Everyone this identity has said it trusts. It is on the identity&apos;s public record,
-          and so is taking it back.
+          Everyone this identity has said it trusts and has not taken back. Saying it is on the
+          identity&apos;s public record, and so is taking it back.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
-        <IdentityListScope identities={identity.trust.map((record) => resolved(record.subject))}>
-          {unrevoked.length === 0 ? (
-            <p data-testid="trust-list-empty" className="text-sm">
-              This identity has not said it trusts anyone yet.
-            </p>
-          ) : (
-            <ul data-testid="trust-list" className="divide-y">
-              {unrevoked.map((record) => (
-                <TrustRow
-                  key={record.attestation_event}
-                  record={record}
-                  resolved={resolved(record.subject)}
-                  actions={actions}
-                />
-              ))}
-            </ul>
-          )}
-          {revoked.length > 0 && (
-            <details data-testid="trust-revoked" className="rounded-md border">
-              <summary
-                data-testid="trust-revoked-summary"
-                className="flex min-h-11 cursor-pointer list-none items-center px-3 text-xs text-muted-foreground marker:content-none hover:bg-accent"
-              >
-                {revoked.length} taken back, still on the record
-              </summary>
-              <ul className="divide-y border-t px-3">
-                {revoked.map((record) => (
-                  <TrustRow
-                    key={record.attestation_event}
-                    record={record}
-                    resolved={resolved(record.subject)}
-                    actions={actions}
-                  />
-                ))}
-              </ul>
-            </details>
-          )}
-        </IdentityListScope>
+        <IdentityCardList
+          entries={entries}
+          testId="trust-list"
+          empty="This identity has not said it trusts anyone yet."
+          emptyTestId="trust-list-empty"
+        />
         {actions.appended && (
           <p data-testid="trust-appended-event" className="text-xs">
             Saved as entry <Identifier value={actions.appended} />

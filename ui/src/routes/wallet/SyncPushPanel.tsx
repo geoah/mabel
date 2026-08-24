@@ -4,11 +4,11 @@ import { type ApiError, syncPush } from "@/api/client";
 import type { SyncPushResponse } from "@/api/types";
 import { ErrorEnvelopeView } from "@/components/ErrorEnvelopeView";
 import { Nullable } from "@/components/Field";
+import { InlineField, InlineForm } from "@/components/InlineForm";
 import { KeyValue, KeyValueTable } from "@/components/KeyValue";
 import { Identifier } from "@/components/Identifier";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Table,
   TableBody,
@@ -46,21 +46,21 @@ export function SyncPushPanel({ identityId }: { identityId: string }) {
 
   return (
     <div data-testid="sync-push" className="space-y-3">
-      <form onSubmit={submit} className="space-y-2" data-testid="sync-push-form">
-        <div className="space-y-1">
-          <Label htmlFor="sync-push-to">One witness only (optional)</Label>
+      <InlineForm onSubmit={submit} data-testid="sync-push-form">
+        <InlineField label="One witness only (optional)" htmlFor="sync-push-to">
           <Input
             id="sync-push-to"
             data-testid="sync-push-to"
             value={to}
             onChange={(event) => setTo(event.target.value)}
             placeholder="leave empty to send to all of them"
+            className="font-mono text-xs"
           />
-        </div>
+        </InlineField>
         <Button type="submit" data-testid="sync-push-submit" disabled={pending}>
           {pending ? "sending" : "Send"}
         </Button>
-      </form>
+      </InlineForm>
       {error && <ErrorEnvelopeView error={error} testId="sync-push-error" />}
       {report && (
         <div className="space-y-2" data-testid="sync-push-report">

@@ -68,14 +68,29 @@ describe("the identity page's top section", () => {
     expect(screen.getByTestId("identity-detail-open-invitations")).toHaveTextContent("none");
   });
 
-  it("carries the your-identity pill beside the name", async () => {
+  it("carries the your-identity pill in the top right corner of the card", async () => {
     renderApp(`/identities/${ALICE}`);
     await screen.findByTestId("identity-detail");
 
     const pill = await screen.findByTestId("identity-detail-resolved-pill");
     expect(pill).toHaveTextContent("your identity");
     expect(pill).toHaveAttribute("data-pill", "own");
-    expect(screen.getByTestId("identity-detail-resolved").contains(pill)).toBe(true);
+    // The pill sits in the card's actions slot, not on the name line.
+    expect(pill.closest("[data-slot=item-actions]")).not.toBeNull();
+    expect(screen.getByTestId("identity-detail-resolved").contains(pill)).toBe(false);
+  });
+
+  it("puts the kind on the line above the name", async () => {
+    renderApp(`/identities/${ALICE}`);
+    await screen.findByTestId("identity-detail");
+
+    const line = screen.getByTestId("identity-detail-kind-line");
+    expect(line).toHaveAttribute("data-slot", "item-description");
+    expect(line).toHaveTextContent("person");
+    const title = screen.getByTestId("identity-detail-resolved").closest("[data-slot=item-title]");
+    expect(title).not.toBeNull();
+    // The kind line comes first in the DOM, so it reads first on the screen.
+    expect(line.compareDocumentPosition(title!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   });
 
   it("drops the back link: the browser has one, and the nav has two entries", async () => {
@@ -127,43 +142,44 @@ describe("ledger lines", () => {
 });
 
 describe("state and actions", () => {
-  it("lists who this identity trusts in words, with no position and the revoked folded away", async () => {
+  it("draws who this identity trusts as cards, and trust it took back not at all", async () => {
     renderApp(`/identities/${ALICE}`);
     await screen.findByTestId("trust-panel");
 
-    const [revoked, unrevoked] = alice.trust;
-    expect(screen.getByTestId(`trust-state-${unrevoked.attestation_event}`)).toHaveTextContent(
-      "trusted",
-    );
-    expect(screen.getByTestId(`trust-state-${revoked.attestation_event}`)).toHaveTextContent(
-      "taken back",
-    );
+    const [, unrevoked] = alice.trust;
+    const list = await screen.findByTestId("trust-list");
+    // Alice's fixture holds two entries for one subject, one taken back and one
+    // standing: the standing one is a card, and it is the only card.
+    expect(within(list).getByTestId(`identity-card-${unrevoked.subject}`)).toBeInTheDocument();
+    expect(within(list).getAllByTestId(/^identity-card-[a-z2-7]{52}$/)).toHaveLength(1);
+    // The folded list of taken-back trust is gone, and so is every row of it.
+    expect(screen.queryByTestId("trust-revoked")).not.toBeInTheDocument();
     for (const record of alice.trust) {
-      expect(screen.getByTestId(`trust-state-${record.attestation_event}`).textContent).not.toMatch(
-        /position/,
-      );
+      expect(screen.queryByTestId(`trust-row-${record.attestation_event}`)).not.toBeInTheDocument();
+      expect(
+        screen.queryByTestId(`trust-revoke-${record.attestation_event}`),
+      ).not.toBeInTheDocument();
     }
-    expect(
-      within(screen.getByTestId("trust-list")).queryByTestId(
-        `trust-row-${revoked.attestation_event}`,
-      ),
-    ).not.toBeInTheDocument();
-    expect(
-      within(screen.getByTestId("trust-revoked")).getByTestId(
-        `trust-row-${revoked.attestation_event}`,
-      ),
-    ).toBeInTheDocument();
   });
 
-  it("links each trusted row at the identity page of its subject", async () => {
+  it("links each card at the identity page of its subject", async () => {
     renderApp(`/identities/${ALICE}`);
     await screen.findByTestId("trust-list");
 
     const unrevoked = alice.trust[1];
-    const link = within(
-      screen.getByTestId(`trust-row-${unrevoked.attestation_event}`),
-    ).getByTestId(`trust-subject-${unrevoked.attestation_event}-link`);
-    expect(link).toHaveAttribute("href", `/identities/${unrevoked.subject}`);
+    const card = screen.getByTestId(`identity-card-${unrevoked.subject}`);
+    expect(
+      within(card).getByTestId(`identity-card-link-${unrevoked.subject}`),
+    ).toHaveAttribute("href", `/identities/${unrevoked.subject}`);
+  });
+
+  it("puts who they trust above the record", async () => {
+    renderApp(`/identities/${ALICE}`);
+    await screen.findByTestId("trust-panel");
+
+    const trust = screen.getByTestId("trust-panel");
+    const ledger = screen.getByTestId("ledger-panel");
+    expect(trust.compareDocumentPosition(ledger)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   });
 
   it("names every operation with one line saying what it does", async () => {
@@ -176,7 +192,7 @@ describe("state and actions", () => {
       "action-witnesses",
       "action-push",
       "action-profile",
-      "action-verification",
+      "action-handle",
       "action-keys",
       "action-contact",
       "action-invite",
@@ -189,7 +205,7 @@ describe("state and actions", () => {
       // A title and a description, so the closed list says what each one does.
       expect(summary.textContent ?? "").toMatch(/\w.*\./);
       // Every one of them starts closed (decision 017).
-      expect(screen.getByTestId(action)).not.toHaveAttribute("open");
+      expect(screen.getByTestId(action)).toHaveAttribute("data-state", "closed");
     }
     // The sync moved to the witnesses page, so no action points at the header.
     expect(screen.queryByTestId("action-graph")).not.toBeInTheDocument();

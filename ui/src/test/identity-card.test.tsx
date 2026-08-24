@@ -16,7 +16,7 @@ import {
 } from "@/components/identity";
 import { ACME, ALICE, BOB, seedIdentities } from "@/mocks/fixtures";
 
-import { renderComponent } from "./render";
+import { renderApp, renderComponent } from "./render";
 
 const alice = seedIdentities.find((identity) => identity.identity_id === ALICE)!;
 const acme = seedIdentities.find((identity) => identity.identity_id === ACME)!;
@@ -44,6 +44,60 @@ function card(identity: Identity, state: "collapsed" | "expanded" | "page" = "co
     </MemoryRouter>,
   );
 }
+
+describe("the card's layout", () => {
+  it("reads kind, then name, with the pill in the top right corner", () => {
+    card(alice);
+
+    const kind = screen.getByTestId(`identity-card-kind-line-${ALICE}`);
+    const title = screen.getByTestId(`identity-card-name-${ALICE}`).closest("[data-slot=item-title]");
+    const pill = screen.getByTestId(`identity-card-name-${ALICE}-pill`);
+
+    expect(kind).toHaveAttribute("data-slot", "item-description");
+    expect(kind).toHaveTextContent("person");
+    // The kind line comes before the name line in the DOM, so it reads first.
+    expect(kind.compareDocumentPosition(title!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    // The pill is in the item's actions slot, which is the top right corner.
+    expect(pill.closest("[data-slot=item-actions]")).not.toBeNull();
+    expect(screen.getByTestId(`identity-card-name-${ALICE}`).contains(pill)).toBe(false);
+  });
+
+  it("opens the identity page on a click anywhere that is not a control", async () => {
+    const { user } = renderApp("/wallet");
+    await screen.findByTestId("identity-cards");
+
+    await user.click(screen.getByTestId(`identity-card-kind-line-${ALICE}`));
+
+    expect(await screen.findByTestId("identity-detail")).toBeInTheDocument();
+  });
+
+  it("keeps the expand control and the copy button off the card's own click", async () => {
+    const { user } = renderApp("/wallet");
+    await screen.findByTestId("identity-cards");
+
+    await user.click(screen.getByTestId(`identity-card-expand-${ALICE}`));
+
+    expect(screen.getByTestId(`identity-card-details-${ALICE}`)).toBeInTheDocument();
+    expect(screen.getByTestId("identity-cards")).toBeInTheDocument();
+    expect(screen.queryByTestId("identity-detail")).not.toBeInTheDocument();
+
+    const heading = screen.getByTestId(`identity-card-name-${ALICE}`);
+    await user.click(within(heading).getByLabelText("copy"));
+
+    expect(screen.getByTestId("identity-cards")).toBeInTheDocument();
+    expect(screen.queryByTestId("identity-detail")).not.toBeInTheDocument();
+  });
+
+  it("draws no card click for an entry that routes nowhere", () => {
+    renderComponent(
+      <MemoryRouter>
+        <IdentityCard facts={factsFromIdentity(alice)} testIds={listTestIds(ALICE)} />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByTestId(`identity-card-${ALICE}`).className).not.toMatch(/cursor-pointer/);
+  });
+});
 
 describe("the collapsed card", () => {
   it("holds the name, the id with a copy button, the pill, the email and the kind", () => {
