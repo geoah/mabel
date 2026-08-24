@@ -138,8 +138,7 @@ export function GraphSyncCard() {
       <CardHeader>
         <CardTitle>Finding people through the people you trust</CardTitle>
         <CardDescription>
-          Your wallet follows who trusts whom, one witness at a time, so a stranger&apos;s page can
-          tell you how you know them. It only looks when you press the button.
+          Your wallet follows who trusts whom, and only when you press the button.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-2">

@@ -2,7 +2,7 @@ import { useCallback, useMemo, useState } from "react";
 import { useParams } from "react-router";
 
 import { ApiError, getContact, getIdentity, getMemberships, listIdentities, lookup } from "@/api/client";
-import type { IdentityResponse, LookupResponse, MembershipView, NameProvenance } from "@/api/types";
+import type { IdentityResponse, LookupResponse, MembershipView } from "@/api/types";
 import { Action } from "@/components/Action";
 import { ErrorEnvelopeView } from "@/components/ErrorEnvelopeView";
 import {
@@ -14,8 +14,6 @@ import {
   type PillFacts,
   trustedSubjects,
 } from "@/components/identity";
-import { KeyValue, KeyValueTable } from "@/components/KeyValue";
-import { Card } from "@/components/ui/card";
 import { degreesOf, named, useResolvedNames } from "@/hooks/useResolvedNames";
 import { useResource } from "@/hooks/useResource";
 import { ActionsSection } from "@/routes/wallet/ActionsSection";
@@ -36,9 +34,9 @@ function notStored(thrown: unknown): null {
 }
 
 /**
- * The private note this home keeps about a foreign identity. The contact store
- * covers ids whose ledger this wallet does not hold, which is the point of it
- * (proposal 003 section 1).
+ * The nickname and note this home keeps about a foreign identity. The contact
+ * store covers ids whose ledger this wallet does not hold, which is the point of
+ * it (proposal 003 section 1).
  */
 function ContactSection({ identityId }: { identityId: string }) {
   const [version, setVersion] = useState(0);
@@ -47,8 +45,8 @@ function ContactSection({ identityId }: { identityId: string }) {
   return (
     <Action
       testId="lookup-contact"
-      title="Write a private note"
-      description="A nickname and note only you see. It stays on this computer and is never published."
+      title="Update local info"
+      description="The nickname and note only this device sees."
     >
       {contact.error && <ErrorEnvelopeView error={contact.error} testId="lookup-contact-error" />}
       {contact.data && (
@@ -61,13 +59,6 @@ function ContactSection({ identityId }: { identityId: string }) {
     </Action>
   );
 }
-
-/** Where the name on a crawled page came from, in the order section 4 fixes. */
-const PROVENANCE_SENTENCE: Record<NameProvenance, string> = {
-  profile: "the name they publish themselves",
-  alias: "your own nickname for them, which nobody else sees",
-  none: "nothing your wallet knows, so the id is the only label",
-};
 
 /**
  * One identity, local or foreign, stored or not (proposal 004). What varies is
@@ -176,20 +167,11 @@ export function IdentityPage() {
           </>
         )}
         {held === null && answer && (
-          <>
-            <IdentityCard
-              facts={factsFromResolved(answer.identity, { stale: answer.stale })}
-              state="page"
-              testIds={pageTestIds}
-            />
-            <Card className="p-3 sm:p-4">
-              <KeyValueTable>
-                <KeyValue label="name comes from" testId="identity-detail-provenance">
-                  {PROVENANCE_SENTENCE[answer.identity.provenance]}
-                </KeyValue>
-              </KeyValueTable>
-            </Card>
-          </>
+          <IdentityCard
+            facts={factsFromResolved(answer.identity, { stale: answer.stale })}
+            state="page"
+            testIds={pageTestIds}
+          />
         )}
         {knowledge.error && <ErrorEnvelopeView error={knowledge.error} testId="lookup-error" />}
         {!canSign && (

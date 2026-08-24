@@ -17,6 +17,11 @@ interface IdentityInlineProps {
   linkTestId?: string;
   /** Overrides the pill the screen's own facts would give this id. */
   pill?: Pill | null;
+  /**
+   * `stacked` puts the name on its own line, larger, with the id under it: what
+   * a card heading needs. `inline` is one line, which is every other use.
+   */
+  layout?: "inline" | "stacked";
   className?: string;
 }
 
@@ -34,6 +39,7 @@ export function IdentityInline({
   to,
   linkTestId,
   pill,
+  layout = "inline",
   className,
 }: IdentityInlineProps) {
   const { name, source } = resolveName(identity);
@@ -42,17 +48,15 @@ export function IdentityInline({
   const shared = useSharedName(name);
   const fromScope = usePill(identity.identity_id);
   const shown = pill === undefined ? fromScope : pill;
+  const stacked = layout === "stacked";
 
-  return (
-    <span
-      data-testid={testId}
-      data-identity-id={identity.identity_id}
-      data-name-source={source}
-      data-shared-name={String(shared)}
-      className={cn("inline-flex flex-wrap items-baseline gap-x-2 gap-y-0.5", className)}
-    >
+  const heading = (
+    <>
       {name !== null && (
-        <span data-testid={testId && `${testId}-name`} className="text-sm">
+        <span
+          data-testid={testId && `${testId}-name`}
+          className={stacked ? "text-base leading-tight font-medium" : "text-sm"}
+        >
           {name}
         </span>
       )}
@@ -63,13 +67,37 @@ export function IdentityInline({
         testId={testId && `${testId}-verification`}
       />
       {shown && <IdentityPillBadge pill={shown} testId={testId && `${testId}-pill`} />}
-      <Identifier
-        value={identity.identity_id}
-        full={shared}
-        to={to}
-        linkTestId={linkTestId ?? (testId && `${testId}-link`)}
-        className="text-muted-foreground"
-      />
+    </>
+  );
+  const id = (
+    <Identifier
+      value={identity.identity_id}
+      full={shared}
+      to={to}
+      linkTestId={linkTestId ?? (testId && `${testId}-link`)}
+      className="text-muted-foreground"
+    />
+  );
+
+  return (
+    <span
+      data-testid={testId}
+      data-identity-id={identity.identity_id}
+      data-name-source={source}
+      data-shared-name={String(shared)}
+      className={cn(
+        stacked
+          ? "flex min-w-0 flex-col items-start gap-0.5"
+          : "inline-flex flex-wrap items-baseline gap-x-2 gap-y-0.5",
+        className,
+      )}
+    >
+      {stacked ? (
+        <span className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">{heading}</span>
+      ) : (
+        heading
+      )}
+      {id}
     </span>
   );
 }

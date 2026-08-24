@@ -35,6 +35,28 @@ describe("navigation", () => {
     expect(screen.getByTestId("nav-node")).not.toHaveAttribute("aria-current");
   });
 
+  it("marks the entry you are on with a background, and underlines nothing", async () => {
+    renderApp("/wallet");
+    await screen.findByTestId("identity-cards");
+
+    // The shadcn active state: a muted background on the current entry, the
+    // same height and typography on all three.
+    const current = screen.getByTestId("nav-wallet");
+    expect(current.className).toMatch(/aria-\[current=page\]:bg-accent/);
+    expect(current.className).not.toMatch(/underline/);
+    // The router adds its own "active" class to the current entry; every other
+    // class is shared, so no entry carries a size or a weight of its own.
+    const shared = (testId: string) =>
+      screen
+        .getByTestId(testId)
+        .className.split(" ")
+        .filter((name) => name !== "active")
+        .join(" ");
+    for (const testId of ["nav-witnesses", "nav-node"]) {
+      expect(shared(testId)).toBe(shared("nav-wallet"));
+    }
+  });
+
   it("walks the entries with the arrow keys", async () => {
     const { user } = renderApp("/wallet");
     await screen.findByTestId("identity-cards");
@@ -132,7 +154,7 @@ describe("finding people through the people you trust", () => {
     renderApp("/witnesses");
 
     const card = await screen.findByTestId("graph-sync");
-    expect(card).toHaveTextContent("It only looks when you press the button.");
+    expect(card).toHaveTextContent("only when you press the button");
     expect(screen.getByTestId("graph-sync-state")).toHaveTextContent("Your wallet last looked");
     expect(screen.getByTestId("graph-sync-truncated")).toHaveTextContent(
       "Your wallet may not have seen everything.",

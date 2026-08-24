@@ -46,20 +46,26 @@ function card(identity: Identity, state: "collapsed" | "expanded" | "page" = "co
 }
 
 describe("the card's layout", () => {
-  it("reads kind, then name, with the pill in the top right corner", () => {
+  it("reads kind, then name, with the pill and the chevron in the top right corner", () => {
     card(alice);
 
     const kind = screen.getByTestId(`identity-card-kind-line-${ALICE}`);
-    const title = screen.getByTestId(`identity-card-name-${ALICE}`).closest("[data-slot=item-title]");
+    const name = screen.getByTestId(`identity-card-name-${ALICE}`);
     const pill = screen.getByTestId(`identity-card-name-${ALICE}-pill`);
+    const expand = screen.getByTestId(`identity-card-expand-${ALICE}`);
 
-    expect(kind).toHaveAttribute("data-slot", "item-description");
     expect(kind).toHaveTextContent("person");
     // The kind line comes before the name line in the DOM, so it reads first.
-    expect(kind.compareDocumentPosition(title!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
-    // The pill is in the item's actions slot, which is the top right corner.
-    expect(pill.closest("[data-slot=item-actions]")).not.toBeNull();
-    expect(screen.getByTestId(`identity-card-name-${ALICE}`).contains(pill)).toBe(false);
+    expect(kind.compareDocumentPosition(name)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    // One surface: the card draws the only border, and nothing inside it draws
+    // a second one.
+    const card_ = screen.getByTestId(`identity-card-${ALICE}`);
+    for (const inner of card_.querySelectorAll("div")) {
+      expect(inner.className).not.toMatch(/(^|\s)border($|\s)/);
+    }
+    // The pill and the chevron share the corner, and neither is inside the name.
+    expect(pill.parentElement).toBe(expand.parentElement);
+    expect(name.contains(pill)).toBe(false);
   });
 
   it("opens the identity page on a click anywhere that is not a control", async () => {
@@ -119,9 +125,8 @@ describe("the collapsed card", () => {
       "alice@alice.example",
     );
     expect(screen.getByTestId(`identity-card-declared-kind-${ALICE}`)).toHaveTextContent("person");
-    expect(screen.getByTestId(`identity-card-head-seq-${ALICE}`)).toHaveTextContent(
-      `at position ${alice.head_seq}`,
-    );
+    // A position on the record is not a fact about the identity: no card says one.
+    expect(screen.getByTestId(`identity-card-${ALICE}`)).not.toHaveTextContent("at position");
   });
 
   it("draws no email line for an identity publishing none", () => {
@@ -142,11 +147,6 @@ describe("the collapsed card", () => {
     expect(screen.getByTestId(`identity-card-details-${ALICE}`)).toBeInTheDocument();
     expect(screen.getByTestId(`identity-card-created-${ALICE}`)).toHaveTextContent("2023-11-14");
     expect(expand).toHaveAttribute("aria-expanded", "true");
-    // The short line is the closed card's version of a row the open one holds
-    // in full, so the two never say the same thing twice.
-    expect(screen.queryByTestId(`identity-card-head-seq-${ALICE}`)).toHaveTextContent(
-      String(alice.head_seq),
-    );
 
     await user.click(expand);
 
@@ -183,11 +183,15 @@ describe("the page state", () => {
     expect(screen.getByTestId("identity-detail-resolved-name")).toHaveTextContent("Alice Ashworth");
     expect(screen.getByTestId("identity-detail-email")).toHaveTextContent("alice@alice.example");
     expect(screen.getByTestId("identity-detail-alias")).toHaveTextContent(alice.alias);
+    expect(screen.getByTestId("identity-detail-alias-row")).toHaveTextContent("Nickname");
+    // The note sits directly under the nickname, which is the pair a reader edits.
+    expect(
+      screen
+        .getByTestId("identity-detail-alias-row")
+        .compareDocumentPosition(screen.getByTestId("identity-detail-contact-row")),
+    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     expect(screen.getByTestId("identity-detail-event-count")).toHaveTextContent(
       String(alice.event_count),
-    );
-    expect(screen.getByTestId("identity-detail-head-seq")).toHaveTextContent(
-      String(alice.head_seq),
     );
     expect(screen.getByTestId("identity-detail-trusted-count")).toHaveTextContent("1 identity");
   });
@@ -234,9 +238,9 @@ describe("the page state", () => {
     );
 
     const row = screen.getByTestId("identity-detail-open-invitations-row");
-    expect(row).toHaveTextContent("invitations not yet answered");
+    expect(row).toHaveTextContent("invitations");
     expect(screen.getByTestId("identity-detail-open-invitations")).toHaveTextContent(
-      "2 invitations to help control this identity, still waiting for an answer",
+      "2 waiting for an answer",
     );
   });
 

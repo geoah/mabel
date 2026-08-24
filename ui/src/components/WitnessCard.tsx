@@ -3,19 +3,12 @@ import { useNavigate } from "react-router";
 
 import { Identifier } from "@/components/Identifier";
 import { Card } from "@/components/ui/card";
-import {
-  Item,
-  ItemActions,
-  ItemContent,
-  ItemDescription,
-  ItemHeader,
-  ItemTitle,
-} from "@/components/ui/item";
 
 /**
- * One witness as a card, in the same shape as an identity card: the kind on the
- * first small line, the id under it, and a badge in the top right corner. The
- * id is never truncated here, because it is the only name a witness has.
+ * One witness as a card, in the same shape as an identity card and with the same
+ * single border: the kind on the first small line, the Iroh ID under it, and a
+ * badge in the top right corner. The id is never truncated here, because it is
+ * the only name a witness has.
  *
  * Every screen that draws a witness draws this, so the list of witnesses and the
  * witnesses one identity chose cannot drift apart. The whole card is clickable
@@ -51,26 +44,26 @@ export function WitnessCard({
       onClick={open}
       className="cursor-pointer p-3 transition-colors hover:border-foreground/30 hover:bg-accent sm:p-4"
     >
-      <Item size="flush" className="items-start">
-        {/* The first line of the card: the kind, and the badge in the corner. */}
-        <ItemHeader>
-          <ItemDescription data-testid={`${testIdPrefix}-kind-line-${endpointId}`}>
-            witness
-          </ItemDescription>
-          {badge !== undefined && <ItemActions className="ml-auto">{badge}</ItemActions>}
-        </ItemHeader>
-        <ItemContent>
-          <ItemTitle className="flex-wrap">
-            <Identifier
-              value={endpointId}
-              full
-              to={to}
-              linkTestId={`${testIdPrefix}-link-${endpointId}`}
-            />
-          </ItemTitle>
-          {children}
-        </ItemContent>
-      </Item>
+      {/* The top line: the kind, and the badge in the corner. The id comes under
+          it, across the whole card: 52 characters and a copy button do not share
+          a phone's width with a badge. */}
+      <div className="flex items-start justify-between gap-2">
+        <p
+          data-testid={`${testIdPrefix}-kind-line-${endpointId}`}
+          className="min-w-0 text-xs text-muted-foreground"
+        >
+          witness
+        </p>
+        {badge !== undefined && <div className="ml-auto shrink-0">{badge}</div>}
+      </div>
+      <Identifier
+        value={endpointId}
+        full
+        to={to}
+        linkTestId={`${testIdPrefix}-link-${endpointId}`}
+        className="mt-0.5"
+      />
+      {children !== undefined && <div className="mt-1">{children}</div>}
     </Card>
   );
 }

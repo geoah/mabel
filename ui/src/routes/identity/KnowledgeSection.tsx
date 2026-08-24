@@ -1,14 +1,16 @@
-import { lookup } from "@/api/client";
-import type {
-  Equivocation,
-  LookupHop,
-  LookupResponse,
-  ResolvedIdentity as ResolvedIdentityDocument,
-} from "@/api/types";
-import { ErrorEnvelopeView } from "@/components/ErrorEnvelopeView";
+import type { Equivocation, LookupPath, LookupResponse } from "@/api/types";
 import { Identifier } from "@/components/Identifier";
-import { KeyValue, KeyValueTable } from "@/components/KeyValue";
-import { IdentityInline, IdentityListScope } from "@/components/identity";
+import { InfoTip } from "@/components/InfoTip";
+import {
+  type CardTestIds,
+  factsFromResolved,
+  IdentityCard,
+  type IdentityCardEntry,
+  IdentityCardList,
+  IdentityInline,
+  IdentityPillBadge,
+  usePill,
+} from "@/components/identity";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Collapsible,
@@ -16,20 +18,12 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { useResource } from "@/hooks/useResource";
 import { describeAge } from "@/lib/time";
 import { GraphStalenessBanner, useGraphSync } from "@/routes/wallet/GraphSyncControl";
 
 /**
- * How far the section expands in place. The identity page itself is level 0, so
- * a reader can open a name and open one name inside it, and no further: a walk
- * that kept expanding would render the whole crawl (proposal 003 section 4).
- */
-export const MAX_LEVEL = 2;
-
-/**
  * The reverse list is never "who trusts them". It is who your wallet happens to
- * have seen trusting them, and it says so wherever it is drawn.
+ * have seen trusting them, and the info icon beside the list says so.
  */
 export const REVERSE_LABEL =
   "Best effort: who your wallet has seen trusting them, not everyone who does";
@@ -63,237 +57,154 @@ export function EquivocationNotice({
   );
 }
 
-/** One step of a chain: who trusts whom, and how fresh that reading is. */
-function Hop({ hop, testId }: { hop: LookupHop; testId: string }) {
+/** The verdict, in one sentence, with the pill that says the same thing shorter. */
+function Verdict({ identityId, degrees }: { identityId: string; degrees: number | null }) {
+  const pill = usePill(identityId);
   return (
-    <li data-testid={testId} className="flex flex-wrap items-center gap-x-2 gap-y-1 py-2">
-      <IdentityInline identity={hop.from} testId={`${testId}-from`} />
-      <span className="text-xs text-muted-foreground">trusts</span>
-      <IdentityInline
-        identity={hop.to}
-        testId={`${testId}-to`}
-        to={`/identities/${hop.to.identity_id}`}
-      />
-      <span data-testid={`${testId}-fetched`} className="text-xs text-muted-foreground">
-        seen {describeAge(hop.fetched_at_ms)}
-      </span>
-      {hop.stale && (
-        <span data-testid={`${testId}-stale`} className="text-xs italic">
-          may be out of date
-        </span>
+    <div className="flex flex-wrap items-center gap-2">
+      {/* The pill is the sentence in two words, so it is drawn beside the one it
+          agrees with: a pill reading trusted next to "no connection found" is
+          two answers to one question. */}
+      {pill !== null && degrees !== null && (
+        <IdentityPillBadge pill={pill} testId="lookup-verdict-pill" />
       )}
-      {hop.equivocation && (
-        <EquivocationNotice equivocation={hop.equivocation} testId={`${testId}-equivocation`} />
-      )}
-    </li>
-  );
-}
-
-/** One name in a trust or reverse list, openable while the cap allows it. */
-function EntryRow({
-  identity,
-  from,
-  level,
-  kind,
-}: {
-  identity: ResolvedIdentityDocument;
-  from: string;
-  level: number;
-  kind: "trust" | "reverse";
-}) {
-  const expandable = level < MAX_LEVEL;
-
-  return (
-    <li data-testid={`lookup-${kind}-row-${identity.identity_id}`} className="py-2">
-      <Collapsible className="space-y-1">
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <IdentityInline
-            identity={identity}
-            testId={`lookup-${kind}-name-${identity.identity_id}`}
-            to={`/identities/${identity.identity_id}`}
-          />
-          {expandable ? (
-            <CollapsibleTrigger
-              data-testid={`lookup-${kind}-expand-${identity.identity_id}`}
-              className="ml-auto flex min-h-9 items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
-            >
-              <CollapsibleChevron />
-              <span>How you know them</span>
-            </CollapsibleTrigger>
-          ) : (
-            <span
-              data-testid={`lookup-${kind}-expand-limit-${identity.identity_id}`}
-              className="ml-auto text-xs text-muted-foreground"
-            >
-              Open their own page to go further.
-            </span>
-          )}
-        </div>
-        {expandable && (
-          <CollapsibleContent>
-            <Expansion
-              identityId={identity.identity_id}
-              from={from}
-              level={level + 1}
-              kind={kind}
-            />
-          </CollapsibleContent>
-        )}
-      </Collapsible>
-    </li>
-  );
-}
-
-/** One nested lookup, drawn in place under the name that opened it. */
-function Expansion({
-  identityId,
-  from,
-  level,
-  kind,
-}: {
-  identityId: string;
-  from: string;
-  level: number;
-  kind: "trust" | "reverse";
-}) {
-  const response = useResource(() => lookup(identityId, { from }), [identityId, from]);
-
-  return (
-    <div
-      data-testid={`lookup-${kind}-expansion-${identityId}`}
-      className="rounded-md border bg-muted/40 p-2"
-    >
-      {response.loading && <p className="text-xs">loading</p>}
-      {response.error && (
-        <ErrorEnvelopeView error={response.error} testId={`lookup-${kind}-expansion-error`} />
-      )}
-      {response.data && <KnowledgeBody response={response.data} level={level} />}
-    </div>
-  );
-}
-
-function Degrees({ response, level }: { response: LookupResponse; level: number }) {
-  const suffix = level === 0 ? "" : `-${response.identity.identity_id}`;
-  return (
-    <>
-      {/* One statement, either way: the row when there is a distance to give,
-          the sentence when there is not. */}
-      {response.degrees === null ? (
-        <p data-testid={`lookup-degrees-none${suffix}`} className="text-sm">
-          <span data-testid={`lookup-degrees${suffix}`}>No connection found</span> yet. Sync and
-          try again.
+      {degrees === null ? (
+        // Both testids are kept: the sentence, and the verdict inside it.
+        <p data-testid="lookup-degrees-none" className="text-sm">
+          <span data-testid="lookup-degrees">No connection found</span> yet.
         </p>
       ) : (
-        <KeyValueTable>
-          <KeyValue label="how far away" testId={`lookup-degrees${suffix}`}>
-            {response.degrees} {response.degrees === 1 ? "step" : "steps"}
-          </KeyValue>
-        </KeyValueTable>
+        <p data-testid="lookup-degrees" className="text-sm">
+          {degrees === 1 ? "You trust them directly" : `Connected through ${degrees} steps`}
+        </p>
       )}
-    </>
-  );
-}
-
-/**
- * One crawl answer: how a local identity reaches this one, who this one trusts,
- * and who this crawl saw attesting to it. The same body renders the section and
- * every expansion inside it, so no nested list can drop the best-effort label or
- * the staleness of the hop it came from.
- *
- * Testids repeat between an expansion and the list that opened it, on purpose:
- * every nested list sits inside its own `lookup-trust-expansion-<id>` or
- * `lookup-reverse-expansion-<id>`, which is what a reader of the DOM scopes by.
- */
-export function KnowledgeBody({
-  response,
-  level,
-}: {
-  response: LookupResponse;
-  level: number;
-}) {
-  const from = response.from.identity_id;
-  const listed = [
-    ...response.trust.map((entry) => entry.subject),
-    ...response.reverse.entries.map((entry) => entry.identity),
-  ];
-
-  return (
-    <div className="space-y-3">
-      <Degrees response={response} level={level} />
-      {level === 0 && response.paths.length > 0 && (
-        <div data-testid="lookup-paths" className="space-y-2">
-          {response.paths.map((path, index) => (
-            <div
-              key={path.hops.map((hop) => hop.attestation_event).join("-")}
-              data-testid={`lookup-path-${index}`}
-              className="rounded-md border px-2"
-            >
-              <ul className="divide-y">
-                {path.hops.map((hop, hopIndex) => (
-                  <Hop
-                    key={hop.attestation_event}
-                    hop={hop}
-                    testId={`lookup-hop-${index}-${hopIndex}`}
-                  />
-                ))}
-              </ul>
-            </div>
-          ))}
-        </div>
-      )}
-      <IdentityListScope identities={listed}>
-        <div className="space-y-1">
-          <p className="text-xs text-muted-foreground">who they trust</p>
-          {response.trust.length === 0 ? (
-            <p data-testid="lookup-trust-empty" className="text-sm">
-              Your wallet has not seen them trust anyone.
-            </p>
-          ) : (
-            <ul data-testid="lookup-trust" className="divide-y">
-              {response.trust.map((entry) => (
-                <EntryRow
-                  key={entry.attestation_event}
-                  identity={entry.subject}
-                  from={from}
-                  level={level}
-                  kind="trust"
-                />
-              ))}
-            </ul>
-          )}
-        </div>
-        <div className="space-y-1">
-          <p data-testid="lookup-reverse-label" className="text-xs text-muted-foreground">
-            {REVERSE_LABEL}
-          </p>
-          {response.reverse.entries.length === 0 ? (
-            <p data-testid="lookup-reverse-empty" className="text-sm">
-              Your wallet has not seen anyone trust them.
-            </p>
-          ) : (
-            <ul data-testid="lookup-reverse" className="divide-y">
-              {response.reverse.entries.map((entry) => (
-                <EntryRow
-                  key={entry.attestation_event}
-                  identity={entry.identity}
-                  from={from}
-                  level={level}
-                  kind="reverse"
-                />
-              ))}
-            </ul>
-          )}
-        </div>
-      </IdentityListScope>
     </div>
   );
 }
 
+function ArrowDown() {
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden="true" className="size-3.5 shrink-0" fill="currentColor">
+      <path d="M8 2.5a.75.75 0 0 1 .75.75v7.19l2.72-2.72a.75.75 0 1 1 1.06 1.06l-4 4a.75.75 0 0 1-1.06 0l-4-4a.75.75 0 1 1 1.06-1.06l2.72 2.72V3.25A.75.75 0 0 1 8 2.5Z" />
+    </svg>
+  );
+}
+
 /**
- * How you know them: the section a foreign identity's page carries. It answers
- * from one of your own identities, in named steps with the freshness of each,
- * and it says what your wallet has not seen rather than implying it does not
- * exist.
+ * The card testids of one step of a path. A hop's card is `lookup-hop-i-j` and
+ * the identity on it is `lookup-hop-i-j-to`, which is what the suites read; the
+ * first card of a chain is the root the answer came from.
+ */
+function hopTestIds(index: number, hopIndex: number): CardTestIds {
+  const base = `lookup-hop-${index}-${hopIndex}`;
+  return (part) => (part === "" ? base : part === "name" ? `${base}-to` : `${base}-${part}`);
+}
+
+function rootTestIds(index: number): CardTestIds {
+  const base = `lookup-path-${index}-root`;
+  return (part) =>
+    part === "" ? base : part === "name" ? `lookup-hop-${index}-0-from` : `${base}-${part}`;
+}
+
+/**
+ * One path, as a chain of the same identity cards every other screen draws: the
+ * root you asked from, then one card per step, each under the word that links
+ * them. Who trusts whom is the order, top to bottom.
+ */
+function PathChain({ path, index }: { path: LookupPath; index: number }) {
+  const root = path.hops[0]?.from;
+  if (root === undefined) {
+    return null;
+  }
+  return (
+    <ol data-testid={`lookup-path-${index}`} className="space-y-1">
+      <li className="min-w-0">
+        <IdentityCard
+          facts={factsFromResolved(root, { to: `/identities/${root.identity_id}` })}
+          testIds={rootTestIds(index)}
+        />
+      </li>
+      {path.hops.map((hop, hopIndex) => (
+        <li key={hop.attestation_event} className="min-w-0 space-y-1">
+          <p className="flex items-center gap-1 pl-3 text-xs text-muted-foreground">
+            <ArrowDown />
+            trusts
+          </p>
+          <IdentityCard
+            facts={factsFromResolved(hop.to, {
+              stale: hop.stale,
+              to: `/identities/${hop.to.identity_id}`,
+            })}
+            testIds={hopTestIds(index, hopIndex)}
+            markers={
+              <>
+                <span data-testid={`lookup-hop-${index}-${hopIndex}-fetched`}>
+                  seen {describeAge(hop.fetched_at_ms)}
+                </span>
+                {hop.stale && (
+                  <span data-testid={`lookup-hop-${index}-${hopIndex}-stale`} className="italic">
+                    may be out of date
+                  </span>
+                )}
+              </>
+            }
+          />
+          {hop.equivocation && (
+            <EquivocationNotice
+              equivocation={hop.equivocation}
+              testId={`lookup-hop-${index}-${hopIndex}-equivocation`}
+            />
+          )}
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+/** One trust or reverse list, folded away behind its own count. */
+function EntryList({
+  title,
+  count,
+  testId,
+  entries,
+  empty,
+  info,
+}: {
+  title: string;
+  count: number;
+  /** `lookup-trust` or `lookup-reverse`: the list, its toggle and its empty line. */
+  testId: string;
+  entries: IdentityCardEntry[];
+  empty: string;
+  info?: string;
+}) {
+  return (
+    <Collapsible className="rounded-md border">
+      <CollapsibleTrigger
+        data-testid={`${testId}-toggle`}
+        className="flex min-h-11 w-full items-center gap-2 px-3 text-left text-sm hover:bg-accent"
+      >
+        <CollapsibleChevron />
+        <span data-testid={`${testId}-label`}>{title}</span>
+        {info !== undefined && <InfoTip text={info} testId={`${testId}-note`} />}
+        <span className="ml-auto text-xs text-muted-foreground">{count}</span>
+      </CollapsibleTrigger>
+      <CollapsibleContent className="border-t p-3">
+        <IdentityCardList
+          entries={entries}
+          testId={testId}
+          empty={empty}
+          emptyTestId={`${testId}-empty`}
+        />
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}
+
+/**
+ * How you know them: the verdict, the path that reached them, and the two lists
+ * the crawl holds. Every identity here is an identity card, so a name on a path
+ * reads exactly as it does in the wallet.
  */
 export function KnowledgeSection({ response }: { response: LookupResponse }) {
   const sync = useGraphSync();
@@ -304,16 +215,24 @@ export function KnowledgeSection({ response }: { response: LookupResponse }) {
       (hop) => hop.equivocation !== null && hop.to.identity_id === response.identity.identity_id,
     ),
   );
+  const trust: IdentityCardEntry[] = response.trust.map((entry) => ({
+    facts: factsFromResolved(entry.subject, {
+      to: `/identities/${entry.subject.identity_id}`,
+    }),
+  }));
+  const reverse: IdentityCardEntry[] = response.reverse.entries.map((entry) => ({
+    facts: factsFromResolved(entry.identity, {
+      to: `/identities/${entry.identity.identity_id}`,
+    }),
+  }));
 
   return (
     <Card data-testid="lookup-result">
       <CardHeader>
         <CardTitle>How you know them</CardTitle>
-        <CardDescription>
-          <span className="inline-flex flex-wrap items-baseline gap-2">
-            following trust out from your
-            <IdentityInline identity={response.from} testId="lookup-from" />
-          </span>
+        <CardDescription className="flex flex-wrap items-baseline gap-2">
+          from your
+          <IdentityInline identity={response.from} testId="lookup-from" />
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
@@ -331,7 +250,33 @@ export function KnowledgeSection({ response }: { response: LookupResponse }) {
         {response.equivocation && !onAPath && (
           <EquivocationNotice equivocation={response.equivocation} testId="lookup-equivocation" />
         )}
-        <KnowledgeBody response={response} level={0} />
+        <Verdict identityId={response.identity.identity_id} degrees={response.degrees} />
+        {response.paths.length > 0 && (
+          <div data-testid="lookup-paths" className="space-y-3">
+            {response.paths.map((path, index) => (
+              <PathChain
+                key={path.hops.map((hop) => hop.attestation_event).join("-")}
+                path={path}
+                index={index}
+              />
+            ))}
+          </div>
+        )}
+        <EntryList
+          title="Who they trust"
+          count={trust.length}
+          testId="lookup-trust"
+          entries={trust}
+          empty="Your wallet has not seen them trust anyone."
+        />
+        <EntryList
+          title="Who your wallet has seen trusting them"
+          count={reverse.length}
+          testId="lookup-reverse"
+          entries={reverse}
+          empty="Your wallet has not seen anyone trust them."
+          info={REVERSE_LABEL}
+        />
       </CardContent>
     </Card>
   );

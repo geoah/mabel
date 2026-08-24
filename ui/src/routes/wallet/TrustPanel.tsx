@@ -103,7 +103,7 @@ export function TrustAddForm({ actions }: { actions: TrustActions }) {
             data-testid="trust-add-subject"
             value={subject}
             onChange={(event) => setSubject(event.target.value)}
-            placeholder="their identity id"
+            placeholder="their Mabel ID"
             className="font-mono text-xs"
           />
         </InlineField>
@@ -166,7 +166,7 @@ export function TrustRevokeForm({
               setMissing(false);
               setSubject(event.target.value);
             }}
-            placeholder="their identity id"
+            placeholder="their Mabel ID"
             className="font-mono text-xs"
           />
         </InlineField>
@@ -220,8 +220,7 @@ export function TrustPanel({
       <CardHeader>
         <CardTitle>{owner === null ? "Who this identity trusts" : `Who ${owner} trusts`}</CardTitle>
         <CardDescription>
-          Everyone this identity has said it trusts and has not taken back. Saying it is on the
-          identity&apos;s public record, and so is taking it back.
+          Everyone it has said it trusts and has not taken back.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">

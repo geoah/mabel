@@ -78,7 +78,7 @@ export function WitnessLedgerDetail() {
             </CardHeader>
             <CardContent className="space-y-2">
               <KeyValueTable>
-                <KeyValue label="record id" testId="witness-detail-ledger-id">
+                <KeyValue label="Mabel ID" testId="witness-detail-ledger-id">
                   <Identifier value={ledger.data.entry.ledger_id} />
                 </KeyValue>
                 <KeyValue label="declared kind" testId="witness-detail-declared-kind-row">

@@ -22,16 +22,21 @@ export function WitnessHome() {
   const entries: IdentityCardEntry[] = (page.data?.entries ?? []).map((entry) => ({
     facts: factsFromResolved(bareIdentity(entry.ledger_id), {
       declaredKind: entry.declared_kind,
-      headSeq: entry.head_seq,
       to: `/witness/ledgers/${entry.ledger_id}`,
     }),
-    markers:
-      entry.fork_count > 0 ? (
-        <span data-testid={`identity-card-fork-count-${entry.ledger_id}`}>
-          {entry.fork_count} {entry.fork_count === 1 ? "conflict" : "conflicts"}
-          {entry.forks_truncated ? ", and it stopped recording more" : ""}
+    markers: (
+      <>
+        <span data-testid={`identity-card-entries-${entry.ledger_id}`}>
+          {entry.head_seq + 1} {entry.head_seq === 0 ? "entry" : "entries"}
         </span>
-      ) : null,
+        {entry.fork_count > 0 && (
+          <span data-testid={`identity-card-fork-count-${entry.ledger_id}`}>
+            {entry.fork_count} {entry.fork_count === 1 ? "conflict" : "conflicts"}
+            {entry.forks_truncated ? ", and it stopped recording more" : ""}
+          </span>
+        )}
+      </>
+    ),
   }));
 
   return (

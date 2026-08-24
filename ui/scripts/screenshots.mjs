@@ -69,6 +69,18 @@ const SCREENS = [
     },
   },
   {
+    // The info icon beside a short label, opened: what a phone gets instead of
+    // a hover, and the only long sentence either local field carries.
+    name: "wallet-home-card-info",
+    path: "/wallet",
+    ready: `identity-card-expand-${ALICE}`,
+    async act(page) {
+      await page.getByTestId(`identity-card-expand-${ALICE}`).click();
+      await page.getByTestId(`identity-card-alias-${ALICE}-info`).click();
+      await page.getByTestId(`identity-card-alias-${ALICE}-info-text`).waitFor();
+    },
+  },
+  {
     name: "wallet-home-resolve",
     path: "/wallet",
     ready: "wallet-search-input",
@@ -161,12 +173,14 @@ const SCREENS = [
     ready: "identity-fetch-button",
   },
   {
+    // The two lists of "how you know them", opened: cards, not bespoke rows.
     name: "identity-foreign-expanded",
     path: `/identities/${CAROL}`,
     ready: "lookup-result",
     async act(page) {
-      await page.getByTestId(`lookup-trust-expand-${BOB}`).click();
-      await page.getByTestId(`lookup-trust-expansion-${BOB}`).waitFor();
+      await page.getByTestId("lookup-trust-toggle").click();
+      await page.getByTestId(`identity-card-${BOB}`).waitFor();
+      await page.getByTestId("lookup-reverse-toggle").click();
     },
   },
   {

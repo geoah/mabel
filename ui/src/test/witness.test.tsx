@@ -45,8 +45,8 @@ describe("the witness node's debug route", () => {
     expect(within(card).getByTestId(`identity-card-declared-kind-${ACME}`)).toHaveTextContent(
       "organization",
     );
-    expect(within(card).getByTestId(`identity-card-head-seq-${ACME}`)).toHaveTextContent(
-      `at position ${acme.head_seq}`,
+    expect(within(card).getByTestId(`identity-card-entries-${ACME}`)).toHaveTextContent(
+      `${acme.head_seq + 1} entries`,
     );
   });
 

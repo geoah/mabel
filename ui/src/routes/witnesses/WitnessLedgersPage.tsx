@@ -55,15 +55,22 @@ export function WitnessLedgersPage() {
   const entries: IdentityCardEntry[] = (page.data?.ledgers ?? []).map((ledger) => ({
     facts: factsFromResolved(named(names, ledger.ledger_id), {
       declaredKind: ledger.declared_kind,
-      headSeq: ledger.head_seq,
       to: `/identities/${ledger.ledger_id}`,
     }),
-    markers:
-      ledger.fork_count > 0 ? (
-        <span data-testid={`identity-card-fork-count-${ledger.ledger_id}`}>
-          {ledger.fork_count} {ledger.fork_count === 1 ? "conflict" : "conflicts"}
+    markers: (
+      <>
+        {/* How much of a record this witness holds, which is what the listing is
+            about. The position it reaches is not a fact about the identity. */}
+        <span data-testid={`identity-card-entries-${ledger.ledger_id}`}>
+          {ledger.head_seq + 1} {ledger.head_seq === 0 ? "entry" : "entries"}
         </span>
-      ) : null,
+        {ledger.fork_count > 0 && (
+          <span data-testid={`identity-card-fork-count-${ledger.ledger_id}`}>
+            {ledger.fork_count} {ledger.fork_count === 1 ? "conflict" : "conflicts"}
+          </span>
+        )}
+      </>
+    ),
   }));
   const unreachable = page.error?.reason === "witness_unreachable" ? page.error : null;
   // Each name came from one lookup, so the distance it carries costs nothing
@@ -95,8 +102,7 @@ export function WitnessLedgersPage() {
               <Identifier value={endpointId} />
             </CardTitle>
             <CardDescription>
-              Asked when this page loaded, and saved nowhere. A record missing here may still be on
-              another witness.
+              Asked when this page loaded. A record missing here may be on another witness.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">

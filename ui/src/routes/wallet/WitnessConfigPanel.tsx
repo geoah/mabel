@@ -62,7 +62,7 @@ export function WitnessConfigPanel({
         </ul>
       )}
       <InlineForm onSubmit={submit} data-testid="witness-add-form">
-        <InlineField label="Witness id" htmlFor="witness-add-endpoint">
+        <InlineField label="Witness Iroh ID" htmlFor="witness-add-endpoint">
           <Input
             id="witness-add-endpoint"
             data-testid="witness-add-endpoint"

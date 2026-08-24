@@ -95,7 +95,9 @@ export function usePill(identityId: string): Pill | null {
 }
 
 const TONES: Record<PillKind, string> = {
-  own: "",
+  // The quiet one on purpose: every card in your own wallet wears it, so a
+  // solid black badge on each of them is the loudest thing on the screen.
+  own: "border-border",
   trusted: "border-green-700/40 bg-green-50 text-green-900",
   degree: "border-amber-700/40 bg-amber-50 text-amber-900",
 };
@@ -111,7 +113,7 @@ export function IdentityPillBadge({ pill, testId }: { pill: Pill; testId?: strin
     <Badge
       data-testid={testId}
       data-pill={pill.kind}
-      variant={pill.kind === "own" ? "default" : "outline"}
+      variant={pill.kind === "own" ? "secondary" : "outline"}
       title={TITLES[pill.kind]}
       className={TONES[pill.kind]}
     >

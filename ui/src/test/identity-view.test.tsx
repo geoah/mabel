@@ -63,7 +63,6 @@ describe("the identity page's top section", () => {
     expect(screen.getByTestId("identity-detail-created")).toHaveTextContent("2023-11-14");
     expect(screen.getByTestId("identity-detail-declared-kind")).toHaveTextContent("person");
     expect(screen.getByTestId("identity-detail-event-count")).toHaveTextContent("9");
-    expect(screen.getByTestId("identity-detail-head-seq")).toHaveTextContent("8");
     expect(screen.getByTestId("identity-detail-trusted-count")).toHaveTextContent("1 identity");
     expect(screen.getByTestId("identity-detail-open-invitations")).toHaveTextContent("none");
   });
@@ -75,8 +74,9 @@ describe("the identity page's top section", () => {
     const pill = await screen.findByTestId("identity-detail-resolved-pill");
     expect(pill).toHaveTextContent("your identity");
     expect(pill).toHaveAttribute("data-pill", "own");
-    // The pill sits in the card's actions slot, not on the name line.
-    expect(pill.closest("[data-slot=item-actions]")).not.toBeNull();
+    // The pill sits on the card's own top line, not inside the name.
+    const kindLine = screen.getByTestId("identity-detail-kind-line");
+    expect(pill.parentElement?.previousElementSibling).toBe(kindLine);
     expect(screen.getByTestId("identity-detail-resolved").contains(pill)).toBe(false);
   });
 
@@ -85,12 +85,10 @@ describe("the identity page's top section", () => {
     await screen.findByTestId("identity-detail");
 
     const line = screen.getByTestId("identity-detail-kind-line");
-    expect(line).toHaveAttribute("data-slot", "item-description");
     expect(line).toHaveTextContent("person");
-    const title = screen.getByTestId("identity-detail-resolved").closest("[data-slot=item-title]");
-    expect(title).not.toBeNull();
+    const name = screen.getByTestId("identity-detail-resolved");
     // The kind line comes first in the DOM, so it reads first on the screen.
-    expect(line.compareDocumentPosition(title!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(line.compareDocumentPosition(name)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   });
 
   it("drops the back link: the browser has one, and the nav has two entries", async () => {

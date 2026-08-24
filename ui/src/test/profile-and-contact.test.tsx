@@ -90,21 +90,33 @@ describe("profile replacement", () => {
 });
 
 describe("contact", () => {
-  it("round-trips the private note through the contact route", async () => {
+  it("writes the nickname and the note together, from one button", async () => {
     const { user } = renderApp(`/identities/${ALICE}`);
     await openAction(user, "action-contact");
 
     expect(screen.getByTestId("identity-detail-contact")).toHaveTextContent("none");
+    // Both fields carry a short label with the sentence behind an info icon.
+    expect(screen.getByTestId("contact-nickname-info")).toHaveAttribute(
+      "aria-label",
+      "Your local nickname for this identity. Only this device sees it.",
+    );
+    expect(screen.getByTestId("contact-note-info")).toHaveAttribute(
+      "aria-label",
+      "A private note about this identity. Only this device sees it.",
+    );
 
     await user.type(screen.getByTestId("contact-nickname"), "alice at the co-op");
     await user.type(screen.getByTestId("contact-note"), "keys live on the blue laptop");
     await user.click(screen.getByTestId("contact-save"));
 
     expect(await screen.findByTestId("contact-result")).toHaveTextContent("Saved ");
+    // The nickname row is the name the card falls back to, the note is its own
+    // row directly under it.
     await waitFor(() =>
-      expect(screen.getByTestId("identity-detail-contact")).toHaveTextContent(
-        "alice at the co-op: keys live on the blue laptop",
-      ),
+      expect(screen.getByTestId("identity-detail-alias")).toHaveTextContent("alice at the co-op"),
+    );
+    expect(screen.getByTestId("identity-detail-contact")).toHaveTextContent(
+      "keys live on the blue laptop",
     );
   });
 

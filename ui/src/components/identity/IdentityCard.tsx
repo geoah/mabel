@@ -10,6 +10,7 @@ import type {
   Verification,
 } from "@/api/types";
 import { DeclaredKindValue } from "@/components/DeclaredKind";
+import { NICKNAME_INFO, NOTE_INFO } from "@/components/InfoTip";
 import { KeyValue, KeyValueTable } from "@/components/KeyValue";
 import { Card } from "@/components/ui/card";
 import {
@@ -18,14 +19,6 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import {
-  Item,
-  ItemActions,
-  ItemContent,
-  ItemDescription,
-  ItemHeader,
-  ItemTitle,
-} from "@/components/ui/item";
 import { formatDate } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
@@ -43,7 +36,6 @@ export interface IdentityRecord {
   alias: string;
   createdAtMs: number;
   eventCount: number;
-  headSeq: number;
   verification: Verification;
   contact: Contact | null;
   /** How many identities it trusts and has not taken that back for. */
@@ -62,8 +54,6 @@ export interface IdentityFacts {
   /** The email its profile publishes, null when it publishes none or none is known. */
   email: string | null;
   declaredKind: DeclaredKind | null;
-  /** The newest position on its record, null when this screen does not know it. */
-  headSeq: number | null;
   /** Where its id links, null when there is nowhere to go. */
   to: string | null;
   record: IdentityRecord | null;
@@ -76,13 +66,11 @@ export function factsFromIdentity(identity: Identity, to: string | null = null):
     stale: identity.verification.stale,
     email: identity.profile?.email ?? null,
     declaredKind: identity.declared_kind,
-    headSeq: identity.head_seq,
     to,
     record: {
       alias: identity.alias,
       createdAtMs: identity.created_at_ms,
       eventCount: identity.event_count,
-      headSeq: identity.head_seq,
       verification: identity.verification,
       contact: identity.contact,
       trustedCount: identity.trust.filter((record) => !record.revoked).length,
@@ -105,7 +93,6 @@ export function factsFromResolved(
   resolved: ResolvedIdentityDocument,
   options: {
     declaredKind?: DeclaredKind | null;
-    headSeq?: number | null;
     stale?: boolean;
     to?: string | null;
   } = {},
@@ -115,7 +102,6 @@ export function factsFromResolved(
     stale: options.stale ?? false,
     email: null,
     declaredKind: options.declaredKind ?? null,
-    headSeq: options.headSeq ?? null,
     to: options.to ?? null,
     record: null,
   };
@@ -168,6 +154,7 @@ function RecordRows({
   }
   const contact = record.contact;
   const invitations = record.openInvitationCount;
+  const nickname = contact?.nickname ?? record.alias;
   // A raw-rooted ledger is its own principal, and the card already holds the
   // name for that one: only the others need resolving.
   const principals = record.principals.map((principal) =>
@@ -178,8 +165,11 @@ function RecordRows({
 
   return (
     <KeyValueTable>
-      <KeyValue label="your private nickname" testId={testIds("alias")}>
-        {record.alias}
+      <KeyValue label="Nickname" testId={testIds("alias")} info={NICKNAME_INFO}>
+        {nickname === "" ? "none" : nickname}
+      </KeyValue>
+      <KeyValue label="Note" testId={testIds("contact")} info={NOTE_INFO}>
+        {contact?.note ?? "none"}
       </KeyValue>
       <KeyValue label="created" testId={testIds("created")}>
         {formatDate(record.createdAtMs)}
@@ -196,15 +186,9 @@ function RecordRows({
           />
         )}
       </KeyValue>
-      <KeyValue label="your private note" testId={testIds("contact")}>
-        {contact === null
-          ? "none"
-          : [contact.nickname, contact.note].filter((part) => part !== null).join(": ")}
-      </KeyValue>
       <KeyValue label="ledger" testId={testIds("ledger-summary")}>
         <span data-testid={testIds("event-count")}>{record.eventCount}</span>{" "}
-        {record.eventCount === 1 ? "entry" : "entries"}, the newest at position{" "}
-        <span data-testid={testIds("head-seq")}>{record.headSeq}</span>
+        {record.eventCount === 1 ? "entry" : "entries"}
       </KeyValue>
       <KeyValue label="trusts" testId={testIds("trusted-count")}>
         {record.trustedCount} {record.trustedCount === 1 ? "identity" : "identities"}
@@ -232,23 +216,22 @@ function RecordRows({
           </span>
         </IdentityListScope>
       </KeyValue>
-      <KeyValue label="invitations not yet answered" testId={testIds("open-invitations")}>
+      <KeyValue label="invitations" testId={testIds("open-invitations")}>
         {invitations === 0
           ? "none"
-          : `${invitations} ${
-              invitations === 1 ? "invitation" : "invitations"
-            } to help control this identity, still waiting for an answer`}
+          : `${invitations} waiting for an answer`}
       </KeyValue>
     </KeyValueTable>
   );
 }
 
 /**
- * One identity as a card, built on the item component: the kind on the first
- * small line, then the name with its id, and the pill in the top right corner.
- * An expand control opens the record in place, and the same open block without
- * the toggle is the identity page's top section. One component, three states, so
- * a list entry and a page heading cannot drift apart (proposal 005).
+ * One identity as a card, and one surface: the card draws the only border. The
+ * kind on the first small line, the name under it, its id under that, and the
+ * pill with the expand chevron in the top right corner. The chevron opens the
+ * record in place, and the same open block without the chevron is the identity
+ * page's top section. One component, three states, so a list entry and a page
+ * heading cannot drift apart (proposal 005).
  *
  * A card that routes somewhere is clickable across its whole surface. The id
  * link inside it is the real anchor, so the keyboard and a screen reader reach
@@ -282,12 +265,12 @@ export function IdentityCard({
   // closed card's version of a row the open one carries in full.
   const [open, setOpen] = useState(state === "expanded");
   const shown = page || open;
-  // The short line beside the kind: the closed card's version of a row the open
-  // one carries in full. The line itself is drawn only when it holds something.
-  const shortLine = !shown && (facts.headSeq !== null || facts.record === null);
+  // The open block says this in a row of its own, so the closed card is the only
+  // one that says it on the kind line.
+  const unheld = !shown && facts.record === null;
   const kindLine =
     facts.declaredKind !== null ||
-    shortLine ||
+    unheld ||
     (markers !== undefined && markers !== null && markers !== false);
 
   function openPage(event: MouseEvent<HTMLDivElement>) {
@@ -313,66 +296,59 @@ export function IdentityCard({
       )}
     >
       <Collapsible open={shown} onOpenChange={setOpen}>
-        <Item size="flush" className="items-start">
-          {/* The first line of the card: the kind, and the pill in the corner. */}
-          <ItemHeader>
-            {kindLine && (
-              <ItemDescription
-                data-testid={testIds("kind-line")}
-                className="flex flex-wrap items-center gap-x-2 gap-y-1"
+        {/* The top line: what this is on the left, the pill and the expand
+            chevron in the corner. The name and the id come under it, across the
+            whole card, because a 52-character id and a copy button do not share
+            a phone's width with a badge. */}
+        <div className="flex items-start justify-between gap-2">
+          {kindLine && (
+            <p
+              data-testid={testIds("kind-line")}
+              className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground"
+            >
+              {facts.declaredKind !== null && (
+                <DeclaredKindValue kind={facts.declaredKind} testId={testIds("declared-kind")} />
+              )}
+              {unheld && <span data-testid={testIds("unheld")}>not stored here</span>}
+              {markers}
+            </p>
+          )}
+          <div className="ml-auto flex shrink-0 items-center gap-1">
+            {pill !== null && <IdentityPillBadge pill={pill} testId={`${testIds("name")}-pill`} />}
+            {/* Only a card holding a record has anything to open: a crawled one
+                says so on its kind line and draws no control. */}
+            {!page && facts.record !== null && (
+              <CollapsibleTrigger
+                data-testid={testIds("expand")}
+                aria-label={shown ? "Hide the record" : "Show the record"}
+                title={shown ? "Hide the record" : "Show the record"}
+                onClick={(event) => event.stopPropagation()}
+                className="-my-1 inline-flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
               >
-                {facts.declaredKind !== null && (
-                  <DeclaredKindValue kind={facts.declaredKind} testId={testIds("declared-kind")} />
-                )}
-                {/* The open block says both of these in full, so the line holding
-                    the short version is drawn only while the card is closed. */}
-                {shortLine && facts.headSeq !== null && (
-                  <span data-testid={testIds("head-seq")}>at position {facts.headSeq}</span>
-                )}
-                {shortLine && facts.headSeq === null && facts.record === null && (
-                  <span data-testid={testIds("unheld")}>no copy of its record here</span>
-                )}
-                {markers}
-              </ItemDescription>
+                <CollapsibleChevron className="size-4" />
+              </CollapsibleTrigger>
             )}
-            {pill !== null && (
-              <ItemActions className="ml-auto">
-                <IdentityPillBadge pill={pill} testId={`${testIds("name")}-pill`} />
-              </ItemActions>
-            )}
-          </ItemHeader>
-          <ItemContent>
-            <ItemTitle className="flex-wrap">
-              <IdentityInline
-                identity={facts.resolved}
-                stale={facts.stale}
-                testId={testIds("name")}
-                linkTestId={linkTestId}
-                to={facts.to ?? undefined}
-                // The card draws the pill itself, in its top right corner.
-                pill={null}
-              />
-            </ItemTitle>
-            {facts.email !== null && (
-              <p data-testid={testIds("email")} className="text-sm break-all">
-                {facts.email}
-              </p>
-            )}
-          </ItemContent>
-        </Item>
-        {!page && (
-          <CollapsibleTrigger
-            data-testid={testIds("expand")}
-            onClick={(event) => event.stopPropagation()}
-            className="mt-2 flex min-h-9 items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
-          >
-            <CollapsibleChevron />
-            <span>Show the record</span>
-          </CollapsibleTrigger>
+          </div>
+        </div>
+        <IdentityInline
+          identity={facts.resolved}
+          stale={facts.stale}
+          testId={testIds("name")}
+          linkTestId={linkTestId}
+          to={facts.to ?? undefined}
+          layout="stacked"
+          className="mt-0.5"
+          // The card draws the pill itself, in its top right corner.
+          pill={null}
+        />
+        {facts.email !== null && (
+          <p data-testid={testIds("email")} className="mt-0.5 text-sm break-all text-muted-foreground">
+            {facts.email}
+          </p>
         )}
         <CollapsibleContent
           data-testid={testIds("details")}
-          className={cn("border-t pt-2", !page && "mt-2")}
+          className="mt-3 border-t pt-3"
         >
           <RecordRows facts={facts} testIds={testIds} resolvePrincipal={resolvePrincipal} />
         </CollapsibleContent>

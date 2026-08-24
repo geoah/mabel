@@ -55,22 +55,24 @@ export function App() {
         The header names the app and nothing else. Decision 017: a counter the
         header cannot explain does not belong in the header.
       */}
-      <header className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 border-b pb-3">
-        <span className="text-sm font-semibold" data-testid="app-title">
+      <header className="mb-4 flex h-12 items-center justify-between gap-4 border-b">
+        <span className="text-base font-semibold tracking-tight" data-testid="app-title">
           mabel
         </span>
         {/*
-          One nav element at every width: a row in the header on md+, a fixed
-          bottom bar below it, where a thumb reaches it. The entries share the
-          width of a phone, so three of them fit without scrolling sideways.
+          One nav element at every width: the link row of a shadcn navigation
+          menu in the header on md+, and the same links as a fixed bottom bar
+          below it, where a thumb reaches them. Three entries share the width of
+          a phone without scrolling sideways.
         */}
         <NavigationMenu
           className={cn(
             "max-md:fixed max-md:inset-x-0 max-md:bottom-0 max-md:z-20 max-md:max-w-none",
-            "max-md:border-t max-md:bg-background",
+            "max-md:border-t max-md:bg-background max-md:p-1",
+            "max-md:pb-[max(0.25rem,env(safe-area-inset-bottom))]",
           )}
         >
-          <NavigationMenuList className="max-md:w-full max-md:gap-0">
+          <NavigationMenuList className="gap-1 max-md:w-full">
             {links.map((link) => (
               <NavigationMenuItem key={link.to} className="max-md:flex-1">
                 <NavigationMenuLink asChild>
@@ -79,10 +81,10 @@ export function App() {
                     end={link.to === "/wallet"}
                     data-testid={link.testId}
                     className={cn(
-                      "flex min-h-11 items-center justify-center px-2 text-sm text-muted-foreground",
-                      "md:min-h-9 md:px-3",
-                      "aria-[current=page]:font-medium aria-[current=page]:text-foreground",
-                      "aria-[current=page]:underline",
+                      "flex h-12 items-center justify-center rounded-md px-3 text-sm",
+                      "font-medium text-muted-foreground transition-colors",
+                      "hover:bg-accent hover:text-accent-foreground md:h-9",
+                      "aria-[current=page]:bg-accent aria-[current=page]:text-accent-foreground",
                     )}
                   >
                     {link.label}

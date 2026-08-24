@@ -1,5 +1,6 @@
 import type * as React from "react";
 
+import { InfoTip } from "@/components/InfoTip";
 import { cn } from "@/lib/utils";
 
 /**
@@ -17,16 +18,21 @@ interface KeyValueProps {
   label: string;
   /** Lands on the value, which is what a suite reads; the row adds -row. */
   testId: string;
+  /** The sentence a short label will not carry, shown by an info icon beside it. */
+  info?: string;
   children: React.ReactNode;
 }
 
-export function KeyValue({ label, testId, children }: KeyValueProps) {
+export function KeyValue({ label, testId, info, children }: KeyValueProps) {
   return (
     <div
       data-testid={`${testId}-row`}
       className="flex items-baseline gap-3 py-1 first:pt-0 last:pb-0"
     >
-      <dt className="w-28 shrink-0 text-xs text-muted-foreground sm:w-40">{label}</dt>
+      <dt className="flex w-28 shrink-0 items-center gap-1 text-xs text-muted-foreground sm:w-40">
+        {label}
+        {info !== undefined && <InfoTip text={info} testId={`${testId}-info`} />}
+      </dt>
       <dd data-testid={testId} className="min-w-0 flex-1 text-sm">
         {children}
       </dd>

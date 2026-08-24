@@ -5,6 +5,8 @@
   --color-foreground: oklch(0.145 0 0);
   --color-card: oklch(1 0 0);
   --color-card-foreground: oklch(0.145 0 0);
+  --color-popover: oklch(1 0 0);
+  --color-popover-foreground: oklch(0.145 0 0);
   --color-primary: oklch(0.205 0 0);
   --color-primary-foreground: oklch(0.985 0 0);
   --color-secondary: oklch(0.97 0 0);
@@ -23,8 +25,16 @@
   --radius-sm: 0.25rem;
 }
 
-* {
-  border-color: var(--color-border);
+/*
+ * The default border colour, inside the base layer so every border utility
+ * still wins. Unlayered, this rule beat `border-transparent` and
+ * `border-destructive` everywhere: an item inside a card drew a second visible
+ * border, and a destructive box drew a grey one.
+ */
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
 }
 
 body {

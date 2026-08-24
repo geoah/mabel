@@ -68,7 +68,7 @@ describe("membership", () => {
     // The invitation is on the ledger and open, before anybody accepts it.
     expect(screen.getByTestId(`invitation-status-${ACME}`)).toHaveTextContent("open");
     expect(screen.getByTestId("identity-detail-open-invitations")).toHaveTextContent(
-      "1 invitation to help control this identity, still waiting for an answer",
+      "1 waiting for an answer",
     );
     cleanup();
 

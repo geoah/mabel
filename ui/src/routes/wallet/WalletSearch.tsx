@@ -10,7 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { asApiError } from "@/hooks/useResource";
 
-/** A 52-character lowercase base32 identity id and nothing else. */
+/** A 52-character lowercase base32 Mabel ID and nothing else. */
 const IDENTITY_ID = /^[a-z2-7]{52}$/i;
 
 /**
@@ -19,13 +19,13 @@ const IDENTITY_ID = /^[a-z2-7]{52}$/i;
  */
 const STATUS_SENTENCE: Record<ResolveStatus, string> = {
   no_record: "names no identity",
-  mismatched_records: "answered, and nothing it said is an identity id",
+  mismatched_records: "answered, and nothing it said is a Mabel ID",
   unreachable: "gave no answer",
   resolved: "answered without naming an identity",
 };
 
 /**
- * The one box on the wallet front page. An identity id opens its page directly.
+ * The one box on the wallet front page. A Mabel ID opens its page directly.
  * Anything else is treated as a hostname and resolved through the node, which
  * either names an identity or says what the TXT lookup answered.
  */
@@ -67,11 +67,11 @@ export function WalletSearch() {
     <Card data-testid="wallet-search">
       <CardHeader>
         <CardTitle>Open an identity</CardTitle>
-        <CardDescription>Paste an identity id, or type a handle to look up in DNS</CardDescription>
+        <CardDescription>Paste a Mabel ID, or type a handle to look up in DNS</CardDescription>
       </CardHeader>
       <CardContent className="space-y-2">
         <InlineForm onSubmit={submit} data-testid="wallet-search-form">
-          <InlineField label="Identity id or handle" htmlFor="wallet-search-input">
+          <InlineField label="Mabel ID or handle" htmlFor="wallet-search-input">
             <Input
               id="wallet-search-input"
               data-testid="wallet-search-input"

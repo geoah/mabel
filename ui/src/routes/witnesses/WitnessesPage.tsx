@@ -57,9 +57,7 @@ export function WitnessesPage() {
         <CardHeader>
           <CardTitle>Witnesses</CardTitle>
           <CardDescription>
-            A witness keeps a copy of an identity&apos;s record so other people can read it. These
-            are the ones your wallet knows: the ones your identities chose, and the ones this node
-            uses by default.
+            The ones your identities chose, and the ones this node uses by default.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">

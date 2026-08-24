@@ -6,6 +6,8 @@ import type { LookupResponse } from "@/api/types";
 import { ACME, ALICE, BOB, CAROL, seedGraph, seedLookup } from "@/mocks/fixtures";
 import { server } from "@/mocks/server";
 
+import { REVERSE_LABEL } from "@/routes/identity/KnowledgeSection";
+
 import { openAction, renderApp } from "./render";
 
 /** The frozen answer with the whole crawl aged past the 24-hour rule. */
@@ -42,7 +44,7 @@ describe("an identity this wallet can sign for", () => {
     await screen.findByTestId("identity-detail");
 
     expect(screen.getByTestId("identity-detail-declared-kind")).toHaveTextContent("person");
-    expect(screen.getByTestId("identity-detail-head-seq")).toHaveTextContent("8");
+    expect(screen.getByTestId("identity-detail-event-count")).toHaveTextContent("9");
     expect(await screen.findByTestId("ledger-events")).toBeInTheDocument();
     expect(screen.getByTestId("trust-panel")).toBeInTheDocument();
     expect(screen.getByTestId("ledger-panel")).toBeInTheDocument();
@@ -87,9 +89,8 @@ describe("a foreign identity this wallet holds no ledger for", () => {
     expect(await screen.findByTestId("ledger-panel")).toBeInTheDocument();
     expect(screen.queryByTestId("identity-fetch")).not.toBeInTheDocument();
     await waitFor(() =>
-      expect(screen.getByTestId("identity-detail-head-seq")).toHaveTextContent("3"),
+      expect(screen.getByTestId("identity-detail-event-count")).toHaveTextContent("4"),
     );
-    expect(screen.getByTestId("identity-detail-event-count")).toHaveTextContent("4");
     // Storing a ledger is not controlling it: no badge and no actions appear.
     expect(screen.queryByTestId("identity-own-badge")).not.toBeInTheDocument();
     expect(screen.queryByTestId("identity-actions")).not.toBeInTheDocument();
@@ -117,21 +118,26 @@ describe("how you know them", () => {
     // Acme attests to nobody, so the honest answer from that root is no path.
     expect(screen.getByTestId("lookup-degrees")).toHaveTextContent("No connection found");
     expect(screen.getByTestId("lookup-degrees-none")).toHaveTextContent(
-      "No connection found yet. Sync and try again.",
+      "No connection found yet.",
     );
   });
 
-  it("names every hop and links it at its own identity page", async () => {
+  it("draws the path as a chain of identity cards, one step per card", async () => {
     serveLookup(seedLookup);
     renderApp(`/identities/${CAROL}`);
     await screen.findByTestId("lookup-result");
 
-    await waitFor(() => expect(screen.getByTestId("lookup-degrees")).toHaveTextContent("2 steps"));
-    const first = screen.getByTestId("lookup-hop-0-0");
-    expect(within(first).getByTestId("lookup-hop-0-0-from")).toHaveAttribute(
+    await waitFor(() =>
+      expect(screen.getByTestId("lookup-degrees")).toHaveTextContent("Connected through 2 steps"),
+    );
+    // The chain reads top to bottom: the root you asked from, then one card per
+    // step, each of them the same identity card the wallet draws.
+    const chain = screen.getByTestId("lookup-path-0");
+    expect(within(chain).getByTestId("lookup-hop-0-0-from")).toHaveAttribute(
       "data-identity-id",
       ALICE,
     );
+    const first = within(chain).getByTestId("lookup-hop-0-0");
     expect(within(first).getByTestId("lookup-hop-0-0-to")).toHaveAttribute(
       "data-identity-id",
       BOB,
@@ -143,22 +149,29 @@ describe("how you know them", () => {
     );
   });
 
-  it("labels the reverse list best effort wherever it is drawn", async () => {
+  it("keeps the two lists folded away, as identity cards behind their counts", async () => {
     serveLookup(seedLookup);
     const { user } = renderApp(`/identities/${CAROL}`);
-    await screen.findByTestId("lookup-reverse");
+    await screen.findByTestId("lookup-reverse-toggle");
 
+    // Closed, the toggles carry the short label and the info icon holds the
+    // best-effort sentence the label used to spell out.
     expect(screen.getByTestId("lookup-reverse-label")).toHaveTextContent(
-      "who your wallet has seen trusting them, not everyone who does",
+      "Who your wallet has seen trusting them",
     );
+    expect(screen.getByTestId("lookup-reverse-note")).toHaveAttribute(
+      "aria-label",
+      REVERSE_LABEL,
+    );
+    expect(screen.queryByTestId("lookup-reverse")).not.toBeInTheDocument();
 
-    await user.click(screen.getByTestId(`lookup-trust-expand-${BOB}`));
+    await user.click(screen.getByTestId("lookup-reverse-toggle"));
 
-    const expansion = await screen.findByTestId(`lookup-trust-expansion-${BOB}`);
-    await waitFor(() =>
-      expect(within(expansion).getByTestId("lookup-reverse-label")).toHaveTextContent(
-        "Best effort",
-      ),
+    const list = await screen.findByTestId("lookup-reverse");
+    expect(within(list).getByTestId(`identity-card-${BOB}`)).toBeInTheDocument();
+    expect(within(list).getByTestId(`identity-card-link-${BOB}`)).toHaveAttribute(
+      "href",
+      `/identities/${BOB}`,
     );
   });
 
@@ -201,23 +214,16 @@ describe("how you know them", () => {
     expect(screen.getByTestId("lookup-hop-0-0-stale")).toHaveTextContent("may be out of date");
   });
 
-  it("stops expanding at two levels", async () => {
+  it("says what it has not seen, rather than implying nobody trusts them", async () => {
+    serveLookup({ ...seedLookup, trust: [] });
     const { user } = renderApp(`/identities/${CAROL}`);
+    await screen.findByTestId("lookup-trust-toggle");
 
-    await screen.findByTestId(`lookup-trust-expand-${BOB}`);
-    await user.click(screen.getByTestId(`lookup-trust-expand-${BOB}`));
+    await user.click(screen.getByTestId("lookup-trust-toggle"));
 
-    const first = await screen.findByTestId(`lookup-trust-expansion-${BOB}`);
-    const deeper = await within(first).findByTestId(`lookup-trust-expand-${CAROL}`);
-    await user.click(deeper);
-
-    const second = await within(first).findByTestId(`lookup-trust-expansion-${CAROL}`);
-    await waitFor(() =>
-      expect(within(second).getByTestId(`lookup-trust-expand-limit-${BOB}`)).toHaveTextContent(
-        "Open their own page to go further.",
-      ),
+    expect(await screen.findByTestId("lookup-trust-empty")).toHaveTextContent(
+      "Your wallet has not seen them trust anyone.",
     );
-    expect(within(second).queryByTestId(`lookup-trust-expand-${BOB}`)).not.toBeInTheDocument();
   });
 
   it("answers from the lowest local identity id, which is what the node defaults to", async () => {

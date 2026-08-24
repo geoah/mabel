@@ -10,56 +10,44 @@ import { openAction, renderApp } from "./render";
 const alice = seedIdentities.find((identity) => identity.identity_id === ALICE)!;
 
 describe("identity detail", () => {
-  it("pages the ledger with an inclusive since", async () => {
+  it("pages the ledger with the shadcn pagination and nothing else", async () => {
     const { user } = renderApp(`/identities/${ALICE}`);
     await screen.findByTestId("ledger-events");
 
-    await user.clear(screen.getByTestId("ledger-limit"));
-    await user.type(screen.getByTestId("ledger-limit"), "2");
-    await user.click(screen.getByTestId("ledger-load"));
-    await waitFor(() =>
-      expect(screen.getByTestId("ledger-range")).toHaveTextContent(
-        `Showing positions 0 to 1 of ${alice.event_count}.`,
-      ),
-    );
+    // The page size is a constant: no from-position box, no how-many box, no
+    // Load button and no range sentence.
+    expect(screen.queryByTestId("ledger-since")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("ledger-limit")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("ledger-load")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("ledger-range")).not.toBeInTheDocument();
+
+    // Page one holds the first eight positions, and nothing before it.
     expect(screen.getByTestId("event-seq-0")).toHaveTextContent("0");
-    expect(screen.queryByTestId("ledger-event-2")).not.toBeInTheDocument();
-    // Nothing before the first page, and more after it.
+    expect(screen.getByTestId("ledger-page-1")).toHaveAttribute("aria-current", "page");
     expect(screen.getByTestId("ledger-previous")).toBeDisabled();
     expect(screen.getByTestId("ledger-next")).not.toBeDisabled();
+    expect(screen.queryByTestId("event-seq-8")).not.toBeInTheDocument();
 
     await user.click(screen.getByTestId("ledger-next"));
 
-    await waitFor(() =>
-      expect(screen.getByTestId("ledger-range")).toHaveTextContent(
-        `Showing positions 2 to 3 of ${alice.event_count}.`,
-      ),
-    );
-    // since is inclusive, so the page opens at seq 2.
-    expect(screen.getByTestId("event-seq-2")).toHaveTextContent("2");
-    expect(screen.getByTestId("event-payload-kind-3")).toHaveTextContent("trust_revocation");
+    // since is inclusive, so the second page opens at seq 8.
+    await waitFor(() => expect(screen.getByTestId("event-seq-8")).toHaveTextContent("8"));
+    expect(screen.getByTestId("ledger-page-2")).toHaveAttribute("aria-current", "page");
+    expect(screen.getByTestId("ledger-next")).toBeDisabled();
     expect(screen.getByTestId("ledger-previous")).not.toBeDisabled();
-    expect(screen.queryByTestId("ledger-event-1")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("event-seq-0")).not.toBeInTheDocument();
 
-    await user.click(screen.getByTestId("ledger-previous"));
+    await user.click(screen.getByTestId("ledger-page-1"));
 
-    await waitFor(() =>
-      expect(screen.getByTestId("ledger-range")).toHaveTextContent(
-        `Showing positions 0 to 1 of ${alice.event_count}.`,
-      ),
-    );
-
-    // The last page offers no next, and reports the whole record, not its page.
-    await user.clear(screen.getByTestId("ledger-since"));
-    await user.type(screen.getByTestId("ledger-since"), String(alice.head_seq));
-    await user.click(screen.getByTestId("ledger-load"));
-
-    await waitFor(() => expect(screen.getByTestId("ledger-next")).toBeDisabled());
-    expect(screen.getByTestId("ledger-range")).toHaveTextContent(
-      `Showing positions ${alice.head_seq} to ${alice.head_seq} of ${alice.event_count}.`,
-    );
+    await waitFor(() => expect(screen.getByTestId("event-seq-0")).toHaveTextContent("0"));
     expect(screen.getByTestId("ledger-event-count")).toHaveTextContent(String(alice.event_count));
-    expect(screen.getByTestId("ledger-head-seq")).toHaveTextContent(String(alice.head_seq));
+  });
+
+  it("draws no pagination for a record that fits on one page", async () => {
+    renderApp(`/identities/${ACME}`);
+    await screen.findByTestId("ledger-events");
+
+    expect(screen.queryByTestId("ledger-footer")).not.toBeInTheDocument();
   });
 
   it("titles the section Ledger, not Record", async () => {
@@ -78,7 +66,6 @@ describe("identity detail", () => {
 
     const acme = seedIdentities.find((identity) => identity.identity_id === ACME)!;
     expect(screen.getByTestId("ledger-event-count")).toHaveTextContent(String(acme.event_count));
-    expect(screen.getByTestId("ledger-head-seq")).toHaveTextContent(String(acme.head_seq));
     // Acme is founded by another identity, so its record opens with an
     // inception naming that founder.
     expect(screen.getByTestId("event-payload-kind-0")).toHaveTextContent("inception");
@@ -109,7 +96,7 @@ describe("identity detail", () => {
     renderApp(`/identities/${ALICE}`);
 
     expect(await screen.findByTestId("ledger-not-fetched")).toHaveTextContent(
-      "Your wallet knows this record reaches position 4 but has not fetched any of its entries.",
+      "Your wallet holds none of this record's 5 entries yet.",
     );
     expect(screen.queryByTestId("ledger-event-count")).not.toBeInTheDocument();
   });

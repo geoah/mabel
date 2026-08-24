@@ -131,9 +131,7 @@ describe("identity create", () => {
     expect(within(card).getByTestId(`identity-card-email-${identityId}`)).toHaveTextContent(
       "dana@dana.example",
     );
-    expect(within(card).getByTestId(`identity-card-head-seq-${identityId}`)).toHaveTextContent(
-      "at position 1",
-    );
+    expect(card).not.toHaveTextContent("at position");
   });
 
   it("sends neither public field when both boxes are left empty", async () => {

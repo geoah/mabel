@@ -11,34 +11,42 @@ import { renderApp } from "./render";
  * route on either role, so there is no ticket on this page.
  */
 describe("the node page", () => {
-  it("names what this node is for, its id and its counts", async () => {
+  it("names its role, its Iroh ID and its counts, one short row each", async () => {
     renderApp("/node");
     await screen.findByTestId("node-page");
 
-    expect(screen.getByTestId("node-role")).toHaveTextContent(
-      "holds your identities and signs for them",
-    );
+    expect(screen.getByTestId("node-role")).toHaveTextContent("wallet");
     const id = screen.getByTestId("node-endpoint-id");
     // The id is whole, not truncated, and it can be copied.
     expect(id.querySelector("[data-value]")).toHaveAttribute("data-value", walletNode.endpoint_id);
     expect(id).toHaveTextContent(walletNode.endpoint_id);
     expect(within(id).getByLabelText("copy")).toBeInTheDocument();
-    expect(screen.getByTestId("node-relay")).toHaveTextContent("through the public relays");
-    expect(screen.getByTestId("node-http-bind")).toHaveTextContent(walletNode.http_bind);
+    // The endpoint id is the Iroh ID everywhere, and never "its id".
+    expect(screen.getByTestId("node-endpoint-id-row")).toHaveTextContent("Iroh ID");
+    expect(screen.getByTestId("node-relay")).toHaveTextContent("public relays");
     expect(screen.getByTestId("node-identity-count")).toHaveTextContent(
-      `${walletNode.identity_count} identities`,
+      String(walletNode.identity_count),
     );
     expect(screen.getByTestId("node-version")).toHaveTextContent(walletNode.version);
     expect(screen.getByTestId("node-storage")).toHaveTextContent(" of ");
+    // The three explanations this page used to open with are gone.
+    const page = screen.getByTestId("node-page").textContent ?? "";
+    expect(page).not.toMatch(/program on this computer/);
+    expect(page).not.toMatch(/how it is reachable/);
+    expect(page).not.toMatch(/where it serves/);
   });
 
-  it("links every witness this node uses by default", async () => {
+  it("draws every default witness as the witness card, not as a link in a row", async () => {
     renderApp("/node");
     await screen.findByTestId("node-page");
 
-    const row = screen.getByTestId("node-witnesses");
+    const list = await screen.findByTestId("node-witness-cards");
     for (const endpointId of walletNode.witnesses) {
-      expect(within(row).getByTestId(`node-witness-link-${endpointId}`)).toHaveAttribute(
+      const card = within(list).getByTestId(`node-witness-${endpointId}`);
+      expect(within(card).getByTestId(`node-witness-kind-line-${endpointId}`)).toHaveTextContent(
+        "witness",
+      );
+      expect(within(card).getByTestId(`node-witness-link-${endpointId}`)).toHaveAttribute(
         "href",
         `/witnesses/${endpointId}`,
       );
@@ -58,10 +66,8 @@ describe("the node page", () => {
     renderApp("/node");
     await screen.findByTestId("node-page");
 
-    expect(screen.getByTestId("node-role")).toHaveTextContent(
-      "keeps copies of other people's records",
-    );
-    expect(screen.getByTestId("node-ledger-count")).toHaveTextContent("records");
+    expect(screen.getByTestId("node-role")).toHaveTextContent("witness");
+    expect(screen.getByTestId("node-ledger-count-row")).toHaveTextContent("records");
     expect(screen.getByTestId("node-fork-count")).toBeInTheDocument();
     expect(screen.getByTestId("node-relay")).toHaveTextContent("direct connections only");
     expect(screen.queryByTestId("node-identity-count")).not.toBeInTheDocument();

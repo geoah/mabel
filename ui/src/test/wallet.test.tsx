@@ -1,13 +1,11 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
-import { ACME, ALICE, seedIdentities } from "@/mocks/fixtures";
+import { ACME, ALICE } from "@/mocks/fixtures";
 import { server } from "@/mocks/server";
 import { MISMATCHED_HOSTNAME, UNREACHABLE_HOSTNAME } from "@/mocks/store";
 
 import { renderApp } from "./render";
-
-const alice = seedIdentities.find((identity) => identity.identity_id === ALICE)!;
 
 /** Every hostname the screen sent to GET /api/resolve, in order. */
 function resolveCalls(): string[] {
@@ -22,7 +20,7 @@ function resolveCalls(): string[] {
 }
 
 describe("the identity card list", () => {
-  it("draws one card per local identity, with the name, id, kind and head seq", async () => {
+  it("draws one card per local identity, with the name, id and kind", async () => {
     renderApp("/wallet");
     await screen.findByTestId("identity-cards");
 
@@ -38,9 +36,8 @@ describe("the identity card list", () => {
     expect(within(card).getByTestId(`identity-card-declared-kind-${ALICE}`)).toHaveTextContent(
       "person",
     );
-    expect(within(card).getByTestId(`identity-card-head-seq-${ALICE}`)).toHaveTextContent(
-      `at position ${alice.head_seq}`,
-    );
+    // No card names a position on the record: nobody reads a card for that.
+    expect(card).not.toHaveTextContent("at position");
   });
 
   it("links the card at the identity page, on the id its heading draws", async () => {
@@ -107,7 +104,7 @@ describe("the wallet search box", () => {
 
   it.each([
     ["nobody.example", "no_record", "names no identity"],
-    [MISMATCHED_HOSTNAME, "mismatched_records", "nothing it said is an identity id"],
+    [MISMATCHED_HOSTNAME, "mismatched_records", "nothing it said is a Mabel ID"],
     [UNREACHABLE_HOSTNAME, "unreachable", "gave no answer"],
   ])("says what the TXT lookup answered for %s", async (hostname, status, sentence) => {
     const { user } = renderApp("/wallet");

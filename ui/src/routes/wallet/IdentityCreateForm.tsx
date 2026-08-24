@@ -130,7 +130,7 @@ export function IdentityCreateForm({ onCreated }: { onCreated: () => void }) {
               data-testid="identity-create-founder"
               value={founder}
               onChange={(event) => setFounder(event.target.value)}
-              placeholder="identity id of whoever will sign for it"
+              placeholder="Mabel ID of whoever will sign for it"
             />
             <p className="text-xs text-muted-foreground">
               Leave this empty and the new identity gets a key of its own. Name a founder and that
@@ -149,7 +149,7 @@ export function IdentityCreateForm({ onCreated }: { onCreated: () => void }) {
         {created && (
           <div className="mt-3 space-y-3" data-testid="identity-create-result">
             <KeyValueTable>
-              <KeyValue label="identity id" testId="identity-create-result-identity-id">
+              <KeyValue label="Mabel ID" testId="identity-create-result-identity-id">
                 <Identifier value={created.identity.identity_id} />
               </KeyValue>
               <KeyValue label="first entry" testId="identity-create-result-inception-event">

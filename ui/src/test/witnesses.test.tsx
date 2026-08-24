@@ -44,8 +44,9 @@ describe("the witness card list", () => {
     expect(within(card).getByTestId(`identity-card-declared-kind-${ALICE}`)).toHaveTextContent(
       "person",
     );
-    expect(within(card).getByTestId(`identity-card-head-seq-${ALICE}`)).toHaveTextContent(
-      "at position 3",
+    // What a witness holds is how much of the record it has, not a position.
+    expect(within(card).getByTestId(`identity-card-entries-${ALICE}`)).toHaveTextContent(
+      "4 entries",
     );
     // A card is the identity page, never a witness-only screen.
     expect(screen.getByTestId(`identity-card-link-${ALICE}`)).toHaveAttribute(

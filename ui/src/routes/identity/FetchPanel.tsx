@@ -64,8 +64,7 @@ export function FetchPanel({
       <CardHeader>
         <CardTitle>Fetch this record from a witness</CardTitle>
         <CardDescription>
-          Everything above is what your wallet found by following who trusts whom. Fetching asks
-          the witnesses it knows, in order, for the record itself and keeps what they send.
+          Asks the witnesses your wallet knows, in order, and keeps what they send.
         </CardDescription>
       </CardHeader>
       <CardContent>

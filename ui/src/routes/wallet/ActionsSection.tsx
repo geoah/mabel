@@ -33,15 +33,14 @@ export function ActionsSection({
       <CardHeader>
         <CardTitle>What you can do</CardTitle>
         <CardDescription>
-          Each of these changes this identity&apos;s public record, except your private note, which
-          stays on this computer.
+          Everything here changes the public record, except the local info.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-2">
         <Action
           testId="action-trust"
           title="Say you trust someone"
-          description="Their identity id goes on this identity's public record."
+          description="Their Mabel ID goes on this identity's public record."
         >
           <TrustAddForm actions={trust} />
         </Action>
@@ -55,28 +54,28 @@ export function ActionsSection({
         <Action
           testId="action-witnesses"
           title="Choose who keeps a copy"
-          description="A witness holds this identity's record so other people can read it. Pick 1 to 16."
+          description="A witness keeps a copy of this record so other people can read it."
         >
           <WitnessConfigPanel identity={identity} onAppended={onAppended} />
         </Action>
         <Action
           testId="action-push"
           title="Send the record to the witnesses"
-          description="Hand this identity's record to each witness you chose, and see what each one said."
+          description="Send this record to each witness you chose."
         >
           <SyncPushPanel identityId={identity.identity_id} />
         </Action>
         <Action
           testId="action-profile"
           title="Change the public name and email"
-          description="Set what other people see. Both are replaced together, and the old ones stay on the record."
+          description="Both are replaced together, and the old ones stay on the record."
         >
           <ProfilePanel identity={identity} onAppended={onAppended} />
         </Action>
         <Action
           testId="action-handle"
           title="Set the handle people can look you up by"
-          description="A handle is a domain name that points at this identity in DNS. This shows the line to add and checks it."
+          description="A domain name that points at this identity in DNS."
         >
           <HandlePanel identity={identity} onAppended={onAppended} />
         </Action>
@@ -89,8 +88,8 @@ export function ActionsSection({
         </Action>
         <Action
           testId="action-contact"
-          title="Write a private note"
-          description="A nickname and note only you see. It stays on this computer and is never published."
+          title="Update local info"
+          description="The nickname and note only this device sees."
         >
           <ContactPanel
             identityId={identity.identity_id}
