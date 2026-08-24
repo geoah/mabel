@@ -14,7 +14,13 @@ import {
   witnessId as readWitnessId,
   WITNESS_URL,
 } from "../lib/docker";
-import { compareIds, createIdentityCli, expectExit, story004Steps1to7 } from "../lib/stories";
+import {
+  compareIds,
+  createIdentityCli,
+  expectExit,
+  readNodePage,
+  story004Steps1to7,
+} from "../lib/stories";
 import { cardIds, identifier } from "../lib/ui";
 
 /** docs/stories/005-witness-operator.md */
@@ -92,10 +98,7 @@ test("step 2: five ledgers on the witness, four person and one organization", as
   expect(ledgers.body.entries).toHaveLength(5);
 });
 
-test("step 3: the node facts, which left the UI with the operator tables", async () => {
-  // The witness debug route is the identity card list and the identity page,
-  // and nothing else (proposal 004). What the Node card used to read is a fact
-  // of the node document, which is where this story now reads it.
+test("step 3: the node facts, on the route and on the node page", async () => {
   const node = await apiGet(WITNESS_URL, "/api/node");
   expect(node.body.role).toBe("witness");
   expect(node.body.relay).toBe("disabled");
@@ -103,6 +106,14 @@ test("step 3: the node facts, which left the UI with the operator tables", async
   expect(node.body.ledger_count).toBe(5);
   expect(node.body.fork_count).toBe(1);
   expect(node.body.storage_capacity).toBe(2147483648);
+
+  // Round 4 of proposal 005 gave the facts a page again. A witness serves no
+  // wallet, so its nav names the records it keeps and the program keeping them.
+  await page.goto(`${WITNESS_URL}/witness`);
+  await expect(page.getByTestId("nav-witness")).toBeVisible();
+  await expect(page.getByTestId("nav-node")).toBeVisible();
+  await expect(page.locator('header [data-testid^="nav-"]')).toHaveCount(2);
+  await readNodePage(page, WITNESS_URL, { role: "witness", endpointId: witnessId });
 });
 
 test("step 4: five ledgers as five cards, on one page and in id order", async () => {

@@ -5,6 +5,7 @@ import {
   apiGet,
   BOB_URL,
   json,
+  mabel,
   stdoutLines,
   verifier,
   WITNESS_URL,
@@ -14,6 +15,7 @@ import {
   compareIds,
   createIdentityCli,
   expectExit,
+  readNodePage,
   story001Steps1to7,
 } from "../lib/stories";
 import {
@@ -24,6 +26,7 @@ import {
   openAction,
   openIdentity,
   push,
+  trustCard,
 } from "../lib/ui";
 
 /** docs/stories/001-two-people-meet.md */
@@ -79,9 +82,10 @@ test("the keys action offers both secret keys, and the route answers the same", 
 test("step 8: alice attests bob", async () => {
   await openIdentity(alicePage, ALICE_URL, aliceId);
   aliceAttestation = await addTrust(alicePage, bobId);
-  await expect(alicePage.getByTestId(`trust-row-${aliceAttestation}`)).toBeVisible();
-  // Proposal 005: a trust row is two words and no position.
-  await expect(alicePage.getByTestId(`trust-state-${aliceAttestation}`)).toHaveText("trusted");
+  // Round 4 of proposal 005: who this identity trusts is a list of collapsed
+  // identity cards keyed by the subject, and the entry that said it is read on
+  // the record rather than drawn as a row of its own.
+  await expect(trustCard(alicePage, bobId)).toBeVisible();
   await expect(alicePage.getByTestId("identity-detail-head-seq")).toHaveText("2");
 
   const identity = await apiGet(ALICE_URL, `/api/identities/${aliceId}`);
@@ -93,7 +97,7 @@ test("step 8: alice attests bob", async () => {
 test("step 9: bob attests alice, in a second ledger", async () => {
   await openIdentity(bobPage, BOB_URL, bobId);
   const bobAttestation = await addTrust(bobPage, aliceId);
-  await expect(bobPage.getByTestId(`trust-state-${bobAttestation}`)).toHaveText("trusted");
+  await expect(trustCard(bobPage, aliceId)).toBeVisible();
   await expect(bobPage.getByTestId("identity-detail-head-seq")).toHaveText("2");
   expect(bobAttestation).not.toBe(aliceAttestation);
 });
@@ -256,6 +260,11 @@ test("the wallet home draws one card per identity, and the card is the page", as
     "href",
     `/identities/${aliceId}`,
   );
+  // The one expand affordance every card in this app draws, in the words it
+  // draws it with: the card opens the record in place.
+  await expect(alicePage.getByTestId(`identity-card-expand-${aliceId}`)).toHaveText(
+    "Show the record",
+  );
 });
 
 test("the identifier a spec reads is the whole value", async () => {
@@ -317,4 +326,13 @@ test("step 16: a new identity that publishes a name and an email from birth", as
   await expect(alicePage.getByTestId(`identity-card-email-${dana.identityId}`)).toHaveText(
     "dana@dana.example",
   );
+});
+
+test("step 17: the node page names this node and what it holds", async () => {
+  // The third nav entry, added by round 4 of proposal 005. The endpoint id it
+  // draws is the one `mabel node id` prints, which is what another node dials.
+  const endpointId = expectExit(mabel("alice", ["node", "id"]), 0).stdout.trim();
+  expect(endpointId).toMatch(BASE32_ID);
+  await alicePage.goto(`${ALICE_URL}/wallet`);
+  await readNodePage(alicePage, ALICE_URL, { role: "wallet", endpointId });
 });

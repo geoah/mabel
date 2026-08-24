@@ -23,7 +23,7 @@ import {
   writeFileBase64,
   type RunResult,
 } from "./docker";
-import { addWitness, createIdentity, openIdentity, push } from "./ui";
+import { addWitness, createIdentity, identifier, openIdentity, push } from "./ui";
 
 export const BASE32_ID = /^[a-z2-7]{52}$/;
 
@@ -95,11 +95,17 @@ export async function story001Steps1to7(
       [bobPage, BOB_URL],
     ] as const) {
       await page.goto(`${url}/wallet`);
-      // The nav is two entries and no third, which is what says this node
+      // The nav is three entries and no fourth, which is what says this node
       // serves a wallet; the role itself is a fact of the node document.
       await expect(page.getByTestId("nav-wallet")).toBeVisible();
       await expect(page.getByTestId("nav-witnesses")).toBeVisible();
+      await expect(page.getByTestId("nav-node")).toBeVisible();
+      await expect(page.locator('header [data-testid^="nav-"]')).toHaveCount(3);
       await expect(page.getByTestId("wallet-search")).toBeVisible();
+      // The search box takes a handle as well as an id, and says so.
+      await expect(page.getByTestId("wallet-search")).toContainText(
+        "type a handle to look up in DNS",
+      );
       await expect(page.getByTestId("identity-list-empty")).toHaveText(
         "You have no identities yet. Create one below.",
       );
@@ -143,6 +149,77 @@ export async function story001Steps1to7(
   });
 
   return state;
+}
+
+/**
+ * The `/node` page, which round 4 of proposal 005 added: what this node is for,
+ * the id other nodes dial it by, how it is reachable, where its API listens,
+ * what it holds and which build is running. Everything on it is
+ * `GET /api/node`, so the document is what each row is read against.
+ *
+ * Stories 001 and 005 both read it, one per role: a wallet counts the
+ * identities it holds, a witness counts the records it keeps for others.
+ */
+export async function readNodePage(
+  page: Page,
+  base: string,
+  expected: { role: "wallet" | "witness"; endpointId: string },
+): Promise<void> {
+  await page.getByTestId("nav-node").click();
+  await expect(page).toHaveURL(`${base}/node`);
+  await expect(page.getByTestId("node-page")).toBeVisible();
+
+  const node = await apiGet(base, "/api/node");
+  expect(node.body.role).toBe(expected.role);
+  expect(node.body.endpoint_id).toBe(expected.endpointId);
+  expect(node.body.relay).toBe("disabled");
+
+  await expect(page.getByTestId("node-role")).toHaveText(
+    expected.role === "wallet"
+      ? "holds your identities and signs for them"
+      : "keeps copies of other people's records",
+  );
+  // The endpoint id is written out whole, because it is the only name a node
+  // has and it is what another node is given to dial this one.
+  expect(await identifier(page, "node-endpoint-id")).toBe(expected.endpointId);
+  await expect(page.getByTestId("node-endpoint-id").locator("[data-value]")).toHaveAttribute(
+    "data-truncated",
+    "false",
+  );
+  await expect(page.getByTestId("node-relay")).toHaveText(
+    "direct connections only, with no relay",
+  );
+  await expect(page.getByTestId("node-http-bind")).toHaveText(node.body.http_bind);
+  await expect(page.getByTestId("node-version")).toHaveText(node.body.version);
+  // The capacity the topology sets, said in the units a reader reads.
+  await expect(page.getByTestId("node-storage")).toHaveText(
+    /^[\d.]+ (bytes|kB|MB|GB) of 2\.1 GB$/,
+  );
+
+  if (expected.role === "wallet") {
+    const count = node.body.identity_count;
+    await expect(page.getByTestId("node-identity-count")).toHaveText(
+      `${count} ${count === 1 ? "identity" : "identities"}`,
+    );
+    await expect(page.getByTestId("node-ledger-count")).toHaveCount(0);
+    await expect(page.getByTestId("node-fork-count")).toHaveCount(0);
+  } else {
+    const count = node.body.ledger_count;
+    await expect(page.getByTestId("node-ledger-count")).toHaveText(
+      `${count} ${count === 1 ? "record" : "records"}`,
+    );
+    await expect(page.getByTestId("node-fork-count")).toHaveText(String(node.body.fork_count));
+    await expect(page.getByTestId("node-identity-count")).toHaveCount(0);
+  }
+
+  const witnesses: string[] = node.body.witnesses;
+  if (witnesses.length === 0) {
+    await expect(page.getByTestId("node-witnesses")).toHaveText("none");
+  } else {
+    for (const endpointId of witnesses) {
+      await expect(page.getByTestId(`node-witness-link-${endpointId}`)).toBeVisible();
+    }
+  }
 }
 
 /** `mabel identity export`, with the two lines story 001 step 5 quotes. */

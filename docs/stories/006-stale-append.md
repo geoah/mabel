@@ -126,9 +126,15 @@ machines; two admitted controllers acting from their own homes is ticket 031.
   []` and `GET http://127.0.0.1:9080/api/ledgers/<org_id>` answers
   `entry.fork_count: 0`. The losing event was discarded before it was ever
   pushed, which is the difference between this story and story 004.
+- Step 7's ledger footer is the pagination bar: five entries at eight a page is
+  one page, so `ledger-page-1` reads `1`, both `ledger-previous` and
+  `ledger-next` are disabled, and `ledger-range` reads `Showing positions 0 to 4
+  of 5.`
 - Step 8 succeeds: `trust-appended-event` shows a new event id,
-  `identity-detail-head-seq` reads `5`, and a row for the new attestation reads
-  `trusted`.
+  `identity-detail-head-seq` reads `5`, and `identity-card-<bob_id>` appears in
+  `trust-list`. `GET /api/identities/<org_id>` answers that bob's entry is
+  unrevoked and that its `attestation_event` is the id the form reported: the
+  list is keyed by the identity trusted, so the entry is read on the record.
 - Step 9's push report reads `push-status-<witness_id>` `accepted` and
   `push-stored-<witness_id>` `1`.
 - Step 10 exits 0 and prints `trusted: true`, then `valid as of seq 5 of

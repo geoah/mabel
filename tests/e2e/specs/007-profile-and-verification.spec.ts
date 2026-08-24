@@ -33,6 +33,7 @@ import {
   openIdentity,
   push,
   searchIdentity,
+  trustCard,
 } from "../lib/ui";
 
 /** docs/stories/007-profile-and-verification.md */
@@ -404,6 +405,11 @@ test("step 6: a forced check answers verified, and the UI marks the hostname row
   const row = await openHostnameRow(alicePage, ALICE_URL, aliceId);
   await expect(row).toHaveAttribute("data-verification", "verified");
   await expect(row).toContainText("alice.example");
+  // Round 4 of proposal 005 calls it a handle everywhere a reader sees it, and
+  // the row on the identity page is labelled that.
+  await expect(alicePage.getByTestId("identity-detail-hostname-row").locator("dt")).toHaveText(
+    "handle",
+  );
   // Proposal 005 removed the DNS advisory sentence from every surface: the
   // verdict glyph and the hostname it is about are the whole statement.
   await expect(alicePage.getByTestId("identity-detail-verification-note")).toHaveCount(0);
@@ -479,13 +485,22 @@ test("step 7: bob.example mismatches, nobody.example is unverified, carol is unc
   await openIdentity(bobPage, BOB_URL, carolId);
   await expect(bobPage.getByTestId("identity-detail-hostname")).toHaveText("none");
   await expect(bobPage.getByTestId("identity-detail-hostname-verification")).toHaveCount(0);
-  // The check action says the same thing, and says only that: proposal 005
-  // removed the advisory sentence that used to sit under it.
-  await openAction(bobPage, "action-verification");
+  // Round 4 of proposal 005 put the check inside the action that sets the
+  // handle: one action covers the handle, the line DNS needs and the check.
+  // It says the same thing, and says only that, because proposal 005 removed
+  // the advisory sentence that used to sit under it.
+  await openAction(bobPage, "action-handle");
+  await expect(bobPage.getByTestId("handle-panel")).toBeVisible();
+  await expect(bobPage.getByTestId("handle-current")).toHaveText("none");
+  await expect(bobPage.getByTestId("verification-panel")).toBeVisible();
   await expect(bobPage.getByTestId("verification-status")).toHaveText(
-    "this identity claims no website",
+    "this identity claims no handle",
   );
   await expect(bobPage.getByTestId("verification-note")).toHaveCount(0);
+  // With no handle set there is no line to publish, so the panel says so.
+  await expect(bobPage.getByTestId("handle-panel")).toContainText(
+    "Set a handle to see the line your DNS records need.",
+  );
 
   const refused = await apiPost(BOB_URL, `/api/identities/${carolId}/verification`, {});
   expect(refused.status).toBe(409);
@@ -869,6 +884,11 @@ test("step 10: the graph is synchronized from the UI, and carol is two hops away
   await expect(
     alicePage.getByTestId(`lookup-reverse-row-${bobId}`),
   ).toBeVisible();
+  // One expand affordance covers every expanding block in the app, and here it
+  // is named after what opening it answers.
+  await expect(alicePage.getByTestId(`lookup-reverse-expand-${bobId}`)).toHaveText(
+    "How you know them",
+  );
   // This crawl is fresh and reached everything, so neither disclosure is drawn.
   await expect(alicePage.getByTestId("lookup-graph-stale")).toHaveCount(0);
   await expect(alicePage.getByTestId("lookup-graph-truncated")).toHaveCount(0);
@@ -998,12 +1018,19 @@ test("bob taking alice's name changes what is shown, never which id is shown", a
   await alicePage.getByTestId("graph-sync-button").click();
   await synced;
 
-  // Alice's trust row for bob now reads alice's own name, and carries bob's
-  // id: the name is what the crawl read, the id is who it is about.
+  // Alice's trust card for bob now reads alice's own name, and carries bob's
+  // id: the name is what the crawl read, the id is who it is about. Round 4 of
+  // proposal 005 keys that card by the subject rather than by the entry.
   await openIdentity(alicePage, ALICE_URL, aliceId);
-  const row = `trust-subject-${aliceAttestation}`;
-  await expect(alicePage.getByTestId(`${row}-name`)).toHaveText("Alice Example");
-  expect(await identifier(alicePage, row)).toBe(bobId);
+  await expect(trustCard(alicePage, bobId)).toBeVisible();
+  await expect(alicePage.getByTestId(`identity-card-name-${bobId}-name`)).toHaveText(
+    "Alice Example",
+  );
+  expect(await identifier(alicePage, `identity-card-name-${bobId}`)).toBe(bobId);
+  // The entry that said it is still on the record, which is where it is read.
+  const trust = await apiGet(ALICE_URL, `/api/identities/${aliceId}`);
+  expect(trust.body.identity.trust[0].attestation_event).toBe(aliceAttestation);
+  expect(trust.body.identity.trust[0].subject).toBe(bobId);
 
   // The overview of alice's own identity carries the same name and her id.
   await expect(alicePage.getByTestId("identity-detail-resolved-name")).toHaveText("Alice Example");
@@ -1089,4 +1116,53 @@ test("step 13: the witnesses screen, what one holds, and one deliberate fetch", 
   expect(listedAfter.body.identities.map((identity: any) => identity.identity_id)).toEqual([
     aliceId,
   ]);
+});
+
+test("the handle is set in the UI, with the line DNS needs and the check beside it", async () => {
+  // Round 4 of proposal 005 gave the handle its own action: it shows the exact
+  // TXT record to publish and holds the check. This runs last, because it is
+  // the only step that appends to a ledger nothing after it reads.
+  const before = await apiGet(BOB_URL, `/api/identities/${bobId}`);
+  expect(before.body.identity.profile.hostname).toBeNull();
+  const savedSeq = before.body.identity.head_seq + 1;
+
+  await openIdentity(bobPage, BOB_URL, bobId);
+  await openAction(bobPage, "action-handle");
+  await expect(bobPage.getByTestId("handle-current")).toHaveText("none");
+  await bobPage.getByTestId("handle-input").fill("bob.example");
+  await bobPage.getByTestId("handle-submit").click();
+
+  // A handle is public forever, which is stated once per node home before the
+  // first one is published.
+  await expect(bobPage.getByTestId("handle-consent")).toContainText(
+    "Every name, email and handle you set here stays readable forever by anyone who knows this identity's id.",
+  );
+  await expect(bobPage.getByTestId("handle-consent-confirm")).toHaveText("Publish the handle");
+  await bobPage.getByTestId("handle-consent-confirm").click();
+  await expect(bobPage.getByTestId("handle-result")).toHaveText(`Saved at position ${savedSeq}.`);
+  await expect(bobPage.getByTestId("handle-current")).toHaveText("bob.example");
+
+  // Setting a handle replaces the profile, so the public name travels with it
+  // untouched: this action changes the handle and nothing else.
+  const after = await apiGet(BOB_URL, `/api/identities/${bobId}`);
+  expect(after.body.identity.profile.hostname).toBe("bob.example");
+  expect(after.body.identity.profile.display_name).toBe("Alice Example");
+  expect(after.body.identity.profile.seq).toBe(savedSeq);
+
+  // The line to add is on the screen, whole, so it can be copied into DNS.
+  await expect(
+    bobPage.getByTestId("handle-panel").locator("[data-value]").first(),
+  ).toHaveAttribute("data-value", `_mabel.bob.example. IN TXT "mabel=${bobId}"`);
+
+  // And the check sits in the same action. _mabel.bob.example names carol, so
+  // the verdict is mismatched, exactly as the forced route reported earlier.
+  await bobPage.getByTestId("verification-check").click();
+  await expect(bobPage.getByTestId("verification-mark")).toHaveAttribute(
+    "data-verification",
+    "mismatched",
+  );
+  await expect(bobPage.getByTestId("verification-detail")).toHaveText(
+    "the mabel= record at _mabel.bob.example. names another identity",
+  );
+  await expect(bobPage.getByTestId("verification-checked-at-ms")).not.toHaveText("never");
 });

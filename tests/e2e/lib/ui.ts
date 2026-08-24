@@ -18,7 +18,8 @@ export async function identifier(scope: Page | Locator, testId: string): Promise
 /**
  * Opens the create form, which the wallet home folds away behind
  * `identity-create-summary` (proposal 004). Clicking a summary toggles it, so
- * the click is skipped when the form is already on the screen.
+ * the click is skipped when the form is already on the screen. A closed block
+ * holds no content at all, so a missing form is a closed one.
  */
 export async function openCreateForm(page: Page): Promise<void> {
   const form = page.getByTestId("identity-create-form");
@@ -33,14 +34,18 @@ export async function openCreateForm(page: Page): Promise<void> {
  * 017), and clicking a summary toggles it, so the click is skipped when the
  * action is already open: a helper called twice on one page must not close what
  * the first call opened.
+ *
+ * An action is the shared collapsible: the block carries `data-state` reading
+ * `open` or `closed`, its summary is a button, and a closed block holds none of
+ * its content. Nothing here is a `details` element any more.
  */
 export async function openAction(page: Page, testId: string): Promise<void> {
   const action = page.getByTestId(testId);
   await expect(action).toBeVisible();
-  if (!(await action.evaluate((element) => (element as HTMLDetailsElement).open))) {
+  if ((await action.getAttribute("data-state")) !== "open") {
     await page.getByTestId(`${testId}-summary`).click();
   }
-  await expect(action).toHaveJSProperty("open", true);
+  await expect(action).toHaveAttribute("data-state", "open");
 }
 
 /**
@@ -125,7 +130,13 @@ export async function addWitness(
   await expect(page.getByTestId("witness-add-head-seq")).toHaveText(
     `Saved at position ${expectedHeadSeq}.`,
   );
-  await expect(page.getByTestId(`witness-row-${witnessEndpointId}`)).toBeVisible();
+  // The chosen witness is the same card the witnesses screen draws, linking to
+  // the same page, with the endpoint id written out whole: an endpoint id is the
+  // only name a witness has, so it is never truncated.
+  const row = page.getByTestId(`witness-row-${witnessEndpointId}`);
+  await expect(row).toBeVisible();
+  await expect(page.getByTestId(`witness-row-link-${witnessEndpointId}`)).toBeVisible();
+  await expect(row.locator("[data-value]")).toHaveAttribute("data-truncated", "false");
 }
 
 /**
@@ -169,6 +180,32 @@ export async function addTrust(page: Page, subject: string): Promise<string> {
   await submitAndAwait(page, "trust-add-submit", "/api/trust");
   await expect(page.getByTestId("trust-appended-event")).toBeVisible();
   return identifier(page, "trust-appended-event");
+}
+
+/**
+ * Story 003 step 4: take back the trust this identity said in one subject, and
+ * record the revocation event id.
+ *
+ * The form names the identity, not the entry: the standing entry is on the
+ * record the page already holds, so `trust-revoke-submit` finds it and revokes
+ * that one. `POST /api/trust/<event>/revoke` is what it sends.
+ */
+export async function revokeTrust(page: Page, subject: string): Promise<string> {
+  await openAction(page, "action-revoke");
+  await page.getByTestId("trust-revoke-subject").fill(subject);
+  await submitAndAwait(page, "trust-revoke-submit", "/revoke");
+  await expect(page.getByTestId("trust-appended-event")).toBeVisible();
+  return identifier(page, "trust-appended-event");
+}
+
+/**
+ * The card the trust list draws for one subject, which is keyed by that
+ * subject's identity id and not by the entry that said it. Trust taken back is
+ * absent from the list entirely: it stays on the record, and the record is
+ * where it is read.
+ */
+export function trustCard(page: Page, subject: string): Locator {
+  return page.getByTestId("trust-list").getByTestId(`identity-card-${subject}`);
 }
 
 /**

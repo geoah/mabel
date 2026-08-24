@@ -11,7 +11,7 @@ import {
   verifier,
 } from "../lib/docker";
 import { expectExit, story001Steps1to7 } from "../lib/stories";
-import { addTrust, openAction, openIdentity, push } from "../lib/ui";
+import { addTrust, openAction, openIdentity, push, revokeTrust, trustCard } from "../lib/ui";
 
 /** docs/stories/003-revocation.md */
 test.describe.configure({ mode: "serial" });
@@ -83,11 +83,19 @@ test("step 1: story 001 steps 1 to 12, alice at seq 2 and verified", async () =>
   });
 });
 
-test("step 2: the attestation reads unrevoked", async () => {
+test("step 2: bob's card is in the trust list, and the entry is unrevoked", async () => {
   await openIdentity(alicePage, ALICE_URL, aliceId);
-  await expect(alicePage.getByTestId(`trust-row-${aliceAttestation}`)).toBeVisible();
-  // Proposal 005: a trust row is two words and no position.
-  await expect(alicePage.getByTestId(`trust-state-${aliceAttestation}`)).toHaveText("trusted");
+  // Round 4 of proposal 005: who this identity trusts is a list of collapsed
+  // identity cards keyed by the subject, and it sits above the record.
+  await expect(alicePage.getByTestId("trust-panel")).toContainText(
+    "Everyone this identity has said it trusts and has not taken back.",
+  );
+  await expect(trustCard(alicePage, bobId)).toBeVisible();
+
+  const identity = await apiGet(ALICE_URL, `/api/identities/${aliceId}`);
+  expect(identity.body.identity.trust[0].subject).toBe(bobId);
+  expect(identity.body.identity.trust[0].revoked).toBe(false);
+  expect(identity.body.identity.trust[0].attestation_event).toBe(aliceAttestation);
 });
 
 test("step 3: a second unrevoked attestation for one subject is refused", async () => {
@@ -123,25 +131,36 @@ test("step 3: a second unrevoked attestation for one subject is refused", async 
   await expect(alicePage.getByTestId("identity-detail-head-seq")).toHaveText("2");
 });
 
-test("step 4: the revocation names the attestation event", async () => {
-  await alicePage.getByTestId(`trust-revoke-${aliceAttestation}`).click();
-  await expect(alicePage.getByTestId("trust-appended-event")).toBeVisible();
-  // A row taken back keeps its testids and moves into the folded
-  // `trust-revoked` list, which is on the record and off the standing list.
-  await expect(alicePage.getByTestId(`trust-state-${aliceAttestation}`)).toHaveText("taken back");
-  await expect(alicePage.getByTestId("trust-revoked-summary")).toHaveText(
-    "1 taken back, still on the record",
-  );
+test("step 4: taking trust back names the identity, and its card leaves the list", async () => {
+  // The form names the identity, not the entry: `trust-revoke-submit` finds the
+  // standing entry on the record this page already holds and revokes that one.
+  const revocation = await revokeTrust(alicePage, bobId);
+  expect(revocation).not.toBe(aliceAttestation);
+  // Trust taken back is not drawn at all: it stays on the record forever, and
+  // the record is where it is read.
+  await expect(trustCard(alicePage, bobId)).toHaveCount(0);
   await expect(alicePage.getByTestId("trust-list-empty")).toHaveText(
     "This identity has not said it trusts anyone yet.",
   );
-  await expect(alicePage.getByTestId(`trust-revoke-${aliceAttestation}`)).toBeDisabled();
   await expect(alicePage.getByTestId("identity-detail-head-seq")).toHaveText("3");
 
   const identity = await apiGet(ALICE_URL, `/api/identities/${aliceId}`);
   expect(identity.body.identity.trust[0].revoked).toBe(true);
   expect(identity.body.identity.trust[0].revocation_seq).toBe(3);
   expect(identity.body.identity.trust[0].attestation_event).toBe(aliceAttestation);
+  // The revocation is the entry the form reported, at the head it moved to.
+  const ledger = await apiGet(ALICE_URL, `/api/identities/${aliceId}/ledger?since=3&limit=1`);
+  expect(ledger.body.events[0].event_id).toBe(revocation);
+  expect(ledger.body.events[0].payload_kind).toBe("trust_revocation");
+
+  // Naming an id this identity does not trust right now is refused in the form,
+  // before anything is signed.
+  await alicePage.getByTestId("trust-revoke-subject").fill(bobId);
+  await alicePage.getByTestId("trust-revoke-submit").click();
+  await expect(alicePage.getByTestId("trust-revoke-none")).toHaveText(
+    "This identity does not trust that id right now, so there is nothing to take back.",
+  );
+  await expect(alicePage.getByTestId("identity-detail-head-seq")).toHaveText("3");
 });
 
 test("steps 5 to 7: a fresh verifier reads the revocation", async () => {
@@ -213,7 +232,8 @@ test("steps 8 and 9: attested again, and revocation stays history", async () => 
   await alicePage.getByTestId("nav-wallet").click();
   await openIdentity(alicePage, ALICE_URL, aliceId);
   secondAttestation = await addTrust(alicePage, bobId);
-  await expect(alicePage.getByTestId(`trust-state-${secondAttestation}`)).toHaveText("trusted");
+  // Bob's card is back in the list, and the entry behind it is the new one.
+  await expect(trustCard(alicePage, bobId)).toBeVisible();
   await expect(alicePage.getByTestId("identity-detail-head-seq")).toHaveText("4");
   expect(secondAttestation).not.toBe(aliceAttestation);
 

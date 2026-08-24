@@ -10,9 +10,10 @@ one page per ledger. It names the fork it recorded and issues nothing but
 reads.
 
 Proposal 004 took the node card, the ledger table, its paging controls and the
-event form out of that route. Everything they showed is still answered by the
-witness API, so this story reads on the screen what the screen draws and on the
-route what the route reports.
+event form out of that route, and round 4 of proposal 005 gave the node facts a
+page of their own at `/node`. The rest is still answered by the witness API, so
+this story reads on the screen what the screen draws and on the route what the
+route reports.
 
 ## Actors
 
@@ -46,8 +47,11 @@ for the reason story 004 states), and step 11 tears them down.
    ```
    Record `org_id`. The witness now holds five ledgers, four `person` and one
    `organization`.
-3. Read the node facts, which the UI no longer draws:
-   `curl -fsS http://127.0.0.1:9080/api/node`.
+3. Read the node facts, on the route and on the page that draws them:
+   `curl -fsS http://127.0.0.1:9080/api/node`. Then open
+   `http://127.0.0.1:9080/witness` and click `nav-node`. A witness serves no
+   wallet, so its nav is two entries and no third, `nav-witness` for the records
+   it keeps and `nav-node` for the program keeping them.
 4. Open `http://127.0.0.1:9080/witness`. It is one card list, `identity-cards`,
    holding all five ledgers with no paging control anywhere: the route asks for
    every ledger it holds at once. Read the two standing notes above the list.
@@ -101,6 +105,13 @@ for the reason story 004 states), and step 11 tears them down.
 - Step 3: the node document answers `role: "witness"`, `relay: "disabled"`,
   `endpoint_id == witness_id`, `ledger_count: 5`, `fork_count: 1` and
   `storage_capacity: 2147483648`.
+- Step 3's page says the same in words: `node-role` reads `keeps copies of
+  other people's records`, `node-relay` reads `direct connections only, with no
+  relay`, `node-endpoint-id` carries `witness_id` and is not truncated,
+  `node-ledger-count` reads `5 records`, `node-fork-count` reads `1`,
+  `node-storage` ends `of 2.1 GB`, `node-witnesses` reads `none`, and
+  `node-http-bind` and `node-version` repeat the document's own values. A
+  witness draws no `node-identity-count`: it holds no identity of its own.
 - Step 4: `witness-read-only-note` reads `This page only reads. Nothing here
   changes anything.` and `witness-holdings-note` reads `This is what this one
   witness holds. A record missing here may still be on another witness.` There

@@ -9,19 +9,33 @@ lists where that spec departs from the story text. Template:
 
 The UI is three primitives and nothing else (proposal 004): the identity card
 list, the witness card list, and one identity page at `/identities/<id>` for
-every identity, local or foreign. Nav is `nav-wallet` and `nav-witnesses`.
-There is no verify screen, no lookup screen and no identity selector, so a
-story that verified in the UI verifies on the CLI instead.
+every identity, local or foreign. Nav is `nav-wallet`, `nav-witnesses` and
+`nav-node` on a wallet, and `nav-witness` and `nav-node` on a witness, which
+serves no wallet. `/node` draws what `GET /api/node` answers: `node-role`,
+`node-endpoint-id`, `node-relay`, `node-http-bind`, `node-storage`,
+`node-witnesses`, `node-version`, and either `node-identity-count` on a wallet
+or `node-ledger-count` and `node-fork-count` on a witness. There is no verify
+screen, no lookup screen and no identity selector, so a story that verified in
+the UI verifies on the CLI instead.
 
 Two facts of the UI every story after decision 017 depends on. Every action on
 the identity page starts closed, so a step that uses a form clicks that
-action's summary first: `action-trust`, `action-witnesses`, `action-push`,
-`action-profile`, `action-verification`, `action-keys`, `action-contact`, the
-four membership actions and `lookup-contact` on a foreign page. And the header
-carries the app name and the nav and nothing else: the one control that starts
-a graph sync is the `graph-sync` card on `/witnesses`, because a sync reads
-what witnesses hold. There is no developer mode, so a value the screen does not
-explain is read from the HTTP route instead.
+action's summary first: `action-trust`, `action-revoke`, `action-witnesses`,
+`action-push`, `action-profile`, `action-handle`, `action-keys`,
+`action-contact`, the four membership actions and `lookup-contact` on a foreign
+page. And the header carries the app name and the nav and nothing else: the one
+control that starts a graph sync is the `graph-sync` card on `/witnesses`,
+because a sync reads what witnesses hold. There is no developer mode, so a
+value the screen does not explain is read from the HTTP route instead.
+
+An action is the shared collapsible, not a `details` element: the block carries
+`data-state` reading `open` or `closed`, its `<action>-summary` is a `button`,
+and a closed block holds none of its content, so a form inside it cannot be
+filled before it is opened. One collapsible and one chevron cover every
+expander in the app: `identity-create`, an identity card's
+`identity-card-expand-<id>` labelled `Show the record`, a ledger line's
+`event-expand-<seq>`, and `lookup-trust-expand-<id>` and
+`lookup-reverse-expand-<id>` labelled `How you know them`.
 
 Every story starts from the compose topology of
 [../../docker/compose.yaml](../../docker/compose.yaml): one witness on
@@ -44,17 +58,38 @@ whole value, because the hidden middle characters stay in the DOM in an
 
 Every identity on every screen is drawn by one of two components (proposal
 005), which is what makes the testids above predictable. The inline identity is
-one line, `<testid>` with `<testid>-name`, `<testid>-verification`,
-`<testid>-pill` and the id inside it; the identity page's heading is
-`identity-detail-resolved`, and a card in a list is
-`identity-card-name-<id>`. The pill is `your identity`, green `trusted` or
-amber `trusted (Nd)`, and its `data-pill` attribute is `own`, `trusted` or
-`degree`; a screen with nothing to say draws no pill. Proposal 005 also removed
-four elements outright, so nothing in these stories reads them: the back link,
-the declared-kind advisory sentence, the DNS advisory sentence and the
-key-facts sentence. A trust row now reads `trusted` or `taken back` with no
-position, and the ledger is compact `li` rows under `ledger-events` with a
-`ledger-footer` whose `ledger-range` says `Showing positions X to Y of Z.`
+one line, `<testid>` with `<testid>-name`, `<testid>-verification` and the id
+inside it; the identity page's heading is `identity-detail-resolved`, and a card
+in a list is `identity-card-name-<id>`. The pill is `your identity`, green
+`trusted` or amber `trusted (Nd)`, and its `data-pill` attribute is `own`,
+`trusted` or `degree`; a screen with nothing to say draws no pill. The pill
+keeps its testid, `<testid>-pill`, and sits in the card's top right corner
+rather than inside the name, so a story reads it by its own testid and never as
+text inside `identity-detail-resolved`. Proposal 005 also removed four elements
+outright, so nothing in these stories reads them: the back link, the
+declared-kind advisory sentence, the DNS advisory sentence and the key-facts
+sentence.
+
+An identity page draws its sections in this order: `identity-detail`, who this
+identity trusts (`trust-panel`), the record (`ledger-panel`),
+`principals-panel`, then the sections a foreign identity carries and
+`identity-actions` last. `trust-list` holds one collapsed identity card per
+subject, keyed by the subject's id, and an attestation taken back is absent from
+it entirely: it stays on the record forever, and the record is where it is read.
+The ledger is compact `li` rows under `ledger-events`, and its footer is the
+pagination bar: `ledger-previous`, `ledger-page-<n>`, `ledger-next`, with
+`ledger-range` saying `Showing positions X to Y of Z.`
+
+The website is a handle everywhere a reader sees it. The identity page's row is
+labelled `handle`, `action-handle` is where one is set (`handle-current`,
+`handle-input`, `handle-submit`, the `handle-consent` panel whose confirm reads
+`Publish the handle`, `handle-result`, and the TXT line to publish), and the
+check lives in the same action as `verification-panel` with
+`verification-status`, `verification-mark`, `verification-check`,
+`verification-checked-at-ms` and `verification-detail`. `action-profile` changes
+the public name and email only. The `hostname` in a testid is deliberate: the
+document field is still `hostname`, so `identity-detail-hostname` and
+`identity-detail-hostname-verification` keep their names.
 
 - [001-two-people-meet.md](001-two-people-meet.md): two identities created in
   two wallet UIs, descriptors exchanged, one witness, mutual attestations, and
@@ -62,9 +97,10 @@ position, and the ledger is compact `li` rows under `ledger-events` with a
 - [002-shared-ledger.md](002-shared-ledger.md): an organization-declared ledger
   with a founder, an invitation admitted across two homes, and a verifier told
   which principal signed for the ledger.
-- [003-revocation.md](003-revocation.md): trust revoked in the UI, read back by
-  a fresh verifier with the flag-R wording, then re-attested. Verification is a
-  CLI concern (proposal 004), so every report here is read on the CLI.
+- [003-revocation.md](003-revocation.md): trust taken back in the UI by naming
+  the identity, read back by a fresh verifier with the flag-R wording, then
+  re-attested. Verification is a CLI concern (proposal 004), so every report
+  here is read on the CLI.
 - [004-fork-on-two-witnesses.md](004-fork-on-two-witnesses.md): two divergent
   branches on two witnesses, the fork record in the witness UI, and a
   multi-source verify that exits 20 naming both sources.

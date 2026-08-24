@@ -102,9 +102,9 @@ those forms render.
 11. Back in alice's UI on the `org_id` page, click `action-trust-summary`, paste
     `bob_id` into `trust-add-subject` and click `trust-add-submit`. The shared
     ledger holds no key, so alice's key signs for it (decision 004: any single
-    current controller). `trust-state-<attestation>` reads `trusted` and
-    `identity-detail-head-seq` reads `3`. Record the event id as
-    `org_attestation`.
+    current controller). A card `identity-card-<bob_id>` appears in
+    `trust-list` and `identity-detail-head-seq` reads `3`. Record the event id
+    from `trust-appended-event` as `org_attestation`.
 12. Push before the ledger names a witness, which the witness refuses:
     ```sh
     dc exec -T alice sh -c 'mabel sync push --identity mabel-demo-co --to '"$witness_id"' \
@@ -163,6 +163,10 @@ those forms render.
   `details.results[0].status == "rejected"` and `details.results[0].reject_code
   == "NOT_ADMITTED"`: a witness admits a ledger only when the pushed chain
   names it.
+- Step 11: `GET http://127.0.0.1:9081/api/identities/<org_id>` answers
+  `identity.trust[0].subject == bob_id`, `identity.trust[0].revoked == false`
+  and `identity.trust[0].attestation_event == org_attestation`. The trust list
+  is keyed by the identity trusted, so the entry that said it is read there.
 - Step 13's push report reads `push-status-<witness_id>` `accepted` and
   `push-stored-<witness_id>` `5`.
 - Step 14 exits 0 and prints five lines: `trusted: true`, then `valid as of

@@ -12,7 +12,7 @@ import {
   verifier,
 } from "../lib/docker";
 import { expectExit, story002Steps1to8 } from "../lib/stories";
-import { addTrust, addWitness, openIdentity, push } from "../lib/ui";
+import { addTrust, addWitness, openIdentity, push, trustCard } from "../lib/ui";
 
 /** docs/stories/002-shared-ledger.md */
 test.describe.configure({ mode: "serial" });
@@ -193,8 +193,15 @@ test("replaying step 7 exits 50: the acceptance was already admitted", async () 
 test("step 11: the shared ledger attests bob, signed by alice's key", async () => {
   await openIdentity(alicePage, ALICE_URL, orgId);
   orgAttestation = await addTrust(alicePage, bobId);
-  await expect(alicePage.getByTestId(`trust-state-${orgAttestation}`)).toHaveText("trusted");
+  // Round 4 of proposal 005 keys the trust list by the subject, so the entry
+  // this append wrote is pinned on the identity document instead.
+  await expect(trustCard(alicePage, bobId)).toBeVisible();
   await expect(alicePage.getByTestId("identity-detail-head-seq")).toHaveText("3");
+
+  const identity = await apiGet(ALICE_URL, `/api/identities/${orgId}`);
+  expect(identity.body.identity.trust[0].subject).toBe(bobId);
+  expect(identity.body.identity.trust[0].revoked).toBe(false);
+  expect(identity.body.identity.trust[0].attestation_event).toBe(orgAttestation);
 });
 
 test("step 12: a witness the chain does not name refuses the push", async () => {

@@ -28,9 +28,11 @@ repository root.
    attestation naming bob, pushed to the witness, and a fresh home already
    answered `trusted: true`. Keep `alice_id`, `bob_id`, `witness_id` and
    `alice_attestation`.
-2. In alice's UI open `identity-card-link-<alice_id>`. The trust list shows
-   `trust-row-<alice_attestation>` with `trust-state-<alice_attestation>`
-   reading `trusted`.
+2. In alice's UI open `identity-card-link-<alice_id>`. Who this identity trusts
+   sits above the record: `trust-panel` says `Everyone this identity has said it
+   trusts and has not taken back.` and `trust-list` holds one collapsed identity
+   card, `identity-card-<bob_id>`. The list is keyed by the identity trusted,
+   not by the entry that said it.
 3. Attest bob a second time, before revoking anything. One unrevoked
    attestation per subject is the rule, so this is refused:
    ```sh
@@ -39,14 +41,18 @@ repository root.
    Click `action-trust-summary` to open the action, which starts closed, paste
    `bob_id` into `trust-add-subject` and click `trust-add-submit` for the same
    refusal in the UI.
-4. Click `trust-revoke-<alice_attestation>`. `trust-appended-event` shows the
-   revocation event id, `trust-state-<alice_attestation>` now reads `taken
-   back`, the `trust-revoke-<alice_attestation>` button is disabled and
-   `identity-detail-head-seq` reads `3`. The row leaves the standing list for
-   the folded `trust-revoked` list, whose `trust-revoked-summary` reads `1 taken
-   back, still on the record`, and `trust-list-empty` reads `This identity has
-   not said it trusts anyone yet.` The attestation stays on the screen: the
-   chain is the full history (decision 003).
+4. Take the trust back by naming the identity, not the entry. Click
+   `action-revoke-summary` to open the action, which starts closed, paste
+   `bob_id` into `trust-revoke-subject` and click `trust-revoke-submit`: the
+   standing entry is on the record the page already holds, so the form finds it
+   and takes that one back. `trust-appended-event` shows the revocation event
+   id, `identity-card-<bob_id>` is gone from `trust-list`, `trust-list-empty`
+   reads `This identity has not said it trusts anyone yet.` and
+   `identity-detail-head-seq` reads `3`. Both entries stay on the record: the
+   chain is the full history (decision 003), and the record is where a taken-back
+   attestation is read. Paste `bob_id` again and click `trust-revoke-submit`
+   again: `trust-revoke-none` reads `This identity does not trust that id right
+   now, so there is nothing to take back.` and nothing is signed.
 5. Click `action-push-summary`, then `sync-push-submit`.
    `push-status-<witness_id>` reads `accepted` and `push-stored-<witness_id>`
    reads `1`.
@@ -70,11 +76,10 @@ repository root.
    ```
 8. Alice attests bob again: click `nav-wallet`, open
    `identity-card-link-<alice_id>`, click `action-trust-summary`, paste `bob_id`
-   into `trust-add-subject`, click `trust-add-submit`. A second row appears, and
-   `trust-state-<second attestation>` reads `trusted` with
-   `identity-detail-head-seq` reading `4`. Record the event id as
-   `second_attestation`. This is the same command step 3 refused: the policy
-   refuses only a second *unrevoked* attestation for one subject.
+   into `trust-add-subject`, click `trust-add-submit`. `identity-card-<bob_id>`
+   is back in `trust-list` and `identity-detail-head-seq` reads `4`. Record the
+   event id as `second_attestation`. This is the same command step 3 refused:
+   the policy refuses only a second *unrevoked* attestation for one subject.
 9. Open `action-push` and click `sync-push-submit` again, then repeat step 6 in
    a new container.
 
@@ -93,9 +98,18 @@ repository root.
   `error-message` reading `Policy error: an unrevoked attestation for <bob_id>
   already exists at seq 2`. `error-detail-at_seq` reads `2`, the position of the attestation
   still standing. `identity-detail-head-seq` still reads `2` on both paths.
-- Step 4: `GET http://127.0.0.1:9081/api/identities/<alice_id>` answers
-  `identity.trust[0].revoked == true`, `identity.trust[0].revocation_seq == 3`
+- Step 2: `GET http://127.0.0.1:9081/api/identities/<alice_id>` answers
+  `identity.trust[0].subject == bob_id`, `identity.trust[0].revoked == false`
   and `identity.trust[0].attestation_event == alice_attestation`.
+- Step 4: the same route answers `identity.trust[0].revoked == true`,
+  `identity.trust[0].revocation_seq == 3` and
+  `identity.trust[0].attestation_event == alice_attestation`. `GET
+  /api/identities/<alice_id>/ledger?since=3&limit=1` answers one event whose
+  `event_id` is what `trust-appended-event` reported and whose `payload_kind` is
+  `trust_revocation`: the id in the form was the subject, the entry revoked was
+  the standing one.
+- Step 4's second attempt appends nothing: `identity-detail-head-seq` still
+  reads `3`.
 - Step 6 exits 0 (a revoked attestation is a successful verification, not a
   failure) and prints, in order:
   - `trusted: false`
@@ -137,15 +151,17 @@ repository root.
 Where `tests/e2e/specs/003-revocation.spec.ts` departs from or exceeds the
 story text above.
 
-- The spec asserts one container testid the story never names, because the
-  shared UI helpers wait on it: `identity-detail`. Those helpers open the closed
-  action each form lives in, and step 3's refusal opens `action-trust` itself
-  because it fills the form without the helper.
+- The spec asserts two container testids the story never names, because the
+  shared UI helpers wait on them: `identity-detail` and `trust-appended-event`.
+  Those helpers open the closed action each form lives in, and step 3's refusal
+  opens `action-trust` itself because it fills the form without the helper.
 - Step 9 repeats step 6 in its `--json` form only. Step 6 already pins the
   text form line by line, and the document is what step 9 adds.
-- Step 4 reads `trust-state-<alice_attestation>` after the row has moved into
-  the closed `trust-revoked` list. The element stays in the DOM, so its text
-  and the disabled revoke button are readable without opening the list.
+- Step 4 checks the taken-back attestation on the record rather than on the
+  screen. Round 4 of proposal 005 draws no taken-back entry at all, so the two
+  facts the old row carried, that the attestation is revoked and at which
+  position, are read on `GET /api/identities/<alice_id>` and on the ledger page
+  holding the revocation.
 - Steps 7 and 9 lost their UI half with the verify tab (proposal 004). What the
   report screen asserted, the verdict, the statement, the revoked list and the
   null signing principal, is asserted on the `--json` document instead, and

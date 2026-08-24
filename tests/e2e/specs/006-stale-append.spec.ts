@@ -14,7 +14,7 @@ import {
   WITNESS_URL,
 } from "../lib/docker";
 import { expectExit, startAliceTwo, story002Steps1to8 } from "../lib/stories";
-import { addTrust, identifier, openAction, openIdentity, push } from "../lib/ui";
+import { addTrust, identifier, openAction, openIdentity, push, trustCard } from "../lib/ui";
 
 /** docs/stories/006-stale-append.md */
 test.describe.configure({ mode: "serial" });
@@ -149,6 +149,14 @@ test("step 7: alice's home holds the second machine's event at seq 4", async () 
   await expect(alicePage.getByTestId("event-payload-4")).toHaveText(
     `{"subject":"${aliceId}"}`,
   );
+  // Round 4 of proposal 005 draws the ledger footer as the pagination bar. Five
+  // entries at eight a page is one page, so neither arrow goes anywhere.
+  await expect(alicePage.getByTestId("ledger-page-1")).toHaveText("1");
+  await expect(alicePage.getByTestId("ledger-previous")).toBeDisabled();
+  await expect(alicePage.getByTestId("ledger-next")).toBeDisabled();
+  await expect(alicePage.getByTestId("ledger-range")).toHaveText(
+    "Showing positions 0 to 4 of 5.",
+  );
 
   // The event alice signed in step 4 appears nowhere in the ledger her home
   // now holds: the losing branch was truncated, not kept beside the winner.
@@ -177,7 +185,15 @@ test("steps 8 and 9: the retry is the same action, run again", async () => {
   await expect(alicePage.getByTestId("trust-appended-event")).toBeVisible();
   const attestation = await identifier(alicePage, "trust-appended-event");
   await expect(alicePage.getByTestId("identity-detail-head-seq")).toHaveText("5");
-  await expect(alicePage.getByTestId(`trust-state-${attestation}`)).toHaveText("trusted");
+  // Round 4 of proposal 005 keys the trust list by the subject, so the entry
+  // this retry wrote is pinned on the identity document instead.
+  await expect(trustCard(alicePage, bobId)).toBeVisible();
+  const identity = await apiGet(ALICE_URL, `/api/identities/${orgId}`);
+  const standing = identity.body.identity.trust.find(
+    (record: any) => record.subject === bobId,
+  );
+  expect(standing.revoked).toBe(false);
+  expect(standing.attestation_event).toBe(attestation);
 
   await push(alicePage, witnessId, { stored: 1 });
 });

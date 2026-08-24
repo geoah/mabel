@@ -95,13 +95,17 @@ docker/compose.dns.yaml`, run from the repository root.
    which is where every identity is shown, local or foreign (proposal 004). The
    overview is one compact
    key-value table (`identity-detail`): name, copyable id, declared kind,
-   alias, created, hostname with its verification mark, contact, and the
-   counts. Read the `identity-detail-hostname` row for each of the three cases
-   above and for carol, who claims no hostname. The mark sits inside that row
-   as `identity-detail-hostname-verification`, and carol's row carries no
-   mark at all. On carol's page in bob's UI open `action-verification`, which
-   starts closed: `verification-status` reads `this identity claims no website`,
-   and it says only that, because proposal 005 removed the DNS advisory
+   alias, created, the handle with its verification mark, contact, and the
+   counts. The row is labelled `handle`, because round 4 of proposal 005 calls
+   it that everywhere a reader sees it; the testid keeps the document's own word
+   for the field, `identity-detail-hostname`. Read that row for each of the
+   three cases above and for carol, who claims no handle. The mark sits inside
+   the row as `identity-detail-hostname-verification`, and carol's row carries
+   no mark at all. On carol's page in bob's UI open `action-handle`, which
+   starts closed: it holds `handle-current` reading `none`, the form that sets
+   one, the sentence `Set a handle to see the line your DNS records need.` and
+   the check. `verification-status` there reads `this identity claims no
+   handle`, and it says only that, because proposal 005 removed the DNS advisory
    sentence (`verification-note`) from every surface.
 9. Set a private contact note on bob, which is local and never signed:
    ```sh
@@ -155,6 +159,17 @@ docker/compose.dns.yaml`, run from the repository root.
     curl -fsS 'http://127.0.0.1:9081/api/witnesses/'"$witness_id"'/ledgers?offset=0&limit=256'
     dc exec -T alice ls /data/ledgers
     ```
+14. Set a handle in the UI, on bob's own identity in bob's wallet. Open
+    `identity-card-link-<bob_id>`, click `action-handle-summary`, type
+    `bob.example` into `handle-input` and click `handle-submit`. The first
+    handle this node home publishes asks for consent first: `handle-consent`
+    states that a name, an email and a handle set here stay readable forever,
+    and its confirm button reads `Publish the handle`. Click it.
+    `handle-result` reads `Saved at position <new head>.`, `handle-current` reads
+    `bob.example`, and the panel shows the line to add to DNS,
+    `_mabel.bob.example. IN TXT "mabel=<bob_id>"`. Then click
+    `verification-check` in the same action: `_mabel.bob.example` names carol, so
+    the verdict is `mismatched`, which is what step 7 read on the route.
 
 ## Verified outcomes
 
@@ -213,7 +228,7 @@ docker/compose.dns.yaml`, run from the repository root.
   gates nothing: the ledger and every verification report read the same with
   and without it.
 - The name never renders like an id: the display name is plain text
-  (`identity-detail-resolved-name`), the id and the hostname are monospace
+  (`identity-detail-resolved-name`), the id and the handle are monospace
   with the copy control, the id is always beside the name (inside
   `identity-detail-resolved`, the one inline identity the page's heading
   draws), and two entries resolving to one name both show their full ids. No
@@ -231,10 +246,14 @@ docker/compose.dns.yaml`, run from the repository root.
   [...]}`, labelled `Best effort: who your wallet has seen trusting them, not
   everyone who does` every time it is shown (`lookup-reverse-label`).
   `lookup-from` carries `alice_id`, the root the answer came from.
+- Step 10's lists are openable in place: `lookup-reverse-expand-<bob_id>` reads
+  `How you know them`, the same expand affordance every other block in the app
+  draws.
 - Step 10's page is a foreign identity's page, so it carries no
   `identity-actions` and its pill is the crawl's distance, never ownership:
   `identity-detail-resolved-pill` carries `data-pill` `degree` and reads
-  `trusted (2d)`.
+  `trusted (2d)`. Round 4 of proposal 005 draws that pill in the card's top
+  right corner rather than inside the name, so it is read by its own testid.
   `identity-detail-ledger-summary` reads `your wallet holds no copy of it`, and
   `identity-detail-provenance` reads `nothing your wallet knows, so the id is
   the only label`: no profile and no local nickname name carol here. The crawl is
@@ -281,6 +300,15 @@ docker/compose.dns.yaml`, run from the repository root.
 - The crawl writes no stranger's ledger: after step 10, and until step 13
   fetches one on purpose, alice's `ledgers/` holds only `alice_id`. A crawl
   keeps what it reads in a generation, never as a replica.
+- Step 14 appends one `ProfileUpdate` to bob's ledger and changes nothing else
+  about it: `GET /api/identities/<bob_id>` answers `profile.hostname ==
+  "bob.example"`, `profile.display_name` unchanged, and `profile.seq` equal to
+  the position `handle-result` reported. Setting a handle replaces the whole
+  profile, so the public name and email travel with it untouched.
+- Step 14's check reports the same verdict the route reported in step 7:
+  `verification-mark` carries `data-verification` `mismatched`,
+  `verification-detail` reads `the mabel= record at _mabel.bob.example. names
+  another identity`, and `verification-checked-at-ms` no longer reads `never`.
 
 ## Deviations from the surface this story was drafted against
 
@@ -292,10 +320,16 @@ docker/compose.dns.yaml`, run from the repository root.
   only what the home already holds. The CLI process has no seeded peer
   address, unlike the running wallet, which starts with the witness's ticket.
   The story runs the first sync through the UI and passes `--peer` to the CLI.
-- Steps 12 and 13 are new with proposal 004: the hostname search box, the
+- Steps 12 and 13 are new with proposal 004: the handle search box, the
   witness card list, the witness drill-in and the explicit fetch did not exist
-  when this story was drafted. Step 13 runs last in the spec, because its fetch
-  is the one write that would break "the crawl writes no stranger's ledger".
+  when this story was drafted. Step 13 runs last but one in the spec, because
+  its fetch is the one write that would break "the crawl writes no stranger's
+  ledger".
+- Step 14 is new with round 4 of proposal 005, which gave the handle its own
+  action. Steps 4 and 7 still set every handle on the CLI, because step 5 needs
+  the same command run twice for `no_op_profile_update` and steps 6 to 12 pin
+  exact positions on alice's and bob's chains. Step 14 runs last, on bob's own
+  identity, where the append it makes is read by nothing after it.
 - A day cannot pass in a suite that runs in three minutes, so the stale case
   is set up by writing `/data/verification/<alice_id>.json` in alice's
   container with `checked_at_ms` 25 hours back. The cache is a rebuildable
@@ -321,9 +355,11 @@ docker/compose.dns.yaml`, run from the repository root.
   surface renders it.
 - "Two entries resolving to one name both show their full ids" is checked
   across two screens rather than inside one list: bob publishes alice's
-  display name, and the spec reads alice's trust row for bob and alice's own
-  overview. The full-id rendering of duplicates within one list is covered by
-  `ui/src/test/identity-inline.test.tsx`.
+  display name, and the spec reads bob's card in alice's trust list and alice's
+  own overview. Round 4 of proposal 005 keys that list by the subject, so the
+  card is `identity-card-name-<bob_id>` and the entry that said it is pinned on
+  `GET /api/identities/<alice_id>` instead. The full-id rendering of duplicates
+  within one list is covered by `ui/src/test/identity-inline.test.tsx`.
 - The pill on an identity page is asserted by its `data-pill` attribute rather
   than by absence. Proposal 005 replaced `identity-own-badge` with the one pill
   both identity components draw, and a foreign page draws that pill too, so

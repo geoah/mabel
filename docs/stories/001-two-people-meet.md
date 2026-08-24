@@ -30,11 +30,11 @@ repository root.
    three services report healthy. Read the witness endpoint id,
    `witness_id="$(dc exec -T witness cat /shared/witness.id)"`, a 52-character
    lowercase base32 string.
-2. Open `http://127.0.0.1:9081/wallet`. The nav holds two entries and no third,
-   `nav-wallet` and `nav-witnesses`, the search box `wallet-search` is there,
-   and `identity-list-empty` reads `You have no identities yet. Create one
-   below.` The role itself is a fact of `GET /api/node`, which answers `role:
-   "wallet"`.
+2. Open `http://127.0.0.1:9081/wallet`. The nav holds three entries and no
+   fourth, `nav-wallet`, `nav-witnesses` and `nav-node`, the search box
+   `wallet-search` is there and says `type a handle to look up in DNS`, and
+   `identity-list-empty` reads `You have no identities yet. Create one below.`
+   The role itself is a fact of `GET /api/node`, which answers `role: "wallet"`.
 3. Click `identity-create-summary` to unfold the create form, which the wallet
    home keeps closed. Type `alice` into `identity-create-alias`, labelled
    `Private nickname (only this device sees it)` because it never leaves this
@@ -63,18 +63,20 @@ repository root.
    link to `/identities/<alice_id>`. On the identity page click
    `action-witnesses-summary` to open the action, which starts closed, put
    `$witness_id` into `witness-add-endpoint` and click `witness-add-submit`.
-   `witness-add-head-seq` reads `Saved at position 1.` and
-   `witness-row-<witness_id>` appears. Do the same in bob's UI.
+   `witness-add-head-seq` reads `Saved at position 1.` and the witness card
+   `witness-row-<witness_id>` appears, with `witness-row-link-<witness_id>`
+   opening that witness's page and the endpoint id written out whole. Do the
+   same in bob's UI.
 7. In each UI click `action-push-summary`, leave `sync-push-to` empty and click
    `sync-push-submit`. `sync-push-report` appears with
    `push-status-<witness_id>` reading `accepted`,
    `push-stored-<witness_id>` reading `2` and `sync-push-head-seq` reading `1`.
 8. In alice's UI click `action-trust-summary`, paste `bob_id` into
    `trust-add-subject` and click `trust-add-submit`. `trust-appended-event`
-   shows the new event id, a row `trust-row-<attestation>` appears,
-   `trust-state-<attestation>` reads `trusted` and
-   `identity-detail-head-seq` reads `2`. Record the event id as
-   `alice_attestation`.
+   shows the new event id, a card `identity-card-<bob_id>` appears in
+   `trust-list`, and `identity-detail-head-seq` reads `2`. Record the event id
+   as `alice_attestation`. The list is keyed by the identity trusted, not by the
+   entry that said it: the entry is read on the record.
 9. In bob's UI do the same with `alice_id` as the subject. Trust is one-way
    (decision 003), so this is a second event in a second ledger, not a
    handshake.
@@ -125,6 +127,12 @@ repository root.
     `identity-create-email`, leave the kind at `person` and click
     `identity-create-submit`. Record `dana_id`. Dana is never witnessed and
     never pushed, so nothing earlier in this story moves.
+17. Read the node page. Click `nav-node`, the third nav entry. It draws what
+    `GET /api/node` answers about the program doing the work: what it does, the
+    id other nodes dial it by, how it is reachable, where it serves this page,
+    how many identities it holds, the space it uses and the build running.
+    `node-endpoint-id` is what `dc exec -T alice mabel node id` prints, written
+    out whole because it is the only name a node has.
 
 ## Verified outcomes
 
@@ -134,9 +142,10 @@ repository root.
 - Step 6: `GET http://127.0.0.1:9081/api/identities/<alice_id>` answers
   `identity.witnesses == ["<witness_id>"]`, `identity.head_seq: 1`,
   `identity.event_count: 2`.
-- Step 8: the trust panel row for `alice_attestation` reads `trusted since
-  position 2`, and the same document carries `identity.trust[0].subject ==
-  bob_id` and `identity.trust[0].revoked == false`.
+- Step 8: `trust-list` holds one card, `identity-card-<bob_id>`, and the
+  identity document carries `identity.trust[0].subject == bob_id`,
+  `identity.trust[0].revoked == false` and `identity.trust[0].attestation_event
+  == alice_attestation`.
 - Step 11 exits 0. Its stdout is five lines in this order:
   - `trusted: true`
   - `valid as of seq 2 of <alice_id>, fetched from <witness_id> at <RFC 3339
@@ -178,7 +187,9 @@ repository root.
   `identity-card-head-seq-<alice_id>` `at position 3`; carol's reads `at
   position 0`, because she was created and never appended to.
   `identity-card-link-<alice_id>` points at `/identities/<alice_id>`: the card
-  is the page, and there is no selection state anywhere.
+  is the page, and there is no selection state anywhere. Each card carries the
+  one expand affordance this app draws,
+  `identity-card-expand-<alice_id>` reading `Show the record`.
 - Step 15: `GET /api/identities/<alice_id>/keys` answers 200 with `identity_id
   == alice_id`, an `active_secret_key` and a `reserve_secret_key` matching what
   the two boxes hold, and an `active_key` equal to `identity.active_key` of the
@@ -200,6 +211,15 @@ repository root.
   publishes, not by the nickname only this device sees, so
   `identity-card-name-<dana_id>-name` reads `Dana Example` and
   `identity-card-email-<dana_id>` reads `dana@dana.example`.
+- Step 17: `node-role` reads `holds your identities and signs for them`,
+  `node-relay` reads `direct connections only, with no relay` (the topology sets
+  `MABEL_RELAY=disabled`), `node-endpoint-id` carries what `mabel node id`
+  prints and is not truncated, `node-http-bind` and `node-version` repeat the
+  document's own values, `node-identity-count` counts the identities this home
+  holds, `node-storage` ends `of 2.1 GB` (the topology's
+  `MABEL_STORAGE_CAPACITY`), and `node-witnesses` reads `none`, because the base
+  topology sets no node-wide witness. A wallet draws no `node-ledger-count` and
+  no `node-fork-count`.
 
 ## Deviations
 
@@ -227,6 +247,10 @@ story text above.
 - The shared `createIdentity` helper clicks `identity-create-summary` only when
   the form is not already on the screen: a summary click toggles, so a second
   one would close the form the previous step opened. The shared `openAction`
-  helper does the same for each closed action of steps 6, 7, 8 and 15.
+  helper does the same for each closed action of steps 6, 7, 8 and 15, reading
+  the block's `data-state` to decide.
 - The spec runs step 15 straight after step 7, where it needs nothing that
   steps 8 to 14 add, so the whole keys assertion sits in one test.
+- Step 17 runs last in the spec, after step 16, so `node-identity-count` is
+  read against `GET /api/node` rather than against a number this story would
+  have to keep in step with every identity it creates.
