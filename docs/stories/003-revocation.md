@@ -30,21 +30,23 @@ repository root.
    `alice_attestation`.
 2. In alice's UI open `identity-card-link-<alice_id>`. The trust list shows
    `trust-row-<alice_attestation>` with `trust-state-<alice_attestation>`
-   reading `unrevoked`.
+   reading `trusted since position 2`.
 3. Attest bob a second time, before revoking anything. One unrevoked
    attestation per subject is the rule, so this is refused:
    ```sh
    dc exec -T alice mabel trust add --issuer alice --subject "$bob_id" --json
    ```
-   Paste `bob_id` into `trust-add-subject` and click `trust-add-submit` for the
-   same refusal in the UI.
+   Click `action-trust-summary` to open the action, which starts closed, paste
+   `bob_id` into `trust-add-subject` and click `trust-add-submit` for the same
+   refusal in the UI.
 4. Click `trust-revoke-<alice_attestation>`. `trust-appended-event` shows the
-   revocation event id, `trust-state-<alice_attestation>` now reads `revoked at
-   seq 3`, the `trust-revoke-<alice_attestation>` button is disabled and
+   revocation event id, `trust-state-<alice_attestation>` now reads `taken back
+   at position 3`, the `trust-revoke-<alice_attestation>` button is disabled and
    `identity-detail-head-seq` reads `3`. The attestation stays in the table:
    the chain is the full history (decision 003).
-5. Click `sync-push-submit`. `push-status-<witness_id>` reads `accepted` and
-   `push-stored-<witness_id>` reads `1`.
+5. Click `action-push-summary`, then `sync-push-submit`.
+   `push-status-<witness_id>` reads `accepted` and `push-stored-<witness_id>`
+   reads `1`.
 6. A fresh verifier reads the witness's copy:
    ```sh
    docker run --rm --network mabel_mabel \
@@ -64,13 +66,14 @@ repository root.
      --peer "$(cat /shared/witness.ticket)"'
    ```
 8. Alice attests bob again: click `nav-wallet`, open
-   `identity-card-link-<alice_id>`, paste `bob_id` into `trust-add-subject`,
-   click `trust-add-submit`. A second row appears, and
-   `trust-state-<second attestation>` reads `unrevoked` with
+   `identity-card-link-<alice_id>`, click `action-trust-summary`, paste `bob_id`
+   into `trust-add-subject`, click `trust-add-submit`. A second row appears, and
+   `trust-state-<second attestation>` reads `trusted since position 4` with
    `identity-detail-head-seq` reading `4`. Record the event id as
    `second_attestation`. This is the same command step 3 refused: the policy
    refuses only a second *unrevoked* attestation for one subject.
-9. Click `sync-push-submit` again, then repeat step 6 in a new container.
+9. Open `action-push` and click `sync-push-submit` again, then repeat step 6 in
+   a new container.
 
 ## Verified outcomes
 
@@ -82,10 +85,10 @@ repository root.
   `policy` case of `contracts/cli/errors.json`.
 - Step 3's UI attempt is refused too, in the same words. `trust-error` is
   present with `error-code` reading `code 20`, `error-status` reading `status
-  409`, `error-code-meaning` reading `cryptographic, chain or policy failure`,
-  `error-reason` reading `duplicate_unrevoked_attestation` and `error-message`
-  reading `Policy error: an unrevoked attestation for <bob_id> already exists
-  at seq 2`. `error-detail-at_seq` reads `2`, the position of the attestation
+  409`, `error-code-meaning` reading `A signature, the record itself or a rule
+  refused this.`, `error-reason` reading `duplicate_unrevoked_attestation` and
+  `error-message` reading `Policy error: an unrevoked attestation for <bob_id>
+  already exists at seq 2`. `error-detail-at_seq` reads `2`, the position of the attestation
   still standing. `identity-detail-head-seq` still reads `2` on both paths.
 - Step 4: `GET http://127.0.0.1:9081/api/identities/<alice_id>` answers
   `identity.trust[0].revoked == true`, `identity.trust[0].revocation_seq == 3`
@@ -132,7 +135,9 @@ Where `tests/e2e/specs/003-revocation.spec.ts` departs from or exceeds the
 story text above.
 
 - The spec asserts one container testid the story never names, because the
-  shared UI helpers wait on it: `identity-detail`.
+  shared UI helpers wait on it: `identity-detail`. Those helpers open the closed
+  action each form lives in, and step 3's refusal opens `action-trust` itself
+  because it fills the form without the helper.
 - Step 9 repeats step 6 in its `--json` form only. Step 6 already pins the
   text form line by line, and the document is what step 9 adds.
 - Steps 7 and 9 lost their UI half with the verify tab (proposal 004). What the

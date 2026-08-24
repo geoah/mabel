@@ -11,7 +11,7 @@ import {
   verifier,
 } from "../lib/docker";
 import { expectExit, story001Steps1to7 } from "../lib/stories";
-import { addTrust, openIdentity, push } from "../lib/ui";
+import { addTrust, openAction, openIdentity, push } from "../lib/ui";
 
 /** docs/stories/003-revocation.md */
 test.describe.configure({ mode: "serial" });
@@ -86,7 +86,9 @@ test("step 1: story 001 steps 1 to 12, alice at seq 2 and verified", async () =>
 test("step 2: the attestation reads unrevoked", async () => {
   await openIdentity(alicePage, ALICE_URL, aliceId);
   await expect(alicePage.getByTestId(`trust-row-${aliceAttestation}`)).toBeVisible();
-  await expect(alicePage.getByTestId(`trust-state-${aliceAttestation}`)).toHaveText("unrevoked");
+  await expect(alicePage.getByTestId(`trust-state-${aliceAttestation}`)).toHaveText(
+    "trusted since position 2",
+  );
 });
 
 test("step 3: a second unrevoked attestation for one subject is refused", async () => {
@@ -103,13 +105,16 @@ test("step 3: a second unrevoked attestation for one subject is refused", async 
     `Policy error: an unrevoked attestation for ${bobId} already exists at seq 2`,
   );
 
+  // Every action starts closed (decision 017), so the form is opened before it
+  // is used.
+  await openAction(alicePage, "action-trust");
   await alicePage.getByTestId("trust-add-subject").fill(bobId);
   await alicePage.getByTestId("trust-add-submit").click();
   await expect(alicePage.getByTestId("trust-error")).toBeVisible();
   await expect(alicePage.getByTestId("error-code")).toHaveText("code 20");
   await expect(alicePage.getByTestId("error-status")).toHaveText("status 409");
   await expect(alicePage.getByTestId("error-code-meaning")).toHaveText(
-    "cryptographic, chain or policy failure",
+    "A signature, the record itself or a rule refused this.",
   );
   await expect(alicePage.getByTestId("error-reason")).toHaveText("duplicate_unrevoked_attestation");
   await expect(alicePage.getByTestId("error-message")).toHaveText(
@@ -123,7 +128,7 @@ test("step 4: the revocation names the attestation event", async () => {
   await alicePage.getByTestId(`trust-revoke-${aliceAttestation}`).click();
   await expect(alicePage.getByTestId("trust-appended-event")).toBeVisible();
   await expect(alicePage.getByTestId(`trust-state-${aliceAttestation}`)).toHaveText(
-    "revoked at seq 3",
+    "taken back at position 3",
   );
   await expect(alicePage.getByTestId(`trust-revoke-${aliceAttestation}`)).toBeDisabled();
   await expect(alicePage.getByTestId("identity-detail-head-seq")).toHaveText("3");
@@ -203,7 +208,9 @@ test("steps 8 and 9: attested again, and revocation stays history", async () => 
   await alicePage.getByTestId("nav-wallet").click();
   await openIdentity(alicePage, ALICE_URL, aliceId);
   secondAttestation = await addTrust(alicePage, bobId);
-  await expect(alicePage.getByTestId(`trust-state-${secondAttestation}`)).toHaveText("unrevoked");
+  await expect(alicePage.getByTestId(`trust-state-${secondAttestation}`)).toHaveText(
+    "trusted since position 4",
+  );
   await expect(alicePage.getByTestId("identity-detail-head-seq")).toHaveText("4");
   expect(secondAttestation).not.toBe(aliceAttestation);
 

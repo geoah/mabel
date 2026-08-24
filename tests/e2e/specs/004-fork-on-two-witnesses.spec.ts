@@ -24,7 +24,9 @@ import { identifier } from "../lib/ui";
 test.describe.configure({ mode: "serial" });
 
 const FORK_EVIDENCE_NOTE =
-  "a fork record proves two distinct validly signed events exist at one sequence, produced by whoever held signing authority there: it is evidence of equivocation or of a lost race between honest controllers, and it authorizes nothing";
+  "Two valid entries were signed at the same position by whoever held the key. " +
+  "That can be deliberate or two controllers acting at once, and this record " +
+  "proves nothing beyond the conflict.";
 
 let page: Page;
 let state: ForkState;
@@ -95,7 +97,7 @@ test("step 8: the fork record in witness one's UI", async () => {
   // The card list is the witness route now (proposal 004), and a fork count is
   // drawn on a card only when the witness recorded one.
   await expect(page.getByTestId(`identity-card-fork-count-${state.aliceId}`)).toHaveText(
-    "1 fork record",
+    "1 conflict",
   );
   await expect(page.locator('[data-testid^="identity-card-fork-count-"]')).toHaveCount(1);
 

@@ -9,8 +9,14 @@ import {
   verifier,
   WITNESS_URL,
 } from "../lib/docker";
-import { compareIds, createIdentityCli, expectExit, story001Steps1to7 } from "../lib/stories";
-import { addTrust, cardIds, identifier, openIdentity, push } from "../lib/ui";
+import {
+  BASE32_ID,
+  compareIds,
+  createIdentityCli,
+  expectExit,
+  story001Steps1to7,
+} from "../lib/stories";
+import { addTrust, cardIds, identifier, openAction, openIdentity, push } from "../lib/ui";
 
 /** docs/stories/001-two-people-meet.md */
 test.describe.configure({ mode: "serial" });
@@ -46,11 +52,29 @@ test("steps 1 to 7: two identities, one witness, both pushed", async () => {
   aliceKey = identity.body.identity.active_key;
 });
 
+test("the keys action offers both secret keys, and the route answers the same", async () => {
+  await openIdentity(alicePage, ALICE_URL, aliceId);
+  await openAction(alicePage, "action-keys");
+  const active = alicePage.getByTestId("identity-keys-active");
+  const reserve = alicePage.getByTestId("identity-keys-reserve");
+  await expect(active).toHaveValue(BASE32_ID);
+  await expect(reserve).toHaveValue(BASE32_ID);
+
+  const keys = await apiGet(ALICE_URL, `/api/identities/${aliceId}/keys`);
+  expect(keys.status).toBe(200);
+  expect(keys.body.identity_id).toBe(aliceId);
+  expect(await active.inputValue()).toBe(keys.body.active_secret_key);
+  expect(await reserve.inputValue()).toBe(keys.body.reserve_secret_key);
+  expect(keys.body.active_key).toBe(aliceKey);
+});
+
 test("step 8: alice attests bob", async () => {
   await openIdentity(alicePage, ALICE_URL, aliceId);
   aliceAttestation = await addTrust(alicePage, bobId);
   await expect(alicePage.getByTestId(`trust-row-${aliceAttestation}`)).toBeVisible();
-  await expect(alicePage.getByTestId(`trust-state-${aliceAttestation}`)).toHaveText("unrevoked");
+  await expect(alicePage.getByTestId(`trust-state-${aliceAttestation}`)).toHaveText(
+    "trusted since position 2",
+  );
   await expect(alicePage.getByTestId("identity-detail-head-seq")).toHaveText("2");
 
   const identity = await apiGet(ALICE_URL, `/api/identities/${aliceId}`);
@@ -62,7 +86,9 @@ test("step 8: alice attests bob", async () => {
 test("step 9: bob attests alice, in a second ledger", async () => {
   await openIdentity(bobPage, BOB_URL, bobId);
   const bobAttestation = await addTrust(bobPage, aliceId);
-  await expect(bobPage.getByTestId(`trust-state-${bobAttestation}`)).toHaveText("unrevoked");
+  await expect(bobPage.getByTestId(`trust-state-${bobAttestation}`)).toHaveText(
+    "trusted since position 2",
+  );
   await expect(bobPage.getByTestId("identity-detail-head-seq")).toHaveText("2");
   expect(bobAttestation).not.toBe(aliceAttestation);
 });
@@ -215,11 +241,11 @@ test("the wallet home draws one card per identity, and the card is the page", as
     "person",
   );
   await expect(alicePage.getByTestId(`identity-card-head-seq-${aliceId}`)).toHaveText(
-    "head seq 3",
+    "at position 3",
   );
-  // Carol was created and never appended to, so her card reads seq 0.
+  // Carol was created and never appended to, so her card reads position 0.
   await expect(alicePage.getByTestId(`identity-card-head-seq-${carolId}`)).toHaveText(
-    "head seq 0",
+    "at position 0",
   );
   await expect(alicePage.getByTestId(`identity-card-link-${aliceId}`)).toHaveAttribute(
     "href",

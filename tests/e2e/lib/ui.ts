@@ -28,6 +28,21 @@ export async function openCreateForm(page: Page): Promise<void> {
   await expect(form).toBeVisible();
 }
 
+/**
+ * Opens one action on the identity page. Every action starts closed (decision
+ * 017), and clicking a summary toggles it, so the click is skipped when the
+ * action is already open: a helper called twice on one page must not close what
+ * the first call opened.
+ */
+export async function openAction(page: Page, testId: string): Promise<void> {
+  const action = page.getByTestId(testId);
+  await expect(action).toBeVisible();
+  if (!(await action.evaluate((element) => (element as HTMLDetailsElement).open))) {
+    await page.getByTestId(`${testId}-summary`).click();
+  }
+  await expect(action).toHaveJSProperty("open", true);
+}
+
 /** Story 001 step 3: create one identity in a wallet UI and record its id. */
 export async function createIdentity(
   page: Page,
@@ -85,9 +100,12 @@ export async function addWitness(
   witnessEndpointId: string,
   expectedHeadSeq: number,
 ): Promise<void> {
+  await openAction(page, "action-witnesses");
   await page.getByTestId("witness-add-endpoint").fill(witnessEndpointId);
   await page.getByTestId("witness-add-submit").click();
-  await expect(page.getByTestId("witness-add-head-seq")).toHaveText(`head_seq ${expectedHeadSeq}`);
+  await expect(page.getByTestId("witness-add-head-seq")).toHaveText(
+    `Saved at position ${expectedHeadSeq}.`,
+  );
   await expect(page.getByTestId(`witness-row-${witnessEndpointId}`)).toBeVisible();
 }
 
@@ -113,6 +131,7 @@ export async function push(
   witnessEndpointId: string,
   expected: { stored: number; headSeq?: number },
 ): Promise<void> {
+  await openAction(page, "action-push");
   await submitAndAwait(page, "sync-push-submit", "/api/sync/push");
   await expect(page.getByTestId("sync-push-report")).toBeVisible();
   await expect(page.getByTestId(`push-status-${witnessEndpointId}`)).toHaveText("accepted");
@@ -126,6 +145,7 @@ export async function push(
 
 /** Story 001 step 8: attest trust in a subject and record the event id. */
 export async function addTrust(page: Page, subject: string): Promise<string> {
+  await openAction(page, "action-trust");
   await page.getByTestId("trust-add-subject").fill(subject);
   await submitAndAwait(page, "trust-add-submit", "/api/trust");
   await expect(page.getByTestId("trust-appended-event")).toBeVisible();

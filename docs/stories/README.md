@@ -13,6 +13,16 @@ every identity, local or foreign. Nav is `nav-wallet` and `nav-witnesses`.
 There is no verify screen, no lookup screen and no identity selector, so a
 story that verified in the UI verifies on the CLI instead.
 
+Two facts of the UI every story after decision 017 depends on. Every action on
+the identity page starts closed, so a step that uses a form clicks that
+action's summary first: `action-trust`, `action-witnesses`, `action-push`,
+`action-profile`, `action-verification`, `action-keys`, `action-contact`, the
+four membership actions and `lookup-contact` on a foreign page. And the header
+carries the app name and the nav and nothing else: the one control that starts
+a graph sync is the `graph-sync` card on `/witnesses`, because a sync reads
+what witnesses hold. There is no developer mode, so a value the screen does not
+explain is read from the HTTP route instead.
+
 Every story starts from the compose topology of
 [../../docker/compose.yaml](../../docker/compose.yaml): one witness on
 `http://127.0.0.1:9080` and two wallets on `http://127.0.0.1:9081` and

@@ -101,7 +101,7 @@ export async function story001Steps1to7(
       await expect(page.getByTestId("nav-witnesses")).toBeVisible();
       await expect(page.getByTestId("wallet-search")).toBeVisible();
       await expect(page.getByTestId("identity-list-empty")).toHaveText(
-        "no identities in this node home",
+        "You have no identities yet. Create one below.",
       );
       const node = await apiGet(url, "/api/node");
       expect(node.body.role).toBe("wallet");
@@ -186,8 +186,20 @@ export async function story002Steps1to8(
   await test.step("002 step 3: an identity root holds no key of its own", async () => {
     await openIdentity(alicePage, ALICE_URL, state.orgId);
     await expect(alicePage.getByTestId("identity-detail-declared-kind")).toHaveText("organization");
-    await expect(alicePage.getByTestId("identity-detail-active-key")).toHaveText("null");
-    await expect(alicePage.getByTestId("identity-detail-reserve-commit")).toHaveText("null");
+    // Decision 017: the overview says which of the two roots this is as a
+    // sentence, and the two 52-character values left the screen. The values
+    // themselves are pinned on the routes that carry them.
+    await expect(alicePage.getByTestId("identity-detail-keys")).toHaveText(
+      "this identity holds no key of its own; its controllers sign for it",
+    );
+    // Both keys are absent from the document, not null, on an identity that
+    // holds none (contracts/README.md, "Shared documents").
+    const identity = await apiGet(ALICE_URL, `/api/identities/${state.orgId}`);
+    expect(identity.body.identity).not.toHaveProperty("active_key");
+    expect(identity.body.identity).not.toHaveProperty("reserve_commit");
+    const keys = await apiGet(ALICE_URL, `/api/identities/${state.orgId}/keys`);
+    expect(keys.status).toBe(409);
+    expect(keys.body.details.reason).toBe("no_keys_held");
   });
 
   await test.step("002 step 4: alice invites bob as a controller", async () => {

@@ -32,8 +32,9 @@ repository root.
    lowercase base32 string.
 2. Open `http://127.0.0.1:9081/wallet`. The nav holds two entries and no third,
    `nav-wallet` and `nav-witnesses`, the search box `wallet-search` is there,
-   and `identity-list-empty` reads `no identities in this node home`. The role
-   itself is a fact of `GET /api/node`, which answers `role: "wallet"`.
+   and `identity-list-empty` reads `You have no identities yet. Create one
+   below.` The role itself is a fact of `GET /api/node`, which answers `role:
+   "wallet"`.
 3. Click `identity-create-summary` to unfold the create form, which the wallet
    home keeps closed. Type `alice` into `identity-create-alias`, leave
    `identity-create-declared-kind` at `person`, leave `identity-create-founder`
@@ -55,18 +56,20 @@ repository root.
    Each export prints `exported <id> to <path> (N bytes)` and a second line
    `declared kind person, raw root, 0 witnesses`.
 6. In alice's UI click `identity-card-link-<alice_id>`: the whole card is one
-   link to `/identities/<alice_id>`. On the identity page put
+   link to `/identities/<alice_id>`. On the identity page click
+   `action-witnesses-summary` to open the action, which starts closed, put
    `$witness_id` into `witness-add-endpoint` and click `witness-add-submit`.
-   `witness-add-head-seq` reads `head_seq 1` and `witness-row-<witness_id>`
-   appears. Do the same in bob's UI.
-7. In each UI, leave `sync-push-to` empty and click `sync-push-submit`.
-   `sync-push-report` appears with `push-status-<witness_id>` reading
-   `accepted`, `push-stored-<witness_id>` reading `2` and `sync-push-head-seq`
-   reading `1`.
-8. In alice's UI paste `bob_id` into `trust-add-subject` and click
-   `trust-add-submit`. `trust-appended-event` shows the new event id, a row
-   `trust-row-<attestation>` appears, `trust-state-<attestation>` reads
-   `unrevoked` and `identity-detail-head-seq` reads `2`. Record the event id as
+   `witness-add-head-seq` reads `Saved at position 1.` and
+   `witness-row-<witness_id>` appears. Do the same in bob's UI.
+7. In each UI click `action-push-summary`, leave `sync-push-to` empty and click
+   `sync-push-submit`. `sync-push-report` appears with
+   `push-status-<witness_id>` reading `accepted`,
+   `push-stored-<witness_id>` reading `2` and `sync-push-head-seq` reading `1`.
+8. In alice's UI click `action-trust-summary`, paste `bob_id` into
+   `trust-add-subject` and click `trust-add-submit`. `trust-appended-event`
+   shows the new event id, a row `trust-row-<attestation>` appears,
+   `trust-state-<attestation>` reads `trusted since position 2` and
+   `identity-detail-head-seq` reads `2`. Record the event id as
    `alice_attestation`.
 9. In bob's UI do the same with `alice_id` as the subject. Trust is one-way
    (decision 003), so this is a second event in a second ledger, not a
@@ -91,9 +94,9 @@ repository root.
     ```sh
     dc exec -T alice mabel identity create --alias carol --kind person
     ```
-    Record `carol_id`. In alice's UI paste `carol_id` into `trust-add-subject`,
-    click `trust-add-submit` (`identity-detail-head-seq` reads `3`), then click
-    `sync-push-submit`.
+    Record `carol_id`. In alice's UI open `action-trust`, paste `carol_id` into
+    `trust-add-subject`, click `trust-add-submit` (`identity-detail-head-seq`
+    reads `3`), then open `action-push` and click `sync-push-submit`.
 14. Verify that attestation from an empty home. Carol's ledger is in nobody's
     reach: alice pushed her own ledger, not carol's.
     ```sh
@@ -105,6 +108,13 @@ repository root.
     ```
     The subject's participation is deliberately not required (decision 003), so
     this is an answer, not a failure.
+15. Alice saves her keys. Open `identity-card-link-<alice_id>` and click
+    `action-keys-summary`. `identity-keys-active` and `identity-keys-reserve`
+    each hold a 52-character lowercase base32 secret key, and
+    `identity-keys-warning` says what holding them and losing them means. The
+    same two values are what `GET
+    http://127.0.0.1:9081/api/identities/<alice_id>/keys` answers (decision
+    017).
 
 ## Verified outcomes
 
@@ -114,9 +124,9 @@ repository root.
 - Step 6: `GET http://127.0.0.1:9081/api/identities/<alice_id>` answers
   `identity.witnesses == ["<witness_id>"]`, `identity.head_seq: 1`,
   `identity.event_count: 2`.
-- Step 8: the trust panel row for `alice_attestation` reads `unrevoked`, and
-  the same document carries `identity.trust[0].subject == bob_id` and
-  `identity.trust[0].revoked == false`.
+- Step 8: the trust panel row for `alice_attestation` reads `trusted since
+  position 2`, and the same document carries `identity.trust[0].subject ==
+  bob_id` and `identity.trust[0].revoked == false`.
 - Step 11 exits 0. Its stdout is five lines in this order:
   - `trusted: true`
   - `valid as of seq 2 of <alice_id>, fetched from <witness_id> at <RFC 3339
@@ -155,10 +165,14 @@ repository root.
   `identity-card-<carol_id>`. Alice's card reads
   `identity-card-name-<alice_id>-name` `alice`,
   `identity-card-declared-kind-<alice_id>` `person` and
-  `identity-card-head-seq-<alice_id>` `head seq 3`; carol's reads `head seq 0`,
-  because she was created and never appended to.
+  `identity-card-head-seq-<alice_id>` `at position 3`; carol's reads `at
+  position 0`, because she was created and never appended to.
   `identity-card-link-<alice_id>` points at `/identities/<alice_id>`: the card
   is the page, and there is no selection state anywhere.
+- Step 15: `GET /api/identities/<alice_id>/keys` answers 200 with `identity_id
+  == alice_id`, an `active_secret_key` and a `reserve_secret_key` matching what
+  the two boxes hold, and an `active_key` equal to `identity.active_key` of the
+  identity document.
 
 ## Deviations
 
@@ -176,4 +190,7 @@ story text above.
   nav entries and the search box are what the spec reads on the screen.
 - The shared `createIdentity` helper clicks `identity-create-summary` only when
   the form is not already on the screen: a summary click toggles, so a second
-  one would close the form the previous step opened.
+  one would close the form the previous step opened. The shared `openAction`
+  helper does the same for each closed action of steps 6, 7, 8 and 15.
+- The spec runs step 15 straight after step 7, where it needs nothing that
+  steps 8 to 14 add, so the whole keys assertion sits in one test.

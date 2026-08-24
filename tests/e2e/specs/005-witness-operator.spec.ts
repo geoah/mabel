@@ -21,10 +21,9 @@ import { cardIds, identifier } from "../lib/ui";
 test.describe.configure({ mode: "serial" });
 
 const HOLDINGS_NOTE =
-  "this is what this one witness holds, a diagnostic and not an index: a ledger missing here may still exist on another witness";
-const DECLARED_KIND_NOTE =
-  "declared kind is advisory: it gates no authorization, no payload validity and no verification outcome";
-const READ_ONLY_NOTE = "every request this route issues is a read";
+  "This is what this one witness holds. A record missing here may still be on another witness.";
+const DECLARED_KIND_NOTE = "Anyone can declare any kind. It grants nothing and proves nothing.";
+const READ_ONLY_NOTE = "This page only reads. Nothing here changes anything.";
 
 let page: Page;
 
@@ -132,9 +131,7 @@ test("steps 5 to 7: the declared kind of every card, and the one fork count", as
   }
   // A fork count is drawn on a card only when the witness recorded one, so
   // alice's card carries it and no other card has the element at all.
-  await expect(page.getByTestId(`identity-card-fork-count-${aliceId}`)).toHaveText(
-    "1 fork record",
-  );
+  await expect(page.getByTestId(`identity-card-fork-count-${aliceId}`)).toHaveText("1 conflict");
   await expect(page.locator('[data-testid^="identity-card-fork-count-"]')).toHaveCount(1);
 
   // Paging left the UI with the operator table, so the route is where offset,

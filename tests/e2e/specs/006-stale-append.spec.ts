@@ -14,7 +14,7 @@ import {
   WITNESS_URL,
 } from "../lib/docker";
 import { expectExit, startAliceTwo, story002Steps1to8 } from "../lib/stories";
-import { addTrust, identifier, openIdentity, push } from "../lib/ui";
+import { addTrust, identifier, openAction, openIdentity, push } from "../lib/ui";
 
 /** docs/stories/006-stale-append.md */
 test.describe.configure({ mode: "serial" });
@@ -95,6 +95,9 @@ test("steps 4 and 5: alice appends, the second machine wins the race", async () 
 });
 
 test("step 6: the losing append is refused with exit code 50", async () => {
+  // Every action starts closed (decision 017), so the form is opened before it
+  // is used.
+  await openAction(alicePage, "action-trust");
   await alicePage.getByTestId("trust-add-subject").fill(bobId);
   await alicePage.getByTestId("trust-add-submit").click();
   await expect(alicePage.getByTestId("trust-error")).toBeVisible();
@@ -105,7 +108,7 @@ test("step 6: the losing append is refused with exit code 50", async () => {
     `State error: witness ${witnessId} reports head seq 4, this node holds seq 4`,
   );
   await expect(alicePage.getByTestId("error-code-meaning")).toHaveText(
-    "stale state, a conflicting event or a replay",
+    "Something changed this record first. Reload the page and try again.",
   );
   await expect(alicePage.getByTestId("error-detail-ledger_id")).toHaveText(orgId);
   await expect(alicePage.getByTestId("error-detail-local_head_seq")).toHaveText("4");
@@ -172,7 +175,9 @@ test("steps 8 and 9: the retry is the same action, run again", async () => {
   await expect(alicePage.getByTestId("trust-appended-event")).toBeVisible();
   const attestation = await identifier(alicePage, "trust-appended-event");
   await expect(alicePage.getByTestId("identity-detail-head-seq")).toHaveText("5");
-  await expect(alicePage.getByTestId(`trust-state-${attestation}`)).toHaveText("unrevoked");
+  await expect(alicePage.getByTestId(`trust-state-${attestation}`)).toHaveText(
+    "trusted since position 5",
+  );
 
   await push(alicePage, witnessId, { stored: 1 });
 });

@@ -25,7 +25,15 @@ import {
   expectExit,
   story001Steps1to7,
 } from "../lib/stories";
-import { addTrust, cardIds, identifier, openIdentity, push, searchIdentity } from "../lib/ui";
+import {
+  addTrust,
+  cardIds,
+  identifier,
+  openAction,
+  openIdentity,
+  push,
+  searchIdentity,
+} from "../lib/ui";
 
 /** docs/stories/007-profile-and-verification.md */
 test.describe.configure({ mode: "serial" });
@@ -45,14 +53,14 @@ const RESOLVER_IMAGE = "mabel-resolver:dev";
 /** 25 hours: past the 24-hour freshness window of a verified result. */
 const STALE_AFTER_MS = 25 * 60 * 60 * 1000;
 
-const HOSTNAME_ADVISORY =
-  "hostname verification is advisory: it gates no authorization and no ledger validity";
+const VERIFICATION_NOTE =
+  "A matching website shows only that whoever set up its DNS named this identity. It grants nothing.";
 const GRAPH_CONSENT_FIRST =
-  "A graph sync tells each contacted witness which identities this wallet cares about.";
+  "Every witness your wallet asks learns which people you are interested in.";
 const GRAPH_CONSENT_SECOND =
-  "It fetches ledgers this home does not hold, and keeps them in a crawl generation, not as replicas.";
+  "Your wallet reads their records to answer how you know someone, and keeps no copy.";
 const REVERSE_LABEL =
-  "best effort: who in this crawl attests to them, never who trusts them in the world";
+  "Best effort: who your wallet has seen trusting them, not everyone who does";
 
 let alicePage: Page;
 let bobPage: Page;
@@ -396,7 +404,7 @@ test("step 6: a forced check answers verified, and the UI marks the hostname row
   await expect(row).toHaveAttribute("data-verification", "verified");
   await expect(row).toContainText("alice.example");
   await expect(alicePage.getByTestId("identity-detail-verification-note")).toHaveText(
-    HOSTNAME_ADVISORY,
+    VERIFICATION_NOTE,
   );
   // The name is plain text and the id travels beside it, never instead of it.
   await expect(alicePage.getByTestId("identity-detail-resolved-name")).toHaveText("Alice Example");
@@ -468,8 +476,15 @@ test("step 7: bob.example mismatches, nobody.example is unverified, carol is unc
   expect(carol.hostname).toBeNull();
   expect(carol.checked_at_ms).toBeNull();
   await openIdentity(bobPage, BOB_URL, carolId);
-  await expect(bobPage.getByTestId("identity-detail-hostname")).toHaveText("none claimed");
+  await expect(bobPage.getByTestId("identity-detail-hostname")).toHaveText("none");
   await expect(bobPage.getByTestId("identity-detail-hostname-verification")).toHaveCount(0);
+  // The check action says the same thing, and the note under it is the standing
+  // caveat every surface repeats.
+  await openAction(bobPage, "action-verification");
+  await expect(bobPage.getByTestId("verification-status")).toHaveText(
+    "this identity claims no website",
+  );
+  await expect(bobPage.getByTestId("verification-note")).toHaveText(VERIFICATION_NOTE);
 
   const refused = await apiPost(BOB_URL, `/api/identities/${carolId}/verification`, {});
   expect(refused.status).toBe(409);
@@ -560,7 +575,7 @@ test("a verified result older than a day renders as stale, not as a plain check"
 
   const staleRow = await openHostnameRow(alicePage, ALICE_URL, aliceId);
   await expect(staleRow).toHaveAttribute("data-verification", "stale-verified");
-  await expect(staleRow).toContainText("stale");
+  await expect(staleRow).toContainText("may be out of date");
 
   const document = await verification(ALICE_URL, aliceId);
   expect(document.stale).toBe(true);
@@ -730,11 +745,17 @@ test("step 10: the graph is synchronized from the UI, and carol is two hops away
   // witness before alice reads it from there.
   expectExit(dcSh("bob", 'mabel sync push --identity bob --peer "$(cat /shared/witness.ticket)"'), 0);
 
-  // The sync control is in the header of every wallet screen, with the counts
-  // of the crawl this home holds; there is no graph screen (proposal 004).
+  // The sync reads what witnesses hold, so the one control that starts one
+  // lives on the witnesses screen (decision 017). There is no graph screen and
+  // nothing in the header starts a sync.
   await alicePage.goto(`${ALICE_URL}/wallet`);
+  await expect(alicePage.getByTestId("graph-sync")).toHaveCount(0);
+  await alicePage.getByTestId("nav-witnesses").click();
+  await expect(alicePage).toHaveURL(`${ALICE_URL}/witnesses`);
   await expect(alicePage.getByTestId("graph-sync")).toBeVisible();
-  await expect(alicePage.getByTestId("graph-sync-counts")).toHaveCount(0);
+  await expect(alicePage.getByTestId("graph-sync-state")).toHaveText(
+    "Your wallet has not looked yet.",
+  );
   await alicePage.getByTestId("graph-sync-button").click();
 
   // The first sync in this node home states what becomes observable before
@@ -742,9 +763,12 @@ test("step 10: the graph is synchronized from the UI, and carol is two hops away
   await expect(alicePage.getByTestId("graph-sync-consent")).toBeVisible();
   await expect(alicePage.getByTestId("graph-sync-consent")).toContainText(GRAPH_CONSENT_FIRST);
   await expect(alicePage.getByTestId("graph-sync-consent")).toContainText(GRAPH_CONSENT_SECOND);
+  await expect(alicePage.getByTestId("graph-sync-consent-confirm")).toHaveText("Look now");
   await alicePage.getByTestId("graph-sync-consent-confirm").click();
-  await expect(alicePage.getByTestId("graph-sync-counts")).toHaveText(
-    "3 identities, 3 attestations",
+  // The counts left the screen with developer mode; what the card says is when
+  // the wallet last looked, and the counts are pinned on GET /api/graph below.
+  await expect(alicePage.getByTestId("graph-sync-state")).toHaveText(
+    "Your wallet last looked just now.",
   );
 
   // The consent is remembered per node home, so the second sync from the same
@@ -811,10 +835,10 @@ test("step 10: the graph is synchronized from the UI, and carol is two hops away
   await expect(alicePage.getByTestId("identity-detail")).toBeVisible();
   expect(await identifier(alicePage, "identity-detail-identity-id")).toBe(carolId);
   await expect(alicePage.getByTestId("identity-detail-ledger-summary")).toHaveText(
-    "not stored in this node home",
+    "your wallet holds no copy of it",
   );
   await expect(alicePage.getByTestId("identity-detail-provenance")).toHaveText(
-    "nothing this home holds, so the id is the only label",
+    "nothing your wallet knows, so the id is the only label",
   );
   // Nothing about a foreign page pretends this wallet can act for it.
   await expect(alicePage.getByTestId("identity-own-badge")).toHaveCount(0);
@@ -825,16 +849,16 @@ test("step 10: the graph is synchronized from the UI, and carol is two hops away
     "data-identity-id",
     aliceId,
   );
-  await expect(alicePage.getByTestId("lookup-degrees")).toHaveText("2 hops");
+  await expect(alicePage.getByTestId("lookup-degrees")).toHaveText("2 steps");
   // The number is only an answer next to the question the row asks.
   await expect(alicePage.getByTestId("lookup-degrees-row").locator("dt")).toHaveText(
-    "shortest path found in this crawl",
+    "how far away",
   );
   await expect(alicePage.getByTestId("lookup-hop-0-0-to-name")).toHaveText("Bob Example");
-  await expect(alicePage.getByTestId("lookup-hop-0-1-fetched")).toContainText("read ");
+  await expect(alicePage.getByTestId("lookup-hop-0-1-fetched")).toContainText("seen ");
   await expect(alicePage.getByTestId("lookup-reverse-label")).toHaveText(REVERSE_LABEL);
   await expect(alicePage.getByTestId("lookup-trust-empty")).toHaveText(
-    "this crawl read no attestation of theirs",
+    "Your wallet has not seen them trust anyone.",
   );
   await expect(
     alicePage.getByTestId(`lookup-reverse-row-${bobId}`),
@@ -865,9 +889,9 @@ test("step 11: an identity nobody in this crawl trusts answers with no path", as
 
   await searchIdentity(alicePage, ALICE_URL, witnessId, witnessId);
   await expect(alicePage.getByTestId("lookup-result")).toBeVisible();
-  await expect(alicePage.getByTestId("lookup-degrees")).toHaveText("none");
-  await expect(alicePage.getByTestId("lookup-degrees-none")).toContainText(
-    "no path was found within this crawl's caps",
+  await expect(alicePage.getByTestId("lookup-degrees")).toHaveText("No connection found");
+  await expect(alicePage.getByTestId("lookup-degrees-none")).toHaveText(
+    "No connection found yet. Sync and try again.",
   );
 });
 
@@ -896,7 +920,7 @@ test("step 12: the search box takes a hostname and opens the identity it names",
   const status = alicePage.getByTestId("wallet-search-status");
   await expect(status).toHaveAttribute("data-status", "no_record");
   await expect(status).toContainText("_mabel.nobody.example.");
-  await expect(status).toContainText("holds no mabel record");
+  await expect(status).toContainText("names no identity");
   await expect(alicePage).toHaveURL(`${ALICE_URL}/wallet`);
 
   const missing = await apiGet(ALICE_URL, "/api/resolve/nobody.example");
@@ -960,7 +984,7 @@ test("bob taking alice's name changes what is shown, never which id is shown", a
   );
   expectExit(dcSh("bob", 'mabel sync push --identity bob --peer "$(cat /shared/witness.ticket)"'), 0);
 
-  await alicePage.goto(`${ALICE_URL}/wallet`);
+  await alicePage.goto(`${ALICE_URL}/witnesses`);
   const synced = alicePage.waitForResponse(
     (response) =>
       response.url().endsWith("/api/graph/sync") && response.request().method() === "POST",
@@ -994,10 +1018,10 @@ test("step 13: the witnesses screen, what one holds, and one deliberate fetch", 
   await expect(alicePage).toHaveURL(`${ALICE_URL}/witnesses`);
   await expect(alicePage.getByTestId("witness-cards")).toBeVisible();
   await expect(alicePage.getByTestId(`witness-card-named-by-${witnessId}`)).toHaveText(
-    "named by 1 identity",
+    "chosen by 1 identity of yours",
   );
   await expect(alicePage.getByTestId(`witness-card-default-${witnessId}`)).toHaveText(
-    "node default",
+    "this node uses it by default",
   );
   // The card carries the endpoint id and every identity whose chain names it.
   const onCard = await alicePage
@@ -1016,7 +1040,7 @@ test("step 13: the witnesses screen, what one holds, and one deliberate fetch", 
     "person",
   );
   await expect(alicePage.getByTestId(`identity-card-head-seq-${carolId}`)).toHaveText(
-    "head seq 1",
+    "at position 1",
   );
 
   const proxied = await apiGet(ALICE_URL, `/api/witnesses/${witnessId}/ledgers?offset=0&limit=256`);

@@ -101,19 +101,18 @@ for the reason story 004 states), and step 11 tears them down.
 - Step 3: the node document answers `role: "witness"`, `relay: "disabled"`,
   `endpoint_id == witness_id`, `ledger_count: 5`, `fork_count: 1` and
   `storage_capacity: 2147483648`.
-- Step 4: `witness-read-only-note` reads `every request this route issues is a
-  read` and `witness-holdings-note` reads `this is what this one witness holds,
-  a diagnostic and not an index: a ledger missing here may still exist on
-  another witness`. There is no global discovery and no "who trusts B" query
-  (flag D).
+- Step 4: `witness-read-only-note` reads `This page only reads. Nothing here
+  changes anything.` and `witness-holdings-note` reads `This is what this one
+  witness holds. A record missing here may still be on another witness.` There
+  is no global discovery and no "who trusts B" query (flag D).
 - Step 4: five `identity-card-link-*` elements are present, their ledger ids in
   ascending order, and that order is the order `GET
   /api/ledgers?offset=0&limit=256` answers in.
 - Step 5: `identity-card-declared-kind-<org_id>` reads `organization` and the
   four person cards read `person`. Which card falls where follows from the
   digest order, so the assertion is per card.
-- Step 6: `identity-card-fork-count-<alice_id>` reads `1 fork record`, and it
-  is the only `identity-card-fork-count-*` element on the page.
+- Step 6: `identity-card-fork-count-<alice_id>` reads `1 conflict`, and it is
+  the only `identity-card-fork-count-*` element on the page.
 - Step 7: the first request answers `offset: 0`, `limit: 4`, `more: true` and
   four entries; the second answers `offset: 4`, `more: false` and one entry.
   The two pages together name every ledger exactly once, in the same ascending
@@ -125,9 +124,9 @@ for the reason story 004 states), and step 11 tears them down.
   two endpoint ids, witness one and witness two, because that is what alice's
   chain says. `witness-detail-source-endpoint` carries the endpoint that
   pushed, which is provenance, not authorization.
-  `witness-detail-declared-kind-note` reads `declared kind is advisory: it
-  gates no authorization, no payload validity and no verification outcome` and
-  `witness-detail-holdings-note` repeats the holdings sentence.
+  `witness-detail-declared-kind-note` reads `Anyone can declare any kind. It
+  grants nothing and proves nothing.` and `witness-detail-holdings-note`
+  repeats the holdings sentence.
 - Step 8's chain: `ledger-event-count` reads `4`, `ledger-head-seq` reads `3`,
   and four `ledger-event-*` rows are drawn whose `event-payload-kind-*` values
   are, in order, `inception`, `witness_config`, `witness_config`,

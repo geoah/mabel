@@ -99,7 +99,9 @@ docker/compose.dns.yaml`, run from the repository root.
    counts. Read the `identity-detail-hostname` row for each of the three cases
    above and for carol, who claims no hostname. The mark sits inside that row
    as `identity-detail-hostname-verification`, and carol's row carries no
-   mark at all.
+   mark at all. On carol's page in bob's UI open `action-verification`, which
+   starts closed: `verification-status` reads `this identity claims no website`
+   and `verification-note` carries the standing caveat.
 9. Set a private contact note on bob, which is local and never signed:
    ```sh
    dc exec -T alice mabel contact set "$bob_id" --nickname "Bob from the pub" \
@@ -107,8 +109,10 @@ docker/compose.dns.yaml`, run from the repository root.
    ```
    The same store answers `GET` and `PUT
    /api/identities/<bob_id>/contact`, and it accepts foreign ids.
-10. Synchronize the graph from alice's wallet UI, with `graph-sync-button` in
-    the header, then open carol's page: paste `carol_id` into
+10. Synchronize the graph from alice's wallet UI. A sync reads what witnesses
+    hold, so the control lives on the witnesses screen (decision 017): click
+    `nav-witnesses` and press `graph-sync-button` on the `graph-sync` card.
+    Then open carol's page: paste `carol_id` into
     `wallet-search-input` on the wallet home and click `wallet-search-submit`,
     which navigates to `/identities/<carol_id>`. Carol's ledger is not in
     alice's home, so the page renders what the crawl read: the "How you know
@@ -120,9 +124,11 @@ docker/compose.dns.yaml`, run from the repository root.
     curl -fsS "http://127.0.0.1:9081/api/lookup/$carol_id?from=$alice_id"
     ```
     The first graph sync shows the consent panel (`graph-sync-consent`),
-    stating what becomes observable, and is remembered per node home. A CLI
-    sync needs `--peer`: that process holds no seeded peer address, while the
-    running wallet started with the witness's ticket.
+    stating what becomes observable, and is remembered per node home; its
+    confirm button reads `Look now`. Before the first sync `graph-sync-state`
+    reads `Your wallet has not looked yet.` and after it `Your wallet last
+    looked just now.` A CLI sync needs `--peer`: that process holds no seeded
+    peer address, while the running wallet started with the witness's ticket.
 11. Look up an identity nobody in the crawl trusts, for the empty answer:
     `dc exec -T alice mabel lookup "$witness_id" --from alice`, and open
     `/identities/<witness_id>` through the same search box.
@@ -195,8 +201,10 @@ docker/compose.dns.yaml`, run from the repository root.
   `verified`, a check with a stale marker (`stale-verified`) for one older
   than 24 hours, a warning glyph for `mismatched`, dimmed text for
   `unverified` and `unreachable`, and, for `unclaimed`, no mark at all and the
-  row reading "none claimed". `identity-detail-verification-note` carries the
-  same advisory sentence the declared kind carries. Verification gates
+  row reading `none`. A stale verified row also says `may be out of date`.
+  `identity-detail-verification-note` reads `A matching website shows only that
+  whoever set up its DNS named this identity. It grants nothing.`, the same
+  standing caveat the declared kind carries. Verification gates
   nothing: the ledger and every verification report read the same with and
   without it.
 - The name never renders like an id: the display name is plain text
@@ -206,26 +214,28 @@ docker/compose.dns.yaml`, run from the repository root.
   show their full ids. No screen sorts, matches or deduplicates on a name.
 - Step 9 writes `contacts/<bob_id>.json` in alice's home only. Bob's wallet and
   the witness show no trace of it, and nothing about it is signed or pushed.
-- Step 10 answers `degrees: 2` with a path rendered as two hops
-  (`lookup-hop-0-0`, `lookup-hop-0-1`), alice trusts bob and bob trusts carol,
-  each hop naming the identity, its resolved name and its own `fetched_at_ms`
-  and `stale`. The response also carries `graph_stale`, `graph_truncated`,
-  `truncated_by`, carol's outgoing trust list (empty here, so
-  `lookup-trust-empty`) and a reverse list shaped `{best_effort: true,
-  entries: [...]}`, labelled best effort every time it is shown
-  (`lookup-reverse-label`). `lookup-from` carries `alice_id`, the root the
-  answer came from.
+- Step 10 answers `degrees: 2`, drawn as `2 steps` under the label `how far
+  away`, with a path rendered as two steps (`lookup-hop-0-0`,
+  `lookup-hop-0-1`), alice trusts bob and bob trusts carol, each step naming
+  the identity, its resolved name and how fresh the reading is
+  (`lookup-hop-0-1-fetched` reads `seen ...`). The response also carries
+  `graph_stale`, `graph_truncated`, `truncated_by`, carol's outgoing trust list
+  (empty here, so `lookup-trust-empty` reads `Your wallet has not seen them
+  trust anyone.`) and a reverse list shaped `{best_effort: true, entries:
+  [...]}`, labelled `Best effort: who your wallet has seen trusting them, not
+  everyone who does` every time it is shown (`lookup-reverse-label`).
+  `lookup-from` carries `alice_id`, the root the answer came from.
 - Step 10's page is a foreign identity's page, so it carries no
   `identity-own-badge` and no `identity-actions`,
-  `identity-detail-ledger-summary` reads `not stored in this node home`, and
-  `identity-detail-provenance` reads `nothing this home holds, so the id is the
-  only label`: no profile and no local nickname name carol here. The crawl is
+  `identity-detail-ledger-summary` reads `your wallet holds no copy of it`, and
+  `identity-detail-provenance` reads `nothing your wallet knows, so the id is
+  the only label`: no profile and no local nickname name carol here. The crawl is
   fresh and reached everything, so neither `lookup-graph-stale` nor
   `lookup-graph-truncated` is drawn.
 - Step 11 answers 200 with `degrees: null` and an empty path list, stated as
-  "shortest path found in this crawl" (`lookup-degrees` reads "none", and
-  `lookup-degrees-none` says a path was not found within this crawl's caps)
-  and never as "no relationship".
+  one sentence: `lookup-degrees-none` reads `No connection found yet. Sync and
+  try again.` and `lookup-degrees` inside it reads `No connection found`. It is
+  never stated as "no relationship".
 - Step 12: `GET /api/resolve/alice.example` answers `status: "resolved"` with
   `identity_id == alice_id`, and the search box lands on
   `/identities/<alice_id>`, which carries `identity-own-badge` reading `your
@@ -233,18 +243,19 @@ docker/compose.dns.yaml`, run from the repository root.
   `data-verification` `verified`. `GET /api/resolve/nobody.example` answers
   `status: "no_record"` with `identity_id: null`, and the search box stays on
   `/wallet` with `wallet-search-status` carrying `data-status` `no_record` and
-  reading `_mabel.nobody.example.` and `holds no mabel record`.
+  reading `_mabel.nobody.example.` and `names no identity`.
 - Step 13: `GET /api/witnesses` answers one witness, `endpoint_id ==
   witness_id`, `named_by == [alice_id]` (alice's is the only ledger this home
   holds, and its chain names that witness) and `is_node_default: true` (the
   overlay set it). The card repeats both: `witness-card-named-by-<witness_id>`
-  reads `named by 1 identity`, `witness-card-default-<witness_id>` reads `node
-  default`, and the identifiers on the card are the endpoint id and `alice_id`.
+  reads `chosen by 1 identity of yours`, `witness-card-default-<witness_id>`
+  reads `this node uses it by default`, and the identifiers on the card are the
+  endpoint id and `alice_id`.
 - Step 13's drill-in renders what the witness holds as the identity card list:
   three cards, `alice_id`, `bob_id` and `carol_id`, in the order `GET
   /api/witnesses/<witness_id>/ledgers` answers, which reports `more: false`.
   Carol's card reads `identity-card-declared-kind-<carol_id>` `person` and
-  `identity-card-head-seq-<carol_id>` `head seq 1`.
+  `identity-card-head-seq-<carol_id>` `at position 1`.
 - Step 13's fetch is the only thing that writes. Before it, carol's card leads
   to a page carrying `identity-fetch` and `dc exec -T alice ls /data/ledgers`
   holds `alice_id` alone: browsing a witness stores nothing. After
@@ -288,10 +299,11 @@ docker/compose.dns.yaml`, run from the repository root.
   with `from: null` asks the known witnesses in the crawler's source order,
   which is what the button sends; the running wallet holds the witness's
   address because its container started with the ticket.
-- The spec asserts two things the story's outcomes do not name:
-  `graph-sync-counts` reads `3 identities, 3 attestations` after the first
-  sync, and `/data/graph/generations` holds at most two entries, because
-  generations are caches collected down to the last two.
+- The spec asserts one thing the story's outcomes do not name:
+  `/data/graph/generations` holds at most two entries, because generations are
+  caches collected down to the last two. The crawl's counts left the screen with
+  developer mode (decision 017), so the spec pins `node_count` and `edge_count`
+  on `GET /api/graph` and reads only the last-looked sentence on the card.
 - "A lookup running during a sync reads the previous generation whole" is only
   smoke-checked here: the spec fires one lookup beside one sync and asserts it
   answers from one of the two generations. The outcome itself is pinned by the

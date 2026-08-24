@@ -56,7 +56,8 @@ machines; two admitted controllers acting from their own homes is ticket 031.
    the wait is not optional: an `exec` that lands first fails on a home that is
    not a home yet.
 4. In alice's UI at `http://127.0.0.1:9081/wallet`, open
-   `identity-card-link-<org_id>`, paste `bob_id` into `trust-add-subject` and
+   `identity-card-link-<org_id>`, click `action-trust-summary` to open the
+   action, which starts closed, paste `bob_id` into `trust-add-subject` and
    click `trust-add-submit`. It succeeds: the witness is at seq 3, alice is at
    seq 3, nobody has moved. `identity-detail-head-seq` reads `4`. Alice does
    not push.
@@ -68,10 +69,10 @@ machines; two admitted controllers acting from their own homes is ticket 031.
      --peer "$(cat /shared/witness.ticket)"'
    ```
    Its attestation is at seq 4 as well, and the witness now serves that one.
-6. In alice's UI, paste `bob_id` into `trust-add-subject` again and click
-   `trust-add-submit`. This is the losing append: before anything is signed,
-   the wallet asks the ledger's witnesses where it ends and finds an event it
-   does not hold at seq 4.
+6. In alice's UI, with `action-trust` open, paste `bob_id` into
+   `trust-add-subject` again and click `trust-add-submit`. This is the losing
+   append: before anything is signed, the wallet asks the ledger's witnesses
+   where it ends and finds an event it does not hold at seq 4.
 7. Read what alice's home now holds: in the Ledger card set `ledger-since` to
    `0`, `ledger-limit` to `8`, and click `ledger-load`. Five rows appear,
    `ledger-event-0` to `ledger-event-4`. Alice's seq 4 is the second machine's
@@ -79,7 +80,7 @@ machines; two admitted controllers acting from their own homes is ticket 031.
 8. Click `trust-add-submit` once more, with `bob_id` still in
    `trust-add-subject`. Losing a race is a retry: the same intent, re-signed on
    the new head.
-9. Click `sync-push-submit`.
+9. Click `action-push-summary`, then `sync-push-submit`.
 10. The second machine reads the settled chain back from the witness:
     ```sh
     docker exec mabel-alice-two sh -c 'mabel verify trust --issuer mabel-demo-co \
@@ -101,7 +102,8 @@ machines; two admitted controllers acting from their own homes is ticket 031.
     reads `status 409`, `error-reason` reads `stale_head`.
   - `error-message` reads exactly `State error: witness <witness_id> reports
     head seq 4, this node holds seq 4`.
-  - `error-code-meaning` reads `stale state, a conflicting event or a replay`.
+  - `error-code-meaning` reads `Something changed this record first. Reload the
+    page and try again.`
   - `error-detail-ledger_id` carries `org_id`, `error-detail-local_head_seq`
     reads `4`, `error-detail-observed_head_seq` reads `4`, and
     `error-detail-source` carries `witness_id`.
@@ -126,7 +128,7 @@ machines; two admitted controllers acting from their own homes is ticket 031.
   pushed, which is the difference between this story and story 004.
 - Step 8 succeeds: `trust-appended-event` shows a new event id,
   `identity-detail-head-seq` reads `5`, and a row for the new attestation reads
-  `unrevoked`.
+  `trusted since position 5`.
 - Step 9's push report reads `push-status-<witness_id>` `accepted` and
   `push-stored-<witness_id>` `1`.
 - Step 10 exits 0 and prints `trusted: true`, then `valid as of seq 5 of

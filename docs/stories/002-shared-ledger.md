@@ -38,10 +38,15 @@ those forms render.
    `identity-create-founder`, and click `identity-create-submit`. Record
    `identity-create-result-identity-id` as `org_id`.
 3. Open `identity-card-link-<org_id>`. `identity-detail-declared-kind` reads
-   `organization`, `identity-detail-active-key` and
-   `identity-detail-reserve-commit` both read `null`: an identity-rooted ledger
-   holds no key of its own and its controllers sign for it (decision 002 as
-   amended).
+   `organization` and `identity-detail-keys` reads `this identity holds no key
+   of its own; its controllers sign for it`: an identity-rooted ledger holds no
+   key of its own and its controllers sign for it (decision 002 as amended).
+   Decision 017 replaced the two 52-character key values with that sentence, so
+   the values themselves are read from the routes:
+   `GET http://127.0.0.1:9081/api/identities/<org_id>` carries no `active_key`
+   and no `reserve_commit` (absent, not null), and
+   `GET http://127.0.0.1:9081/api/identities/<org_id>/keys` answers 409 with
+   `details.reason == "no_keys_held"`.
 4. Alice invites bob as a controller:
    ```sh
    dc exec -T alice mabel membership invite --ledger mabel-demo-co --by alice \
@@ -93,21 +98,21 @@ those forms render.
     ```
     `--yes` is required with `--json`: without it the command exits 2 with
     `confirmation_required`, having signed nothing.
-11. Back in alice's UI on the `org_id` page, paste `bob_id` into
-    `trust-add-subject` and click `trust-add-submit`. The shared ledger holds no
-    key, so alice's key signs for it (decision 004: any single current
-    controller). `trust-state-<attestation>` reads `unrevoked` and
-    `identity-detail-head-seq` reads `3`. Record the event id as
+11. Back in alice's UI on the `org_id` page, click `action-trust-summary`, paste
+    `bob_id` into `trust-add-subject` and click `trust-add-submit`. The shared
+    ledger holds no key, so alice's key signs for it (decision 004: any single
+    current controller). `trust-state-<attestation>` reads `trusted since
+    position 3` and `identity-detail-head-seq` reads `3`. Record the event id as
     `org_attestation`.
 12. Push before the ledger names a witness, which the witness refuses:
     ```sh
     dc exec -T alice sh -c 'mabel sync push --identity mabel-demo-co --to '"$witness_id"' \
       --peer "$(cat /shared/witness.ticket)" --json'
     ```
-13. Name the witness on the shared ledger's own chain, in alice's UI: paste
-    `$witness_id` into `witness-add-endpoint`, click `witness-add-submit`
-    (`witness-add-head-seq` reads `head_seq 4`), then click
-    `sync-push-submit`.
+13. Name the witness on the shared ledger's own chain, in alice's UI: click
+    `action-witnesses-summary`, paste `$witness_id` into `witness-add-endpoint`,
+    click `witness-add-submit` (`witness-add-head-seq` reads `Saved at position
+    4.`), then click `action-push-summary` and `sync-push-submit`.
 14. Verify who signed, from alice's home. Verification is a CLI concern
     (proposal 004): the wallet UI has no verify screen, so this is the whole of
     the step, run once for the text form and once with `--json`:
@@ -136,7 +141,7 @@ those forms render.
   per principal: `principal-role-<alice_id>` and `principal-role-<bob_id>` both
   read `controller`, `principal-root-<alice_id>` is present and
   `principal-root-<bob_id>` is absent, and `principals-open-invitations` reads
-  `open_invitation_count 0`.
+  `No invitation is waiting to be accepted.`
 - Step 10's accept document, the `controller-on-a-raw-root` case of
   `contracts/cli/membership-accept.json`, answers `ledger_id == alice_id`,
   `declared_kind: "person"`, `root: "raw"`, `controller_on_raw_root: true` and
@@ -198,7 +203,8 @@ story text above.
   cannot be exercised in the same story.
 - The spec asserts container testids the story never names, because the shared
   UI helpers wait on them: `identity-detail`, `sync-push-report` and
-  `trust-appended-event`.
+  `trust-appended-event`. Those helpers also open the closed action each form
+  lives in, which is what steps 11 and 13 spell out.
 - The refusal in step 10 is checked further than the story states: after the
   accept without `--yes` exits 2, `test ! -f /tmp/raw.acceptance` confirms
   nothing was written.

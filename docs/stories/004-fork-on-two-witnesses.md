@@ -113,7 +113,7 @@ overlay would recreate the shared network under the other specs.
    ```
 8. Open witness one's UI at `http://127.0.0.1:9080/witness`, which is the
    identity card list of what this witness holds. Alice's card carries
-   `identity-card-fork-count-<alice_id>` reading `1 fork record`; no other card
+   `identity-card-fork-count-<alice_id>` reading `1 conflict`; no other card
    carries that element at all. Click `identity-card-link-<alice_id>` and read
    the summary and the Forks card on the identity page.
 9. A fresh verifier asks both witnesses:
@@ -164,10 +164,10 @@ overlay would recreate the shared network under the other specs.
     events exist at seq 3 of <alice_id>, produced by whoever held signing
     authority there; this is evidence of equivocation or of a lost race between
     honest controllers`.
-  - `fork-evidence-note` reads `a fork record proves two distinct validly
-    signed events exist at one sequence, produced by whoever held signing
-    authority there: it is evidence of equivocation or of a lost race between
-    honest controllers, and it authorizes nothing`. No surface names a culprit.
+  - `fork-evidence-note` reads `Two valid entries were signed at the same
+    position by whoever held the key. That can be deliberate or two controllers
+    acting at once, and this record proves nothing beyond the conflict.` No
+    surface names a culprit.
   - `fork-kept-<alice_id>-3-event-id` carries `kept_event` and
     `fork-conflicting-<alice_id>-3-event-id` carries `conflicting_event`; both
     panes show `payload_kind` `trust_attestation`, the same `prev`, the same
