@@ -1,14 +1,17 @@
 import type { ReactNode } from "react";
 
-import type { Identity, MembershipView } from "@/api/types";
+import type { Identity, MembershipView, ResolvedIdentity } from "@/api/types";
 import { Action } from "@/components/Action";
+import { bareIdentity, type Machine } from "@/components/identity";
 import { Section } from "@/components/Section";
 
 import { ContactPanel } from "./ContactPanel";
+import { EndpointsPanel } from "./EndpointsPanel";
 import { HandlePanel } from "./HandlePanel";
 import { KeysPanel } from "./KeysPanel";
 import { AcceptForm, AdmitForm, InviteForm, RemoveForm } from "./MembershipForms";
 import { ProfilePanel } from "./ProfilePanel";
+import { SharePanel } from "./SharePanel";
 import { SyncPushPanel } from "./SyncPushPanel";
 import { type TrustActions, TrustAddForm, TrustRevokeForm } from "./TrustPanel";
 import { WitnessConfigPanel } from "./WitnessConfigPanel";
@@ -47,11 +50,17 @@ export function ActionsSection({
   identity,
   memberships,
   trust,
+  machines,
+  names = bareIdentity,
   onAppended,
 }: {
   identity: Identity;
   memberships: MembershipView | null;
   trust: TrustActions;
+  /** The machines that answer for this identity, for the link it hands over. */
+  machines: Machine[];
+  /** Names one witness this identity chose, from a list the page already holds. */
+  names?: (identityId: string) => ResolvedIdentity;
   onAppended: () => void;
 }) {
   return (
@@ -117,7 +126,7 @@ export function ActionsSection({
           title="Choose who keeps a copy"
           description="A witness keeps a copy of this record so other people can read it."
         >
-          <WitnessConfigPanel identity={identity} onAppended={onAppended} />
+          <WitnessConfigPanel identity={identity} names={names} onAppended={onAppended} />
         </Action>
         <Action
           testId="action-push"
@@ -125,6 +134,26 @@ export function ActionsSection({
           description="Send this record to each witness you chose."
         >
           <SyncPushPanel identityId={identity.identity_id} />
+        </Action>
+      </ActionGroup>
+      <ActionGroup
+        testId="action-group-reach"
+        title="Reaching this identity"
+        description="The machines that answer for it, and the link that opens it somewhere else."
+      >
+        <Action
+          testId="action-endpoints"
+          title="Publish the machines that answer for this identity"
+          description="Other people's wallets dial these to ask for this record."
+        >
+          <EndpointsPanel identity={identity} onAppended={onAppended} />
+        </Action>
+        <Action
+          testId="action-share"
+          title="Share this identity"
+          description="One link, as text, as a square to scan and as a file."
+        >
+          <SharePanel identity={identity} machines={machines} />
         </Action>
       </ActionGroup>
       <ActionGroup

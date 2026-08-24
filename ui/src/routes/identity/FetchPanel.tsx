@@ -7,18 +7,29 @@ import { Button } from "@/components/ui/button";
 import { asApiError } from "@/hooks/useResource";
 
 /**
- * Asks the known witnesses, in order, for a record this home does not hold in
- * full. Viewing never writes, so nothing runs until the button is pressed
- * (proposal 004). The record panel borrows this button when it holds a summary
- * without the entries behind it.
+ * What using a link does, said before the fetch runs. Handing a link over is
+ * one thing; using one is another, and this is the second (proposal 006 section
+ * 7).
+ */
+export const LINK_FETCH_NOTE =
+  "This link names the machines to ask for this record. Asking them tells those machines this home's network address and which identity it is looking for.";
+
+/**
+ * Asks for a record this home does not hold in full. Viewing never writes, so
+ * nothing runs until the button is pressed (proposal 004). With no machine
+ * named the node tries every source it knows; a link's machines are tried
+ * first, one request each, in the order the link carried them.
  */
 export function FetchButton({
   identityId,
   onFetched,
+  machines = [],
   testId = "identity-fetch-button",
 }: {
   identityId: string;
   onFetched: () => void;
+  /** The machines a link named, dialled first and in order. */
+  machines?: string[];
   testId?: string;
 }) {
   const [pending, setPending] = useState(false);
@@ -27,14 +38,23 @@ export function FetchButton({
   async function run() {
     setPending(true);
     setError(null);
-    try {
-      await fetchIdentity(identityId, { from: null });
-      onFetched();
-    } catch (thrown) {
-      setError(asApiError(thrown));
-    } finally {
-      setPending(false);
+    // One machine per request: the route takes one hint. A machine that does
+    // not answer is not the end of the attempt, so the next one is tried and
+    // only the last failure is reported.
+    const sources = machines.length === 0 ? [null] : machines;
+    let failure: ApiError | null = null;
+    for (const source of sources) {
+      try {
+        await fetchIdentity(identityId, { from: source });
+        setPending(false);
+        onFetched();
+        return;
+      } catch (thrown) {
+        failure = asApiError(thrown);
+      }
     }
+    setError(failure);
+    setPending(false);
   }
 
   return (
@@ -55,17 +75,28 @@ export function FetchButton({
 export function FetchPanel({
   identityId,
   onFetched,
+  machines = [],
 }: {
   identityId: string;
   onFetched: () => void;
+  machines?: string[];
 }) {
   return (
     <Section
       testId="identity-fetch"
       title="Fetch this record from a witness"
-      description="Asks the witnesses your wallet knows, in order, and keeps what they send."
+      description={
+        machines.length === 0
+          ? "Asks the witnesses your wallet knows, in order, and keeps what they send."
+          : "Asks the machines the link named, in order, and keeps what they send."
+      }
     >
-      <FetchButton identityId={identityId} onFetched={onFetched} />
+      {machines.length > 0 && (
+        <p data-testid="identity-fetch-link-note" className="text-sm">
+          {LINK_FETCH_NOTE}
+        </p>
+      )}
+      <FetchButton identityId={identityId} onFetched={onFetched} machines={machines} />
     </Section>
   );
 }

@@ -21,11 +21,12 @@ export interface ErrorDetails {
 }
 
 /**
- * payload_kind is the oneof tag name from ledger.proto in snake_case. The seven
- * frozen values are listed in contracts/README.md, "Event document": inception,
+ * payload_kind is the oneof tag name from ledger.proto in snake_case. The frozen
+ * values are listed in contracts/README.md, "Event document": inception,
  * witness_config, trust_attestation, trust_revocation, membership_invitation,
- * membership_acceptance and membership_removal. It stays a string so a node
- * that mints a value this build does not know still renders.
+ * membership_acceptance, membership_removal, profile_update, witness_set and
+ * endpoint_advertisement. It stays a string so a node that mints a value this
+ * build does not know still renders.
  */
 export type PayloadKind = string;
 
@@ -275,7 +276,22 @@ export interface Identity {
   head_seq: number;
   head_event: string;
   event_count: number;
+  /**
+   * The identities the latest witness set names, which are the identities that
+   * may keep this ledger (proposal 006 section 1). Endpoint ids used to stand
+   * here; an id at this surface is an identity id now.
+   */
   witnesses: string[];
+  /**
+   * The machines this identity's own record says answer for it, in the order it
+   * published them (proposal 006 section 2). Empty until it advertises one.
+   */
+  endpoints: string[];
+  /**
+   * The machines the retired witness list on its own chain records. Read for
+   * resolution and never written again, so no screen draws it.
+   */
+  witness_endpoints: string[];
   trust: TrustRecord[];
   principals: PrincipalEntry[];
   open_invitation_count: number;
@@ -329,9 +345,16 @@ export interface KnownIdentity {
   head_seq: number | null;
 }
 
-/** GET /api/identities/known. Sorted by ascending identity_id alone. */
+/**
+ * GET /api/identities/known?offset=&limit=. Sorted by ascending identity_id
+ * alone, and paged since proposal 006 section 8: a home that witnesses holds up
+ * to 10000 ledgers, so the default limit is 100 and the maximum is 256.
+ */
 export interface KnownIdentitiesResponse {
   ok: true;
+  offset: number;
+  limit: number;
+  more: boolean;
   identities: KnownIdentity[];
 }
 
@@ -473,30 +496,33 @@ export interface SetContactRequest {
   note: string | null;
 }
 
-/** GET /api/node on a wallet. */
-export interface WalletNodeInfo {
+/**
+ * One identity this node keeps records for, and whether that identity's own
+ * record names this node as a machine that answers for it (proposal 006 section
+ * 4.1). reason names what is missing when it does not.
+ */
+export interface WitnessForEntry {
+  identity: string;
+  advertised: boolean;
+  reason: string | null;
+}
+
+/**
+ * GET /api/node. One document on every node (proposal 006 section 8): there is
+ * no role, and what a node can do is read from what it holds. identity_count is
+ * what it can sign for, witness_for is who it accepts records for.
+ */
+export interface NodeInfo {
   ok: true;
-  role: "wallet";
   endpoint_id: string;
   http_bind: string;
   relay: string;
+  /** The machines this node pushes to by default, from node.json. */
   witnesses: string[];
+  witness_for: WitnessForEntry[];
   storage_capacity: number;
   storage_used: number;
   identity_count: number;
-  version: string;
-}
-
-/** GET /api/node on a witness. */
-export interface WitnessNodeInfo {
-  ok: true;
-  role: "witness";
-  endpoint_id: string;
-  http_bind: string;
-  relay: string;
-  witnesses: string[];
-  storage_capacity: number;
-  storage_used: number;
   ledger_count: number;
   fork_count: number;
   version: string;
@@ -578,8 +604,24 @@ export interface AppendResponse {
   event: LedgerEvent;
 }
 
+/**
+ * POST /api/identities/:identity_id/witnesses. The array names identity ids and
+ * replaces the set whole. An id this home cannot resolve to a known identity is
+ * refused with reason unresolvable_witness, and one that names a machine this
+ * home knows with reason endpoint_not_identity (proposal 006 section 8).
+ */
 export interface SetWitnessesRequest {
   witnesses: string[];
+}
+
+/**
+ * POST /api/identities/:identity_id/endpoints. One advertisement naming the
+ * machines that answer for this identity, replacing the list whole. An
+ * advertisement that would change nothing is refused with reason
+ * no_op_endpoint_advertisement.
+ */
+export interface SetEndpointsRequest {
+  endpoints: string[];
 }
 
 export interface AddTrustRequest {
@@ -647,14 +689,31 @@ export interface SigningPrincipal {
 }
 
 /**
- * One entry of GET /api/witnesses (proposal 004). named_by lists the identities
- * whose folded witness config names this endpoint; is_node_default is true for
- * an endpoint node.json carries.
+ * Where a machine came from (proposal 006 section 4.2). verified means the
+ * identity's own record lists it; hinted means nothing this home holds confirms
+ * it. Both are API words and never reach the screen: the UI writes the sentence.
+ */
+export type Binding = "verified" | "hinted";
+
+/** One machine that answers for an identity, and where that claim came from. */
+export interface WitnessEndpoint {
+  endpoint_id: string;
+  binding: Binding;
+}
+
+/**
+ * One entry of GET /api/witnesses: a witness is an identity (proposal 006
+ * section 1). named_by lists the identities whose folded witness set names it,
+ * is_node_default is true for one node.json carries, and stored is true when
+ * this home holds a copy of the witness's own record.
  */
 export interface WitnessSummary {
-  endpoint_id: string;
+  identity_id: string;
+  display_name: string | null;
+  endpoints: WitnessEndpoint[];
   named_by: string[];
   is_node_default: boolean;
+  stored: boolean;
 }
 
 export interface WitnessListResponse {
@@ -673,11 +732,15 @@ export interface WitnessLedgerSummary {
 }
 
 /**
- * GET /api/witnesses/:endpoint_id/ledgers?offset=&limit=. A witness this node
- * cannot reach answers 502 with reason witness_unreachable.
+ * GET /api/witnesses/:identity_id/holdings?offset=&limit=. The node resolves the
+ * witness identity to machines and asks one of them; endpoint_id names the one
+ * that answered. A witness no machine answers for is 502 witness_unreachable,
+ * and an id naming a machine rather than an identity is 404
+ * endpoint_not_identity.
  */
-export interface WitnessLedgerListResponse {
+export interface WitnessHoldingsResponse {
   ok: true;
+  identity_id: string;
   endpoint_id: string;
   ledgers: WitnessLedgerSummary[];
   offset: number;
@@ -711,9 +774,15 @@ export interface ResolveResponse {
   status: ResolveStatus | null;
 }
 
-/** POST /api/identities/:identity_id/fetch. null tries the known witnesses in order. */
+/**
+ * POST /api/identities/:identity_id/fetch. Two nulls try every source this home
+ * knows, in the order of proposal 006 section 5. from names one machine to dial
+ * first, from_witness one witness identity to resolve and dial; naming both is
+ * refused with reason conflicting_source.
+ */
 export interface FetchIdentityRequest {
   from: string | null;
+  from_witness?: string | null;
 }
 
 /**
@@ -733,48 +802,7 @@ export interface FetchIdentityResponse {
   controlled_by: string | null;
 }
 
-/** GET /api/ledgers and GET /api/ledgers/:ledger_id on a witness. */
-export interface LedgerSummary {
-  ledger_id: string;
-  declared_kind: DeclaredKind;
-  head_seq: number;
-  head_event: string;
-  event_count: number;
-  first_seen_ms: number;
-  updated_ms: number;
-  fork_count: number;
-  forks_truncated: boolean;
-  source_endpoint: string;
-}
-
-export interface LedgerListResponse {
-  ok: true;
-  offset: number;
-  limit: number;
-  more: boolean;
-  entries: LedgerSummary[];
-}
-
-export interface LedgerEntryResponse {
-  ok: true;
-  entry: LedgerSummary;
-  witnesses: string[];
-}
-
-export interface ForkRecord {
-  ledger_id: string;
-  seq: number;
-  observed_ms: number;
-  source_endpoint: string;
-  kept: LedgerEvent;
-  conflicting: LedgerEvent;
-  statement: string;
-}
-
-export interface ForkListResponse {
-  ok: true;
-  offset: number;
-  limit: number;
-  more: boolean;
-  entries: ForkRecord[];
-}
+// GET /api/ledgers, GET /api/ledgers/:ledger_id and their events route are gone
+// (proposal 006 section 8): GET /api/identities/known, GET
+// /api/identities/:identity_id and .../ledger?since= answer for every ledger a
+// home holds, whatever else that home does.

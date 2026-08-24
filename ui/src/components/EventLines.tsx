@@ -17,6 +17,8 @@ const GLOSS: Record<string, string> = {
   inception: "created this identity",
   profile_update: "changed the public name, email and handle",
   witness_config: "chose who keeps a copy",
+  witness_set: "chose who keeps a copy",
+  endpoint_advertisement: "published the machines that answer for it",
   trust_attestation: "said it trusts someone",
   trust_revocation: "took back trusting someone",
   membership_invitation: "invited someone to help control this identity",

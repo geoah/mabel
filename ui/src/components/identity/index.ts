@@ -17,6 +17,13 @@ export {
 } from "./IdentityCard";
 export { IdentityInline } from "./IdentityInline";
 export {
+  type Machine,
+  machineSentence,
+  machinesOf,
+  NOT_CONFIRMED,
+  ON_OWN_RECORD,
+} from "./machines";
+export {
   bareIdentity,
   duplicateNames,
   IdentityListScope,

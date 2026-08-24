@@ -8,6 +8,8 @@ import { useCallback, useSyncExternalStore } from "react";
 export const HOSTNAME_CONSENT_KEY = "mabel.consent.hostname_publication";
 /** Consent, taken once before the first graph sync. */
 export const GRAPH_CONSENT_KEY = "mabel.consent.graph_sync";
+/** Consent, taken once before the first machine is published on a record. */
+export const ENDPOINTS_CONSENT_KEY = "mabel.consent.endpoint_advertisement";
 
 const listeners = new Set<() => void>();
 

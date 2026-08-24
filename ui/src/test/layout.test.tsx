@@ -64,16 +64,16 @@ describe("never a border inside a border", () => {
     expectNoNestedBorder(screen.getByTestId("identity-detail").parentElement!);
   });
 
-  it("holds on the witnesses page and on one witness", async () => {
+  it("holds on the witnesses page and on one witness's own page", async () => {
     renderApp("/witnesses");
     await screen.findByTestId("witness-cards");
 
     expectNoNestedBorder(screen.getByTestId("witness-list").parentElement!);
 
-    renderApp(`/witnesses/${REACHABLE_WITNESS}`);
+    renderApp(`/identities/${REACHABLE_WITNESS}`);
     await screen.findAllByTestId("identity-cards");
 
-    for (const holdings of screen.getAllByTestId("witness-ledgers")) {
+    for (const holdings of screen.getAllByTestId("witness-holdings")) {
       expectNoNestedBorder(holdings);
     }
   });
@@ -117,10 +117,10 @@ describe("the heading hierarchy", () => {
 
 describe("one way back", () => {
   it("leaves the nav as the way back from a witness and from a record", async () => {
-    renderApp(`/witnesses/${REACHABLE_WITNESS}`);
-    await screen.findByTestId("witness-ledgers");
+    renderApp(`/identities/${REACHABLE_WITNESS}`);
+    await screen.findByTestId("witness-holdings");
 
-    expect(screen.queryByTestId("witness-ledgers-back")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("witness-holdings-back")).not.toBeInTheDocument();
     expect(screen.getByTestId("nav-witnesses")).toBeInTheDocument();
   });
 });

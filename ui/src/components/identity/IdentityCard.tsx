@@ -9,6 +9,7 @@ import type {
   Verification,
 } from "@/api/types";
 import { DeclaredKindValue } from "@/components/DeclaredKind";
+import { Identifier } from "@/components/Identifier";
 import { NICKNAME_INFO, NOTE_INFO } from "@/components/InfoTip";
 import { KeyValue, KeyValueTable } from "@/components/KeyValue";
 import { Badge } from "@/components/ui/badge";
@@ -24,6 +25,7 @@ import { formatDate } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
 import { IdentityInline } from "./IdentityInline";
+import { type Machine, machineSentence, machinesOf } from "./machines";
 import { bareIdentity, IdentityListScope, resolvedFrom, VerificationMark } from "./names";
 import { IdentityPillBadge, usePill } from "./pill";
 
@@ -71,6 +73,12 @@ export interface IdentityFacts {
    * record it has, without the record itself being loaded.
    */
   headSeq: number | null;
+  /**
+   * The machines that answer for it, one row each. The identity document names
+   * the ones its own record publishes; a screen holding the witness list adds
+   * the ones this home knows from somewhere else.
+   */
+  machines: Machine[];
 }
 
 /** The facts an identity document carries, for every screen holding one. */
@@ -83,6 +91,7 @@ export function factsFromIdentity(identity: Identity, to: string | null = null):
     to,
     stored: true,
     headSeq: identity.head_seq,
+    machines: machinesOf(identity),
     record: {
       alias: identity.alias,
       createdAtMs: identity.created_at_ms,
@@ -118,6 +127,8 @@ export function factsFromResolved(
     stored?: boolean | null;
     /** The newest position the listing reported, when it reported one. */
     headSeq?: number | null;
+    /** The machines a screen holding the witness list knows for it. */
+    machines?: Machine[];
   } = {},
 ): IdentityFacts {
   return {
@@ -129,6 +140,7 @@ export function factsFromResolved(
     record: null,
     stored: options.stored ?? null,
     headSeq: options.headSeq ?? null,
+    machines: options.machines ?? [],
   };
 }
 
@@ -168,6 +180,25 @@ function RecordRows({
   resolvePrincipal: (identityId: string) => ResolvedIdentityDocument;
 }) {
   const record = facts.record;
+  // One row per machine, each with its id and the sentence saying where the
+  // claim came from. Never an id and a status on one line (decision 017).
+  const machines = facts.machines.map((machine) => (
+    <KeyValue
+      key={machine.endpointId}
+      label="machine"
+      testId={testIds(`machine-${machine.endpointId}`)}
+    >
+      <span className="flex flex-col gap-1">
+        <Identifier value={machine.endpointId} full copyLabel="Copy machine ID" />
+        <span
+          data-testid={testIds(`machine-${machine.endpointId}-note`)}
+          className="text-xs text-muted-foreground"
+        >
+          {machineSentence(machine)}
+        </span>
+      </span>
+    </KeyValue>
+  ));
   // Every row label is lowercase, the public email included: one style for the
   // whole table, so no row reads as a heading over its neighbours.
   const email =
@@ -183,6 +214,7 @@ function RecordRows({
     return (
       <KeyValueTable>
         {email}
+        {machines}
         {(facts.stored === false || entries !== null) && (
           <KeyValue label="ledger" testId={testIds("ledger-summary")}>
             {entries === null ? (
@@ -241,6 +273,7 @@ function RecordRows({
           />
         )}
       </KeyValue>
+      {machines}
       <KeyValue label="ledger" testId={testIds("ledger-summary")}>
         <span data-testid={testIds("event-count")}>{record.eventCount}</span>{" "}
         {record.eventCount === 1 ? "entry" : "entries"}
@@ -325,7 +358,10 @@ export function IdentityCard({
   // crawled name with none of the three opens onto nothing, so it draws no
   // control at all: the pill in its corner is the whole answer.
   const expandable =
-    facts.record !== null || facts.email !== null || (facts.stored === true && facts.headSeq !== null);
+    facts.record !== null ||
+    facts.email !== null ||
+    facts.machines.length > 0 ||
+    (facts.stored === true && facts.headSeq !== null);
   const extra = markers !== undefined && markers !== null && markers !== false;
 
   return (

@@ -49,7 +49,15 @@ export const handlers = [
   }),
 
   // known is a static segment, matched before an identity id can claim it.
-  http.get("/api/identities/known", () => answer(() => store.listKnownIdentities())),
+  http.get("/api/identities/known", ({ request }) => {
+    const url = new URL(request.url);
+    return answer(() =>
+      store.listKnownIdentities({
+        offset: number(url, "offset"),
+        limit: number(url, "limit"),
+      }),
+    );
+  }),
 
   http.get("/api/identities/:identityId", ({ params }) =>
     answer(() => store.getIdentity(String(params.identityId))),
@@ -75,6 +83,16 @@ export const handlers = [
       store.setIdentityWitnesses(
         String(params.identityId),
         ((body as Body).witnesses ?? []) as string[],
+      ),
+    );
+  }),
+
+  http.post("/api/identities/:identityId/endpoints", async ({ params, request }) => {
+    const body = await request.json();
+    return change(() =>
+      store.setIdentityEndpoints(
+        String(params.identityId),
+        ((body as Body).endpoints ?? []) as string[],
       ),
     );
   }),
@@ -163,10 +181,10 @@ export const handlers = [
 
   http.get("/api/witnesses", () => answer(() => store.listWitnesses())),
 
-  http.get("/api/witnesses/:endpointId/ledgers", ({ params, request }) => {
+  http.get("/api/witnesses/:identityId/holdings", ({ params, request }) => {
     const url = new URL(request.url);
     return answer(() =>
-      store.witnessLedgerList(String(params.endpointId), {
+      store.witnessHoldings(String(params.identityId), {
         offset: number(url, "offset"),
         limit: number(url, "limit"),
       }),
@@ -176,39 +194,4 @@ export const handlers = [
   http.get("/api/resolve", ({ request }) =>
     answer(() => store.resolveInput(new URL(request.url).searchParams.get("input") ?? "")),
   ),
-
-  // The witness routes, all of them reads.
-
-  http.get("/api/ledgers", ({ request }) => {
-    const url = new URL(request.url);
-    return answer(() =>
-      store.listLedgers({ offset: number(url, "offset"), limit: number(url, "limit") }),
-    );
-  }),
-
-  http.get("/api/ledgers/:ledgerId", ({ params }) =>
-    answer(() => store.getLedgerEntry(String(params.ledgerId))),
-  ),
-
-  http.get("/api/ledgers/:ledgerId/events", ({ params, request }) => {
-    const url = new URL(request.url);
-    return answer(() =>
-      store.getLedgerEvents(String(params.ledgerId), {
-        since: number(url, "since"),
-        limit: number(url, "limit"),
-      }),
-    );
-  }),
-
-  http.get("/api/forks", ({ request }) => {
-    const url = new URL(request.url);
-    const ledgerId = url.searchParams.get("ledger_id");
-    return answer(() =>
-      store.listForks({
-        ledger_id: ledgerId ?? undefined,
-        offset: number(url, "offset"),
-        limit: number(url, "limit"),
-      }),
-    );
-  }),
 ];

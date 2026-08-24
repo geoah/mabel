@@ -14,6 +14,15 @@ import { Section } from "@/components/Section";
 import { Button } from "@/components/ui/button";
 import { useResource } from "@/hooks/useResource";
 
+/**
+ * The standing note this list carries, which came off the witness route when
+ * that route went away (proposal 006 section 8). A home that keeps records for
+ * other people lists them here, and there is no global discovery: what is
+ * missing here may be on another witness.
+ */
+export const HOLDINGS_NOTE =
+  "This is what this home holds. A record missing here may still be on another witness.";
+
 /** The resolved document behind one known row, which is what a card reads. */
 function resolvedOf(row: KnownIdentity) {
   return {
@@ -95,6 +104,9 @@ export function KnownIdentities({ own }: { own: Identity[] }) {
         </Button>
       }
     >
+      <p data-testid="known-identities-note" className="text-sm text-muted-foreground">
+        {HOLDINGS_NOTE}
+      </p>
       {known.loading && <p data-testid="known-identities-loading">loading</p>}
       {known.error && (
         <ErrorEnvelopeView error={known.error} testId="known-identities-error" />

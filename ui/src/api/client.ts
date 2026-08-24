@@ -12,7 +12,6 @@ import type {
   ErrorEnvelope,
   FetchIdentityRequest,
   FetchIdentityResponse,
-  ForkListResponse,
   GraphResponse,
   GraphSyncResponse,
   IdentityKeysResponse,
@@ -21,11 +20,10 @@ import type {
   InviteRequest,
   InvitedResponse,
   KnownIdentitiesResponse,
-  LedgerEntryResponse,
-  LedgerListResponse,
   LedgerPageResponse,
   LookupResponse,
   MembershipView,
+  NodeInfo,
   RemoveRequest,
   RemovedResponse,
   ReplaceProfileRequest,
@@ -34,14 +32,13 @@ import type {
   RevokeTrustRequest,
   RevokeTrustResponse,
   SetContactRequest,
+  SetEndpointsRequest,
   SetWitnessesRequest,
   SyncPushRequest,
   SyncPushResponse,
   VerificationResponse,
-  WalletNodeInfo,
-  WitnessLedgerListResponse,
+  WitnessHoldingsResponse,
   WitnessListResponse,
-  WitnessNodeInfo,
 } from "./types";
 
 /** The error envelope of contracts/README.md, thrown for any non-ok document. */
@@ -169,11 +166,11 @@ function query(params: Record<string, string | number | undefined>): string {
   return rendered ? `?${rendered}` : "";
 }
 
-// Wallet routes.
+// One router, and every node serves it (proposal 006 section 8).
 
-/** A node has one role, and the same bundle is served by both: the shell asks. */
-export function getNode(): Promise<WalletNodeInfo | WitnessNodeInfo> {
-  return get<WalletNodeInfo | WitnessNodeInfo>("/node");
+/** What this node is: one document, on a node that signs, keeps records or both. */
+export function getNode(): Promise<NodeInfo> {
+  return get<NodeInfo>("/node");
 }
 
 export function listIdentities(): Promise<IdentityListResponse> {
@@ -189,8 +186,10 @@ export function createIdentity(body: CreateIdentityRequest): Promise<CreateIdent
  * names, whether a copy is stored, and how it is reached. The route reads the
  * home and the stored crawl only, so it opens no socket and asks no DNS.
  */
-export function listKnownIdentities(): Promise<KnownIdentitiesResponse> {
-  return get<KnownIdentitiesResponse>("/identities/known");
+export function listKnownIdentities(
+  params: { offset?: number; limit?: number } = {},
+): Promise<KnownIdentitiesResponse> {
+  return get<KnownIdentitiesResponse>(`/identities/known${query(params)}`);
 }
 
 export function getIdentity(identityId: string): Promise<IdentityResponse> {
@@ -210,11 +209,23 @@ export function getIdentityLedger(
   return get<LedgerPageResponse>(`/identities/${identityId}/ledger${query(params)}`);
 }
 
+/** The witnesses one identity names, replaced whole. The ids name identities. */
 export function setIdentityWitnesses(
   identityId: string,
   body: SetWitnessesRequest,
 ): Promise<AppendResponse> {
   return post<AppendResponse>(`/identities/${identityId}/witnesses`, body);
+}
+
+/**
+ * The machines that answer for one identity, published on its own record and
+ * replaced whole (proposal 006 section 2).
+ */
+export function setIdentityEndpoints(
+  identityId: string,
+  body: SetEndpointsRequest,
+): Promise<AppendResponse> {
+  return post<AppendResponse>(`/identities/${identityId}/endpoints`, body);
 }
 
 export function addTrust(body: AddTrustRequest): Promise<AppendResponse> {
@@ -327,22 +338,23 @@ export function syncGraph(): Promise<GraphSyncResponse> {
 }
 
 /**
- * Every witness this wallet knows of: the folded witness configs of its stored
- * ledgers plus the defaults node.json carries.
+ * Every witness this home knows of, as identities: the folded witness sets of
+ * its stored ledgers plus the defaults node.json carries.
  */
 export function listWitnesses(): Promise<WitnessListResponse> {
   return get<WitnessListResponse>("/witnesses");
 }
 
 /**
- * What one witness holds, asked live over the sync protocol's List request. A
- * witness this node cannot reach answers 502 with reason witness_unreachable.
+ * What one witness holds, asked live over the sync protocol's List request. The
+ * node resolves the identity to machines first, and a witness no machine answers
+ * for is 502 with reason witness_unreachable.
  */
-export function listWitnessLedgers(
-  endpointId: string,
+export function listWitnessHoldings(
+  identityId: string,
   params: { offset?: number; limit?: number } = {},
-): Promise<WitnessLedgerListResponse> {
-  return get<WitnessLedgerListResponse>(`/witnesses/${endpointId}/ledgers${query(params)}`);
+): Promise<WitnessHoldingsResponse> {
+  return get<WitnessHoldingsResponse>(`/witnesses/${identityId}/holdings${query(params)}`);
 }
 
 /**
@@ -353,29 +365,4 @@ export function listWitnessLedgers(
  */
 export function resolveInput(input: string): Promise<ResolveResponse> {
   return get<ResolveResponse>(`/resolve?input=${encodeURIComponent(input)}`);
-}
-
-// Witness routes, read-only.
-
-export function listLedgers(
-  params: { offset?: number; limit?: number } = {},
-): Promise<LedgerListResponse> {
-  return get<LedgerListResponse>(`/ledgers${query(params)}`);
-}
-
-export function getLedger(ledgerId: string): Promise<LedgerEntryResponse> {
-  return get<LedgerEntryResponse>(`/ledgers/${ledgerId}`);
-}
-
-export function getLedgerEvents(
-  ledgerId: string,
-  params: { since?: number; limit?: number } = {},
-): Promise<LedgerPageResponse> {
-  return get<LedgerPageResponse>(`/ledgers/${ledgerId}/events${query(params)}`);
-}
-
-export function listForks(
-  params: { ledger_id?: string; offset?: number; limit?: number } = {},
-): Promise<ForkListResponse> {
-  return get<ForkListResponse>(`/forks${query(params)}`);
 }

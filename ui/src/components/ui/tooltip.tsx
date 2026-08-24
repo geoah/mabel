@@ -56,17 +56,26 @@ export function Tooltip({ className, children, ...props }: React.ComponentProps<
   );
 }
 
+/**
+ * The trigger is a focusable span, not a button, and it carries the button role
+ * and the button keys itself. A tooltip hangs off labels that are themselves
+ * inside a control: the list toggles on the lookup screen are buttons, and a
+ * button inside a button is invalid HTML that browsers repair by moving the
+ * inner one out, which loses the icon.
+ */
 export function TooltipTrigger({
   className,
   onClick,
+  onKeyDown,
   children,
   ...props
-}: React.ComponentProps<"button">) {
+}: React.ComponentProps<"span">) {
   const { open, setOpen, contentId } = useTooltip("TooltipTrigger");
 
   return (
-    <button
-      type="button"
+    <span
+      role="button"
+      tabIndex={0}
       data-slot="tooltip-trigger"
       data-state={open ? "open" : "closed"}
       aria-expanded={open}
@@ -76,7 +85,8 @@ export function TooltipTrigger({
       // shut the sentence the tap just opened. Leaving, blurring and Escape are
       // what close it.
       onClick={(event) => {
-        // A trigger inside a clickable card opens the sentence and nothing else.
+        // A trigger inside a clickable card or a toggle opens the sentence and
+        // nothing else.
         event.stopPropagation();
         onClick?.(event);
         setOpen(true);
@@ -90,19 +100,28 @@ export function TooltipTrigger({
       onFocus={() => setOpen(true)}
       onBlur={() => setOpen(false)}
       onKeyDown={(event) => {
+        onKeyDown?.(event);
         if (event.key === "Escape") {
           setOpen(false);
+          return;
+        }
+        // What a button does for free, done by hand: Enter and Space open the
+        // sentence, and neither reaches the control this span sits inside.
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          event.stopPropagation();
+          setOpen(true);
         }
       }}
       className={cn(
-        "inline-flex items-center justify-center rounded-sm text-muted-foreground",
+        "inline-flex cursor-pointer items-center justify-center rounded-sm text-muted-foreground",
         "hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
         className,
       )}
       {...props}
     >
       {children}
-    </button>
+    </span>
   );
 }
 

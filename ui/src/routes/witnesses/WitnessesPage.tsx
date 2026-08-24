@@ -1,111 +1,93 @@
 import { useMemo } from "react";
 
 import { listIdentities, listWitnesses } from "@/api/client";
-import type { ResolvedIdentity, WitnessSummary } from "@/api/types";
+import type { WitnessSummary } from "@/api/types";
 import { ErrorEnvelopeView } from "@/components/ErrorEnvelopeView";
 import {
   bareIdentity,
-  IdentityInline,
-  IdentityListScope,
-  resolvedFrom,
+  factsFromResolved,
+  type IdentityCardEntry,
+  IdentityCardList,
+  IdentityPillScope,
+  machinesOf,
+  type PillFacts,
+  trustedSubjects,
 } from "@/components/identity";
 import { PageSections, Section } from "@/components/Section";
-import { WitnessCard } from "@/components/WitnessCard";
-import { Badge } from "@/components/ui/badge";
 import { useResource } from "@/hooks/useResource";
 import { GraphSyncCard } from "@/routes/wallet/GraphSyncControl";
 
-/**
- * One witness endpoint and where this wallet knows it from: the identities whose
- * folded witness config names it, named the way every other screen names one, so
- * the card reads as people rather than as a count. How many of them there are is
- * a sentence on the witness's own page, not a line on its card.
- */
-function KnownWitnessCard({
-  witness,
-  name,
-}: {
-  witness: WitnessSummary;
-  name: (identityId: string) => ResolvedIdentity;
-}) {
-  const endpoint = witness.endpoint_id;
-  const chose = witness.named_by.map(name);
-  return (
-    <WitnessCard
-      endpointId={endpoint}
-      testIdPrefix="witness-card"
-      badge={
-        witness.is_node_default ? (
-          <Badge variant="secondary" data-testid={`witness-card-default-${endpoint}`}>
-            this node uses it by default
-          </Badge>
-        ) : undefined
-      }
-    >
-      {chose.length > 0 && (
-        <IdentityListScope identities={chose}>
-          <div data-testid={`witness-card-named-by-${endpoint}`} className="flex flex-col gap-2">
-            {chose.map((identity) => (
-              <IdentityInline
-                key={identity.identity_id}
-                identity={identity}
-                testId={`witness-card-chose-${endpoint}-${identity.identity_id}`}
-                to={`/identities/${identity.identity_id}`}
-                // A card has the width for a whole Mabel ID, so it draws one.
-                full
-              />
-            ))}
-          </div>
-        </IdentityListScope>
-      )}
-    </WitnessCard>
-  );
+/** What a witness card says beyond the name every identity card carries. */
+export const NODE_DEFAULT_MARKER = "this node uses it by default";
+
+/** The card one witness draws: an identity card, because a witness is an identity. */
+function witnessEntry(witness: WitnessSummary): IdentityCardEntry {
+  const named = {
+    ...bareIdentity(witness.identity_id),
+    display_name: witness.display_name,
+  };
+  return {
+    facts: factsFromResolved(named, {
+      to: `/identities/${witness.identity_id}`,
+      stored: witness.stored,
+      machines: machinesOf(null, witness),
+    }),
+    markers: witness.is_node_default ? (
+      <span data-testid={`witness-default-${witness.identity_id}`}>{NODE_DEFAULT_MARKER}</span>
+    ) : undefined,
+  };
 }
 
 /**
- * The witness card list (proposal 004). A wallet knows a witness from a ledger
+ * The witnesses this home knows, each drawn as the identity card every other
+ * screen draws (proposal 006 section 8). A home knows a witness from a ledger
  * that names it or from its own configuration: there is no global directory.
+ * What one of them holds, and which machines answer for it, are on its own page.
  */
 export function WitnessesPage() {
   const witnesses = useResource(listWitnesses, []);
   const identities = useResource(listIdentities, []);
   const held = identities.data?.identities ?? [];
-  // Every identity that names a witness is an identity this wallet holds, so no
-  // request runs to name one: the list it already loaded carries the names.
-  const name = useMemo(() => {
-    const table = new Map(held.map((identity) => [identity.identity_id, resolvedFrom(identity)]));
-    return (identityId: string) => table.get(identityId) ?? bareIdentity(identityId);
+  const rows = witnesses.data?.witnesses ?? [];
+  const entries = rows.map(witnessEntry);
+  // The pills read documents this page already loaded, so no request here
+  // exists for the sake of a pill (proposal 005).
+  const pills = useMemo<PillFacts>(
+    () => ({
+      own: new Set(held.map((identity) => identity.identity_id)),
+      trusted: trustedSubjects(held),
+      degrees: new Map<string, number>(),
+    }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [identities.data]);
+    [identities.data],
+  );
 
   return (
-    <PageSections>
-      {/* Flat sections, like the wallet page: the cards here are the witnesses,
-          so no card wraps them. */}
-      <Section
-        testId="witness-list"
-        title="Witnesses"
-        description="The ones your identities chose, and the ones this node uses by default."
-      >
-        {witnesses.loading && <p data-testid="witness-list-loading">loading</p>}
-        {witnesses.error && (
-          <ErrorEnvelopeView error={witnesses.error} testId="witness-list-error" />
-        )}
-        {witnesses.data && witnesses.data.witnesses.length === 0 && (
-          <p data-testid="witness-list-empty">Your wallet knows of no witness yet.</p>
-        )}
-        {witnesses.data && witnesses.data.witnesses.length > 0 && (
-          <ul data-testid="witness-cards" className="grid gap-2">
-            {witnesses.data.witnesses.map((witness) => (
-              <li key={witness.endpoint_id} className="min-w-0">
-                <KnownWitnessCard witness={witness} name={name} />
-              </li>
-            ))}
-          </ul>
-        )}
-      </Section>
-      {/* The sync reads witnesses, so the control that starts one lives here. */}
-      <GraphSyncCard />
-    </PageSections>
+    <IdentityPillScope facts={pills}>
+      <PageSections>
+        {/* Flat sections, like the wallet page: the cards here are the
+            witnesses, so no card wraps them. */}
+        <Section
+          testId="witness-list"
+          title="Witnesses"
+          description="The ones your identities chose, and the ones this node uses by default."
+        >
+          {witnesses.loading && <p data-testid="witness-list-loading">loading</p>}
+          {witnesses.error && (
+            <ErrorEnvelopeView error={witnesses.error} testId="witness-list-error" />
+          )}
+          {witnesses.data && (
+            <IdentityCardList
+              entries={entries}
+              testId="witness-cards"
+              empty="Your wallet knows of no witness yet."
+              emptyTestId="witness-list-empty"
+            />
+          )}
+        </Section>
+        {/* The sync reads witnesses, so the control that starts one lives here. */}
+        <GraphSyncCard />
+      </PageSections>
+    </IdentityPillScope>
   );
 }

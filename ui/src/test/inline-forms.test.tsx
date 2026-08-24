@@ -36,7 +36,7 @@ describe("one box and one button", () => {
   it.each([
     ["action-trust", "trust-add-form", "trust-add-subject", "trust-add-submit"],
     ["action-revoke", "trust-revoke-form", "trust-revoke-subject", "trust-revoke-submit"],
-    ["action-witnesses", "witness-add-form", "witness-add-endpoint", "witness-add-submit"],
+    ["action-witnesses", "witness-add-form", "witness-add-identity", "witness-add-submit"],
     ["action-push", "sync-push-form", "sync-push-to", "sync-push-submit"],
     ["action-handle", "handle-form", "handle-input", "handle-submit"],
   ])("puts %s on one row", async (action, form, input, submit) => {

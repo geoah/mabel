@@ -5,7 +5,6 @@ import { describe, expect, it } from "vitest";
 import { GRAPH_CONSENT_KEY } from "@/lib/preferences";
 import { ALICE } from "@/mocks/fixtures";
 import { server } from "@/mocks/server";
-import { setNodeRole } from "@/mocks/store";
 
 import { openAction, renderApp } from "./render";
 
@@ -80,6 +79,7 @@ describe("navigation", () => {
 
     await user.click(screen.getByTestId("nav-witnesses"));
     await screen.findByTestId("witness-cards");
+    expect(screen.getByTestId("nav-witnesses")).toHaveAttribute("aria-current", "page");
 
     await user.click(screen.getByTestId("nav-node"));
     await screen.findByTestId("node-page");
@@ -96,24 +96,30 @@ describe("navigation", () => {
 });
 
 describe("the front door", () => {
-  it("waits for the node document rather than assuming a wallet", async () => {
+  it("opens the one home every node has, without asking what it is", async () => {
     renderApp("/");
 
-    // The node has not answered yet, so no screen has been chosen.
-    expect(screen.getByTestId("app-role-loading")).toBeInTheDocument();
-    expect(screen.queryByTestId("identity-cards")).not.toBeInTheDocument();
-
-    await screen.findByTestId("identity-cards");
+    // No screen waits on the node document: there is one home, and it is this.
     expect(screen.queryByTestId("app-role-loading")).not.toBeInTheDocument();
+    await screen.findByTestId("identity-cards");
+    expect(screen.getByTestId("nav-wallet")).toHaveAttribute("aria-current", "page");
   });
 
-  it("sends a witness node to its own records, not to a wallet it does not serve", async () => {
-    setNodeRole("witness");
+  it("shows a home with no keys the same three entries and an empty wallet", async () => {
+    server.use(
+      http.get("/api/identities", () => HttpResponse.json({ ok: true, identities: [] })),
+    );
     renderApp("/");
 
-    await screen.findByTestId("witness-ledger-list");
-    expect(screen.getByTestId("nav-witness")).toHaveTextContent("Records");
-    expect(screen.queryByTestId("nav-wallet")).not.toBeInTheDocument();
+    await screen.findByTestId("identity-list-empty");
+    for (const entry of ["nav-wallet", "nav-witnesses", "nav-node"]) {
+      expect(screen.getByTestId(entry)).toBeInTheDocument();
+    }
+    // Its holdings are the second list, which is where a witness's records are.
+    expect(await screen.findByTestId("known-identity-cards")).toBeInTheDocument();
+    expect(screen.getByTestId("known-identities-note")).toHaveTextContent(
+      "A record missing here may still be on another witness.",
+    );
   });
 
   it("names the address it tried when the node does not answer", async () => {

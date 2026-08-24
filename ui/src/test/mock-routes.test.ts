@@ -13,13 +13,15 @@ import {
   getMemberships,
   invite,
   listIdentities,
-  listWitnessLedgers,
+  listWitnessHoldings,
   listWitnesses,
   lookup,
   removePrincipal,
   replaceProfile,
   resolveInput,
   setContact,
+  setIdentityEndpoints,
+  setIdentityWitnesses,
   syncGraph,
 } from "@/api/client";
 import {
@@ -27,9 +29,11 @@ import {
   ALICE,
   BOB,
   CAROL,
+  HINTED_MACHINE,
   REACHABLE_WITNESS,
   UNREACHABLE_WITNESS,
   UNSTORED_LEDGER,
+  WITNESS_MACHINE,
   seedContact,
   seedGraph,
   seedIdentities,
@@ -317,43 +321,101 @@ describe("profile and verification", () => {
 });
 
 describe("witnesses", () => {
-  it("names every endpoint a stored ledger or node.json points at", async () => {
+  it("names every witness identity a stored ledger or node.json points at", async () => {
     const response = await listWitnesses();
     const named = new Map(
-      response.witnesses.map((witness) => [witness.endpoint_id, witness]),
+      response.witnesses.map((witness) => [witness.identity_id, witness]),
     );
 
     expect(named.get(REACHABLE_WITNESS)?.is_node_default).toBe(true);
     expect(named.get(REACHABLE_WITNESS)?.named_by).toEqual([ALICE]);
     expect(named.get(UNREACHABLE_WITNESS)?.is_node_default).toBe(false);
-    expect(named.get(UNREACHABLE_WITNESS)?.named_by).toEqual([ACME]);
-    // Ascending endpoint id, like every other list this node serves.
-    const ids = response.witnesses.map((witness) => witness.endpoint_id);
+    expect(named.get(UNREACHABLE_WITNESS)?.named_by).toEqual([ACME, ALICE]);
+    // Every row carries the machines that answer for it, and where the claim
+    // that they do came from.
+    expect(named.get(REACHABLE_WITNESS)?.endpoints).toEqual([
+      { endpoint_id: WITNESS_MACHINE, binding: "verified" },
+      { endpoint_id: HINTED_MACHINE, binding: "hinted" },
+    ]);
+    // Ascending identity id, like every other list this node serves.
+    const ids = response.witnesses.map((witness) => witness.identity_id);
     expect(ids).toEqual([...ids].sort());
   });
 
   it("proxies the ledger list of a witness it can reach", async () => {
-    const response = await listWitnessLedgers(REACHABLE_WITNESS);
+    const response = await listWitnessHoldings(REACHABLE_WITNESS);
 
-    expect(response.endpoint_id).toBe(REACHABLE_WITNESS);
+    expect(response.identity_id).toBe(REACHABLE_WITNESS);
+    // The machine that answered is the one the witness's own record names.
+    expect(response.endpoint_id).toBe(WITNESS_MACHINE);
     const alice = response.ledgers.find((ledger) => ledger.ledger_id === ALICE);
     expect(alice?.declared_kind).toBe("person");
     expect(alice?.fork_count).toBe(1);
   });
 
-  it("answers 502 witness_unreachable for a witness it cannot dial", async () => {
-    const error = await rejection(() => listWitnessLedgers(UNREACHABLE_WITNESS));
+  it("answers 502 witness_unreachable for a witness no machine answers for", async () => {
+    const error = await rejection(() => listWitnessHoldings(UNREACHABLE_WITNESS));
 
     expect(error.status).toBe(502);
     expect(error.reason).toBe("witness_unreachable");
     expect(error.code).toBe(30);
+    expect(error.details.identity_id).toBe(UNREACHABLE_WITNESS);
   });
 
-  it("refuses an endpoint id that is not 52 base32 characters", async () => {
-    const error = await rejection(() => listWitnessLedgers("witness-one"));
+  it("answers 404 endpoint_not_identity for a machine id at the identity surface", async () => {
+    const error = await rejection(() => listWitnessHoldings(WITNESS_MACHINE));
+
+    expect(error.status).toBe(404);
+    expect(error.reason).toBe("endpoint_not_identity");
+  });
+
+  it("refuses an identity id that is not 52 base32 characters", async () => {
+    const error = await rejection(() => listWitnessHoldings("witness-one"));
 
     expect(error.status).toBe(400);
-    expect(error.reason).toBe("malformed_endpoint_id");
+    expect(error.reason).toBe("malformed_identity_id");
+  });
+});
+
+describe("the machines an identity publishes", () => {
+  it("replaces the whole list and appends one advertisement", async () => {
+    const machine = "e".repeat(52);
+    const before = (await getIdentity(ALICE)).identity;
+    const response = await setIdentityEndpoints(ALICE, {
+      endpoints: [...before.endpoints, machine],
+    });
+
+    expect(response.event.payload_kind).toBe("endpoint_advertisement");
+    expect(response.event.payload).toEqual({ endpoints: [...before.endpoints, machine] });
+    expect((await getIdentity(ALICE)).identity.endpoints).toContain(machine);
+  });
+
+  it("refuses a replacement that would change nothing", async () => {
+    const current = (await getIdentity(ALICE)).identity.endpoints;
+    const error = await rejection(() => setIdentityEndpoints(ALICE, { endpoints: current }));
+
+    expect(error.status).toBe(409);
+    expect(error.reason).toBe("no_op_endpoint_advertisement");
+  });
+});
+
+describe("naming a witness", () => {
+  it("refuses a machine id where an identity id belongs, before any dial", async () => {
+    const error = await rejection(() =>
+      setIdentityWitnesses(ALICE, { witnesses: [WITNESS_MACHINE] }),
+    );
+
+    expect(error.status).toBe(400);
+    expect(error.reason).toBe("endpoint_not_identity");
+  });
+
+  it("refuses an identity no machine is known for", async () => {
+    const error = await rejection(() =>
+      setIdentityWitnesses(ALICE, { witnesses: ["q".repeat(52)] }),
+    );
+
+    expect(error.status).toBe(400);
+    expect(error.reason).toBe("unresolvable_witness");
   });
 });
 

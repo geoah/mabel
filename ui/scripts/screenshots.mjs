@@ -32,9 +32,9 @@ const ACME = "2okqwhextnpkpmydrgrkk563vbehcklffwfzidxlh5dslawjmn6a";
 const CAROL = "jqtnsb2me7mj5xsze4gavqklohqhdmkshfiz65khjmxtxjruqh2q";
 /** A record one witness holds and this home stores no copy of, so a fetch has work. */
 const UNSTORED_LEDGER = "cd".repeat(26);
-/** The two witness endpoints the fixtures carry: one answers, one does not. */
-const WITNESS = "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq";
-const UNREACHABLE_WITNESS = "54rw3lmckcpqf4ofkvyx3i74agumvale2qmzdu76ubpita6sw5va";
+/** The two witness identities the fixtures carry: one answers, one does not. */
+const WITNESS = "ovfp3btcnjyhwmyw3ldk3wmt2ppb5w5c5adyzcavswmyq7xkg7fq";
+const UNREACHABLE_WITNESS = "q7hnsnk6ycwjyzwbmqjcaxwlmxvvfjbmwzq4gz4dbtvpojjuh3fq";
 
 const VIEWPORTS = [
   { name: "360x780", width: 360, height: 780 },
@@ -158,13 +158,36 @@ const SCREENS = [
     },
   },
   {
-    // The witnesses one identity chose, as cards with whole endpoint ids.
+    // The witnesses one identity chose, named the way every identity is.
     name: "identity-own-witnesses",
     path: `/identities/${ALICE}`,
     ready: "action-witnesses-summary",
     async act(page) {
       await page.getByTestId("action-witnesses-summary").click();
       await page.getByTestId("witness-list").waitFor();
+    },
+  },
+  {
+    // The link that opens this identity somewhere else: the string, the square
+    // and the file, with what handing it over discloses under them.
+    name: "identity-own-share",
+    path: `/identities/${ALICE}`,
+    ready: "action-share-summary",
+    async act(page) {
+      await page.getByTestId("action-share-summary").click();
+      await page.getByTestId("share-qr").waitFor();
+    },
+  },
+  {
+    // Publishing a machine asks for consent once, stating the three facts.
+    name: "identity-own-endpoints-consent",
+    path: `/identities/${ALICE}`,
+    ready: "action-endpoints-summary",
+    async act(page) {
+      await page.getByTestId("action-endpoints-summary").click();
+      await page.getByTestId("endpoints-input").fill("b".repeat(52));
+      await page.getByTestId("endpoints-submit").click();
+      await page.getByTestId("endpoints-consent").waitFor();
     },
   },
   {
@@ -242,11 +265,13 @@ const SCREENS = [
       await page.getByTestId("graph-sync-consent").waitFor();
     },
   },
-  { name: "witness-ledgers", path: `/witnesses/${WITNESS}`, ready: "identity-cards" },
+  // A witness is an identity, so its page is the identity page: the machines
+  // that answer for it as rows, and what it holds under them.
+  { name: "witness-identity", path: `/identities/${WITNESS}`, ready: "identity-cards" },
   {
     // The same holdings, narrowed to the records this wallet controls.
-    name: "witness-ledgers-ours",
-    path: `/witnesses/${WITNESS}`,
+    name: "witness-identity-ours",
+    path: `/identities/${WITNESS}`,
     ready: "witness-holdings-ours",
     async act(page) {
       await page.getByTestId("witness-holdings-ours").click();
@@ -255,8 +280,8 @@ const SCREENS = [
   },
   {
     // And to the people this wallet has a reason to trust.
-    name: "witness-ledgers-trusted",
-    path: `/witnesses/${WITNESS}`,
+    name: "witness-identity-trusted",
+    path: `/identities/${WITNESS}`,
     ready: "witness-holdings-trusted",
     async act(page) {
       await page.getByTestId("witness-holdings-trusted").click();
@@ -265,11 +290,9 @@ const SCREENS = [
   },
   {
     name: "witness-unreachable",
-    path: `/witnesses/${UNREACHABLE_WITNESS}`,
+    path: `/identities/${UNREACHABLE_WITNESS}`,
     ready: "witness-unreachable",
   },
-  { name: "witness-node-home", path: "/witness", ready: "identity-cards" },
-  { name: "witness-node-ledger", path: `/witness/ledgers/${ALICE}`, ready: "ledger-events" },
 ];
 
 /**

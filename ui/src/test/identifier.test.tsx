@@ -112,10 +112,10 @@ describe("Identifier", () => {
   });
 
   it("routes the value when a route is given, and keeps its testid", () => {
-    host(<Identifier value={ALICE} to={`/witness/ledgers/${ALICE}`} linkTestId="ledger-link" />);
+    host(<Identifier value={ALICE} to={`/identities/${ALICE}`} linkTestId="ledger-link" />);
 
     const link = screen.getByTestId("ledger-link");
-    expect(link).toHaveAttribute("href", `/witness/ledgers/${ALICE}`);
+    expect(link).toHaveAttribute("href", `/identities/${ALICE}`);
     expect(link).toHaveTextContent(ALICE);
     expect(screen.queryByRole("button", { name: ALICE })).not.toBeInTheDocument();
   });

@@ -1,15 +1,25 @@
 import { useCallback, useMemo, useState } from "react";
-import { useParams } from "react-router";
+import { useParams, useSearchParams } from "react-router";
 
-import { ApiError, getContact, getIdentity, getMemberships, listIdentities, lookup } from "@/api/client";
+import {
+  ApiError,
+  getContact,
+  getIdentity,
+  getMemberships,
+  listIdentities,
+  listWitnesses,
+  lookup,
+} from "@/api/client";
 import type { IdentityResponse, LookupResponse, MembershipView } from "@/api/types";
 import { Action } from "@/components/Action";
 import { ErrorEnvelopeView } from "@/components/ErrorEnvelopeView";
 import {
+  bareIdentity,
   factsFromIdentity,
   factsFromResolved,
   IdentityCard,
   IdentityPillScope,
+  machinesOf,
   pageTestIds,
   type PillFacts,
   trustedSubjects,
@@ -22,9 +32,17 @@ import { ContactPanel } from "@/routes/wallet/ContactPanel";
 import { LedgerPanel } from "@/routes/wallet/LedgerPanel";
 import { PrincipalsPanel } from "@/routes/wallet/PrincipalsPanel";
 import { TrustPanel, useTrustActions } from "@/routes/wallet/TrustPanel";
+import { WitnessHoldings } from "@/routes/witnesses/WitnessHoldings";
 
 import { FetchButton, FetchPanel } from "./FetchPanel";
 import { KnowledgeSection } from "./KnowledgeSection";
+
+/**
+ * The query key a pasted link leaves behind: the machines it named, so the
+ * fetch on this page can dial them. The browser parsed nothing to get them, the
+ * resolve route did (proposal 006 section 7).
+ */
+export const LINK_MACHINES_PARAM = "machines";
 
 /** A record this wallet does not hold is an answer, not a failure. */
 function notStored(thrown: unknown): null {
@@ -73,10 +91,14 @@ function ContactSection({ identityId }: { identityId: string }) {
  */
 export function IdentityPage() {
   const { identityId = "" } = useParams();
+  const [search] = useSearchParams();
   const [version, setVersion] = useState(0);
   const refresh = useCallback(() => setVersion((value) => value + 1), []);
+  // The machines a pasted link named, in the order the link carried them.
+  const hinted = (search.get(LINK_MACHINES_PARAM) ?? "").split(",").filter(Boolean);
 
   const identities = useResource(listIdentities, [version]);
+  const witnesses = useResource(listWitnesses, [version]);
   const identity = useResource<IdentityResponse | null>(
     () => getIdentity(identityId).catch(notStored),
     [identityId, version],
@@ -95,6 +117,18 @@ export function IdentityPage() {
   // GET /api/identities lists exactly the ledgers this home can sign for, which
   // is the only answer the identity document gives about control.
   const canSign = listed;
+  // A witness is an identity, so this is its page: the row about the machines
+  // that answer for it and the section about what it holds are drawn here, and
+  // only when this home knows it as a witness.
+  const witness =
+    witnesses.data?.witnesses.find((entry) => entry.identity_id === identityId) ?? null;
+  const machines = machinesOf(held, witness);
+  // The witness list is loaded for the section below, so the witnesses this
+  // identity chose are named from it rather than from a request each.
+  const nameWitness = (identityId: string) => {
+    const entry = witnesses.data?.witnesses.find((row) => row.identity_id === identityId);
+    return { ...bareIdentity(identityId), display_name: entry?.display_name ?? null };
+  };
 
   const knowledge = useResource<LookupResponse | null>(
     () =>
@@ -145,7 +179,7 @@ export function IdentityPage() {
         {held && (
           <>
             <IdentityCard
-              facts={factsFromIdentity(held)}
+              facts={{ ...factsFromIdentity(held), machines }}
               state="page"
               testIds={pageTestIds}
               resolvePrincipal={(principal) => named(names, principal)}
@@ -163,6 +197,7 @@ export function IdentityPage() {
                   <FetchButton
                     identityId={held.identity_id}
                     onFetched={refresh}
+                    machines={hinted}
                     testId="ledger-fetch-button"
                   />
                 )
@@ -175,11 +210,18 @@ export function IdentityPage() {
           <IdentityCard
             // This page asked for the record and was told there is none, so the
             // card is the one place that can say so for certain.
-            facts={factsFromResolved(answer.identity, { stale: answer.stale, stored: false })}
+            facts={factsFromResolved(answer.identity, {
+              stale: answer.stale,
+              stored: false,
+              machines,
+            })}
             state="page"
             testIds={pageTestIds}
           />
         )}
+        {/* A witness is an identity, and what it keeps for other people is a
+            fact about it, so it lands on its own page. */}
+        {witness && <WitnessHoldings witness={witness} own={localIdentities} />}
         {knowledge.error && <ErrorEnvelopeView error={knowledge.error} testId="lookup-error" />}
         {!canSign && (
           <>
@@ -193,13 +235,15 @@ export function IdentityPage() {
           </>
         )}
         {held === null && !identity.loading && !identity.error && (
-          <FetchPanel identityId={identityId} onFetched={refresh} />
+          <FetchPanel identityId={identityId} onFetched={refresh} machines={hinted} />
         )}
         {canSign && held && (
           <ActionsSection
             identity={held}
             memberships={memberships.data}
             trust={trust}
+            machines={machines}
+            names={nameWitness}
             onAppended={refresh}
           />
         )}

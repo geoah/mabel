@@ -2,12 +2,21 @@ import { screen, waitFor } from "@testing-library/react";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
 
-import { ACME, ALICE, seedIdentities } from "@/mocks/fixtures";
+import {
+  ACME,
+  ALICE,
+  BOB,
+  HINTED_MACHINE,
+  WITNESS_MACHINE,
+  seedIdentities,
+} from "@/mocks/fixtures";
 import { server } from "@/mocks/server";
 
 import { openAction, renderApp } from "./render";
 
 const alice = seedIdentities.find((identity) => identity.identity_id === ALICE)!;
+/** The witness set the frozen list gives Alice: two witness identities. */
+const WITNESSES = alice.witnesses;
 
 describe("identity detail", () => {
   it("pages the ledger with the shadcn pagination and nothing else", async () => {
@@ -109,7 +118,8 @@ describe("identity detail", () => {
     await user.click(screen.getByTestId("sync-push-submit"));
 
     await screen.findByTestId("sync-push-results");
-    const [first, second] = alice.witnesses;
+    // A push goes to the machines the witness resolves to, one row each.
+    const [first, second] = [WITNESS_MACHINE, HINTED_MACHINE];
     expect(screen.getByTestId(`push-status-${first}`)).toHaveTextContent("accepted");
     expect(screen.getByTestId(`push-stored-${first}`)).toHaveTextContent(
       String(alice.event_count),
@@ -120,14 +130,14 @@ describe("identity detail", () => {
     expect(screen.getByTestId(`push-message-${second}`)).toHaveTextContent("Network error:");
   });
 
-  it("adds a witness endpoint to the set the route replaces", async () => {
-    const endpoint = "b".repeat(52);
+  it("adds a witness identity to the set the route replaces", async () => {
+    const endpoint = ACME;
     const { user } = renderApp(`/identities/${ALICE}`);
     await screen.findByTestId("identity-actions");
     await openAction(user, "action-witnesses");
     await screen.findByTestId("witness-list");
 
-    await user.type(screen.getByTestId("witness-add-endpoint"), endpoint);
+    await user.type(screen.getByTestId("witness-add-identity"), endpoint);
     await user.click(screen.getByTestId("witness-add-submit"));
 
     expect(await screen.findByTestId(`witness-row-${endpoint}`)).toBeInTheDocument();
@@ -136,14 +146,14 @@ describe("identity detail", () => {
     );
   });
 
-  it("offers no add until an endpoint is typed, and trims what is", async () => {
+  it("offers no add until an id is typed, and trims what is", async () => {
     const bodies: unknown[] = [];
     server.events.on("request:start", async ({ request }) => {
       if (request.method === "POST" && request.url.endsWith("/witnesses")) {
         bodies.push(await request.clone().json());
       }
     });
-    const endpoint = "b".repeat(52);
+    const endpoint = ACME;
     const { user } = renderApp(`/identities/${ALICE}`);
     await screen.findByTestId("identity-actions");
     await openAction(user, "action-witnesses");
@@ -151,19 +161,19 @@ describe("identity detail", () => {
 
     expect(screen.getByTestId("witness-add-submit")).toBeDisabled();
 
-    await user.type(screen.getByTestId("witness-add-endpoint"), "   ");
+    await user.type(screen.getByTestId("witness-add-identity"), "   ");
 
-    // Whitespace is not an endpoint id.
+    // Whitespace is not an identity id.
     expect(screen.getByTestId("witness-add-submit")).toBeDisabled();
 
-    await user.type(screen.getByTestId("witness-add-endpoint"), `${endpoint} `);
+    await user.type(screen.getByTestId("witness-add-identity"), `${endpoint} `);
     await user.click(screen.getByTestId("witness-add-submit"));
 
     await screen.findByTestId("witness-add-head-seq");
-    expect(bodies).toEqual([{ witnesses: [...alice.witnesses, endpoint] }]);
+    expect(bodies).toEqual([{ witnesses: [...WITNESSES, endpoint] }]);
   });
 
-  it("refuses an endpoint already in the set, and sends nothing", async () => {
+  it("refuses a witness already in the set, and sends nothing", async () => {
     const posted: string[] = [];
     server.events.on("request:start", ({ request }) => {
       if (request.method === "POST") {
@@ -175,7 +185,7 @@ describe("identity detail", () => {
     await openAction(user, "action-witnesses");
     await screen.findByTestId("witness-list");
 
-    await user.type(screen.getByTestId("witness-add-endpoint"), alice.witnesses[0]);
+    await user.type(screen.getByTestId("witness-add-identity"), WITNESSES[0]);
     await user.click(screen.getByTestId("witness-add-submit"));
 
     expect(await screen.findByTestId("witness-add-duplicate")).toHaveTextContent(
@@ -193,8 +203,8 @@ describe("identity detail", () => {
         bodies.push(await request.clone().json());
       }
     });
-    const added = "c".repeat(52);
-    const endpoint = "b".repeat(52);
+    const added = ACME;
+    const endpoint = BOB;
     const { user } = renderApp(`/identities/${ALICE}`);
     await screen.findByTestId("identity-actions");
     await openAction(user, "action-witnesses");
@@ -205,15 +215,15 @@ describe("identity detail", () => {
       http.get(`/api/identities/${ALICE}`, () =>
         HttpResponse.json({
           ok: true,
-          identity: { ...alice, witnesses: [...alice.witnesses, added] },
+          identity: { ...alice, witnesses: [...WITNESSES, added] },
         }),
       ),
     );
 
-    await user.type(screen.getByTestId("witness-add-endpoint"), endpoint);
+    await user.type(screen.getByTestId("witness-add-identity"), endpoint);
     await user.click(screen.getByTestId("witness-add-submit"));
 
     await screen.findByTestId("witness-add-head-seq");
-    expect(bodies).toEqual([{ witnesses: [...alice.witnesses, added, endpoint] }]);
+    expect(bodies).toEqual([{ witnesses: [...WITNESSES, added, endpoint] }]);
   });
 });

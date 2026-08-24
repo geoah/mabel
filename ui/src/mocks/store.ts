@@ -17,8 +17,6 @@ import type {
   ErrorEnvelope,
   FetchIdentityRequest,
   FetchIdentityResponse,
-  ForkListResponse,
-  ForkRecord,
   Graph,
   GraphResponse,
   GraphSyncResponse,
@@ -31,13 +29,12 @@ import type {
   InvitedResponse,
   KnownIdentitiesResponse,
   KnownIdentity,
-  LedgerEntryResponse,
   LedgerEvent,
-  LedgerListResponse,
   LedgerPageResponse,
   LookupHop,
   LookupResponse,
   MembershipView,
+  NodeInfo,
   PrincipalEntry,
   ProfileFields,
   RemoveRequest,
@@ -55,10 +52,9 @@ import type {
   SyncPushResponse,
   Verification,
   VerificationResponse,
-  WalletNodeInfo,
-  WitnessLedgerListResponse,
+  WitnessEndpoint,
+  WitnessHoldingsResponse,
   WitnessListResponse,
-  WitnessNodeInfo,
   WitnessSummary,
 } from "@/api/types";
 import type { HeldLedger } from "./fixtures";
@@ -66,14 +62,23 @@ import {
   ACME,
   ALICE,
   BOB,
+  HINTED_MACHINE,
+  REACHABLE_WITNESS,
+  UNREACHABLE_MACHINE,
   UNREACHABLE_WITNESS,
+  WITNESS_MACHINE,
+  WITNESS_NAME,
   acmeEvents,
   aliceEvents,
   createdIdentity,
   errors,
   identityKeys,
   knownBob,
+  endpointNotWitnessError,
+  knownWitnesses,
+  nodeDocument,
   noKeysHeldError,
+  noOpEndpointsError,
   seedContact,
   seedEdges,
   seedGraph,
@@ -81,10 +86,9 @@ import {
   seedLookup,
   seedResolved,
   syncPush as syncPushFixture,
-  walletNode,
-  witnessForks,
+  unresolvableWitnessError,
+  witnessEvents,
   witnessLedgers,
-  witnessNode,
 } from "./fixtures";
 import { MOCK_STATE_KEY } from "./persistence";
 
@@ -107,6 +111,17 @@ function failWith(status: number, body: ErrorEnvelope): never {
   throw new MockFailure(status, body);
 }
 
+/** status unclaimed with every other key null: the profile names no hostname. */
+const UNCLAIMED: Verification = {
+  hostname: null,
+  status: "unclaimed",
+  checked_at_ms: null,
+  last_verified_at_ms: null,
+  stale: false,
+  detail: null,
+  unreachable: null,
+};
+
 const BASE32 = "abcdefghijklmnopqrstuvwxyz234567";
 let minted = 0;
 
@@ -123,19 +138,6 @@ function mintId(seed: string): string {
     out += BASE32[(hash >>> 7) % 32];
   }
   return out;
-}
-
-export type NodeRole = "wallet" | "witness";
-
-/**
- * A real node has exactly one role, but the mock serves both routes from one
- * process. In the browser the role follows the path being browsed, so /witness
- * sees a witness document; a test driving a memory router sets it explicitly.
- */
-let nodeRole: NodeRole | null = null;
-
-export function setNodeRole(role: NodeRole | null): void {
-  nodeRole = role;
 }
 
 /** One crawled attestation: who attests, to whom, with which event. */
@@ -164,9 +166,8 @@ interface State {
   /** How the crawl named the identities it reached, keyed by identity id. */
   resolved: Map<string, ResolvedIdentity>;
   edges: Edge[];
-  /** The witness side, independent of the wallet: a witness holds copies. */
+  /** What another witness serves over the sync protocol, for the holdings proxy. */
   held: HeldLedger[];
-  forks: ForkRecord[];
 }
 
 let state: State = emptyState();
@@ -182,7 +183,6 @@ function emptyState(): State {
     resolved: new Map(),
     edges: [],
     held: [],
-    forks: [],
   };
 }
 
@@ -209,7 +209,7 @@ interface Snapshot {
  * bumped by hand when the shape above or the seed below changes; the rest is the
  * version the node fixture reports, which moves when the fixtures do.
  */
-const SNAPSHOT_VERSION = `2:${walletNode.version}`;
+const SNAPSHOT_VERSION = `3:${nodeDocument.version}`;
 
 function snapshot(): Snapshot {
   return {
@@ -267,7 +267,6 @@ export function restoreStore(): boolean {
     resetStore();
     return false;
   }
-  nodeRole = null;
   minted = saved.minted;
   state = {
     identities: saved.identities,
@@ -278,26 +277,27 @@ export function restoreStore(): boolean {
     graph: saved.graph,
     resolved: new Map(saved.resolved),
     edges: saved.edges,
-    // The witness side is a read-only fixture, so it is never saved.
+    // What another witness serves is a read-only fixture, never saved.
     held: witnessLedgers(),
-    forks: witnessForks(),
   };
   return true;
 }
 
 export function resetStore(): void {
   minted = 0;
-  nodeRole = null;
   const contacts = new Map<string, Contact>();
   // Bob is a foreign identity with a local note: the contact store covers ids
   // this home does not control.
   contacts.set(BOB, { ...seedContact });
   const identities = seedIdentities.map((identity) => ({
     ...identity,
-    // Acme names the one endpoint node.json does not default to, so the witness
-    // list has a card that is not a node default and a drill-in that fails.
+    // A witness set names identities (proposal 006 section 1), which is what
+    // the frozen list carries. Acme names the second one and nothing else, so
+    // the witness list has a row that is not a node default.
     witnesses:
       identity.identity_id === ACME ? [UNREACHABLE_WITNESS] : [...identity.witnesses],
+    endpoints: [...identity.endpoints],
+    witness_endpoints: [...identity.witness_endpoints],
     trust: identity.trust.map((record) => ({ ...record })),
     profile: identity.profile ? { ...identity.profile } : null,
     verification: { ...identity.verification },
@@ -310,16 +310,22 @@ export function resetStore(): void {
   }
   const held = witnessLedgers();
   const bob = storedBob(held);
+  const witness = storedWitness();
   state = {
     identities,
-    // Bob is the seeded known identity with a copy on disk: this home stored his
-    // record and controls nothing about him.
-    fetched: new Map(bob === null ? [] : [[BOB, bob.identity]]),
+    // Two records this home stored and controls nothing about: Bob, the known
+    // identity with a copy on disk, and the witness Alice named, whose own
+    // record is what says which machine answers for it.
+    fetched: new Map([
+      ...(bob === null ? [] : ([[BOB, bob.identity]] as [string, Identity][])),
+      [REACHABLE_WITNESS, witness.identity],
+    ]),
     // Every seeded identity carries the chain its own document implies, so no
     // page shows zero entries against a head sequence that is not zero.
     events: new Map([
       [ALICE, aliceEvents()],
       [ACME, acmeEvents()],
+      [REACHABLE_WITNESS, witness.events],
       ...(bob === null ? [] : ([[BOB, bob.events]] as [string, LedgerEvent[]][])),
     ]),
     invitations: new Map(),
@@ -328,9 +334,48 @@ export function resetStore(): void {
     resolved: seedResolved(),
     edges: seedEdges(),
     held,
-    forks: witnessForks(),
   };
   persistStore();
+}
+
+/**
+ * The witness Alice named, as a record this home stored. Its chain publishes
+ * one machine, which is what lets its own page say that a machine is listed on
+ * its record while the other one it is reachable at is confirmed by nothing.
+ */
+function storedWitness(): { identity: Identity; events: LedgerEvent[] } {
+  const events = witnessEvents();
+  const head = events[events.length - 1];
+  return {
+    events,
+    identity: {
+      identity_id: REACHABLE_WITNESS,
+      declared_kind: "service",
+      alias: "",
+      created_at_ms: events[0].timestamp_ms,
+      head_seq: head.seq,
+      head_event: head.event_id,
+      event_count: events.length,
+      witnesses: [],
+      // Its own record names the one machine that answers for it; the other
+      // machine the witness list carries is confirmed by nothing this home has.
+      endpoints: [WITNESS_MACHINE],
+      witness_endpoints: [],
+      trust: [],
+      principals: [],
+      open_invitation_count: 0,
+      profile: {
+        display_name: WITNESS_NAME,
+        hostname: null,
+        email: null,
+        signing_principal: { identity: REACHABLE_WITNESS, key: events[0].author_key },
+        event: events[1].event_id,
+        seq: 1,
+      },
+      verification: { ...UNCLAIMED },
+      contact: null,
+    },
+  };
 }
 
 /**
@@ -353,11 +398,13 @@ function storedBob(held: HeldLedger[]): { identity: Identity; events: LedgerEven
       identity_id: BOB,
       declared_kind: served.entry.declared_kind,
       alias: "",
-      created_at_ms: served.entry.first_seen_ms,
+      created_at_ms: served.firstSeenMs,
       head_seq: served.entry.head_seq,
       head_event: served.entry.head_event,
       event_count: served.entry.event_count,
       witnesses: [...served.witnesses],
+      endpoints: [],
+      witness_endpoints: [],
       trust: outgoing.map((edge) => ({
         attestation_event: edge.attestation_event,
         attestation_seq: edge.seq,
@@ -460,17 +507,6 @@ function appendResponse(identity: Identity, event: LedgerEvent): AppendResponse 
   };
 }
 
-/** status unclaimed with every other key null: the profile names no hostname. */
-const UNCLAIMED: Verification = {
-  hostname: null,
-  status: "unclaimed",
-  checked_at_ms: null,
-  last_verified_at_ms: null,
-  stale: false,
-  detail: null,
-  unreachable: null,
-};
-
 export function listIdentities(): IdentityListResponse {
   const identities = [...state.identities].sort((left, right) =>
     left.identity_id < right.identity_id ? -1 : 1,
@@ -524,6 +560,8 @@ export function createIdentity(body: Partial<CreateIdentityRequest>): CreateIden
     head_event: identityId,
     event_count: 1,
     witnesses: [],
+    endpoints: [],
+    witness_endpoints: [],
     trust: [],
     // The inception seeds exactly one principal: the ledger itself on a raw
     // root, the founding identity on an identity root (proposal 002 section 1).
@@ -648,26 +686,108 @@ export function getIdentityLedger(
   };
 }
 
+/**
+ * POST /api/identities/:identity_id/witnesses. The array names identity ids and
+ * replaces the set whole. An id naming a machine this home knows is refused
+ * before any dial, and an id this home can resolve to no identity is refused
+ * after trying (proposal 006 section 8).
+ */
 export function setIdentityWitnesses(identityId: string, witnesses: string[]): AppendResponse {
   const identity = find(identityId);
-  const duplicate = witnesses.find(
-    (endpoint, index) => witnesses.indexOf(endpoint) !== index,
-  );
-  if (witnesses.length < 1 || witnesses.length > 16 || duplicate) {
+  const duplicate = witnesses.find((witness, index) => witnesses.indexOf(witness) !== index);
+  if (witnesses.length > 16 || duplicate) {
     failWith(400, {
       ok: false,
       code: 10,
-      message: "Schema error: witnesses must hold 1 to 16 distinct endpoint ids",
+      message: "Schema error: witnesses must hold 0 to 16 distinct identity ids",
       details: {
-        reason: duplicate ? "duplicate_witness" : "witness_count_out_of_range",
+        reason: duplicate ? "duplicate_witness" : "witnesses_out_of_range",
         field: "witnesses",
         value: duplicate ?? String(witnesses.length),
       },
     });
   }
+  const machines = knownMachines();
+  for (const witness of witnesses) {
+    checkIdentityId(witness);
+    if (machines.has(witness)) {
+      failWith(endpointNotWitnessError.status, {
+        ...endpointNotWitnessError.body,
+        message: endpointNotWitnessError.body.message.replace(
+          String(endpointNotWitnessError.body.details.value),
+          witness,
+        ),
+        details: { ...endpointNotWitnessError.body.details, value: witness },
+      });
+    }
+    const resolvable =
+      machinesOf(witness).length > 0 ||
+      local(witness) !== undefined ||
+      state.fetched.has(witness);
+    if (!resolvable) {
+      failWith(unresolvableWitnessError.status, {
+        ...unresolvableWitnessError.body,
+        message: unresolvableWitnessError.body.message.replace(
+          String(unresolvableWitnessError.body.details.witness),
+          witness,
+        ),
+        details: { ...unresolvableWitnessError.body.details, witness, endpoints_tried: [] },
+      });
+    }
+  }
   identity.witnesses = [...witnesses];
-  const event = append(identity, "witness_config", { witnesses: [...witnesses] });
+  const event = append(identity, "witness_set", { witnesses: [...witnesses] });
   return appendResponse(identity, event);
+}
+
+/**
+ * POST /api/identities/:identity_id/endpoints. One advertisement naming the
+ * machines that answer for this identity, replacing the list whole. A
+ * replacement that would change nothing is refused, the way the profile route
+ * refuses one.
+ */
+export function setIdentityEndpoints(identityId: string, endpoints: string[]): AppendResponse {
+  const identity = find(identityId);
+  const duplicate = endpoints.find((machine, index) => endpoints.indexOf(machine) !== index);
+  if (endpoints.length > 8 || duplicate) {
+    failWith(400, {
+      ok: false,
+      code: 10,
+      message: "Schema error: endpoints must hold 0 to 8 distinct endpoint ids",
+      details: {
+        reason: duplicate ? "duplicate_endpoint" : "endpoints_out_of_range",
+        field: "endpoints",
+        value: duplicate ?? String(endpoints.length),
+      },
+    });
+  }
+  for (const machine of endpoints) {
+    checkEndpointId(machine);
+  }
+  const current = identity.endpoints;
+  if (current.length === endpoints.length && current.every((id, index) => id === endpoints[index])) {
+    failWith(noOpEndpointsError.status, {
+      ...noOpEndpointsError.body,
+      message: noOpEndpointsError.body.message
+        .replace(ALICE, identityId)
+        .replace(/these \d+ endpoints/, `these ${endpoints.length} endpoints`),
+      details: { ...noOpEndpointsError.body.details, identity_id: identityId },
+    });
+  }
+  identity.endpoints = [...endpoints];
+  const event = append(identity, "endpoint_advertisement", { endpoints: [...endpoints] });
+  return appendResponse(identity, event);
+}
+
+function checkEndpointId(endpointId: string): void {
+  if (endpointId.length !== 52) {
+    failWith(400, {
+      ok: false,
+      code: 10,
+      message: "Schema error: endpoint id must be 52 base32 characters",
+      details: { reason: "malformed_endpoint_id", value: endpointId },
+    });
+  }
 }
 
 export function addTrust(body: Partial<AddTrustRequest>): AppendResponse {
@@ -1099,16 +1219,25 @@ export function removePrincipal(
 
 export function syncPush(body: Partial<SyncPushRequest>): SyncPushResponse {
   const identity = find(String(body.identity_id));
-  const targets = body.to ? [body.to] : identity.witnesses;
+  // A push goes to the machines the identity's witnesses resolve to, which is
+  // what the node does with a witness set (proposal 006 section 5.1).
+  const targets = body.to
+    ? [{ endpoint_id: body.to, binding: "hinted" as const }]
+    : identity.witnesses.flatMap(machinesOf);
   const template = syncPushFixture.results[1];
-  // The second configured witness stands in for the unreachable case, so the
-  // per-witness table has both outcomes to render, and the endpoint no route
-  // reaches is unreachable wherever it is named.
-  const results = targets.map((endpoint, index) =>
-    index === 1 || endpoint === UNREACHABLE_WITNESS
-      ? { ...template, endpoint, message: `Network error: no route to ${endpoint} after 10s` }
+  // The machine nothing confirms stands in for the unreachable case, so the
+  // per-machine table has both outcomes to render.
+  const results = targets.map(({ endpoint_id: endpoint, binding }) =>
+    endpoint === HINTED_MACHINE || endpoint === UNREACHABLE_MACHINE
+      ? {
+          ...template,
+          endpoint,
+          binding,
+          message: `Network error: no route to ${endpoint} after 10s`,
+        }
       : {
           endpoint,
+          binding,
           status: "accepted" as const,
           head_seq: identity.head_seq,
           stored: identity.event_count,
@@ -1129,67 +1258,99 @@ export function syncPush(body: Partial<SyncPushRequest>): SyncPushResponse {
   };
 }
 
-// The three proposal 004 routes. A witness is known from a ledger's folded
-// witness config or from node.json; there is no directory to ask.
+// The witness routes. A witness is an identity, known from a ledger's folded
+// witness set or from node.json; there is no directory to ask.
 
-function checkEndpointId(endpointId: string): void {
-  if (endpointId.length !== 52) {
-    failWith(400, {
-      ok: false,
-      code: 10,
-      message: "Schema error: endpoint id must be 52 base32 characters",
-      details: { reason: "malformed_endpoint_id", value: endpointId },
-    });
+/** The machines the mock knows for one witness identity, in resolution order. */
+function machinesOf(identityId: string): WitnessEndpoint[] {
+  const frozen = knownWitnesses.find((witness) => witness.identity_id === identityId);
+  if (frozen) {
+    return frozen.endpoints.map((machine) => ({ ...machine }));
   }
+  // A witness named by a ledger and by nothing else: the mock knows of it and
+  // knows no machine that answers for it, which is a witness it cannot dial.
+  return [];
 }
 
-/** GET /api/witnesses, ordered by ascending endpoint id. */
+/** Every machine id this home knows, which is what an identity id may not be. */
+function knownMachines(): Set<string> {
+  const machines = new Set<string>([nodeDocument.endpoint_id, ...nodeDocument.witnesses]);
+  for (const witness of knownWitnesses) {
+    for (const machine of witness.endpoints) {
+      machines.add(machine.endpoint_id);
+    }
+  }
+  return machines;
+}
+
+/** GET /api/witnesses, ordered by ascending identity id. */
 export function listWitnesses(): WitnessListResponse {
   const table = new Map<string, WitnessSummary>();
-  const entry = (endpointId: string): WitnessSummary => {
-    const held = table.get(endpointId);
+  const entry = (identityId: string): WitnessSummary => {
+    const held = table.get(identityId);
     if (held) {
       return held;
     }
-    const created: WitnessSummary = { endpoint_id: endpointId, named_by: [], is_node_default: false };
-    table.set(endpointId, created);
+    const stored = state.fetched.get(identityId) ?? local(identityId);
+    const created: WitnessSummary = {
+      identity_id: identityId,
+      display_name: stored?.profile?.display_name ?? null,
+      endpoints: machinesOf(identityId),
+      named_by: [],
+      is_node_default: false,
+      stored: stored !== undefined,
+    };
+    table.set(identityId, created);
     return created;
   };
-  for (const endpointId of walletNode.witnesses) {
-    entry(endpointId).is_node_default = true;
-  }
+  // node.json names one witness identity by default; the seeded home pushes
+  // there for any identity that names no witness of its own.
+  entry(REACHABLE_WITNESS).is_node_default = true;
   for (const identity of state.identities) {
-    for (const endpointId of identity.witnesses) {
-      entry(endpointId).named_by.push(identity.identity_id);
+    for (const witnessId of identity.witnesses) {
+      entry(witnessId).named_by.push(identity.identity_id);
     }
   }
   return {
     ok: true,
     witnesses: [...table.values()].sort((left, right) =>
-      left.endpoint_id < right.endpoint_id ? -1 : 1,
+      left.identity_id < right.identity_id ? -1 : 1,
     ),
   };
 }
 
 /**
- * GET /api/witnesses/:endpoint_id/ledgers, a live proxy of what that witness
- * holds. The mock serves its own witness store, and the one endpoint no local
- * ledger reaches stands in for a witness this node cannot dial.
+ * GET /api/witnesses/:identity_id/holdings, a live proxy of what that witness
+ * keeps. The mock serves one witness's store, and the witness no machine
+ * answers for stands in for one this node cannot dial.
  */
-export function witnessLedgerList(
-  endpointId: string,
+export function witnessHoldings(
+  identityId: string,
   params: { offset?: number; limit?: number },
-): WitnessLedgerListResponse {
-  checkEndpointId(endpointId);
-  if (endpointId === UNREACHABLE_WITNESS) {
+): WitnessHoldingsResponse {
+  checkIdentityId(identityId);
+  if (knownMachines().has(identityId)) {
+    failWith(404, {
+      ok: false,
+      code: 2,
+      message: `${identityId} is a machine this home knows, not a witness identity`,
+      details: { reason: "endpoint_not_identity", value: identityId },
+    });
+  }
+  const machines = machinesOf(identityId).map((machine) => machine.endpoint_id);
+  if (identityId !== REACHABLE_WITNESS) {
     failWith(502, {
       ok: false,
       code: 30,
-      message: `Network error: ${endpointId} did not answer the ledger list`,
+      message: `Network error: no machine answering for ${identityId} served its ledger list`,
       details: {
         reason: "witness_unreachable",
-        endpoint_id: endpointId,
-        error: `no route to ${endpointId} after 10s`,
+        identity_id: identityId,
+        endpoints_tried: machines,
+        error:
+          machines.length === 0
+            ? "no machine is known for it"
+            : `${machines[0]}: no route to ${machines[0]} after 10s`,
       },
     });
   }
@@ -1200,18 +1361,12 @@ export function witnessLedgerList(
   );
   return {
     ok: true,
-    endpoint_id: endpointId,
+    identity_id: identityId,
+    endpoint_id: machines[0],
     offset,
     limit,
     more: ordered.length > offset + limit,
-    ledgers: ordered.slice(offset, offset + limit).map(({ entry }) => ({
-      ledger_id: entry.ledger_id,
-      declared_kind: entry.declared_kind,
-      head_seq: entry.head_seq,
-      head_event: entry.head_event,
-      event_count: entry.event_count,
-      fork_count: entry.fork_count,
-    })),
+    ledgers: ordered.slice(offset, offset + limit).map(({ entry }) => ({ ...entry })),
   };
 }
 
@@ -1308,7 +1463,17 @@ export function fetchIdentity(
   body: Partial<FetchIdentityRequest>,
 ): FetchIdentityResponse {
   checkIdentityId(identityId);
-  const source = body.from ?? walletNode.witnesses[0];
+  if (body.from && body.from_witness) {
+    failWith(400, {
+      ok: false,
+      code: 2,
+      message: "from names an endpoint and from_witness names an identity: give one",
+      details: { reason: "conflicting_source", parameter: "from_witness" },
+    });
+  }
+  const source =
+    body.from ?? (body.from_witness ? machinesOf(body.from_witness)[0]?.endpoint_id : undefined) ??
+    WITNESS_MACHINE;
   const controlled = local(identityId);
   const already = state.fetched.get(identityId);
   if (controlled || already) {
@@ -1339,11 +1504,13 @@ export function fetchIdentity(
     identity_id: identityId,
     declared_kind: served.entry.declared_kind,
     alias: "",
-    created_at_ms: served.entry.first_seen_ms,
+    created_at_ms: served.firstSeenMs,
     head_seq: served.entry.head_seq,
     head_event: served.entry.head_event,
     event_count: served.entry.event_count,
     witnesses: [...served.witnesses],
+    endpoints: [],
+    witness_endpoints: [],
     trust: [],
     principals: [],
     open_invitation_count: 0,
@@ -1445,7 +1612,12 @@ function degreesFromRoots(identityId: string): number | null {
  * generation it stored. Ordered by ascending identity id alone, because an id is
  * the only stable key a row has.
  */
-export function listKnownIdentities(): KnownIdentitiesResponse {
+export function listKnownIdentities(params: {
+  offset?: number;
+  limit?: number;
+}): KnownIdentitiesResponse {
+  const offset = checkRange("offset", params.offset) ?? 0;
+  const limit = checkRange("limit", params.limit) ?? 100;
   const controlled = new Set(state.identities.map((entry) => entry.identity_id));
   const trusted = new Set<string>();
   for (const identity of state.identities) {
@@ -1476,7 +1648,13 @@ export function listKnownIdentities(): KnownIdentitiesResponse {
         head_seq: stored?.head_seq ?? null,
       };
     });
-  return { ok: true, identities };
+  return {
+    ok: true,
+    offset,
+    limit,
+    more: identities.length > offset + limit,
+    identities: identities.slice(offset, offset + limit),
+  };
 }
 
 /** The signer of an append: the mock has one controller per ledger. */
@@ -1864,35 +2042,16 @@ export function syncGraph(): GraphSyncResponse {
   return { ok: true, graph: cloneGraph(state.graph) };
 }
 
-// The witness routes. Every one of them reads: a witness serves no mutation
-// over HTTP (proposal 001 section 10).
-
-export function nodeInfo(): WalletNodeInfo | WitnessNodeInfo {
-  // /witness is the witness binary's debug route; /witnesses is the wallet's
-  // own list of endpoints, so the prefix test has to stop at the boundary.
-  const path = globalThis.location?.pathname ?? "";
-  const browsed = path === "/witness" || path.startsWith("/witness/") ? "witness" : "wallet";
-  if ((nodeRole ?? browsed) !== "witness") {
-    return walletNode;
-  }
-  // The counts follow the seeded store, not the fixture, so the node document
-  // and the ledger list agree.
+/**
+ * GET /api/node: one document, whatever this home does. The counts follow the
+ * seeded store rather than the fixture, so the node page and the lists agree.
+ */
+export function nodeInfo(): NodeInfo {
   return {
-    ...witnessNode,
-    ledger_count: state.held.length,
-    fork_count: state.forks.length,
+    ...nodeDocument,
+    identity_count: state.identities.length,
+    ledger_count: state.identities.length + state.fetched.size,
   };
-}
-
-function checkLedgerId(ledgerId: string): void {
-  if (ledgerId.length !== 52) {
-    failWith(400, {
-      ok: false,
-      code: 10,
-      message: "Schema error: ledger id must be 52 base32 characters",
-      details: { reason: "malformed_ledger_id", value: ledgerId },
-    });
-  }
 }
 
 function checkRange(name: string, value: number | undefined): number | undefined {
@@ -1905,91 +2064,4 @@ function checkRange(name: string, value: number | undefined): number | undefined
     });
   }
   return value;
-}
-
-function held(ledgerId: string): HeldLedger {
-  checkLedgerId(ledgerId);
-  const found = state.held.find((entry) => entry.entry.ledger_id === ledgerId);
-  if (!found) {
-    failWith(404, {
-      ok: false,
-      code: 2,
-      message: `this witness does not hold ${ledgerId}`,
-      details: { reason: "ledger_not_held", ledger_id: ledgerId },
-    });
-  }
-  return found;
-}
-
-/** GET /api/ledgers, ordered by ascending ledger_id. */
-export function listLedgers(params: { offset?: number; limit?: number }): LedgerListResponse {
-  const offset = checkRange("offset", params.offset) ?? 0;
-  const limit = checkRange("limit", params.limit) ?? 256;
-  const ordered = [...state.held].sort((left, right) =>
-    left.entry.ledger_id < right.entry.ledger_id ? -1 : 1,
-  );
-  return {
-    ok: true,
-    offset,
-    limit,
-    more: ordered.length > offset + limit,
-    entries: ordered.slice(offset, offset + limit).map((entry) => entry.entry),
-  };
-}
-
-export function getLedgerEntry(ledgerId: string): LedgerEntryResponse {
-  const found = held(ledgerId);
-  return { ok: true, entry: found.entry, witnesses: [...found.witnesses] };
-}
-
-/** GET /api/ledgers/:ledger_id/events. since is inclusive: the page opens at seq === since. */
-export function getLedgerEvents(
-  ledgerId: string,
-  params: { since?: number; limit?: number },
-): LedgerPageResponse {
-  const found = held(ledgerId);
-  const since = checkRange("since", params.since) ?? 0;
-  const limit = checkRange("limit", params.limit) ?? 512;
-  const matching = found.events.filter((event) => event.seq >= since);
-  return {
-    ok: true,
-    ledger_id: found.entry.ledger_id,
-    declared_kind: found.entry.declared_kind,
-    since,
-    limit,
-    head_seq: found.entry.head_seq,
-    head_event: found.entry.head_event,
-    event_count: found.entry.event_count,
-    more: matching.length > limit,
-    events: matching.slice(0, limit),
-  };
-}
-
-/** GET /api/forks, ordered by ledger_id then seq, optionally filtered to one ledger. */
-export function listForks(params: {
-  ledger_id?: string;
-  offset?: number;
-  limit?: number;
-}): ForkListResponse {
-  const offset = checkRange("offset", params.offset) ?? 0;
-  const limit = checkRange("limit", params.limit) ?? 64;
-  if (params.ledger_id !== undefined) {
-    checkLedgerId(params.ledger_id);
-  }
-  const matching = state.forks
-    .filter((record) => params.ledger_id === undefined || record.ledger_id === params.ledger_id)
-    .sort((left, right) =>
-      left.ledger_id === right.ledger_id
-        ? left.seq - right.seq
-        : left.ledger_id < right.ledger_id
-          ? -1
-          : 1,
-    );
-  return {
-    ok: true,
-    offset,
-    limit,
-    more: matching.length > offset + limit,
-    entries: matching.slice(offset, offset + limit),
-  };
 }

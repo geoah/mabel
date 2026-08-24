@@ -77,7 +77,7 @@ describe("error envelope", () => {
     const { user } = renderApp(`/identities/${ALICE}`);
     await screen.findByTestId("identity-detail");
     await openAction(user, "action-witnesses");
-    await user.type(screen.getByTestId("witness-add-endpoint"), "a".repeat(52));
+    await user.type(screen.getByTestId("witness-add-identity"), "a".repeat(52));
     await user.click(screen.getByTestId("witness-add-submit"));
 
     const envelope = await screen.findByTestId("witness-add-error");

@@ -13,24 +13,17 @@ import { cn } from "@/lib/utils";
 import { IdentityPage } from "@/routes/identity/IdentityPage";
 import { NodePage } from "@/routes/node/NodePage";
 import { WalletHome } from "@/routes/wallet/WalletHome";
-import { WitnessHome } from "@/routes/witness/WitnessHome";
-import { WitnessLedgerDetail } from "@/routes/witness/WitnessLedgerDetail";
-import { WitnessLedgersPage } from "@/routes/witnesses/WitnessLedgersPage";
 import { WitnessesPage } from "@/routes/witnesses/WitnessesPage";
 
 /**
- * Three entries, and no fourth: the identities this wallet holds, the witnesses
- * it knows, and the program doing the work.
+ * Three entries on every node, and no fourth: the identities this home holds,
+ * the witnesses it knows, and the program doing the work. A home that signs for
+ * nothing shows the same three, with an empty first list (proposal 006 section
+ * 8): what a node can do is read from what it holds, never from a role.
  */
-const WALLET_LINKS = [
+const LINKS = [
   { to: "/wallet", label: "Wallet", testId: "nav-wallet" },
   { to: "/witnesses", label: "Witnesses", testId: "nav-witnesses" },
-  { to: "/node", label: "Node", testId: "nav-node" },
-];
-
-/** A witness node serves no wallet, so its nav names the records it keeps. */
-const WITNESS_LINKS = [
-  { to: "/witness", label: "Records", testId: "nav-witness" },
   { to: "/node", label: "Node", testId: "nav-node" },
 ];
 
@@ -40,29 +33,11 @@ function RedirectToIdentity() {
   return <Navigate to={`/identities/${identityId}`} replace />;
 }
 
-/**
- * The front door, once the node has said which role it serves. Redirecting
- * before the answer arrives sends a witness operator to the wallet, which is a
- * screen their node does not serve, so `/` waits.
- */
-function RoleHome({ role, blocked }: { role: "wallet" | "witness" | null; blocked: boolean }) {
-  if (role !== null) {
-    return <Navigate to={role === "witness" ? "/witness" : "/wallet"} replace />;
-  }
-  // The shell above already says which node it could not reach, so a failed
-  // question is not answered twice here.
-  return blocked ? null : <p data-testid="app-role-loading">loading</p>;
-}
-
 export function App() {
-  // A node has one role. The witness binary serves this same bundle, and its
-  // debug route is the only screen there: it holds no identities to list.
+  // The node document is read here for one reason: to say, once, that this page
+  // could not reach the node. No screen is chosen by it.
   const node = useResource(getNode, []);
-  const witness = node.data?.role === "witness";
-  const links = witness ? WITNESS_LINKS : WALLET_LINKS;
-  // Null until the node answers: a wallet is what this build shows by default,
-  // never what it assumes while the question is still open.
-  const role = node.data === null ? null : witness ? "witness" : "wallet";
+  const links = LINKS;
 
   return (
     // One readable column at every width, and margins rather than a second
@@ -114,9 +89,9 @@ export function App() {
         </NavigationMenu>
       </header>
       {/*
-        The node document is what every screen here stands on: which role this
-        node serves, and whether it is answering at all. A failure to read it is
-        said once, in the shell, naming the address it asked.
+        Whether the node is answering at all is what every screen here stands
+        on. A failure to read it is said once, in the shell, naming the address
+        it asked.
       */}
       {node.error && (
         <div data-testid="shell-node-error" className="mb-4 space-y-2">
@@ -131,14 +106,15 @@ export function App() {
         </div>
       )}
       <Routes>
-        <Route path="/" element={<RoleHome role={role} blocked={node.error !== null} />} />
+        {/* One home, on every node: the wallet page, which lists what this home
+            signs for and what it knows of. */}
+        <Route path="/" element={<Navigate to="/wallet" replace />} />
         <Route path="/wallet" element={<WalletHome />} />
         <Route path="/identities/:identityId" element={<IdentityPage />} />
         <Route path="/witnesses" element={<WitnessesPage />} />
         <Route path="/node" element={<NodePage />} />
-        <Route path="/witnesses/:endpointId" element={<WitnessLedgersPage />} />
-        <Route path="/witness" element={<WitnessHome />} />
-        <Route path="/witness/ledgers/:ledgerId" element={<WitnessLedgerDetail />} />
+        {/* A witness is an identity, so its page is the identity page. */}
+        <Route path="/witnesses/:identityId" element={<RedirectToIdentity />} />
         {/* Bookmarks from the four-tab wallet, so no saved link 404s. */}
         <Route path="/wallet/identities/:identityId" element={<RedirectToIdentity />} />
         <Route path="/wallet/lookup/:identityId" element={<RedirectToIdentity />} />
