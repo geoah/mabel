@@ -3,7 +3,7 @@ import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
 
 import type { LookupResponse } from "@/api/types";
-import { ACME, ALICE, BOB, CAROL, seedGraph, seedLookup } from "@/mocks/fixtures";
+import { ACME, ALICE, BOB, CAROL, seedGraph, seedLookup, UNSTORED_LEDGER } from "@/mocks/fixtures";
 import { server } from "@/mocks/server";
 
 import { REVERSE_LABEL } from "@/routes/identity/KnowledgeSection";
@@ -77,8 +77,8 @@ describe("a foreign identity this wallet holds no ledger for", () => {
   });
 
   it("renders as a stored ledger once the fetch lands", async () => {
-    // BOB is a ledger the mock witness holds and this home does not.
-    const { user } = renderApp(`/identities/${BOB}`);
+    // A ledger the mock witness holds and this home stores no copy of.
+    const { user } = renderApp(`/identities/${UNSTORED_LEDGER}`);
     await screen.findByTestId("identity-fetch-button");
     expect(screen.queryByTestId("ledger-panel")).not.toBeInTheDocument();
 

@@ -22,6 +22,12 @@ export interface ResolvedName {
   /** null when neither a profile name nor an alias exists: the id is the label. */
   name: string | null;
   source: NameSource;
+  /**
+   * The nickname this device keeps, when it is not itself the shown name. It is
+   * drawn in parentheses after the name, so a public name and the name you gave
+   * them are both readable and tellable apart: Alice Ashworth (alice).
+   */
+  nickname: string | null;
 }
 
 /**
@@ -30,12 +36,29 @@ export interface ResolvedName {
  */
 export function resolveName(identity: ResolvedIdentityDocument): ResolvedName {
   if (identity.display_name) {
-    return { name: identity.display_name, source: "profile" };
+    return {
+      name: identity.display_name,
+      source: "profile",
+      nickname: identity.alias || null,
+    };
   }
   if (identity.alias) {
-    return { name: identity.alias, source: "alias" };
+    return { name: identity.alias, source: "alias", nickname: null };
   }
-  return { name: null, source: "id" };
+  return { name: null, source: "id", nickname: null };
+}
+
+/**
+ * The name a heading spells for one identity: `Alice Ashworth (alice)` when this
+ * device also keeps a nickname, the name alone otherwise, and null when the id is
+ * the only label there is.
+ */
+export function nameWithNickname(identity: ResolvedIdentityDocument): string | null {
+  const { name, nickname } = resolveName(identity);
+  if (name === null) {
+    return null;
+  }
+  return nickname === null ? name : `${name} (${nickname})`;
 }
 
 /** The names two or more entries of one list share, which forces their full ids. */
@@ -164,6 +187,7 @@ export function bareIdentity(identityId: string): ResolvedIdentityDocument {
   return {
     identity_id: identityId,
     display_name: null,
+    email: null,
     alias: null,
     hostname: null,
     verification_status: "unclaimed",
@@ -182,6 +206,7 @@ export function resolvedFrom(identity: Identity): ResolvedIdentityDocument {
   return {
     identity_id: identity.identity_id,
     display_name: displayName,
+    email: identity.profile?.email ?? null,
     alias,
     hostname: identity.profile?.hostname ?? null,
     verification_status: identity.verification.status,

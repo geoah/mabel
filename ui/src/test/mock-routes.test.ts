@@ -29,6 +29,7 @@ import {
   CAROL,
   REACHABLE_WITNESS,
   UNREACHABLE_WITNESS,
+  UNSTORED_LEDGER,
   seedContact,
   seedGraph,
   seedIdentities,
@@ -385,13 +386,13 @@ describe("resolve", () => {
 
 describe("fetch", () => {
   it("stores a ledger a witness holds and leaves it uncontrolled", async () => {
-    const response = await fetchIdentity(BOB, { from: null });
+    const response = await fetchIdentity(UNSTORED_LEDGER, { from: null });
 
-    expect(response.ledger_id).toBe(BOB);
+    expect(response.ledger_id).toBe(UNSTORED_LEDGER);
     expect(response.stored).toBe(response.event_count);
     expect(response.controlled_by).toBeNull();
 
-    const stored = await getIdentity(BOB);
+    const stored = await getIdentity(UNSTORED_LEDGER);
     expect(stored.identity.head_seq).toBe(response.head_seq);
     // Stored is not controlled: the wallet's own list does not grow.
     const listed = (await listIdentities()).identities.map((entry) => entry.identity_id);
@@ -399,8 +400,8 @@ describe("fetch", () => {
   });
 
   it("stores nothing the second time and reports that", async () => {
-    await fetchIdentity(BOB, { from: null });
-    const again = await fetchIdentity(BOB, { from: null });
+    await fetchIdentity(UNSTORED_LEDGER, { from: null });
+    const again = await fetchIdentity(UNSTORED_LEDGER, { from: null });
 
     expect(again.stored).toBe(0);
   });

@@ -22,6 +22,8 @@ interface IdentityInlineProps {
    * a card heading needs. `inline` is one line, which is every other use.
    */
   layout?: "inline" | "stacked";
+  /** Draws the whole id, for an inline use that sits on a card and has the width. */
+  full?: boolean;
   className?: string;
 }
 
@@ -40,9 +42,10 @@ export function IdentityInline({
   linkTestId,
   pill,
   layout = "inline",
+  full = false,
   className,
 }: IdentityInlineProps) {
-  const { name, source } = resolveName(identity);
+  const { name, source, nickname } = resolveName(identity);
   // Two entries of one list resolving to the same name both drop the
   // truncation, because the id is the only thing telling them apart.
   const shared = useSharedName(name);
@@ -60,6 +63,15 @@ export function IdentityInline({
           {name}
         </span>
       )}
+      {/* The name you gave them, after the name they publish. */}
+      {nickname !== null && (
+        <span
+          data-testid={testId && `${testId}-nickname`}
+          className="text-sm text-muted-foreground"
+        >
+          ({nickname})
+        </span>
+      )}
       <VerificationMark
         status={identity.verification_status}
         hostname={identity.hostname}
@@ -72,7 +84,9 @@ export function IdentityInline({
   const id = (
     <Identifier
       value={identity.identity_id}
-      full={shared}
+      // A card has the width for the whole id, and a Mabel ID is the only thing
+      // that tells two identities apart: no card truncates one.
+      full={shared || stacked || full}
       to={to}
       linkTestId={linkTestId ?? (testId && `${testId}-link`)}
       className="text-muted-foreground"

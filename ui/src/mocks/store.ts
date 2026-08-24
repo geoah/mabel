@@ -29,6 +29,8 @@ import type {
   InvitationEntry,
   InviteRequest,
   InvitedResponse,
+  KnownIdentitiesResponse,
+  KnownIdentity,
   LedgerEntryResponse,
   LedgerEvent,
   LedgerListResponse,
@@ -58,6 +60,7 @@ import type {
   WitnessNodeInfo,
   WitnessSummary,
 } from "@/api/types";
+import { DEMO_STATE_KEY } from "@/lib/demo";
 import type { HeldLedger } from "./fixtures";
 import {
   ACME,
@@ -69,6 +72,7 @@ import {
   createdIdentity,
   errors,
   identityKeys,
+  knownBob,
   noKeysHeldError,
   seedContact,
   seedEdges,
@@ -181,6 +185,105 @@ function emptyState(): State {
   };
 }
 
+/**
+ * The state a reload has to keep, as plain JSON: everything a visitor changed.
+ * The witness side is left out because no route mutates it, so it is reseeded
+ * from the fixtures every boot.
+ */
+interface Snapshot {
+  version: string;
+  minted: number;
+  identities: Identity[];
+  fetched: [string, Identity][];
+  events: [string, LedgerEvent[]][];
+  invitations: [string, InvitationEntry[]][];
+  contacts: [string, Contact][];
+  graph: Graph | null;
+  resolved: [string, ResolvedIdentity][];
+  edges: Edge[];
+}
+
+/**
+ * The saved state is thrown away when this string changes. The leading number is
+ * bumped by hand when the shape above or the seed below changes; the rest is the
+ * version the node fixture reports, which moves when the fixtures do.
+ */
+const SNAPSHOT_VERSION = `2:${walletNode.version}`;
+
+function snapshot(): Snapshot {
+  return {
+    version: SNAPSHOT_VERSION,
+    minted,
+    identities: state.identities,
+    fetched: [...state.fetched],
+    events: [...state.events],
+    invitations: [...state.invitations],
+    contacts: [...state.contacts],
+    graph: state.graph,
+    resolved: [...state.resolved],
+    edges: state.edges,
+  };
+}
+
+/**
+ * Writes what the visitor did. A demo whose fetched record disappears on the
+ * next page load is telling a lie about the node, so every mutating route ends
+ * here. A storage that throws (private mode, disabled cookies) means the session
+ * still works and nothing is remembered.
+ */
+export function persistStore(): void {
+  try {
+    globalThis.localStorage?.setItem(DEMO_STATE_KEY, JSON.stringify(snapshot()));
+  } catch {
+    // Nothing is remembered, and the session still works.
+  }
+}
+
+/** What the last page load saved, or null when there is nothing usable. */
+function savedSnapshot(): Snapshot | null {
+  try {
+    const raw = globalThis.localStorage?.getItem(DEMO_STATE_KEY) ?? null;
+    if (raw === null) {
+      return null;
+    }
+    const parsed = JSON.parse(raw) as Partial<Snapshot>;
+    // A snapshot from another version is thrown away rather than migrated: it
+    // was seeded from fixtures this build no longer carries.
+    return parsed.version === SNAPSHOT_VERSION ? (parsed as Snapshot) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Loads what the last page load left, or reseeds from the fixtures when there is
+ * nothing saved, the saved state was written by another version, or it does not
+ * parse. Called once on boot and by the tests that drive a reload.
+ */
+export function restoreStore(): boolean {
+  const saved = savedSnapshot();
+  if (saved === null) {
+    resetStore();
+    return false;
+  }
+  nodeRole = null;
+  minted = saved.minted;
+  state = {
+    identities: saved.identities,
+    fetched: new Map(saved.fetched),
+    events: new Map(saved.events),
+    invitations: new Map(saved.invitations),
+    contacts: new Map(saved.contacts),
+    graph: saved.graph,
+    resolved: new Map(saved.resolved),
+    edges: saved.edges,
+    // The witness side is a read-only fixture, so it is never saved.
+    held: witnessLedgers(),
+    forks: witnessForks(),
+  };
+  return true;
+}
+
 export function resetStore(): void {
   minted = 0;
   nodeRole = null;
@@ -204,26 +307,92 @@ export function resetStore(): void {
       contacts.set(identity.identity_id, { ...identity.contact });
     }
   }
+  const held = witnessLedgers();
+  const bob = storedBob(held);
   state = {
     identities,
-    fetched: new Map(),
+    // Bob is the seeded known identity with a copy on disk: this home stored his
+    // record and controls nothing about him.
+    fetched: new Map(bob === null ? [] : [[BOB, bob.identity]]),
     // Every seeded identity carries the chain its own document implies, so no
     // page shows zero entries against a head sequence that is not zero.
     events: new Map([
       [ALICE, aliceEvents()],
       [ACME, acmeEvents()],
+      ...(bob === null ? [] : ([[BOB, bob.events]] as [string, LedgerEvent[]][])),
     ]),
     invitations: new Map(),
     contacts,
     graph: { ...seedGraph, roots: seedGraph.roots.map((root) => ({ ...root })) },
     resolved: seedResolved(),
     edges: seedEdges(),
-    held: witnessLedgers(),
+    held,
     forks: witnessForks(),
+  };
+  persistStore();
+}
+
+/**
+ * Bob as this home stored him: the chain one witness serves, plus the profile
+ * the crawl read for him. Every field is a copy of what another route would
+ * have written, because the only way to hold a foreign record is to fetch it.
+ */
+function storedBob(held: HeldLedger[]): { identity: Identity; events: LedgerEvent[] } | null {
+  const served = held.find((entry) => entry.entry.ledger_id === BOB);
+  if (served === undefined) {
+    return null;
+  }
+  const events = served.events.map((event) => ({ ...event }));
+  // The crawl records one attestation of his, the hop that puts Carol two steps
+  // from Alice, so his stored record carries the same entry.
+  const outgoing = seedEdges().filter((edge) => edge.from === BOB);
+  return {
+    events,
+    identity: {
+      identity_id: BOB,
+      declared_kind: served.entry.declared_kind,
+      alias: "",
+      created_at_ms: served.entry.first_seen_ms,
+      head_seq: served.entry.head_seq,
+      head_event: served.entry.head_event,
+      event_count: served.entry.event_count,
+      witnesses: [...served.witnesses],
+      trust: outgoing.map((edge) => ({
+        attestation_event: edge.attestation_event,
+        attestation_seq: edge.seq,
+        subject: edge.to,
+        revoked: false,
+        revocation_event: null,
+        revocation_seq: null,
+      })),
+      principals: [],
+      open_invitation_count: 0,
+      profile: {
+        display_name: knownBob.display_name,
+        hostname: knownBob.hostname,
+        email: knownBob.email,
+        signing_principal: { identity: BOB, key: served.events[0].author_key },
+        event: served.entry.head_event,
+        seq: served.entry.head_seq,
+      },
+      // He claims a handle and this home has not checked it, which is the
+      // unverified state rather than a missing one.
+      verification: {
+        hostname: knownBob.hostname,
+        status: knownBob.verification_status,
+        checked_at_ms: null,
+        last_verified_at_ms: null,
+        stale: true,
+        detail: null,
+        unreachable: null,
+      },
+      contact: { ...seedContact },
+      controlled_by: null,
+    },
   };
 }
 
-resetStore();
+restoreStore();
 
 /** A ledger this home can sign for. Every mutating route goes through it. */
 function find(identityId: string): Identity {
@@ -1184,13 +1353,16 @@ function local(identityId: string): Identity | undefined {
  */
 function resolve(identityId: string): ResolvedIdentity {
   const nickname = state.contacts.get(identityId)?.nickname ?? null;
-  const held = local(identityId);
+  // A stored copy is the better source than the crawl's summary of it, and this
+  // home stores both the ledgers it controls and the ones it fetched.
+  const held = local(identityId) ?? state.fetched.get(identityId);
   if (held) {
     const displayName = held.profile?.display_name ?? null;
-    const alias = nickname ?? held.alias;
+    const alias = nickname ?? (held.alias === "" ? null : held.alias);
     return {
       identity_id: identityId,
       display_name: displayName,
+      email: held.profile?.email ?? null,
       alias,
       hostname: held.profile?.hostname ?? null,
       verification_status: held.verification.status,
@@ -1202,11 +1374,70 @@ function resolve(identityId: string): ResolvedIdentity {
   return {
     identity_id: identityId,
     display_name: crawled?.display_name ?? null,
+    email: crawled?.email ?? null,
     alias,
     hostname: crawled?.hostname ?? null,
     verification_status: crawled?.verification_status ?? "unclaimed",
     provenance: crawled?.display_name ? "profile" : alias ? "alias" : "none",
   };
+}
+
+/**
+ * The edge count from the nearest crawl root, which is every identity this home
+ * controls, or null when no crawl reached the identity: "not in my crawl" is an
+ * answer and never "no relationship" (contracts/README.md, "Known identities").
+ */
+function degreesFromRoots(identityId: string): number | null {
+  const depth = state.graph?.depth ?? 2;
+  let nearest: number | null = null;
+  for (const root of state.identities) {
+    const trails = shortestTrails(root.identity_id, identityId, depth);
+    const length = trails[0]?.length;
+    if (length !== undefined && (nearest === null || length < nearest)) {
+      nearest = length;
+    }
+  }
+  return nearest;
+}
+
+/**
+ * GET /api/identities/known. Every identity this home has a record of and does
+ * not control, from two local sources: the ledgers it fetched and the crawl
+ * generation it stored. Ordered by ascending identity id alone, because an id is
+ * the only stable key a row has.
+ */
+export function listKnownIdentities(): KnownIdentitiesResponse {
+  const controlled = new Set(state.identities.map((entry) => entry.identity_id));
+  const trusted = new Set<string>();
+  for (const identity of state.identities) {
+    for (const record of identity.trust) {
+      if (!record.revoked) {
+        trusted.add(record.subject);
+      }
+    }
+  }
+  const ids = new Set<string>([...state.fetched.keys(), ...state.resolved.keys()]);
+  const identities: KnownIdentity[] = [...ids]
+    .filter((identityId) => !controlled.has(identityId))
+    .sort((left, right) => (left < right ? -1 : 1))
+    .map((identityId) => {
+      const stored = state.fetched.get(identityId);
+      const named = resolve(identityId);
+      return {
+        identity_id: identityId,
+        display_name: named.display_name,
+        alias: named.alias,
+        email: named.email,
+        hostname: named.hostname,
+        verification_status: named.verification_status,
+        declared_kind: stored?.declared_kind ?? null,
+        stored: stored !== undefined,
+        trusted: trusted.has(identityId),
+        degrees: degreesFromRoots(identityId),
+        head_seq: stored?.head_seq ?? null,
+      };
+    });
+  return { ok: true, identities };
 }
 
 /** The signer of an append: the mock has one controller per ledger. */

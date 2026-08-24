@@ -13,6 +13,7 @@ import {
   listTestIds,
   pageTestIds,
   type PillFacts,
+  resolvedFrom,
 } from "@/components/identity";
 import { ACME, ALICE, BOB, seedIdentities } from "@/mocks/fixtures";
 
@@ -106,11 +107,15 @@ describe("the card's layout", () => {
 });
 
 describe("the collapsed card", () => {
-  it("holds the name, the id with a copy button, the pill, the email and the kind", () => {
+  it("holds the name, the nickname, the whole id with a copy button, the pill and the kind", () => {
     card(alice);
 
     expect(screen.getByTestId(`identity-card-name-${ALICE}-name`)).toHaveTextContent(
       "Alice Ashworth",
+    );
+    // The name you gave them, in parentheses after the name they publish.
+    expect(screen.getByTestId(`identity-card-name-${ALICE}-nickname`)).toHaveTextContent(
+      `(${alice.alias})`,
     );
     expect(screen.getByTestId(`identity-card-link-${ALICE}`)).toHaveAttribute(
       "href",
@@ -118,19 +123,35 @@ describe("the collapsed card", () => {
     );
     const heading = screen.getByTestId(`identity-card-name-${ALICE}`);
     expect(within(heading).getByLabelText("copy")).toBeInTheDocument();
+    // A card has the room for the whole Mabel ID, and it draws all of it.
+    const id = heading.querySelector(`[data-value="${ALICE}"]`);
+    expect(id).toHaveAttribute("data-truncated", "false");
+    expect(id).toHaveTextContent(ALICE);
     expect(screen.getByTestId(`identity-card-name-${ALICE}-pill`)).toHaveTextContent(
       "your identity",
-    );
-    expect(screen.getByTestId(`identity-card-email-${ALICE}`)).toHaveTextContent(
-      "alice@alice.example",
     );
     expect(screen.getByTestId(`identity-card-declared-kind-${ALICE}`)).toHaveTextContent("person");
     // A position on the record is not a fact about the identity: no card says one.
     expect(screen.getByTestId(`identity-card-${ALICE}`)).not.toHaveTextContent("at position");
   });
 
-  it("draws no email line for an identity publishing none", () => {
-    card(acme);
+  it("keeps the public email out of the closed card and in the record it opens", async () => {
+    const { user } = card(alice);
+
+    expect(screen.queryByTestId(`identity-card-email-${ALICE}`)).not.toBeInTheDocument();
+
+    await user.click(screen.getByTestId(`identity-card-expand-${ALICE}`));
+
+    expect(screen.getByTestId(`identity-card-email-${ALICE}`)).toHaveTextContent(
+      "alice@alice.example",
+    );
+    expect(screen.getByTestId(`identity-card-email-${ALICE}-row`)).toHaveTextContent("email");
+  });
+
+  it("draws no email row for an identity publishing none", async () => {
+    const { user } = card(acme);
+
+    await user.click(screen.getByTestId(`identity-card-expand-${ACME}`));
 
     expect(screen.queryByTestId(`identity-card-email-${ACME}`)).not.toBeInTheDocument();
   });
@@ -151,6 +172,30 @@ describe("the collapsed card", () => {
     await user.click(expand);
 
     expect(screen.queryByTestId(`identity-card-details-${ALICE}`)).not.toBeInTheDocument();
+  });
+
+  it("draws the expand control as a pressable button with a vertical chevron", async () => {
+    const { user } = card(alice);
+
+    const expand = screen.getByTestId(`identity-card-expand-${ALICE}`);
+    // It reads as a button: a border of its own and a hover state.
+    expect(expand.tagName).toBe("BUTTON");
+    expect(expand.className).toMatch(/border/);
+    expect(expand.className).toMatch(/hover:bg-accent/);
+    expect(expand).toHaveAttribute("aria-label", "Show the record");
+
+    const chevron = expand.querySelector("[data-slot='collapsible-chevron']");
+    // Closed it points down, at the content it opens; open it points back up.
+    expect(chevron).toHaveAttribute("data-state", "closed");
+    expect(chevron?.getAttribute("class")).not.toMatch(/rotate-90/);
+    expect(chevron?.getAttribute("class")).not.toMatch(/rotate-180/);
+
+    await user.click(expand);
+
+    expect(expand).toHaveAttribute("aria-label", "Hide the record");
+    expect(
+      expand.querySelector("[data-slot='collapsible-chevron']")?.getAttribute("class"),
+    ).toMatch(/rotate-180/);
   });
 
   it("starts open in the expanded state", () => {
@@ -183,7 +228,12 @@ describe("the page state", () => {
     expect(screen.getByTestId("identity-detail-resolved-name")).toHaveTextContent("Alice Ashworth");
     expect(screen.getByTestId("identity-detail-email")).toHaveTextContent("alice@alice.example");
     expect(screen.getByTestId("identity-detail-alias")).toHaveTextContent(alice.alias);
-    expect(screen.getByTestId("identity-detail-alias-row")).toHaveTextContent("Nickname");
+    // One casing for every row label on every card: lowercase.
+    expect(screen.getByTestId("identity-detail-alias-row")).toHaveTextContent("nickname");
+    expect(screen.getByTestId("identity-detail-contact-row")).toHaveTextContent("note");
+    for (const row of screen.getByTestId("identity-detail-details").querySelectorAll("dt")) {
+      expect(row.textContent ?? "").toMatch(/^[a-z]/);
+    }
     // The note sits directly under the nickname, which is the pair a reader edits.
     expect(
       screen
@@ -199,17 +249,47 @@ describe("the page state", () => {
   it("renders every principal as a linked identity, never as a count", () => {
     renderComponent(
       <MemoryRouter>
-        <IdentityCard facts={factsFromIdentity(alice)} state="page" testIds={pageTestIds} />
+        <IdentityCard facts={factsFromIdentity(acme)} state="page" testIds={pageTestIds} />
       </MemoryRouter>,
     );
 
     const row = screen.getByTestId("identity-detail-principals");
-    for (const principal of alice.principals) {
+    for (const principal of acme.principals) {
       expect(
         within(row).getByTestId(`identity-detail-principal-${principal.identity}-link`),
       ).toHaveAttribute("href", `/identities/${principal.identity}`);
     }
     expect(screen.queryByTestId("identity-detail-principal-count")).not.toBeInTheDocument();
+  });
+
+  it("names the principals with the names the screen resolved, not their ids", () => {
+    renderComponent(
+      <MemoryRouter>
+        <IdentityCard
+          facts={factsFromIdentity(acme)}
+          state="page"
+          testIds={pageTestIds}
+          resolvePrincipal={() => resolvedFrom(alice)}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(
+      screen.getByTestId(`identity-detail-principal-${ALICE}-name`),
+    ).toHaveTextContent("Alice Ashworth");
+  });
+
+  it("draws no principals row for an identity whose only principal is itself", () => {
+    renderComponent(
+      <MemoryRouter>
+        <IdentityCard facts={factsFromIdentity(alice)} state="page" testIds={pageTestIds} />
+      </MemoryRouter>,
+    );
+
+    // Alice keys herself: "who can act for it" would answer with the identity
+    // the heading already names.
+    expect(alice.principals.map((principal) => principal.identity)).toEqual([ALICE]);
+    expect(screen.queryByTestId("identity-detail-principals")).not.toBeInTheDocument();
   });
 
   it("says once, on the principals row, that a founded identity's controllers sign for it", () => {
@@ -248,7 +328,7 @@ describe("the page state", () => {
     renderComponent(
       <MemoryRouter>
         <IdentityCard
-          facts={factsFromResolved(bareIdentity(BOB))}
+          facts={factsFromResolved(bareIdentity(BOB), { stored: false })}
           state="page"
           testIds={pageTestIds}
         />

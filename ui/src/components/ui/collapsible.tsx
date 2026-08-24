@@ -122,9 +122,10 @@ export function CollapsibleContent({ className, ...props }: React.ComponentProps
 }
 
 /**
- * The one expand affordance this app draws, anywhere anything expands: a
- * chevron that points right while the block is closed and down while it is
- * open. It reads the collapsible it sits in, so no caller passes a state.
+ * The one expand affordance this app draws, anywhere anything expands: a chevron
+ * pointing down while the block is closed, which is where the content appears,
+ * and up while it is open, which is where pressing it sends the content back. It
+ * reads the collapsible it sits in, so no caller passes a state.
  */
 export function CollapsibleChevron({ className }: { className?: string }) {
   const { open } = useCollapsible("CollapsibleChevron");
@@ -136,12 +137,12 @@ export function CollapsibleChevron({ className }: { className?: string }) {
       data-state={open ? "open" : "closed"}
       className={cn(
         "size-3.5 shrink-0 text-muted-foreground transition-transform",
-        open && "rotate-90",
+        open && "rotate-180",
         className,
       )}
       fill="currentColor"
     >
-      <path d="M5.72 3.72a.75.75 0 0 1 1.06 0l3.75 3.75a.75.75 0 0 1 0 1.06l-3.75 3.75a.75.75 0 1 1-1.06-1.06L8.94 8 5.72 4.78a.75.75 0 0 1 0-1.06Z" />
+      <path d="M3.72 5.72a.75.75 0 0 1 1.06 0L8 8.94l3.22-3.22a.75.75 0 1 1 1.06 1.06l-3.75 3.75a.75.75 0 0 1-1.06 0L3.72 6.78a.75.75 0 0 1 0-1.06Z" />
     </svg>
   );
 }

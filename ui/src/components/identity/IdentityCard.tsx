@@ -12,6 +12,7 @@ import type {
 import { DeclaredKindValue } from "@/components/DeclaredKind";
 import { NICKNAME_INFO, NOTE_INFO } from "@/components/InfoTip";
 import { KeyValue, KeyValueTable } from "@/components/KeyValue";
+import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import {
   Collapsible,
@@ -57,6 +58,19 @@ export interface IdentityFacts {
   /** Where its id links, null when there is nowhere to go. */
   to: string | null;
   record: IdentityRecord | null;
+  /**
+   * Whether this home stores a copy of the record, and null when the screen
+   * drawing the card does not know. A card that stores none says so in a pill,
+   * because everything else on it came from a crawl; a card whose screen never
+   * asked says nothing, rather than claiming an answer it does not have.
+   */
+  stored: boolean | null;
+  /**
+   * The newest position a listing reported for the record, null when none did.
+   * It is how a stored copy this home does not control says how much of the
+   * record it has, without the record itself being loaded.
+   */
+  headSeq: number | null;
 }
 
 /** The facts an identity document carries, for every screen holding one. */
@@ -67,6 +81,8 @@ export function factsFromIdentity(identity: Identity, to: string | null = null):
     email: identity.profile?.email ?? null,
     declaredKind: identity.declared_kind,
     to,
+    stored: true,
+    headSeq: identity.head_seq,
     record: {
       alias: identity.alias,
       createdAtMs: identity.created_at_ms,
@@ -85,9 +101,9 @@ export function factsFromIdentity(identity: Identity, to: string | null = null):
 
 /**
  * The facts a crawled or witness-held identity carries: a name, an id, a verdict
- * and whatever summary the listing came with. A profile email is not part of the
- * resolved document, so a card built this way shows none until this home holds
- * the record itself.
+ * and whatever summary the listing came with. The resolved document carries the
+ * public email the crawl read, so a card built this way shows one without this
+ * home holding the record; everything a record answers is missing until it does.
  */
 export function factsFromResolved(
   resolved: ResolvedIdentityDocument,
@@ -95,15 +111,24 @@ export function factsFromResolved(
     declaredKind?: DeclaredKind | null;
     stale?: boolean;
     to?: string | null;
+    /**
+     * Whether this home holds a copy of the record behind the name. Left out on
+     * a screen that never asked, and the card then says nothing about it.
+     */
+    stored?: boolean | null;
+    /** The newest position the listing reported, when it reported one. */
+    headSeq?: number | null;
   } = {},
 ): IdentityFacts {
   return {
     resolved,
     stale: options.stale ?? false,
-    email: null,
+    email: resolved.email,
     declaredKind: options.declaredKind ?? null,
     to: options.to ?? null,
     record: null,
+    stored: options.stored ?? null,
+    headSeq: options.headSeq ?? null,
   };
 }
 
@@ -143,12 +168,33 @@ function RecordRows({
   resolvePrincipal: (identityId: string) => ResolvedIdentityDocument;
 }) {
   const record = facts.record;
+  // Every row label is lowercase, the public email included: one style for the
+  // whole table, so no row reads as a heading over its neighbours.
+  const email =
+    facts.email === null ? null : (
+      <KeyValue label="email" testId={testIds("email")}>
+        <span className="break-all">{facts.email}</span>
+      </KeyValue>
+    );
   if (record === null) {
+    // A copy this home stored says how much of the record it holds; one it did
+    // not says exactly that, and a screen that never asked says neither.
+    const entries = facts.headSeq === null ? null : facts.headSeq + 1;
     return (
       <KeyValueTable>
-        <KeyValue label="ledger" testId={testIds("ledger-summary")}>
-          your wallet holds no copy of it
-        </KeyValue>
+        {email}
+        {(facts.stored === false || entries !== null) && (
+          <KeyValue label="ledger" testId={testIds("ledger-summary")}>
+            {entries === null ? (
+              "your wallet holds no copy of it"
+            ) : (
+              <>
+                <span data-testid={testIds("event-count")}>{entries}</span>{" "}
+                {entries === 1 ? "entry" : "entries"}
+              </>
+            )}
+          </KeyValue>
+        )}
       </KeyValueTable>
     );
   }
@@ -162,13 +208,21 @@ function RecordRows({
       ? facts.resolved
       : resolvePrincipal(principal.identity),
   );
+  // An identity keyed by itself has one principal, itself, which the heading
+  // above already names: the row is drawn when the answer differs from it. A
+  // record with no principal set at all, which is what a fetched copy carries,
+  // has no answer to give and says nothing.
+  const principalsDiffer =
+    principals.length > 1 ||
+    (principals.length === 1 && principals[0].identity_id !== facts.resolved.identity_id);
 
   return (
     <KeyValueTable>
-      <KeyValue label="Nickname" testId={testIds("alias")} info={NICKNAME_INFO}>
+      {email}
+      <KeyValue label="nickname" testId={testIds("alias")} info={NICKNAME_INFO}>
         {nickname === "" ? "none" : nickname}
       </KeyValue>
-      <KeyValue label="Note" testId={testIds("contact")} info={NOTE_INFO}>
+      <KeyValue label="note" testId={testIds("contact")} info={NOTE_INFO}>
         {contact?.note ?? "none"}
       </KeyValue>
       <KeyValue label="created" testId={testIds("created")}>
@@ -193,29 +247,31 @@ function RecordRows({
       <KeyValue label="trusts" testId={testIds("trusted-count")}>
         {record.trustedCount} {record.trustedCount === 1 ? "identity" : "identities"}
       </KeyValue>
-      <KeyValue label="who can act for it" testId={testIds("principals")}>
-        <IdentityListScope identities={principals}>
-          <span className="flex flex-col gap-1">
-            {principals.map((principal) => (
-              <IdentityInline
-                key={principal.identity_id}
-                identity={principal}
-                testId={testIds(`principal-${principal.identity_id}`)}
-                to={`/identities/${principal.identity_id}`}
-                // A raw-rooted ledger is its own only principal, and the card's
-                // heading already carries its pill: once is enough.
-                pill={principal.identity_id === facts.resolved.identity_id ? null : undefined}
-              />
-            ))}
-            {/* The one key fact worth a sentence, said once, where it matters. */}
-            {record.founded && (
-              <span data-testid={testIds("founded")} className="text-xs text-muted-foreground">
-                Its controllers sign for it.
-              </span>
-            )}
-          </span>
-        </IdentityListScope>
-      </KeyValue>
+      {principalsDiffer && (
+        <KeyValue label="who can act for it" testId={testIds("principals")}>
+          <IdentityListScope identities={principals}>
+            <span className="flex flex-col gap-1">
+              {principals.map((principal) => (
+                <IdentityInline
+                  key={principal.identity_id}
+                  identity={principal}
+                  testId={testIds(`principal-${principal.identity_id}`)}
+                  to={`/identities/${principal.identity_id}`}
+                  // A raw-rooted ledger is its own only principal, and the card's
+                  // heading already carries its pill: once is enough.
+                  pill={principal.identity_id === facts.resolved.identity_id ? null : undefined}
+                />
+              ))}
+              {/* The one key fact worth a sentence, said once, where it matters. */}
+              {record.founded && (
+                <span data-testid={testIds("founded")} className="text-xs text-muted-foreground">
+                  Its controllers sign for it.
+                </span>
+              )}
+            </span>
+          </IdentityListScope>
+        </KeyValue>
+      )}
       <KeyValue label="invitations" testId={testIds("open-invitations")}>
         {invitations === 0
           ? "none"
@@ -265,12 +321,14 @@ export function IdentityCard({
   // closed card's version of a row the open one carries in full.
   const [open, setOpen] = useState(state === "expanded");
   const shown = page || open;
-  // The open block says this in a row of its own, so the closed card is the only
-  // one that says it on the kind line.
-  const unheld = !shown && facts.record === null;
+  // What the open block would add that the closed card does not already say: the
+  // record, a public email, or how much of the record this home stored. A
+  // crawled name with none of the three opens onto nothing, so it draws no
+  // control at all: the pill in its corner is the whole answer.
+  const expandable =
+    facts.record !== null || facts.email !== null || (facts.stored === true && facts.headSeq !== null);
   const kindLine =
     facts.declaredKind !== null ||
-    unheld ||
     (markers !== undefined && markers !== null && markers !== false);
 
   function openPage(event: MouseEvent<HTMLDivElement>) {
@@ -296,10 +354,10 @@ export function IdentityCard({
       )}
     >
       <Collapsible open={shown} onOpenChange={setOpen}>
-        {/* The top line: what this is on the left, the pill and the expand
-            chevron in the corner. The name and the id come under it, across the
-            whole card, because a 52-character id and a copy button do not share
-            a phone's width with a badge. */}
+        {/* The top line: what this identity says it is on the left as a badge,
+            the pills and the expand control in the corner. The name and the id
+            come under it, across the whole card, because a 52-character id and a
+            copy button do not share a phone's width with a badge. */}
         <div className="flex items-start justify-between gap-2">
           {kindLine && (
             <p
@@ -309,21 +367,29 @@ export function IdentityCard({
               {facts.declaredKind !== null && (
                 <DeclaredKindValue kind={facts.declaredKind} testId={testIds("declared-kind")} />
               )}
-              {unheld && <span data-testid={testIds("unheld")}>not stored here</span>}
               {markers}
             </p>
           )}
-          <div className="ml-auto flex shrink-0 items-center gap-1">
+          <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-1">
             {pill !== null && <IdentityPillBadge pill={pill} testId={`${testIds("name")}-pill`} />}
-            {/* Only a card holding a record has anything to open: a crawled one
-                says so on its kind line and draws no control. */}
-            {!page && facts.record !== null && (
+            {/* Everything on a card with no copy of the record came from a
+                crawl, and that is worth a pill beside the ones about trust. */}
+            {facts.stored === false && (
+              <Badge
+                variant="outline"
+                data-testid={testIds("unheld")}
+                title="Your wallet holds no copy of this record, only what a crawl read."
+              >
+                not stored here
+              </Badge>
+            )}
+            {!page && expandable && (
               <CollapsibleTrigger
                 data-testid={testIds("expand")}
                 aria-label={shown ? "Hide the record" : "Show the record"}
                 title={shown ? "Hide the record" : "Show the record"}
                 onClick={(event) => event.stopPropagation()}
-                className="-my-1 inline-flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+                className="-my-1 -mr-1 inline-flex size-8 items-center justify-center rounded-md border bg-background text-muted-foreground hover:bg-accent hover:text-foreground"
               >
                 <CollapsibleChevron className="size-4" />
               </CollapsibleTrigger>
@@ -341,11 +407,6 @@ export function IdentityCard({
           // The card draws the pill itself, in its top right corner.
           pill={null}
         />
-        {facts.email !== null && (
-          <p data-testid={testIds("email")} className="mt-0.5 text-sm break-all text-muted-foreground">
-            {facts.email}
-          </p>
-        )}
         <CollapsibleContent
           data-testid={testIds("details")}
           className="mt-3 border-t pt-3"
@@ -373,12 +434,15 @@ export function IdentityCardList({
   testId,
   empty,
   emptyTestId = `${testId}-empty`,
+  resolvePrincipal,
 }: {
   entries: IdentityCardEntry[];
   testId: string;
   /** What the list says when it holds nothing. */
   empty: string;
   emptyTestId?: string;
+  /** Names one principal, for a list whose screen resolved the ids it draws. */
+  resolvePrincipal?: (identityId: string) => ResolvedIdentityDocument;
 }) {
   if (entries.length === 0) {
     return (
@@ -399,6 +463,7 @@ export function IdentityCardList({
                 testIds={listTestIds(id)}
                 linkTestId={`identity-card-link-${id}`}
                 markers={entry.markers}
+                resolvePrincipal={resolvePrincipal}
               />
             </li>
           );

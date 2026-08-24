@@ -24,6 +24,8 @@ const BOB = "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq";
 const ACME = "2okqwhextnpkpmydrgrkk563vbehcklffwfzidxlh5dslawjmn6a";
 /** The foreign identity the lookup fixture answers for, and no witness holds. */
 const CAROL = "jqtnsb2me7mj5xsze4gavqklohqhdmkshfiz65khjmxtxjruqh2q";
+/** A record one witness holds and this home stores no copy of, so a fetch has work. */
+const UNSTORED_LEDGER = "cd".repeat(26);
 /** The two witness endpoints the demo knows: one answers, one does not. */
 const WITNESS = "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq";
 const UNREACHABLE_WITNESS = "54rw3lmckcpqf4ofkvyx3i74agumvale2qmzdu76ubpita6sw5va";
@@ -55,6 +57,27 @@ const SCREENS = [
       await page.getByTestId("identity-create-alias").fill("dana");
       await page.getByTestId("identity-create-submit").click();
       await page.getByTestId("identity-keys-download").waitFor();
+    },
+  },
+  {
+    // The second list: every identity this wallet knows of and does not
+    // control, narrowed to the ones it has a reason to trust.
+    name: "wallet-home-known-trusted",
+    path: "/wallet",
+    ready: "known-identity-cards",
+    async act(page) {
+      await page.getByTestId("known-trusted-only").click();
+      await page.getByTestId("known-identity-cards").waitFor();
+    },
+  },
+  {
+    // A known identity with a copy of the record on disk, opened in place.
+    name: "wallet-home-known-expanded",
+    path: "/wallet",
+    ready: "known-identity-cards",
+    async act(page) {
+      await page.getByTestId(`identity-card-expand-${BOB}`).click();
+      await page.getByTestId(`identity-card-details-${BOB}`).waitFor();
     },
   },
   {
@@ -184,8 +207,17 @@ const SCREENS = [
     },
   },
   {
+    // A record this home stored without controlling it: the ledger is there, the
+    // actions are not, and the note and the crawl answer for the rest.
     name: "identity-foreign-stored",
     path: `/identities/${BOB}`,
+    ready: "ledger-events",
+  },
+  {
+    // The fetch, on a record one witness holds and this home does not: the page
+    // that answered "no copy" becomes the page with the record on it.
+    name: "identity-foreign-fetched",
+    path: `/identities/${UNSTORED_LEDGER}`,
     ready: "identity-fetch-button",
     async act(page) {
       await page.getByTestId("identity-fetch-button").click();
@@ -248,15 +280,17 @@ async function main() {
   const failures = [];
   try {
     for (const viewport of VIEWPORTS) {
-      const context = await browser.newContext({
-        viewport: { width: viewport.width, height: viewport.height },
-        deviceScaleFactor: 1,
-        colorScheme: "light",
-      });
-      const page = await context.newPage();
-      page.on("pageerror", (error) => failures.push(`${viewport.name}: ${error.message}`));
-
       for (const screen of SCREENS) {
+        // One context per screen: the demo remembers what a visitor did in
+        // localStorage, and a capture has to show the seeded state, not what the
+        // capture before it left behind.
+        const context = await browser.newContext({
+          viewport: { width: viewport.width, height: viewport.height },
+          deviceScaleFactor: 1,
+          colorScheme: "light",
+        });
+        const page = await context.newPage();
+        page.on("pageerror", (error) => failures.push(`${viewport.name}: ${error.message}`));
         await page.goto(`${BASE_URL}${screen.path}`, { waitUntil: "load" });
         await page.getByTestId(screen.ready).waitFor({ timeout: 15_000 });
         if (screen.act) {
@@ -283,8 +317,8 @@ async function main() {
           fullPage: true,
         });
         console.log(`${scrolls ? "scrolls" : "ok     "} ${screen.name}-${viewport.name}.png`);
+        await context.close();
       }
-      await context.close();
     }
   } finally {
     await browser.close();

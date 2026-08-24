@@ -123,11 +123,19 @@ describe("identity create", () => {
     );
 
     // The public fields become one entry on the new record, right after the one
-    // that created it, so the card names them straight away.
+    // that created it, so the card names them straight away: the public name and
+    // the nickname on its heading, the email inside the record it opens.
     const card = await screen.findByTestId(`identity-card-${identityId}`);
     expect(within(card).getByTestId(`identity-card-name-${identityId}-name`)).toHaveTextContent(
       "Dana Dane",
     );
+    expect(
+      within(card).getByTestId(`identity-card-name-${identityId}-nickname`),
+    ).toHaveTextContent("(dana)");
+    expect(within(card).queryByTestId(`identity-card-email-${identityId}`)).not.toBeInTheDocument();
+
+    await user.click(within(card).getByTestId(`identity-card-expand-${identityId}`));
+
     expect(within(card).getByTestId(`identity-card-email-${identityId}`)).toHaveTextContent(
       "dana@dana.example",
     );

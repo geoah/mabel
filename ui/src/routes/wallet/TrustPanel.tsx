@@ -7,7 +7,7 @@ import {
   factsFromResolved,
   type IdentityCardEntry,
   IdentityCardList,
-  resolveName,
+  nameWithNickname,
   resolvedFrom,
 } from "@/components/identity";
 import { Identifier } from "@/components/Identifier";
@@ -206,7 +206,9 @@ export function TrustPanel({
   names: ResolvedNames;
   actions: TrustActions;
 }) {
-  const owner = resolveName(resolvedFrom(identity)).name;
+  // The heading names the identity the way its card does, the nickname this
+  // device keeps in parentheses after the name it publishes.
+  const owner = nameWithNickname(resolvedFrom(identity));
   const entries: IdentityCardEntry[] = identity.trust
     .filter((record) => !record.revoked)
     .map((record) => ({

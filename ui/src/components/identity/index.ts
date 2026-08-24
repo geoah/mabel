@@ -20,6 +20,7 @@ export {
   bareIdentity,
   duplicateNames,
   IdentityListScope,
+  nameWithNickname,
   type NameSource,
   type ResolvedName,
   resolveName,

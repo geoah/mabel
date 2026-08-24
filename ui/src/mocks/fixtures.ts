@@ -5,6 +5,7 @@
 
 import walletNodeFixture from "@contracts/http/wallet-get-node.json";
 import identitiesFixture from "@contracts/http/wallet-get-identities.json";
+import knownIdentitiesFixture from "@contracts/http/wallet-get-known-identities.json";
 import profileFixture from "@contracts/http/wallet-post-identity-profile.json";
 import verificationFixture from "@contracts/http/wallet-post-identity-verification.json";
 import contactFixture from "@contracts/http/wallet-get-identity-contact.json";
@@ -38,6 +39,7 @@ import type {
   Graph,
   Identity,
   IdentityKeysResponse,
+  KnownIdentity,
   LedgerEvent,
   LedgerPageResponse,
   LedgerSummary,
@@ -119,6 +121,16 @@ export const noKeysHeldError = identityKeysFixture.errors[1] as {
   status: number;
   body: ErrorEnvelope;
 };
+
+/** GET /api/identities/known, the two rows the frozen answer carries. */
+export const knownIdentityRows = knownIdentitiesFixture.response
+  .identities as KnownIdentity[];
+/**
+ * The row the contract pins for Bob: stored, trusted, one degree away. The mock
+ * seeds his stored copy from these values, so the demo's known list reads the
+ * way the frozen answer does.
+ */
+export const knownBob = knownIdentityRows.find((row) => row.identity_id === BOB)!;
 
 /** GET /api/lookup/:identity_id, the two-hop answer from Alice to Carol. */
 export const seedLookup = lookupFixture.response as LookupResponse;
@@ -466,6 +478,13 @@ function syntheticEntry(
 
 /** The ledger the witness stopped recording forks for, flagged forks_truncated. */
 export const TRUNCATED_LEDGER = "gh".repeat(26);
+
+/**
+ * A ledger one witness holds and this home stores no copy of, which is what a
+ * fetch pulls. Bob is seeded as already stored, so the unstored case needs a
+ * record of its own.
+ */
+export const UNSTORED_LEDGER = "cd".repeat(26);
 
 export const SYNTHETIC_ENTRIES: LedgerSummary[] = [
   syntheticEntry("cd", "organization", 3, 0, false),

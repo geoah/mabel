@@ -299,15 +299,46 @@ export type NameProvenance = "profile" | "alias" | "none";
  * contracts/README.md, "ResolvedIdentity": the object returned everywhere a
  * foreign identity renders. It carries the verdict as a status string alone,
  * spelled verification_status, because a path hop needs the glyph and not six
- * timestamps.
+ * timestamps. display_name and email come from one source, the profile this
+ * home holds or the one the last crawl read, so a card shows a known public
+ * email without a second request.
  */
 export interface ResolvedIdentity {
   identity_id: string;
   display_name: string | null;
+  email: string | null;
   alias: string | null;
   hostname: string | null;
   verification_status: VerificationStatus;
   provenance: NameProvenance;
+}
+
+/**
+ * One row of GET /api/identities/known: an identity this home has a record of
+ * and does not control. The first six keys are the ResolvedIdentity fields
+ * flattened, without provenance; declared_kind and head_seq come from the
+ * stored copy and are null when this home stores none. degrees is the edge
+ * count from the nearest crawl root, null when no crawl reached the identity,
+ * which means "not in my crawl" and never "no relationship".
+ */
+export interface KnownIdentity {
+  identity_id: string;
+  display_name: string | null;
+  alias: string | null;
+  email: string | null;
+  hostname: string | null;
+  verification_status: VerificationStatus;
+  declared_kind: DeclaredKind | null;
+  stored: boolean;
+  trusted: boolean;
+  degrees: number | null;
+  head_seq: number | null;
+}
+
+/** GET /api/identities/known. Sorted by ascending identity_id alone. */
+export interface KnownIdentitiesResponse {
+  ok: true;
+  identities: KnownIdentity[];
 }
 
 /** One branch of an equivocation: the source that served it and the event. */

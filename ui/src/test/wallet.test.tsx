@@ -19,6 +19,45 @@ function resolveCalls(): string[] {
   return asked;
 }
 
+describe("the wallet page's shape", () => {
+  it("is three flat sections under their own headings, and no card holds a card", async () => {
+    renderApp("/wallet");
+    await screen.findByTestId("identity-cards");
+
+    const headings = screen.getAllByRole("heading", { level: 2 }).map((node) => node.textContent);
+    expect(headings).toEqual(["Open an identity", "Your identities", "Known identities"]);
+    // No section is a card: the cards on this page are the identities.
+    for (const section of ["wallet-search", "identity-list", "known-identities"]) {
+      expect(screen.getByTestId(section).className).not.toMatch(/bg-card/);
+    }
+    // And no card holds another card.
+    for (const card of screen.getAllByTestId(/^identity-card-[a-z2-7]{52}$/)) {
+      for (const inner of card.querySelectorAll("div")) {
+        expect(inner.className).not.toMatch(/bg-card/);
+      }
+    }
+  });
+
+  it("puts the create control in the section about your own identities", async () => {
+    renderApp("/wallet");
+    await screen.findByTestId("identity-cards");
+
+    const section = screen.getByTestId("identity-list");
+    expect(within(section).getByTestId("identity-cards")).toBeInTheDocument();
+    expect(within(section).getByTestId("identity-create-summary")).toBeInTheDocument();
+    expect(within(section).queryByTestId("known-identity-cards")).not.toBeInTheDocument();
+  });
+
+  it("offers the demo reset in the footer, under a plain label", async () => {
+    renderApp("/wallet");
+    await screen.findByTestId("identity-cards");
+
+    const reset = screen.getByTestId("demo-reset");
+    expect(reset).toHaveTextContent("Reset demo data");
+    expect(reset.closest("footer")).not.toBeNull();
+  });
+});
+
 describe("the identity card list", () => {
   it("draws one card per local identity, with the name, id and kind", async () => {
     renderApp("/wallet");

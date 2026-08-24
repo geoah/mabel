@@ -20,6 +20,7 @@ import type {
   IdentityResponse,
   InviteRequest,
   InvitedResponse,
+  KnownIdentitiesResponse,
   LedgerEntryResponse,
   LedgerListResponse,
   LedgerPageResponse,
@@ -159,6 +160,15 @@ export function listIdentities(): Promise<IdentityListResponse> {
 
 export function createIdentity(body: CreateIdentityRequest): Promise<CreateIdentityResponse> {
   return post<CreateIdentityResponse>("/identities", body);
+}
+
+/**
+ * Every identity this home has a record of and does not control: the crawl's
+ * names, whether a copy is stored, and how it is reached. The route reads the
+ * home and the stored crawl only, so it opens no socket and asks no DNS.
+ */
+export function listKnownIdentities(): Promise<KnownIdentitiesResponse> {
+  return get<KnownIdentitiesResponse>("/identities/known");
 }
 
 export function getIdentity(identityId: string): Promise<IdentityResponse> {

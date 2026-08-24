@@ -168,7 +168,9 @@ export function IdentityPage() {
         )}
         {held === null && answer && (
           <IdentityCard
-            facts={factsFromResolved(answer.identity, { stale: answer.stale })}
+            // This page asked for the record and was told there is none, so the
+            // card is the one place that can say so for certain.
+            facts={factsFromResolved(answer.identity, { stale: answer.stale, stored: false })}
             state="page"
             testIds={pageTestIds}
           />

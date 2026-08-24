@@ -21,6 +21,7 @@ function document(overrides: Partial<ResolvedIdentityDocument> = {}): ResolvedId
   return {
     identity_id: ALICE,
     display_name: "Alice Ashworth",
+    email: null,
     alias: null,
     hostname: null,
     verification_status: "unclaimed",
@@ -50,14 +51,20 @@ function host(element: ReactElement, pills: PillFacts = facts()) {
 
 describe("name resolution", () => {
   it("tries the profile display name, then the alias, then the id", () => {
-    expect(resolveName(document())).toEqual({ name: "Alice Ashworth", source: "profile" });
+    expect(resolveName(document())).toEqual({
+      name: "Alice Ashworth",
+      source: "profile",
+      nickname: null,
+    });
     expect(resolveName(document({ display_name: null, alias: "alice" }))).toEqual({
       name: "alice",
       source: "alias",
+      nickname: null,
     });
     expect(resolveName(document({ display_name: null, alias: null }))).toEqual({
       name: null,
       source: "id",
+      nickname: null,
     });
   });
 });

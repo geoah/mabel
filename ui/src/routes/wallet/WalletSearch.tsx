@@ -6,7 +6,6 @@ import type { ResolveStatus } from "@/api/types";
 import { ErrorEnvelopeView } from "@/components/ErrorEnvelopeView";
 import { InlineField, InlineForm } from "@/components/InlineForm";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { asApiError } from "@/hooks/useResource";
 
@@ -25,7 +24,8 @@ const STATUS_SENTENCE: Record<ResolveStatus, string> = {
 };
 
 /**
- * The one box on the wallet front page. A Mabel ID opens its page directly.
+ * The one box on the wallet front page, drawn bare under its heading: the page
+ * is flat sections, not cards inside cards. A Mabel ID opens its page directly.
  * Anything else is treated as a hostname and resolved through the node, which
  * either names an identity or says what the TXT lookup answered.
  */
@@ -64,35 +64,29 @@ export function WalletSearch() {
   }
 
   return (
-    <Card data-testid="wallet-search">
-      <CardHeader>
-        <CardTitle>Open an identity</CardTitle>
-        <CardDescription>Paste a Mabel ID, or type a handle to look up in DNS</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-2">
-        <InlineForm onSubmit={submit} data-testid="wallet-search-form">
-          <InlineField label="Mabel ID or handle" htmlFor="wallet-search-input">
-            <Input
-              id="wallet-search-input"
-              data-testid="wallet-search-input"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="52 base32 characters, or alice.example"
-              className="font-mono text-xs"
-            />
-          </InlineField>
-          <Button type="submit" data-testid="wallet-search-submit" disabled={pending}>
-            {pending ? "resolving" : "Open"}
-          </Button>
-        </InlineForm>
-        {status !== null && (
-          <p data-testid="wallet-search-status" data-status={status.status} className="text-sm">
-            <span className="font-mono text-xs">_mabel.{status.hostname}.</span>{" "}
-            {STATUS_SENTENCE[status.status]}
-          </p>
-        )}
-        {error && <ErrorEnvelopeView error={error} testId="wallet-search-error" />}
-      </CardContent>
-    </Card>
+    <div data-testid="wallet-search" className="space-y-2">
+      <InlineForm onSubmit={submit} data-testid="wallet-search-form">
+        <InlineField label="Mabel ID or handle" htmlFor="wallet-search-input">
+          <Input
+            id="wallet-search-input"
+            data-testid="wallet-search-input"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="52 base32 characters, or alice.example"
+            className="font-mono text-xs"
+          />
+        </InlineField>
+        <Button type="submit" data-testid="wallet-search-submit" disabled={pending}>
+          {pending ? "resolving" : "Open"}
+        </Button>
+      </InlineForm>
+      {status !== null && (
+        <p data-testid="wallet-search-status" data-status={status.status} className="text-sm">
+          <span className="font-mono text-xs">_mabel.{status.hostname}.</span>{" "}
+          {STATUS_SENTENCE[status.status]}
+        </p>
+      )}
+      {error && <ErrorEnvelopeView error={error} testId="wallet-search-error" />}
+    </div>
   );
 }
