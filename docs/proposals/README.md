@@ -20,3 +20,8 @@ never move.
   three primitives (identity list, witness list, one identity page for local
   and foreign identities), a search box replaces the lookup and verify tabs,
   and a witnesses tab browses what a witness holds. Accepted.
+- [005-public-profile-email-and-identity-components.md](005-public-profile-email-and-identity-components.md):
+  the public profile gains an email, identity creation writes the profile as
+  the second event, the alias becomes the private nickname, and the UI renders
+  every identity through one inline component and one expandable card on a
+  mobile-first single column. Accepted.
