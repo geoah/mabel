@@ -59,7 +59,10 @@ for the reason story 004 states), and step 11 tears them down.
    every ledger it holds at once. Read the two standing notes above the list.
    Ledger ids are digests, so which card is where is whatever the ordering
    says: read the ids out of the DOM and assert per card, never "the org is
-   first".
+   first". The three holdings filters, `witness-holdings-all`,
+   `witness-holdings-ours` and `witness-holdings-trusted`, are absent here: a
+   witness serves no wallet, so "yours" and "trusted" mean nothing on this
+   route. They belong to the wallet's drill-in, which story 007 step 13 reads.
 5. Read the declared kind of each card,
    `identity-card-declared-kind-<ledger_id>`.
 6. Read the fork counts. A card carries
@@ -71,10 +74,12 @@ for the reason story 004 states), and step 11 tears them down.
    curl -fsS 'http://127.0.0.1:9080/api/ledgers?offset=0&limit=4'
    curl -fsS 'http://127.0.0.1:9080/api/ledgers?offset=4&limit=4'
    ```
-8. Click `identity-card-link-<alice_id>`. On the identity page read the summary
-   card, then the Ledger card, which draws one line per event: click
-   `event-expand-3` to open the head event. Then page the events on the route,
-   which is where `since` and `limit` live now:
+8. Click `identity-card-link-<alice_id>`. The page is headed `This record` and
+   the nav is the only way back from it. Read the summary card, then the Ledger
+   card, which draws one line per event: a closed line carries the position and
+   a plain gloss, so click `event-expand-<seq>` to read the raw kind, the entry
+   id and the payload. Then page the events on the route, which is where `since`
+   and `limit` live now:
    ```sh
    curl -fsS 'http://127.0.0.1:9080/api/ledgers/'"$alice_id"'/events?since=2&limit=1'
    ```
@@ -119,7 +124,9 @@ for the reason story 004 states), and step 11 tears them down.
 - Step 4: `witness-read-only-note` reads `This page only reads. Nothing here
   changes anything.` and `witness-holdings-note` reads `This is what this one
   witness holds. A record missing here may still be on another witness.` There
-  is no global discovery and no "who trusts B" query (flag D).
+  is no global discovery and no "who trusts B" query (flag D). None of
+  `witness-holdings-all`, `witness-holdings-ours` or `witness-holdings-trusted`
+  is on the page: this route draws one flat list and no filter.
 - Step 4: five `identity-card-link-*` elements are present, their ledger ids in
   ascending order, and that order is the order `GET
   /api/ledgers?offset=0&limit=256` answers in.
@@ -132,6 +139,8 @@ for the reason story 004 states), and step 11 tears them down.
   four entries; the second answers `offset: 4`, `more: false` and one entry.
   The two pages together name every ledger exactly once, in the same ascending
   order the cards are drawn in.
+- Step 8's page is headed `This record`, its only `h1`, and it draws no back
+  link: `witness-ledger-back` is absent, because the nav is the way back.
 - Step 8's summary: `witness-detail-ledger-id` carries `alice_id`,
   `witness-detail-declared-kind` reads `person`, `witness-detail-head-seq`
   reads `3`, `witness-detail-event-count` reads `4`,
@@ -143,12 +152,16 @@ for the reason story 004 states), and step 11 tears them down.
   `witness-detail-declared-kind-note` is absent from the page, and
   `witness-detail-holdings-note` repeats the holdings sentence.
 - Step 8's chain: `ledger-event-count` reads `4`, `ledger-head-seq` reads `3`,
-  and four `ledger-event-*` rows are drawn whose `event-payload-kind-*` values
-  are, in order, `inception`, `witness_config`, `witness_config`,
-  `trust_attestation`. Opening `event-expand-3` shows `event-detail-3`, whose
-  `event-id-3` carries the `entry.head_event` the ledger route reports. The
-  wallet's ledger and a witness's copy of it render through the same component,
-  because the chain is the same chain.
+  and four `ledger-event-*` rows are drawn. A closed line carries `event-seq-*`
+  and `event-gloss-*` only, reading in order `created this identity`, `chose who
+  keeps a copy`, `chose who keeps a copy` and `said it trusts someone`, with no
+  `event-payload-kind-*` element on the page at all. Opening
+  `event-expand-<seq>` shows `event-detail-<seq>`, and `event-payload-kind-*`
+  then reads `inception`, `witness_config`, `witness_config` and
+  `trust_attestation` in the same order. `event-id-3` in the open head entry
+  carries the `entry.head_event` the ledger route reports. The wallet's ledger
+  and a witness's copy of it render through the same component, because the
+  chain is the same chain.
 - Step 8's event page answers `since: 2`, `limit: 1`, `more: true` and one
   event whose `seq` is 2: `since` is inclusive.
 - Step 9: `witness-forks` is present with exactly one `fork-record-*` element,
@@ -192,6 +205,10 @@ the story text above.
   `ledger-events`. Proposal 005 draws the ledger as compact rows rather than a
   table, so a line is a list item; the wallet's own ledger and this witness's
   copy still render through the one component.
+- Step 8 opens all four lines rather than only the head, and closes the first
+  three again. The final round of proposal 005 moved the raw kind string into the
+  opened entry, so reading four kinds means four clicks; the head entry is left
+  open, which is the one state the story asks for.
 - `forks_truncated` is asserted nowhere on the screen. The redesigned route
   draws the flag in `witness-detail-fork-count`'s sentence only when a witness
   stopped recording, which this witness did not, so the flag is pinned on the

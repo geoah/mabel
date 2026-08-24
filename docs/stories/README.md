@@ -24,9 +24,16 @@ reading `none` when it uses none. There is no verify screen, no lookup screen
 and no identity selector, so a story that verified in the UI verifies on the CLI
 instead.
 
+A section is a heading, an optional one-line description and its content, and it
+draws no border: only the leaf inside it does, which is a card, a form input or a
+notice, so no screen draws a border inside a border. A section's description
+carries a testid where a story reads it, `trust-panel-description`,
+`witness-holdings-note`, `principals-description` and `fork-evidence-note`.
+
 The wallet home is three flat sections under three headings, divided by a rule
 and never nested in cards (round 6 of proposal 005): "Open an identity"
-(`wallet-search`, whose box is labelled `Mabel ID or handle`), "Your
+(`wallet-search`, whose box is labelled `Mabel ID or handle` and whose
+placeholder reads `alice.example or paste a Mabel ID`), "Your
 identities" (`identity-list`, holding `identity-cards` and the folded
 `identity-create`), and "Known identities" (`known-identities`, holding
 `known-identity-cards` from `GET /api/identities/known` and the
@@ -46,6 +53,12 @@ the header carries the app name and the nav and nothing else: the one control
 that starts a graph sync is the `graph-sync` card on `/witnesses`, because a
 sync reads what witnesses hold. There is no developer mode and no demo mode, so
 a value the screen does not explain is read from the HTTP route instead.
+
+The twelve actions sit under four group headings rather than one "What you can
+do", which no story reads any more: `action-group-profile` (`Profile`),
+`action-group-trust` (`Trust`), `action-group-witnesses` (`Witnesses and sync`)
+and `action-group-control` (`Control and keys`). Every `action-<name>` and
+`<action>-summary` kept its testid, so only the heading a story reads changed.
 
 An action is the shared collapsible, not a `details` element: the block carries
 `data-state` reading `open` or `closed`, its `<action>-summary` is a `button`,
@@ -97,11 +110,26 @@ say draws no pill. The pill keeps its testid, `<testid>-pill`, and sits in the
 card's top right corner rather than inside the name, so a story reads it by its
 own testid and never as text inside `identity-detail-resolved`. Beside it, a
 card whose record this home does not store carries `<card>-unheld` reading `not
-stored here`. The kind an identity declares is a badge on the card's first small
-line, `<card>-declared-kind` with `data-declared-kind`. Proposal 005 also
-removed five elements outright, so nothing in these stories reads them: the back
-link, the declared-kind advisory sentence, the DNS advisory sentence, the
-key-facts sentence and the name-provenance row.
+stored here`. The kind an identity declares is a badge beside the name,
+`<card>-declared-kind` and `identity-detail-declared-kind`, both with
+`data-declared-kind`. Under the name line, `<card>-kind-line` holds whatever the
+listing that drew the card carries, which is how many entries a witness holds of
+a record and how many conflicts it recorded: a plain wallet card passes no such
+markers and draws no `identity-card-kind-line-<id>` at all, and no identity page
+draws `identity-detail-kind-line`. Proposal 005 also removed five elements
+outright, so nothing in these stories reads them: the back link, the
+declared-kind advisory sentence, the DNS advisory sentence, the key-facts
+sentence and the name-provenance row. A detail page's way back is the nav, so
+`witness-ledgers-back` and `witness-ledger-back` are gone too.
+
+A card that routes somewhere is one stretched anchor: `<testid>-link` and
+`identity-card-link-<id>` sit on the name, with the href they had before, and on
+the id only when the identity publishes no name and has nothing else to click.
+Clicking anywhere on the card navigates, and the keyboard reaches the same page,
+so no story needs a forced click or a click on a `div`. Every control on a card
+sits above that anchor and keeps its own click, including the button beside an
+id, which names what it copies: `Copy Mabel ID` or `Copy Iroh ID`, swapped for
+`<label>: copied` for two seconds after a copy.
 
 An identity page draws its sections in this order: `identity-detail`, who this
 identity trusts (`trust-panel`), the record (`ledger-panel`),
@@ -112,11 +140,21 @@ and without its toggle, and its rows are labelled in lowercase: `email`,
 it`, `invitations`. The email row is drawn only on an opened card, and `who can
 act for it` only when the answer differs from the identity itself, which is what
 an identity-rooted ledger is; an identity holding its own key draws no such row.
-`trust-panel` is headed `Who <name> trusts` and described `Everyone it has said
-it trusts and has not taken back.` `trust-list` holds one collapsed identity
+`trust-panel` is headed `Who <name> trusts`, `trust-panel-description` reads
+`People this identity currently trusts.` and `trust-list-empty` reads `This
+identity does not trust anyone yet.` `trust-list` holds one collapsed identity
 card per subject, keyed by the subject's id, and an attestation taken back is
 absent from it entirely: it stays on the record forever, and the record is where
 it is read.
+
+A closed ledger line carries two things and no more, `event-seq-<seq>` and
+`event-gloss-<seq>`, the plain clause naming what the entry did (`created this
+identity`, `chose who keeps a copy`, `said it trusts someone`, and `did something
+this version does not know about` for a kind this build has no gloss for). The
+raw kind string, the entry id, the entry before it, the signing time and the
+payload all live inside the opened entry, so a story reading
+`event-payload-kind-<seq>`, `event-id-<seq>` or `event-payload-<seq>` clicks
+`event-expand-<seq>` first; a closed line has no such element in the DOM at all.
 
 The ledger is compact `li` rows under `ledger-events`, eight to a page, and
 nobody tunes that from the screen: round 5 removed the since box, the limit box
@@ -141,7 +179,25 @@ directly`, or `lookup-degrees-none` reading `No connection found yet.` with
 `lookup-reverse`. The reverse list is headed `Who your wallet has seen trusting
 them`, and the caveat it used to carry is the sentence its info tip holds:
 `lookup-reverse-note` has `aria-label` `Best effort: who your wallet has seen
-trusting them, not everyone who does`.
+trusting them, not everyone who does`. That info tip sits inside the same row as
+the toggle and stops the click there, so a list is opened by clicking
+`lookup-trust-label` or `lookup-reverse-label`, the heading a reader aims at,
+rather than the middle of the row, which can land on the icon.
+
+A witness card on `/witnesses` names the identities whose chains chose that
+witness rather than counting them: `witness-card-named-by-<endpoint>` is the
+container, holding one `witness-card-chose-<endpoint>-<id>` inline identity each,
+so its text is names and ids. How many there are is a sentence on the witness's
+own page. That page, `/witnesses/<endpoint>`, is headed `This witness`, carries
+`witness-chosen-by` reading `Chosen by N of your identities.` (plus `This node
+uses it by default.` when it is a default), and draws one flat card list with
+three filters over it: `witness-holdings-all`, `witness-holdings-ours` and
+`witness-holdings-trusted`, `All` chosen when the page opens. The chosen filter's
+own sentence is the section's description, and `witness-ledgers-empty` reads
+`This witness holds no record.` under `All` and `No record it holds matches
+this.` under the other two. A witness node's own route serves no wallet, so
+`/witness` draws no filter at all and `/witness/ledgers/<id>` is headed `This
+record`.
 
 The website is a handle everywhere a reader sees it. The identity page's row is
 labelled `handle`, `action-handle` is where one is set (`handle-current`,

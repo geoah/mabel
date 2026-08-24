@@ -107,6 +107,11 @@ export async function story001Steps1to7(
       // a handle as well as a Mabel ID, and its label says so.
       await expect(page.getByTestId("wallet-search")).toBeVisible();
       await expect(page.getByTestId("wallet-search")).toContainText("Mabel ID or handle");
+      // The box says what to type into it, in the two forms it takes.
+      await expect(page.getByTestId("wallet-search-input")).toHaveAttribute(
+        "placeholder",
+        "alice.example or paste a Mabel ID",
+      );
       await expect(page.getByTestId("identity-list-empty")).toHaveText(
         "You have no identities yet. Create one below.",
       );

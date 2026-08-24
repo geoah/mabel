@@ -87,10 +87,11 @@ test("step 2: bob's card is in the trust list, and the entry is unrevoked", asyn
   await openIdentity(alicePage, ALICE_URL, aliceId);
   // Round 4 of proposal 005: who this identity trusts is a list of collapsed
   // identity cards keyed by the subject, and it sits above the record. Round 5
-  // put the identity's own name in the heading, so the description says "it".
+  // put the identity's own name in the heading, and the final round shortened
+  // the line under it and gave it a testid of its own.
   await expect(alicePage.getByTestId("trust-panel")).toContainText("Who alice trusts");
-  await expect(alicePage.getByTestId("trust-panel")).toContainText(
-    "Everyone it has said it trusts and has not taken back.",
+  await expect(alicePage.getByTestId("trust-panel-description")).toHaveText(
+    "People this identity currently trusts.",
   );
   await expect(trustCard(alicePage, bobId)).toBeVisible();
 
@@ -142,7 +143,7 @@ test("step 4: taking trust back names the identity, and its card leaves the list
   // the record is where it is read.
   await expect(trustCard(alicePage, bobId)).toHaveCount(0);
   await expect(alicePage.getByTestId("trust-list-empty")).toHaveText(
-    "This identity has not said it trusts anyone yet.",
+    "This identity does not trust anyone yet.",
   );
   await expect(alicePage.getByTestId("identity-detail-event-count")).toHaveText("4");
   await expectHeadSeq(ALICE_URL, aliceId, 3);

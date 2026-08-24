@@ -31,7 +31,7 @@ repository root.
 2. In alice's UI open `identity-card-link-<alice_id>`. Who this identity trusts
    sits above the record: `trust-panel` is headed `Who alice trusts`, because
    round 5 of proposal 005 put the identity's own name in the heading, and
-   described `Everyone it has said it trusts and has not taken back.`
+   `trust-panel-description` reads `People this identity currently trusts.`
    `trust-list` holds one collapsed identity card, `identity-card-<bob_id>`. The
    list is keyed by the identity trusted, not by the entry that said it.
 3. Attest bob a second time, before revoking anything. One unrevoked
@@ -48,7 +48,7 @@ repository root.
    standing entry is on the record the page already holds, so the form finds it
    and takes that one back. `trust-appended-event` shows the revocation event
    id, `identity-card-<bob_id>` is gone from `trust-list`, `trust-list-empty`
-   reads `This identity has not said it trusts anyone yet.` and
+   reads `This identity does not trust anyone yet.` and
    `identity-detail-event-count` reads `4`; the head is read on `GET
    /api/identities/<alice_id>`, which answers `head_seq: 3`. Both entries stay on the record: the
    chain is the full history (decision 003), and the record is where a taken-back

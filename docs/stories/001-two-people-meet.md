@@ -123,11 +123,14 @@ repository root.
     ```
     The subject's participation is deliberately not required (decision 003), so
     this is an answer, not a failure.
-15. Alice saves her keys. Open `identity-card-link-<alice_id>` and click
-    `action-keys-summary`. `identity-keys-active` and `identity-keys-reserve`
-    each hold a 52-character lowercase base32 secret key, and
-    `identity-keys-warning` says what holding them and losing them means. The
-    same two values are what `GET
+15. Alice saves her keys. Open `identity-card-link-<alice_id>`. What she can do
+    to this identity is four groups under four headings, `action-group-profile`
+    (`Profile`), `action-group-trust` (`Trust`), `action-group-witnesses`
+    (`Witnesses and sync`) and `action-group-control` (`Control and keys`), and
+    saving keys is in the last of them. Click `action-keys-summary`.
+    `identity-keys-active` and `identity-keys-reserve` each hold a 52-character
+    lowercase base32 secret key, and `identity-keys-warning` says what holding
+    them and losing them means. The same two values are what `GET
     http://127.0.0.1:9081/api/identities/<alice_id>/keys` answers (decision
     017).
 16. A new identity that publishes something from birth. In alice's UI unfold

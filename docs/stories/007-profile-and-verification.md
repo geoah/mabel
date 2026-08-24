@@ -153,11 +153,15 @@ docker/compose.dns.yaml`, run from the repository root.
     `nobody.example` and the wallet stays where it is and says what the lookup
     answered. Resolving is navigation, never verification: the page still draws
     alice's own advisory verdict.
-13. Browse the witness. Click `nav-witnesses`, read the witness card, click
-    `witness-card-link-<witness_id>` for what that witness holds, and click
-    carol's card. Her ledger is not in this home, so the page offers one
-    action: click `identity-fetch-button`, and the same page then renders as a
-    stored ledger.
+13. Browse the witness. Click `nav-witnesses` and read the witness card, which
+    names the identities whose chains chose this witness rather than counting
+    them. Click `witness-card-link-<witness_id>` for what that witness holds: the
+    page is headed `This witness`, `witness-chosen-by` is where the count went,
+    and one flat card list has three ways to narrow it, `witness-holdings-all`,
+    `witness-holdings-ours` and `witness-holdings-trusted`. Put it back on `All`
+    and click carol's card. Her ledger is not in this home, so the page offers
+    one action: click `identity-fetch-button`, and the same page then renders as
+    a stored ledger.
     ```sh
     curl -fsS http://127.0.0.1:9081/api/witnesses
     curl -fsS 'http://127.0.0.1:9081/api/witnesses/'"$witness_id"'/ledgers?offset=0&limit=256'
@@ -314,10 +318,16 @@ docker/compose.dns.yaml`, run from the repository root.
 - Step 13: `GET /api/witnesses` answers one witness, `endpoint_id ==
   witness_id`, `named_by == [alice_id]` (alice's is the only ledger this home
   holds, and its chain names that witness) and `is_node_default: true` (the
-  overlay set it). The card repeats both: `witness-card-named-by-<witness_id>`
-  reads `chosen by 1 identity of yours`, `witness-card-default-<witness_id>`
-  reads `this node uses it by default`, and the identifiers on the card are the
-  endpoint id and `alice_id`.
+  overlay set it). The card names who chose it rather than counting them:
+  `witness-card-named-by-<witness_id>` holds one inline identity per chain, here
+  `witness-card-chose-<witness_id>-<alice_id>` whose name reads `Alice Example`,
+  and the words `chosen by` appear nowhere on it.
+  `witness-card-default-<witness_id>` reads `this node uses it by default`, and
+  the identifiers on the card are the endpoint id and `alice_id`.
+- Step 13's drill-in is headed `This witness`, its only `h1`, and draws no back
+  link: `witness-ledgers-back` is absent, because the nav is the way back. The
+  count that used to sit on the card is `witness-chosen-by`, reading `Chosen by 1
+  of your identities. This node uses it by default.`
 - Step 13's drill-in renders what the witness holds as the identity card list:
   three cards, `alice_id`, `bob_id` and `carol_id`, in the order `GET
   /api/witnesses/<witness_id>/ledgers` answers, which reports `more: false`.
@@ -325,6 +335,14 @@ docker/compose.dns.yaml`, run from the repository root.
   `identity-card-entries-<carol_id>` `2 entries`: how much of a record this
   witness holds is what the listing is about, and round 5 of proposal 005 took
   the position off the cards.
+- Step 13's three filters narrow that one list, `All` chosen when the page
+  opens with `aria-pressed` `true`, and the sentence under the heading says
+  which is chosen: `Every record this witness holds.` for `All`, `The records
+  your own identities control.` for `Yours`, which leaves `alice_id` alone, and
+  `The people you trust, and the ones your wallet reaches through them.` for
+  `Trusted`, which holds `bob_id`, whom alice trusts outright, and `carol_id`,
+  whom the crawl reached through him, and not `alice_id`. Clicking `All` again
+  restores the three cards in their original order.
 - Step 13's fetch is the only thing that writes. Before it, carol's card leads
   to a page carrying `identity-fetch` and `dc exec -T alice ls /data/ledgers`
   holds `alice_id` alone: browsing a witness stores nothing. After
@@ -381,6 +399,18 @@ docker/compose.dns.yaml`, run from the repository root.
 - Bob's ledger is pushed to the witness once more immediately before step 10.
   His profile events matter to the crawl, and alice can only read them from
   the witness.
+- Step 10 opens the two crawl lists by clicking `lookup-trust-label` and
+  `lookup-reverse-label` rather than the toggle row itself. The info icon beside
+  the reverse heading is a button inside the toggle's button, and it stops the
+  click so a tap on it opens its sentence and nothing else; the sections lost
+  their borders in the final round of proposal 005, which widened the row enough
+  that its centre point falls on that icon. Clicking the heading is what a reader
+  aims at anyway.
+- Step 13's `Trusted` filter is asserted per card rather than as a set. Whether
+  an id counts as trusted here depends on the stored crawl, so the spec waits on
+  `identity-card-<bob_id>` and `identity-card-<carol_id>` being drawn and on
+  `identity-card-<alice_id>` being absent, which retries while the page's
+  lookups settle.
 - Step 13's fetch names no witness. `POST /api/identities/<carol_id>/fetch`
   with `from: null` asks the known witnesses in the crawler's source order,
   which is what the button sends; the running wallet holds the witness's

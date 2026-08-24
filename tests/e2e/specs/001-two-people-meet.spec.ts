@@ -68,6 +68,19 @@ test("steps 1 to 7: two identities, one witness, both pushed", async () => {
 
 test("the keys action offers both secret keys, and the route answers the same", async () => {
   await openIdentity(alicePage, ALICE_URL, aliceId);
+  // The final round of proposal 005 replaced the "What you can do" heading with
+  // four group headings, each holding the actions it is about, so the twelve
+  // rows are four decisions rather than one list. Every action kept its testid.
+  for (const [group, heading] of [
+    ["profile", "Profile"],
+    ["trust", "Trust"],
+    ["witnesses", "Witnesses and sync"],
+    ["control", "Control and keys"],
+  ] as const) {
+    await expect(alicePage.getByTestId(`action-group-${group}`)).toContainText(heading);
+  }
+  await expect(alicePage.getByTestId("identity-actions")).not.toContainText("What you can do");
+  await expect(alicePage.getByTestId("action-group-control")).toContainText("Save your keys");
   await openAction(alicePage, "action-keys");
   const active = alicePage.getByTestId("identity-keys-active");
   const reserve = alicePage.getByTestId("identity-keys-reserve");
@@ -315,6 +328,15 @@ test("the identifier a spec reads is the whole value", async () => {
   // component, so the id sits inside `identity-detail-resolved` rather than in
   // a row of its own.
   expect(await identifier(alicePage, "identity-detail-resolved")).toBe(aliceId);
+  // The button beside an id names what it copies, because "copy" alone tells a
+  // screen reader nothing about which of the ids on a screen it would take. The
+  // confirmation it swaps that label for, `Copy Mabel ID: copied`, is pinned by
+  // `ui/src/test/identifier.test.tsx`, which can hold the two-second clock still.
+  await expect(
+    alicePage
+      .getByTestId("identity-detail-resolved")
+      .getByRole("button", { name: "Copy Mabel ID" }),
+  ).toHaveAttribute("data-copied", "false");
 });
 
 test("step 16: a new identity that publishes a name and an email from birth", async () => {

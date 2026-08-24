@@ -909,12 +909,24 @@ test("step 10: the graph is synchronized from the UI, and carol is two hops away
     REVERSE_LABEL,
   );
   // A closed block holds none of its content, so each list is opened to read it.
+  // The list is opened by its heading, which is what a reader clicks: the info
+  // icon sits inside the same row, opens its own sentence and stops the click
+  // there, so a click aimed at the middle of the row can land on the icon
+  // instead of on the row.
   await expect(alicePage.getByTestId("lookup-trust-empty")).toHaveCount(0);
-  await alicePage.getByTestId("lookup-trust-toggle").click();
+  await alicePage.getByTestId("lookup-trust-label").click();
+  await expect(alicePage.getByTestId("lookup-trust-toggle")).toHaveAttribute(
+    "aria-expanded",
+    "true",
+  );
   await expect(alicePage.getByTestId("lookup-trust-empty")).toHaveText(
     "Your wallet has not seen them trust anyone.",
   );
-  await alicePage.getByTestId("lookup-reverse-toggle").click();
+  await alicePage.getByTestId("lookup-reverse-label").click();
+  await expect(alicePage.getByTestId("lookup-reverse-toggle")).toHaveAttribute(
+    "aria-expanded",
+    "true",
+  );
   // Round 5 draws each entry as the same identity card, keyed by the identity,
   // so the per-entry expand controls are gone.
   await expect(
@@ -1158,9 +1170,18 @@ test("step 13: the witnesses screen, what one holds, and one deliberate fetch", 
   await alicePage.getByTestId("nav-witnesses").click();
   await expect(alicePage).toHaveURL(`${ALICE_URL}/witnesses`);
   await expect(alicePage.getByTestId("witness-cards")).toBeVisible();
-  await expect(alicePage.getByTestId(`witness-card-named-by-${witnessId}`)).toHaveText(
-    "chosen by 1 identity of yours",
-  );
+  // The final round of proposal 005 named the identities that chose this witness
+  // instead of counting them: `witness-card-named-by-*` is the container holding
+  // one inline identity per chain that names the endpoint, so its text is a name
+  // and an id rather than "chosen by 1 identity of yours". How many there are is
+  // a sentence on the witness's own page now.
+  const namedBy = alicePage.getByTestId(`witness-card-named-by-${witnessId}`);
+  await expect(namedBy).toContainText("Alice Example");
+  await expect(namedBy).not.toContainText("chosen by");
+  await expect(
+    alicePage.getByTestId(`witness-card-chose-${witnessId}-${aliceId}-name`),
+  ).toHaveText("Alice Example");
+  await expect(namedBy.locator("> [data-identity-id]")).toHaveCount(1);
   await expect(alicePage.getByTestId(`witness-card-default-${witnessId}`)).toHaveText(
     "this node uses it by default",
   );
@@ -1175,6 +1196,13 @@ test("step 13: the witnesses screen, what one holds, and one deliberate fetch", 
   // the same identity card list.
   await alicePage.getByTestId(`witness-card-link-${witnessId}`).click();
   await expect(alicePage.getByTestId("witness-ledgers")).toBeVisible();
+  // The page names itself, and the count the card used to carry is the sentence
+  // under the heading. The way back is the nav, so there is no back link.
+  await expect(alicePage.getByRole("heading", { level: 1 })).toHaveText("This witness");
+  await expect(alicePage.getByTestId("witness-chosen-by")).toHaveText(
+    "Chosen by 1 of your identities. This node uses it by default.",
+  );
+  await expect(alicePage.getByTestId("witness-ledgers-back")).toHaveCount(0);
   const held = await cardIds(alicePage);
   expect([...held].sort(compareIds)).toEqual([aliceId, bobId, carolId].sort(compareIds));
   await expect(alicePage.getByTestId(`identity-card-declared-kind-${carolId}`)).toHaveText(
@@ -1183,6 +1211,46 @@ test("step 13: the witnesses screen, what one holds, and one deliberate fetch", 
   // How much of a record this witness holds is what this listing is about, so
   // the card counts the entries rather than naming the position they end at.
   await expect(alicePage.getByTestId(`identity-card-entries-${carolId}`)).toHaveText("2 entries");
+
+  // One flat list with three ways to narrow it, All chosen when the page opens,
+  // and the sentence under the heading saying which one is chosen.
+  for (const [filter, label] of [
+    ["all", "All"],
+    ["ours", "Yours"],
+    ["trusted", "Trusted"],
+  ] as const) {
+    await expect(alicePage.getByTestId(`witness-holdings-${filter}`)).toHaveText(label);
+  }
+  await expect(alicePage.getByTestId("witness-holdings-all")).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await expect(alicePage.getByTestId("witness-ledgers")).toContainText(
+    "Every record this witness holds.",
+  );
+  // Yours is the records alice's own wallet controls, which is her own alone.
+  await alicePage.getByTestId("witness-holdings-ours").click();
+  await expect(alicePage.getByTestId("witness-holdings-ours")).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await expect(alicePage.getByTestId("witness-ledgers")).toContainText(
+    "The records your own identities control.",
+  );
+  await expect(alicePage.getByTestId(`identity-card-${aliceId}`)).toBeVisible();
+  await expect(alicePage.getByTestId(`identity-card-${bobId}`)).toHaveCount(0);
+  await expect(alicePage.getByTestId(`identity-card-${carolId}`)).toHaveCount(0);
+  // Trusted is bob, whom alice trusts outright, and carol, whom the crawl
+  // reached through him. Alice's own record is neither, so it drops out.
+  await alicePage.getByTestId("witness-holdings-trusted").click();
+  await expect(alicePage.getByTestId("witness-ledgers")).toContainText(
+    "The people you trust, and the ones your wallet reaches through them.",
+  );
+  await expect(alicePage.getByTestId(`identity-card-${bobId}`)).toBeVisible();
+  await expect(alicePage.getByTestId(`identity-card-${carolId}`)).toBeVisible();
+  await expect(alicePage.getByTestId(`identity-card-${aliceId}`)).toHaveCount(0);
+  await alicePage.getByTestId("witness-holdings-all").click();
+  expect(await cardIds(alicePage)).toEqual(held);
 
   const proxied = await apiGet(ALICE_URL, `/api/witnesses/${witnessId}/ledgers?offset=0&limit=256`);
   expect(proxied.body.endpoint_id).toBe(witnessId);

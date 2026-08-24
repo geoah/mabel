@@ -120,6 +120,12 @@ test("step 4: five ledgers as five cards, on one page and in id order", async ()
   await page.goto(`${WITNESS_URL}/witness`);
   await expect(page.getByTestId("witness-read-only-note")).toHaveText(READ_ONLY_NOTE);
   await expect(page.getByTestId("witness-holdings-note")).toHaveText(HOLDINGS_NOTE);
+  // The three holdings filters belong to the wallet's drill-in, where "yours"
+  // and "trusted" mean something: a witness serves no wallet, so this route
+  // draws one flat list and no filter at all. Story 007 step 13 pins them.
+  for (const filter of ["all", "ours", "trusted"] as const) {
+    await expect(page.getByTestId(`witness-holdings-${filter}`)).toHaveCount(0);
+  }
 
   // Every ledger the witness holds is drawn, in ascending ledger id order,
   // with no paging control anywhere: the route asks for all of them at once.
@@ -167,6 +173,10 @@ test("steps 5 to 7: the declared kind of every card, and the one fork count", as
 test("step 8: one ledger's summary and its chain, on the identity page", async () => {
   await page.getByTestId(`identity-card-link-${aliceId}`).click();
   await expect(page.getByTestId("witness-ledger-detail")).toBeVisible();
+  // The page names itself, and the nav is the one way back: the final round of
+  // proposal 005 removed the page's own back link.
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("This record");
+  await expect(page.getByTestId("witness-ledger-back")).toHaveCount(0);
 
   expect(await identifier(page, "witness-detail-ledger-id")).toBe(aliceId);
   await expect(page.getByTestId("witness-detail-declared-kind")).toHaveText("person");
@@ -196,16 +206,27 @@ test("step 8: one ledger's summary and its chain, on the identity page", async (
   await expect(
     page.getByTestId("ledger-events").locator('li[data-testid^="ledger-event-"]'),
   ).toHaveCount(4);
-  for (const [seq, kind] of [
-    [0, "inception"],
-    [1, "witness_config"],
-    [2, "witness_config"],
-    [3, "trust_attestation"],
+  // The final round of proposal 005 left the closed line the position and the
+  // plain gloss only: the raw kind string moved inside the opened entry, so a
+  // spec that wants it opens the line first.
+  for (const [seq, gloss, kind] of [
+    [0, "created this identity", "inception"],
+    [1, "chose who keeps a copy", "witness_config"],
+    [2, "chose who keeps a copy", "witness_config"],
+    [3, "said it trusts someone", "trust_attestation"],
   ] as const) {
     await expect(page.getByTestId(`event-seq-${seq}`)).toHaveText(String(seq));
+    await expect(page.getByTestId(`event-gloss-${seq}`)).toHaveText(gloss);
+    await expect(page.getByTestId(`event-payload-kind-${seq}`)).toHaveCount(0);
+    await page.getByTestId(`event-expand-${seq}`).click();
     await expect(page.getByTestId(`event-payload-kind-${seq}`)).toHaveText(kind);
+    // Every line but the last closes again, so the one open entry step 8 reads
+    // its id from is the one it opened for that.
+    if (seq !== 3) {
+      await page.getByTestId(`event-expand-${seq}`).click();
+      await expect(page.getByTestId(`event-detail-${seq}`)).toHaveCount(0);
+    }
   }
-  await page.getByTestId("event-expand-3").click();
   await expect(page.getByTestId("event-detail-3")).toBeVisible();
   expect(await identifier(page, "event-id-3")).toBe(
     (await apiGet(WITNESS_URL, `/api/ledgers/${aliceId}`)).body.entry.head_event,

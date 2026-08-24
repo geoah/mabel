@@ -133,18 +133,25 @@ test("step 7: alice's home holds the second machine's event at seq 4", async () 
   await expect(
     reader.getByTestId("ledger-events").locator('li[data-testid^="ledger-event-"]'),
   ).toHaveCount(5);
-  for (const [seq, kind] of [
-    [0, "inception"],
-    [1, "membership_invitation"],
-    [2, "membership_acceptance"],
-    [3, "witness_config"],
-    [4, "trust_attestation"],
+  // A closed line carries its position and the plain gloss; the raw kind, the
+  // entry id and the payload are one click into the line (ticket 028, and the
+  // final round of proposal 005 which moved the kind in with them).
+  for (const [seq, gloss, kind] of [
+    [0, "created this identity", "inception"],
+    [1, "invited someone to help control this identity", "membership_invitation"],
+    [2, "confirmed someone as a controller", "membership_acceptance"],
+    [3, "chose who keeps a copy", "witness_config"],
+    [4, "said it trusts someone", "trust_attestation"],
   ] as const) {
+    await expect(reader.getByTestId(`event-gloss-${seq}`)).toHaveText(gloss);
+    await expect(reader.getByTestId(`event-payload-kind-${seq}`)).toHaveCount(0);
+    await reader.getByTestId(`event-expand-${seq}`).click();
     await expect(reader.getByTestId(`event-payload-kind-${seq}`)).toHaveText(kind);
+    if (seq !== 4) {
+      await reader.getByTestId(`event-expand-${seq}`).click();
+      await expect(reader.getByTestId(`event-detail-${seq}`)).toHaveCount(0);
+    }
   }
-  // A ledger line carries its sequence and its type; the event id and the
-  // payload are one click into the line (ticket 028).
-  await reader.getByTestId("event-expand-4").click();
   await expect(reader.getByTestId("event-detail-4")).toBeVisible();
   expect(await identifier(reader, "event-id-4")).toBe(secondMachineEvent);
   await expect(reader.getByTestId("event-payload-4")).toHaveText(`{"subject":"${aliceId}"}`);

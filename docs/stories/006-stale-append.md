@@ -120,11 +120,15 @@ machines; two admitted controllers acting from their own homes is ticket 031.
   `trust[0].attestation_seq == 4`, the second machine's event, fetched during
   the failed attempt. The event id alice signed in step 4 appears nowhere in
   the ledger.
-- Step 7's Ledger card agrees: `event-payload-kind-4` reads
-  `trust_attestation`, the identifier inside `event-id-4` carries the second
-  machine's event id, and `event-payload-4` reads `{"subject":"<alice_id>"}`.
-  The five rows read `inception`, `membership_invitation`,
-  `membership_acceptance`, `witness_config`, `trust_attestation` in order.
+- Step 7's Ledger card agrees. The five closed lines read, in order, `created
+  this identity`, `invited someone to help control this identity`, `confirmed
+  someone as a controller`, `chose who keeps a copy` and `said it trusts
+  someone`, which is the whole of a closed line beside its position. Opening
+  each one shows the same five as raw kinds, `inception`,
+  `membership_invitation`, `membership_acceptance`, `witness_config` and
+  `trust_attestation`. In the open entry at position 4 the identifier inside
+  `event-id-4` carries the second machine's event id and `event-payload-4` reads
+  `{"subject":"<alice_id>"}`.
 - No fork was created: `GET http://127.0.0.1:9080/api/forks` answers `entries:
   []` and `GET http://127.0.0.1:9080/api/ledgers/<org_id>` answers
   `entry.fork_count: 0`. The losing event was discarded before it was ever
@@ -175,6 +179,10 @@ story text above.
 - Step 7 counts the five rows as `li[data-testid^="ledger-event-"]` under
   `ledger-events`. Proposal 005 draws the ledger as compact rows rather than a
   table, so a line is a list item.
+- Step 7 opens all five lines and closes the first four again. The final round
+  of proposal 005 moved the raw kind string in beside the entry id and the
+  payload, so reading five kinds means five clicks, and the entry at position 4
+  is left open because that is the one this story reads by id.
 - "The event id alice signed in step 4 appears nowhere in the ledger" is
   checked against `GET /api/identities/<org_id>/ledger?since=0&limit=16` in
   alice's home: the five events it returns do not include that id.
