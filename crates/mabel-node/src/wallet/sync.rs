@@ -131,7 +131,7 @@ impl WalletSync {
         if witnesses.is_empty() {
             return Err(ServiceError::usage(
                 "no_witness_configured",
-                format!("ledger {ledger} names no witness to push to"),
+                format!("no endpoint is configured to push {ledger} to"),
             )
             .with_detail("ledger_id", ledger.to_string()));
         }

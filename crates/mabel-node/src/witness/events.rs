@@ -93,6 +93,8 @@ fn payload_kind(payload: &event_body::Payload) -> &'static str {
         event_body::Payload::MembershipAcceptance(_) => "membership_acceptance",
         event_body::Payload::MembershipRemoval(_) => "membership_removal",
         event_body::Payload::ProfileUpdate(_) => "profile_update",
+        event_body::Payload::EndpointAdvertisement(_) => "endpoint_advertisement",
+        event_body::Payload::WitnessSet(_) => "witness_set",
     }
 }
 
@@ -137,6 +139,24 @@ fn payload_document(payload: &event_body::Payload) -> Value {
             "display_name": text(&profile.display_name),
             "hostname": text(&profile.hostname),
             "email": text(&profile.email),
+        }),
+        // The endpoints that answer for this identity and the identities that
+        // may keep its chain (proposal 006 sections 1 and 2). Both lists may be
+        // empty, and an empty list renders as `[]`, never as `null`: the event
+        // said "these and only these", and it named none.
+        event_body::Payload::EndpointAdvertisement(advertisement) => json!({
+            "endpoints": advertisement
+                .endpoints
+                .iter()
+                .map(|endpoint| optional(id_field(endpoint)))
+                .collect::<Vec<Value>>(),
+        }),
+        event_body::Payload::WitnessSet(set) => json!({
+            "witnesses": set
+                .witnesses
+                .iter()
+                .map(|witness| optional(id_field(witness)))
+                .collect::<Vec<Value>>(),
         }),
     }
 }

@@ -162,6 +162,11 @@ pub enum IdentityCommand {
         /// The identity, by alias or id.
         identity: String,
     },
+    /// Publish the machines that answer for an identity.
+    Endpoints {
+        #[command(subcommand)]
+        command: EndpointsCommand,
+    },
     /// Write an identity's `IdentityDescriptor` file, the artifact an invitation
     /// embeds.
     Export {
@@ -175,6 +180,26 @@ pub enum IdentityCommand {
     Rotate {
         /// The identity, by alias or id.
         identity: Option<String>,
+    },
+}
+
+/// `mabel identity endpoints ...`.
+#[derive(Debug, Subcommand)]
+pub enum EndpointsCommand {
+    /// Replace the whole list of machines that answer for an identity.
+    ///
+    /// One event says "these and only these", so a rotation names the machine
+    /// it keeps as well as the new one.
+    Replace {
+        /// The identity, by alias or id.
+        #[arg(long, value_name = "ALIAS_OR_ID")]
+        identity: String,
+        /// `auto` for this node's own endpoint id, `none` to advertise nothing,
+        /// or a comma-separated list of endpoint ids, base32 or hex.
+        #[arg(long, value_name = "AUTO_OR_ENDPOINTS")]
+        endpoints: String,
+        #[command(flatten)]
+        append: AppendOptions,
     },
 }
 
@@ -386,14 +411,18 @@ pub enum TrustCommand {
 /// `mabel witness ...`.
 #[derive(Debug, Subcommand)]
 pub enum WitnessCommand {
-    /// Add an endpoint to an identity's witness set.
+    /// Add a witness identity to an identity's witness set.
+    ///
+    /// A witness is named by its Mabel id, not by the endpoint it answers at,
+    /// so replacing the machine behind a witness leaves this event standing
+    /// (proposal 006 section 1).
     Add {
-        /// The identity, by alias or id.
+        /// The identity whose witness set is replaced, by alias or id.
         #[arg(long)]
         identity: String,
-        /// The witness endpoint id, base32 or hex.
+        /// The witness identity, by alias or id.
         #[arg(long)]
-        endpoint: String,
+        witness: String,
         #[command(flatten)]
         append: AppendOptions,
     },
@@ -549,19 +578,27 @@ pub enum NodeCommand {
 /// holds the same bytes a person typing the commands would have produced.
 #[derive(Debug, Subcommand)]
 pub enum DevCommand {
-    /// Fill an empty home with four identities, one organization, four
+    /// Fill an empty home with five identities, one organization, four
     /// attestations and one private note.
     ///
     /// Refuses a home that already holds an identity: this writes real signed
     /// ledgers, and there is no way to take an event back.
     Seed {
-        /// Endpoint ticket of a witness to register on every seeded ledger and
-        /// push to. Repeatable.
+        /// Endpoint ticket of a machine to push every seeded ledger to.
+        /// Repeatable.
         ///
         /// Given none, the seed stays local: the ledgers name no witness,
         /// nothing is pushed and no crawl runs.
         #[arg(long, value_name = "TICKET")]
         peer: Vec<String>,
+        /// A witness identity to name in every seeded witness set, beside the
+        /// one the seed creates. Repeatable.
+        ///
+        /// A ticket names a machine, and a machine only takes a push for a
+        /// ledger whose witness set names an identity it witnesses for, so a
+        /// push to somebody else's witness needs that witness's Mabel id.
+        #[arg(long, value_name = "ALIAS_OR_ID")]
+        witness: Vec<String>,
     },
 }
 

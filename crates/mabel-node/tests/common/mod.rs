@@ -17,8 +17,8 @@ use iroh::{Endpoint, EndpointAddr, TransportAddr};
 use iroh_base::{EndpointId, SecretKey};
 use mabel_core::proto::DeclaredKind;
 use mabel_core::sign::{
-    BuiltEvent, Position, Root, build_inception, build_trust_attestation, build_trust_revocation,
-    build_witness_config,
+    BuiltEvent, Position, Root, build_endpoint_advertisement, build_inception,
+    build_trust_attestation, build_trust_revocation, build_witness_set,
 };
 use mabel_core::{EventId, IdentityId, LedgerId};
 use mabel_net::store::Provenance;
@@ -59,6 +59,16 @@ pub fn subject(seed: u8) -> IdentityId {
     IdentityId::from_bytes([seed; 32])
 }
 
+/// The witness identity every home here witnesses for, and the one a chain
+/// names in its `WitnessSet` to be admitted (proposal 006 sections 1 and 4).
+///
+/// It is an id and nothing else: `witness_for` needs no local key and no local
+/// copy of the witness's own ledger.
+#[must_use]
+pub fn witness_identity() -> IdentityId {
+    subject(0x77)
+}
+
 /// A public key as every document spells it: lowercase base32, not the hex
 /// `iroh_base` displays.
 #[must_use]
@@ -77,11 +87,19 @@ pub struct Home {
 }
 
 impl Home {
-    /// A witness home with relays disabled and `storage_capacity` bytes.
+    /// A witness home with relays disabled, `storage_capacity` bytes and
+    /// [`witness_identity`] in `witness_for`.
     #[must_use]
     pub fn new(storage_capacity: u64) -> Self {
+        Self::witnessing_for(storage_capacity, vec![witness_identity()])
+    }
+
+    /// A witness home whose `witness_for` is exactly `witness_for`, which is
+    /// how a test asks for a home that witnesses for nobody.
+    #[must_use]
+    pub fn witnessing_for(storage_capacity: u64, witness_for: Vec<IdentityId>) -> Self {
         let dir = tempfile::tempdir().expect("a temp directory");
-        let home = create(dir.path(), storage_capacity);
+        let home = create(dir.path(), storage_capacity, witness_for);
         Self { dir, home }
     }
 
@@ -91,21 +109,34 @@ impl Home {
         self.home.node_key().expect("the node key reads").public()
     }
 
-    /// Storage over this home with `caps`.
+    /// The identities this home witnesses for, as `node.json` records them.
+    #[must_use]
+    pub fn witness_for(&self) -> Vec<IdentityId> {
+        self.home.config().expect("node.json reads").witness_for
+    }
+
+    /// Storage over this home with `caps`, witnessing for what `node.json`
+    /// names.
     #[must_use]
     pub fn storage(&self, caps: WitnessCaps) -> Arc<WitnessStorage> {
         Arc::new(
-            WitnessStorage::open(self.home.clone(), self.endpoint_id(), caps)
-                .expect("the index builds"),
+            WitnessStorage::open(
+                self.home.clone(),
+                self.endpoint_id(),
+                caps,
+                self.witness_for(),
+            )
+            .expect("the index builds"),
         )
     }
 }
 
-fn create(root: &Path, storage_capacity: u64) -> NodeHome {
+fn create(root: &Path, storage_capacity: u64, witness_for: Vec<IdentityId>) -> NodeHome {
     let config = NodeConfig {
         role: NodeRole::Witness,
         http_bind: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0),
         witnesses: Vec::new(),
+        witness_for,
         storage_capacity,
         relay: RelayMode::Disabled,
         ..NodeConfig::default()
@@ -117,6 +148,12 @@ fn create(root: &Path, storage_capacity: u64) -> NodeHome {
 #[must_use]
 pub fn home() -> Home {
     Home::new(mabel_node::DEFAULT_STORAGE_CAPACITY)
+}
+
+/// A home that witnesses for nobody, which refuses every stranger's push.
+#[must_use]
+pub fn home_witnessing_for_nobody() -> Home {
+    Home::witnessing_for(mabel_node::DEFAULT_STORAGE_CAPACITY, Vec::new())
 }
 
 /// Provenance for a push that arrived from `seed`'s endpoint.
@@ -185,11 +222,18 @@ impl Chain {
         self.seq - 1
     }
 
-    /// A witness config for the next position, not added to the chain.
+    /// A witness set for the next position, not added to the chain.
     #[must_use]
-    pub fn witness_config(&self, witnesses: &[EndpointId]) -> BuiltEvent {
-        build_witness_config(&self.signer, &self.at(), witnesses, self.now())
-            .expect("the config builds")
+    pub fn witness_set(&self, witnesses: &[IdentityId]) -> BuiltEvent {
+        build_witness_set(&self.signer, &self.at(), witnesses, self.now())
+            .expect("the witness set builds")
+    }
+
+    /// An endpoint advertisement for the next position, not added to the chain.
+    #[must_use]
+    pub fn advertisement(&self, endpoints: &[EndpointId]) -> BuiltEvent {
+        build_endpoint_advertisement(&self.signer, &self.at(), endpoints, self.now())
+            .expect("the advertisement builds")
     }
 
     /// An attestation for the next position, not added to the chain.
@@ -223,10 +267,16 @@ impl Chain {
         built.event_id
     }
 
-    /// Adds a witness config naming `witnesses`.
-    pub fn add_witness_config(&mut self, witnesses: &[EndpointId]) -> EventId {
-        let built = self.witness_config(witnesses);
+    /// Adds a witness set naming `witnesses`.
+    pub fn add_witness_set(&mut self, witnesses: &[IdentityId]) -> EventId {
+        let built = self.witness_set(witnesses);
         self.add(built)
+    }
+
+    /// Adds a witness set naming the one witness identity these tests use,
+    /// which is what admits a push to a home built by [`home`].
+    pub fn add_witness(&mut self) -> EventId {
+        self.add_witness_set(&[witness_identity()])
     }
 
     /// Adds an attestation naming `subject(seed)`.

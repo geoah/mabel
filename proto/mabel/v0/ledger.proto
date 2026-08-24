@@ -14,7 +14,11 @@
 // are append-only; a breaking change means a v1 directory, a new envelope
 // version and a new ALPN. Proposal 002 section 7 rewrote this file in place
 // once, an exception that expires with the first ledger created outside the
-// test suite.
+// test suite, and it is spent.
+//
+// `EventBody.payload` tags 10 to 19 are all spent (proposal 006 section 3):
+// the next payload takes a number out of the block reserved for the deferred
+// payloads of proposal 002 section 9.
 
 syntax = "proto3";
 
@@ -61,8 +65,29 @@ message Inception {
   }
 }
 
+// Retired for writing and readable forever (proposal 006 section 1). The
+// field holds raw Iroh endpoint ids, which is what it always physically was:
+// endpoints that may hold this ledger. No node builds one; the fold accepts
+// whatever a valid chain contains, and `WitnessSet` at tag 19 is what a
+// ledger writes now.
 message WitnessConfig {
   repeated bytes witnesses = 1; // 1..=16 distinct 32-byte Iroh EndpointIds
+}
+
+// The endpoints that answer for this identity, replaced whole by each event
+// (proposal 006 section 2). Legal on every ledger: an identity that publishes
+// one is directly fetchable with no witness at all. An empty list means
+// nothing answers for this identity right now.
+message EndpointAdvertisement {
+  repeated bytes endpoints = 1; // 0..=8 distinct 32-byte Iroh endpoint ids
+}
+
+// The identities that may keep this ledger, replaced whole by each event
+// (proposal 006 section 1). Each entry is an identity id, so a witness can
+// move: replacing a machine is one event on the witness's own ledger. An
+// empty list means nobody keeps this chain, and a ledger may name itself.
+message WitnessSet {
+  repeated bytes witnesses = 1; // 0..=16 distinct 32-byte identity ids
 }
 
 message TrustAttestation {
@@ -109,7 +134,7 @@ message EventBody {
   bytes prev = 4;             // previous event_id; absent at seq 0
   uint64 timestamp_ms = 5;    // unix ms, ledger order; 1..=4102444800000
   bytes author_key = 6;       // 32-byte ed25519 public key
-  oneof payload {             // tags 10..=17, append-only; 18 and 19 are free
+  oneof payload {             // tags 10..=19, append-only and all spent
     Inception inception = 10;
     WitnessConfig witness_config = 11;
     TrustAttestation trust_attestation = 12;
@@ -118,6 +143,8 @@ message EventBody {
     MembershipAcceptance membership_acceptance = 15;
     MembershipRemoval membership_removal = 16;
     ProfileUpdate profile_update = 17;
+    EndpointAdvertisement endpoint_advertisement = 18;
+    WitnessSet witness_set = 19;
   }
   // Held for the deferred payloads of proposal 002 section 9.
   reserved 20 to 29;

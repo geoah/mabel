@@ -390,19 +390,23 @@ fn the_invitation_document_and_bundle_name_the_invitee_from_the_descriptor() {
     );
 }
 
+/// The descriptor's `witnesses` field holds dialable endpoint ids, which only
+/// the retired tag-11 payload carries. A tag-19 witness set names identities, so
+/// it never lands here: an identity id in a list of endpoints is a number
+/// nothing can dial (proposal 006 section 1).
 #[test]
-fn identity_export_round_trips_and_carries_the_configured_witnesses() {
+fn identity_export_round_trips_and_carries_no_witness_identity_as_an_endpoint() {
     let home = Home::new();
     let exchange = Exchange::new();
     let alice = home.create("alice");
-    let endpoint = text(&home.json(&["node", "id"])["endpoint_id"]);
+    let keeper = home.create("keeper");
     home.json(&[
         "witness",
         "add",
         "--identity",
         "alice",
-        "--endpoint",
-        &endpoint,
+        "--witness",
+        &keeper,
     ]);
 
     let descriptor = exchange.file("alice.descriptor");
@@ -423,7 +427,7 @@ fn identity_export_round_trips_and_carries_the_configured_witnesses() {
     assert_eq!(document["identity_id"], Value::from(alice.clone()));
     assert_eq!(document["declared_kind"], Value::from("person"));
     assert_eq!(document["root"], Value::from("raw"));
-    assert_eq!(document["witnesses"], Value::from(vec![endpoint]));
+    assert_eq!(document["witnesses"], Value::Array(Vec::new()));
     assert!(is_id(&document["active_key"]), "{document}");
 
     // The same ledger exports the same bytes, and the id resolves like the

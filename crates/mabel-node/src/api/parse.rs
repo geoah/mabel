@@ -20,6 +20,7 @@ use super::service::{
 };
 use crate::contacts::{ContactTextError, MAX_NICKNAME_BYTES, MAX_NOTE_BYTES, normalize};
 use crate::verification::check_hostname;
+use mabel_core::{MAX_ENDPOINTS, MAX_WITNESSES};
 
 /// The query string, one value per name.
 pub(super) type Query = HashMap<String, String>;
@@ -274,34 +275,81 @@ struct WitnessesBody {
     witnesses: Option<Vec<String>>,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct EndpointsBody {
+    endpoints: Option<Vec<String>>,
+}
+
 /// `POST /api/identities/{identity_id}/witnesses`.
 ///
-/// The witness list must hold 1 to 16 distinct endpoint ids (proposal 001
-/// section 3.3).
+/// The list names 0 to 16 distinct identity ids: a witness is an identity, and
+/// an empty list says nobody keeps this chain (proposal 006 section 1). The key
+/// must be sent, because the operation replaces the whole set.
 pub(super) fn witnesses(bytes: &[u8]) -> Result<Vec<Id>, ServiceError> {
-    const MAX_WITNESSES: usize = 16;
-    const RANGE_MESSAGE: &str = "witnesses must hold 1 to 16 distinct endpoint ids";
+    const RANGE_MESSAGE: &str = "witnesses must hold 0 to 16 distinct identity ids";
 
     let parsed: WitnessesBody = body(bytes)?;
     let raw = parsed.witnesses.ok_or_else(|| missing_field("witnesses"))?;
-    if raw.is_empty() || raw.len() > MAX_WITNESSES {
-        return Err(
-            ServiceError::schema("witnesses_out_of_range", RANGE_MESSAGE)
-                .with_detail("field", "witnesses")
-                .with_detail("count", raw.len()),
-        );
+    entries(
+        &raw,
+        IdKind::Identity,
+        "witnesses",
+        MAX_WITNESSES,
+        RANGE_MESSAGE,
+        "witnesses_out_of_range",
+        "duplicate_witness",
+    )
+}
+
+/// `POST /api/identities/{identity_id}/endpoints`.
+///
+/// The list names 0 to 8 distinct endpoint ids, and an empty list says nothing
+/// answers for this identity right now (proposal 006 section 2). The key must be
+/// sent, because the operation replaces the whole list.
+pub(super) fn endpoints(bytes: &[u8]) -> Result<Vec<Id>, ServiceError> {
+    const RANGE_MESSAGE: &str = "endpoints must hold 0 to 8 distinct endpoint ids";
+
+    let parsed: EndpointsBody = body(bytes)?;
+    let raw = parsed.endpoints.ok_or_else(|| missing_field("endpoints"))?;
+    entries(
+        &raw,
+        IdKind::Endpoint,
+        "endpoints",
+        MAX_ENDPOINTS,
+        RANGE_MESSAGE,
+        "endpoints_out_of_range",
+        "duplicate_endpoint",
+    )
+}
+
+/// One whole-replacement list body: at most `max` ids of one kind, no repeat.
+#[allow(clippy::too_many_arguments)]
+fn entries(
+    raw: &[String],
+    kind: IdKind,
+    field: &'static str,
+    max: usize,
+    range_message: &'static str,
+    out_of_range: &'static str,
+    duplicate: &'static str,
+) -> Result<Vec<Id>, ServiceError> {
+    if raw.len() > max {
+        return Err(ServiceError::schema(out_of_range, range_message)
+            .with_detail("field", field)
+            .with_detail("count", raw.len()));
     }
-    let mut witnesses = Vec::with_capacity(raw.len());
-    for value in &raw {
-        let endpoint = id_field(IdKind::Endpoint, "witnesses", value)?;
-        if witnesses.contains(&endpoint) {
-            return Err(ServiceError::schema("duplicate_witness", RANGE_MESSAGE)
-                .with_detail("field", "witnesses")
-                .with_detail("value", endpoint.as_str()));
+    let mut parsed = Vec::with_capacity(raw.len());
+    for value in raw {
+        let id = id_field(kind, field, value)?;
+        if parsed.contains(&id) {
+            return Err(ServiceError::schema(duplicate, range_message)
+                .with_detail("field", field)
+                .with_detail("value", id.as_str()));
         }
-        witnesses.push(endpoint);
+        parsed.push(id);
     }
-    Ok(witnesses)
+    Ok(parsed)
 }
 
 #[derive(Debug, Deserialize)]
@@ -681,8 +729,8 @@ pub(super) fn method_not_allowed(method: &str, path: &str) -> ServiceError {
 #[cfg(test)]
 mod tests {
     use super::{
-        IdKind, MAX_EVENT_LIMIT, Query, create_identity, event_page, fetch_identity, fork_query,
-        hostname, id, ledger_page, limit, witnesses,
+        IdKind, MAX_EVENT_LIMIT, Query, create_identity, endpoints, event_page, fetch_identity,
+        fork_query, hostname, id, ledger_page, limit, witnesses,
     };
     use crate::api::documents::Id;
     use serde_json::json;
@@ -759,9 +807,53 @@ mod tests {
         let bytes = json!({"witnesses": [ALICE, ALICE]}).to_string();
         let error = witnesses(bytes.as_bytes()).expect_err("duplicate");
         assert_eq!(error.reason(), "duplicate_witness");
+
+        // An empty set is legal and says nobody keeps this chain, but the key
+        // must be sent: the operation replaces the whole set (proposal 006
+        // section 1).
         let bytes = json!({"witnesses": []}).to_string();
-        let error = witnesses(bytes.as_bytes()).expect_err("empty");
+        assert_eq!(
+            witnesses(bytes.as_bytes()).expect("empty is legal"),
+            Vec::new()
+        );
+        let error = witnesses(b"{}").expect_err("the key is required");
+        assert_eq!(error.reason(), "missing_field");
+
+        let many: Vec<String> = (0..17)
+            .map(|index| {
+                let mut bytes = [0u8; 32];
+                bytes[0] = index;
+                data_encoding::BASE32_NOPAD
+                    .encode(&bytes)
+                    .to_ascii_lowercase()
+            })
+            .collect();
+        let bytes = json!({"witnesses": many}).to_string();
+        let error = witnesses(bytes.as_bytes()).expect_err("seventeen");
         assert_eq!(error.reason(), "witnesses_out_of_range");
+    }
+
+    /// The advertisement body takes 0 to 8 distinct endpoint ids (proposal 006
+    /// section 2).
+    #[test]
+    fn an_endpoints_body_is_bounded_and_distinct() {
+        let bytes = json!({"endpoints": []}).to_string();
+        assert_eq!(
+            endpoints(bytes.as_bytes()).expect("empty is legal"),
+            Vec::new()
+        );
+
+        let bytes = json!({"endpoints": [ALICE, ALICE]}).to_string();
+        let error = endpoints(bytes.as_bytes()).expect_err("duplicate");
+        assert_eq!(error.reason(), "duplicate_endpoint");
+
+        let many: Vec<String> = std::iter::repeat_n(ALICE, 9).map(str::to_owned).collect();
+        let bytes = json!({"endpoints": many}).to_string();
+        let error = endpoints(bytes.as_bytes()).expect_err("nine");
+        assert_eq!(error.reason(), "endpoints_out_of_range");
+
+        let error = endpoints(b"{}").expect_err("the key is required");
+        assert_eq!(error.reason(), "missing_field");
     }
 
     #[test]

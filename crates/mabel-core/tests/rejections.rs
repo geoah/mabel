@@ -25,10 +25,11 @@ use mabel_core::fold::{Reason, Violation};
 use mabel_core::validate::{self, WireError};
 use mabel_core::{
     BuiltEvent, ID_BYTES, IdentityId, LedgerId, MAX_ACCEPTANCE_BYTES, MAX_DISPLAY_NAME_BYTES,
-    MAX_EMAIL_BYTES, MAX_EMBEDDED_INCEPTION_BYTES, MAX_EVENT_BYTES, MAX_HOSTNAME_BYTES,
-    MAX_TIMESTAMP_MS, MAX_WITNESSES, NONCE_BYTES, Position, Root, SIG_BYTES, build_acceptance,
-    build_inception, build_membership_acceptance, build_membership_invitation,
-    build_membership_removal, build_trust_attestation, build_witness_config, fold,
+    MAX_EMAIL_BYTES, MAX_EMBEDDED_INCEPTION_BYTES, MAX_ENDPOINTS, MAX_EVENT_BYTES,
+    MAX_HOSTNAME_BYTES, MAX_TIMESTAMP_MS, MAX_WITNESSES, NONCE_BYTES, Position, Root, SIG_BYTES,
+    build_acceptance, build_endpoint_advertisement, build_inception, build_membership_acceptance,
+    build_membership_invitation, build_membership_removal, build_trust_attestation,
+    build_witness_config, build_witness_set, fold,
     proto::{DeclaredKind, Role},
     reserve_commit, sign_input,
 };
@@ -46,6 +47,8 @@ const MEMBERSHIP_INVITATION: u32 = 14;
 const MEMBERSHIP_ACCEPTANCE: u32 = 15;
 const MEMBERSHIP_REMOVAL: u32 = 16;
 const PROFILE_UPDATE: u32 = 17;
+const ENDPOINT_ADVERTISEMENT: u32 = 18;
+const WITNESS_SET: u32 = 19;
 
 /// The `Inception.root` tags.
 const RAW_ROOT: u32 = 10;
@@ -591,19 +594,22 @@ fn rejections() -> Vec<Rejection> {
 
     let mut parts = attestation_parts();
     drop_part(&mut parts, TRUST_ATTESTATION);
-    parts.push(Part::L(18, encode(&[Part::L(1, s.bob_id.to_vec())])));
+    // Tag 30 is the first tag past the block reserved for the deferred
+    // payloads: tags 10 to 19 are all spent (proposal 006 section 3), so this
+    // vector moved off tag 18 when the advertisement took it.
+    parts.push(Part::L(30, encode(&[Part::L(1, s.bob_id.to_vec())])));
     push(
         "unknown-oneof-variant",
         "wire-format",
         "3.1 unrecognised oneof variants",
-        "An EventBody whose payload uses tag 18, which v0 does not define.",
+        "An EventBody whose payload uses tag 30, which v0 does not define.",
         wire(
             Entry::SignedEvent,
             sign(&encode(&parts), &s.alice),
             WireError::UnknownOneofVariant {
                 message: "EventBody",
                 oneof: "payload",
-                number: 18,
+                number: 30,
             },
         ),
     );
@@ -2403,6 +2409,164 @@ fn rejections() -> Vec<Rejection> {
         ),
     );
 
+    // The two list payloads of proposal 006. Both lists may be empty, so every
+    // vector here is a cap, a repeat, a length or a point.
+
+    let witness_set_body = |payload: &[Part]| {
+        sign(
+            &encode(&append_body(
+                s.alice_id,
+                1,
+                s.alice_inception.event_id.as_bytes(),
+                &s.alice.public(),
+                WITNESS_SET,
+                payload,
+            )),
+            &s.alice,
+        )
+    };
+    let advertisement_body = |payload: &[Part]| {
+        sign(
+            &encode(&append_body(
+                s.alice_id,
+                1,
+                s.alice_inception.event_id.as_bytes(),
+                &s.alice.public(),
+                ENDPOINT_ADVERTISEMENT,
+                payload,
+            )),
+            &s.alice,
+        )
+    };
+
+    let many: Vec<Part> = (0..=MAX_WITNESSES as u8)
+        .map(|seed| Part::L(1, IdentityId::from_bytes([seed; ID_BYTES]).to_vec()))
+        .collect();
+    push(
+        "witness-set-seventeen",
+        "field-table",
+        "006 section 3 WitnessSet holds 0 to 16 witnesses",
+        "A WitnessSet naming 17 identities.",
+        wire(
+            Entry::SignedEvent,
+            witness_set_body(&many),
+            WireError::RepeatedCount {
+                message: "WitnessSet",
+                field: "witnesses",
+                count: MAX_WITNESSES + 1,
+                min: 0,
+                max: MAX_WITNESSES,
+            },
+        ),
+    );
+
+    let witness = IdentityId::from_bytes([0x77; ID_BYTES]).to_vec();
+    push(
+        "witness-set-duplicate",
+        "field-table",
+        "006 section 3 witnesses are distinct",
+        "A WitnessSet naming the same identity twice.",
+        wire(
+            Entry::SignedEvent,
+            witness_set_body(&[Part::L(1, witness.clone()), Part::L(1, witness)]),
+            WireError::RepeatedDuplicate {
+                message: "WitnessSet",
+                field: "witnesses",
+            },
+        ),
+    );
+
+    push(
+        "witness-set-witness-length",
+        "field-table",
+        "006 section 3 each witness is 32 bytes",
+        "A WitnessSet whose witness is 31 bytes.",
+        wire(
+            Entry::SignedEvent,
+            witness_set_body(&[Part::L(1, vec![0x77; ID_BYTES - 1])]),
+            WireError::WrongLength {
+                message: "WitnessSet",
+                field: "witnesses",
+                expected: ID_BYTES,
+                actual: ID_BYTES - 1,
+            },
+        ),
+    );
+
+    let many: Vec<Part> = (0..=MAX_ENDPOINTS as u8)
+        .map(|seed| Part::L(1, secret(0x80 + seed).public().as_bytes().to_vec()))
+        .collect();
+    push(
+        "endpoint-advertisement-nine",
+        "field-table",
+        "006 section 3 EndpointAdvertisement holds 0 to 8 endpoints",
+        "An EndpointAdvertisement naming 9 endpoints.",
+        wire(
+            Entry::SignedEvent,
+            advertisement_body(&many),
+            WireError::RepeatedCount {
+                message: "EndpointAdvertisement",
+                field: "endpoints",
+                count: MAX_ENDPOINTS + 1,
+                min: 0,
+                max: MAX_ENDPOINTS,
+            },
+        ),
+    );
+
+    let endpoint = secret(0x77).public().as_bytes().to_vec();
+    push(
+        "endpoint-advertisement-duplicate",
+        "field-table",
+        "006 section 3 endpoints are distinct",
+        "An EndpointAdvertisement naming the same endpoint twice.",
+        wire(
+            Entry::SignedEvent,
+            advertisement_body(&[Part::L(1, endpoint.clone()), Part::L(1, endpoint)]),
+            WireError::RepeatedDuplicate {
+                message: "EndpointAdvertisement",
+                field: "endpoints",
+            },
+        ),
+    );
+
+    push(
+        "endpoint-advertisement-endpoint-length",
+        "field-table",
+        "006 section 3 each endpoint is 32 bytes",
+        "An EndpointAdvertisement whose endpoint is 31 bytes.",
+        wire(
+            Entry::SignedEvent,
+            advertisement_body(&[Part::L(1, vec![0x77; ID_BYTES - 1])]),
+            WireError::WrongLength {
+                message: "EndpointAdvertisement",
+                field: "endpoints",
+                expected: ID_BYTES,
+                actual: ID_BYTES - 1,
+            },
+        ),
+    );
+
+    // 32 bytes of 0x02 decompress to no ed25519 point, so nothing can ever dial
+    // this endpoint. The length is right, so the scanner passes it and the fold
+    // is where the point check lives, exactly as it does for tag 11.
+    push(
+        "endpoint-advertisement-not-a-point",
+        "fold",
+        "006 section 3 each endpoint decompresses to a valid ed25519 point",
+        "An EndpointAdvertisement whose endpoint is 32 bytes that are not a curve point.",
+        Expected::Fold {
+            events: vec![
+                s.alice_inception.signed_event.clone(),
+                advertisement_body(&[Part::L(1, vec![0x02; ID_BYTES])]),
+            ],
+            at_seq: 1,
+            reason: Reason::InvalidPublicKey {
+                field: "EndpointAdvertisement.endpoints",
+            },
+        },
+    );
+
     cases
 }
 
@@ -2539,8 +2703,8 @@ fn every_golden_vector_passes_the_validator() {
         seen += 1;
     }
     assert!(
-        seen >= 15,
-        "expected the fifteen golden vectors, saw {seen}"
+        seen >= 19,
+        "expected the nineteen golden vectors, saw {seen}"
     );
 }
 
@@ -2575,6 +2739,34 @@ fn the_signing_path_produces_valid_events() {
     )
     .expect("builds");
     validate::signed_event(&witnesses.signed_event).expect("a witness config passes");
+
+    let set = build_witness_set(
+        &s.alice,
+        &Position {
+            ledger: s.alice_id,
+            seq: 1,
+            prev: s.alice_inception.event_id,
+            prev_timestamp_ms: T0,
+        },
+        &[s.bob_id, s.alice_id],
+        T0 + STEP_MS,
+    )
+    .expect("builds");
+    validate::signed_event(&set.signed_event).expect("a witness set passes");
+
+    let advertisement = build_endpoint_advertisement(
+        &s.alice,
+        &Position {
+            ledger: s.alice_id,
+            seq: 1,
+            prev: s.alice_inception.event_id,
+            prev_timestamp_ms: T0,
+        },
+        &[secret(0x77).public()],
+        T0 + STEP_MS,
+    )
+    .expect("builds");
+    validate::signed_event(&advertisement.signed_event).expect("an advertisement passes");
 }
 
 /// Rewrites `test-vectors/rejections/`. The only writer; run it deliberately

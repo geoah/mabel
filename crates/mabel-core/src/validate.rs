@@ -32,8 +32,8 @@ use crate::digest::{accept_input, event_id, sign_input};
 use crate::id::{EventId, IdentityId};
 use crate::{
     ID_BYTES, MAX_ACCEPTANCE_BYTES, MAX_DISPLAY_NAME_BYTES, MAX_EMAIL_BYTES,
-    MAX_EMBEDDED_INCEPTION_BYTES, MAX_EVENT_BYTES, MAX_HOSTNAME_BYTES, MAX_HOSTNAME_LABEL_BYTES,
-    MAX_TIMESTAMP_MS, MAX_WITNESSES, NONCE_BYTES, SIG_BYTES,
+    MAX_EMBEDDED_INCEPTION_BYTES, MAX_ENDPOINTS, MAX_EVENT_BYTES, MAX_HOSTNAME_BYTES,
+    MAX_HOSTNAME_LABEL_BYTES, MAX_TIMESTAMP_MS, MAX_WITNESSES, NONCE_BYTES, SIG_BYTES,
 };
 
 /// How deep messages may nest before the scanner gives up.
@@ -764,6 +764,10 @@ pub static INCEPTION: MessageDescriptor = MessageDescriptor {
 };
 
 /// `WitnessConfig` (proposal 001 section 3.4).
+///
+/// Retired for writing and read forever, with these rules unchanged (proposal
+/// 006 section 1): the fold must accept whatever a valid chain contains, so a
+/// chain written before tag 19 existed keeps folding.
 pub static WITNESS_CONFIG: MessageDescriptor = MessageDescriptor {
     name: "WitnessConfig",
     max_bytes: MAX_EVENT_BYTES,
@@ -772,6 +776,51 @@ pub static WITNESS_CONFIG: MessageDescriptor = MessageDescriptor {
         name: "witnesses",
         cardinality: Cardinality::Repeated {
             min: 1,
+            max: MAX_WITNESSES,
+            distinct: true,
+        },
+        kind: ID,
+    }],
+    oneof: None,
+    check: None,
+};
+
+/// `EndpointAdvertisement` (proposal 006 sections 2 and 3).
+///
+/// The list may be empty, which says nothing answers for this identity right
+/// now. Each entry must also decompress to a valid ed25519 point, which the
+/// fold checks: an endpoint id that is not a point can never be dialled.
+pub static ENDPOINT_ADVERTISEMENT: MessageDescriptor = MessageDescriptor {
+    name: "EndpointAdvertisement",
+    max_bytes: MAX_EVENT_BYTES,
+    fields: &[FieldDescriptor {
+        number: 1,
+        name: "endpoints",
+        cardinality: Cardinality::Repeated {
+            min: 0,
+            max: MAX_ENDPOINTS,
+            distinct: true,
+        },
+        kind: ID,
+    }],
+    oneof: None,
+    check: None,
+};
+
+/// `WitnessSet` (proposal 006 sections 1 and 3).
+///
+/// The list may be empty, which says nobody keeps this chain. Each entry is an
+/// identity id, a digest and not a key, so no point check applies, and the
+/// ledger's own id is allowed: that is how a self-hosted identity says it keeps
+/// its own chain.
+pub static WITNESS_SET: MessageDescriptor = MessageDescriptor {
+    name: "WitnessSet",
+    max_bytes: MAX_EVENT_BYTES,
+    fields: &[FieldDescriptor {
+        number: 1,
+        name: "witnesses",
+        cardinality: Cardinality::Repeated {
+            min: 0,
             max: MAX_WITNESSES,
             distinct: true,
         },
@@ -938,6 +987,8 @@ pub static EVENT_BODY: MessageDescriptor = MessageDescriptor {
         variant(15, "membership_acceptance", &MEMBERSHIP_ACCEPTANCE),
         variant(16, "membership_removal", &MEMBERSHIP_REMOVAL),
         variant(PROFILE_UPDATE_TAG, "profile_update", &PROFILE_UPDATE),
+        variant(18, "endpoint_advertisement", &ENDPOINT_ADVERTISEMENT),
+        variant(19, "witness_set", &WITNESS_SET),
     ],
     oneof: Some(Oneof {
         name: "payload",
@@ -1829,7 +1880,8 @@ mod tests {
     use super::*;
     use crate::id::ID_STR_LEN;
     use crate::sign::{
-        BuiltEvent, Position, Root, build_inception, build_trust_attestation, build_witness_config,
+        BuiltEvent, Position, Root, build_endpoint_advertisement, build_inception,
+        build_trust_attestation, build_witness_config, build_witness_set,
     };
     use iroh_base::SecretKey;
     use mabel_proto::v0::DeclaredKind;
@@ -2058,16 +2110,17 @@ mod tests {
 
     #[test]
     fn unrecognised_oneof_variants_are_rejected() {
-        // Tags 18 and 19 sit past the last assigned payload and below the
-        // reserved block, so a later version may take them.
+        // Tags 10 to 19 are all assigned and 20 to 29 are reserved for the
+        // deferred payloads, so tag 30 is the first a later version may take
+        // (proposal 006 section 3).
         let mut bytes = body();
-        bytes.extend_from_slice(&len_field(18, &[]));
+        bytes.extend_from_slice(&len_field(30, &[]));
         assert_eq!(
             event_body(&bytes),
             Err(WireError::UnknownOneofVariant {
                 message: "EventBody",
                 oneof: "payload",
-                number: 18,
+                number: 30,
             })
         );
     }
@@ -2422,6 +2475,119 @@ mod tests {
                 max: MAX_WITNESSES,
             })
         );
+    }
+
+    /// Both new lists may be empty and both refuse a repeat and a seventeenth
+    /// or ninth entry (proposal 006 sections 1, 2 and 3).
+    #[test]
+    fn the_witness_set_and_the_advertisement_are_bounded_and_distinct() {
+        let empty: Vec<u8> = Vec::new();
+        message(&WITNESS_SET, &empty).expect("an empty witness set is legal");
+        message(&ENDPOINT_ADVERTISEMENT, &empty).expect("an empty advertisement is legal");
+
+        for (descriptor, name, field, max) in [
+            (&WITNESS_SET, "WitnessSet", "witnesses", MAX_WITNESSES),
+            (
+                &ENDPOINT_ADVERTISEMENT,
+                "EndpointAdvertisement",
+                "endpoints",
+                MAX_ENDPOINTS,
+            ),
+        ] {
+            let mut repeated = len_field(1, &[1u8; ID_BYTES]);
+            repeated.extend_from_slice(&len_field(1, &[1u8; ID_BYTES]));
+            assert_eq!(
+                message(descriptor, &repeated),
+                Err(WireError::RepeatedDuplicate {
+                    message: name,
+                    field,
+                })
+            );
+
+            let many: Vec<u8> = (0..=max as u8)
+                .flat_map(|seed| len_field(1, &[seed; ID_BYTES]))
+                .collect();
+            assert_eq!(
+                message(descriptor, &many),
+                Err(WireError::RepeatedCount {
+                    message: name,
+                    field,
+                    count: max + 1,
+                    min: 0,
+                    max,
+                })
+            );
+
+            let short = len_field(1, &[1u8; ID_BYTES - 1]);
+            assert_eq!(
+                message(descriptor, &short),
+                Err(WireError::WrongLength {
+                    message: name,
+                    field,
+                    expected: ID_BYTES,
+                    actual: ID_BYTES - 1,
+                })
+            );
+        }
+    }
+
+    /// A ledger naming itself in its own witness set is legal, which is how a
+    /// self-hosted identity says it keeps its own chain (proposal 006
+    /// section 1).
+    #[test]
+    fn a_witness_set_from_the_signing_path_may_name_the_ledger_itself() {
+        let head = raw_rooted();
+        let ledger: IdentityId = head.event_id.into();
+        let built = build_witness_set(
+            &secret(1),
+            &Position {
+                ledger,
+                seq: 1,
+                prev: head.event_id,
+                prev_timestamp_ms: T0,
+            },
+            &[ledger],
+            T0,
+        )
+        .expect("builds");
+        signed_event(&built.signed_event).expect("passes");
+
+        let empty = build_witness_set(
+            &secret(1),
+            &Position {
+                ledger,
+                seq: 1,
+                prev: head.event_id,
+                prev_timestamp_ms: T0,
+            },
+            &[],
+            T0,
+        )
+        .expect("builds");
+        signed_event(&empty.signed_event).expect("an empty set passes");
+    }
+
+    #[test]
+    fn an_endpoint_advertisement_from_the_signing_path_passes() {
+        let head = raw_rooted();
+        let at = Position {
+            ledger: head.event_id.into(),
+            seq: 1,
+            prev: head.event_id,
+            prev_timestamp_ms: T0,
+        };
+        let built = build_endpoint_advertisement(
+            &secret(1),
+            &at,
+            &[secret(7).public(), secret(8).public()],
+            T0,
+        )
+        .expect("builds");
+        signed_event(&built.signed_event).expect("passes");
+
+        let empty =
+            build_endpoint_advertisement(&secret(1), &at, &[], T0).expect("an empty list builds");
+        signed_event(&empty.signed_event).expect("an empty advertisement passes");
     }
 
     #[test]
@@ -2906,20 +3072,26 @@ mod tests {
         );
     }
 
-    /// The payload is reachable through `EventBody`, at tag 17 and nowhere
-    /// else: tags 18 and 19 stay unassigned and 20 to 29 stay reserved.
+    /// Every payload sits at the tag `ledger.proto` gives it, tags 10 to 19 are
+    /// all spent and 20 to 29 stay reserved (proposal 006 section 3).
     #[test]
-    fn the_profile_payload_sits_at_tag_17() {
-        let field = EVENT_BODY
-            .field(PROFILE_UPDATE_TAG)
-            .expect("EventBody declares tag 17");
-        assert_eq!(field.name, "profile_update");
-        assert_eq!(field.cardinality, Cardinality::Variant);
-        for number in [18, 19, 20, 29] {
+    fn the_payload_tags_are_spent_to_nineteen() {
+        for (number, name) in [
+            (PROFILE_UPDATE_TAG, "profile_update"),
+            (18, "endpoint_advertisement"),
+            (19, "witness_set"),
+        ] {
+            let field = EVENT_BODY
+                .field(number)
+                .unwrap_or_else(|| panic!("EventBody declares tag {number}"));
+            assert_eq!(field.name, name);
+            assert_eq!(field.cardinality, Cardinality::Variant);
+        }
+        for number in [20, 29] {
             assert_eq!(
                 EVENT_BODY.field(number).map(|field| field.name),
                 None,
-                "tag {number} must stay unassigned"
+                "tag {number} must stay reserved"
             );
         }
     }

@@ -11,6 +11,12 @@ default = []
 serde = ["dep:serde"]
 # Enables the ignored `gen_vectors` test that rewrites `test-vectors/`.
 gen-vectors = []
+# Exposes `build_witness_config`, the retired tag-11 signing path (proposal 006
+# section 1). The golden and rejection vectors for tag 11 are generated from it
+# and must keep their exact bytes, so it survives here and nowhere else: no
+# route, command or UI action reaches it, and a build without this feature does
+# not compile a caller.
+legacy-witness-config = []
 
 # No Iroh networking, no tokio, no filesystem (proposal 001 section 7).
 [dependencies]
@@ -23,5 +29,7 @@ thiserror.workspace = true
 
 [dev-dependencies]
 data-encoding.workspace = true
+# The vector tests are the one caller of the retired tag-11 signing path.
+mabel-core = { path = ".", features = ["legacy-witness-config"] }
 mabel-proto.workspace = true
 serde_json.workspace = true

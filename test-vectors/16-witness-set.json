@@ -1,0 +1,37 @@
+{
+  "body": {
+    "author_key_hex": "d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c9778737",
+    "ledger_hex": "8225a669a21ee244ba23bf4a1096ed5445a954ea01967150ccddee723635f1d1",
+    "payload": {
+      "witness_set": {
+        "witnesses_hex": [
+          "56690b23dafe56de2271519b35601a4b4f4e54ce51439930cf99a731a0ab8b96",
+          "8225a669a21ee244ba23bf4a1096ed5445a954ea01967150ccddee723635f1d1"
+        ]
+      }
+    },
+    "prev_hex": "3710b2b7c639a2de12f44d95198857d24c79dd21a32f3f464cd1265553eb4aab",
+    "seq": 10,
+    "timestamp_ms": 1700000840000,
+    "version": 0
+  },
+  "body_hex": "12208225a669a21ee244ba23bf4a1096ed5445a954ea01967150ccddee723635f1d1180a22203710b2b7c639a2de12f44d95198857d24c79dd21a32f3f464cd1265553eb4aab28c0f2c8ffbc313220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c97787379a01440a2056690b23dafe56de2271519b35601a4b4f4e54ce51439930cf99a731a0ab8b960a208225a669a21ee244ba23bf4a1096ed5445a954ea01967150ccddee723635f1d1",
+  "description": "Alice names the identities that may keep her chain: Bob, and herself, which is how a self-hosted identity says it keeps its own.",
+  "event_id": "73hw3ltwjaavyfn7tvdedvz43vkm3buo2vzjjdqhjohgt6prx57q",
+  "event_id_hex": "fecf6dae7648015c15bf9d4641d73cdd54cd868ed572948e074b8e69f9f1bf7f",
+  "file": "16-witness-set.json",
+  "inputs": {
+    "ledger": "qis2m2ncd3rejordx5fbbfxnkrc2svhkaglhcugm3xxhenrv6hiq",
+    "now_ms": 1700000840000,
+    "prev": "g4ilfn6ghgrn4exujwkrtccx2jghtxjbumxt6rsm2etfku7ljkvq",
+    "prev_timestamp_ms": 1700000780000,
+    "secret_key_hex": "1111111111111111111111111111111111111111111111111111111111111111",
+    "seq": 10,
+    "witnesses": [
+      "kzuqwi627zln4itrkgntkya2jnhu4vgokfbzsmgptgttdiflrola",
+      "qis2m2ncd3rejordx5fbbfxnkrc2svhkaglhcugm3xxhenrv6hiq"
+    ]
+  },
+  "signature_hex": "e35000e7fcd34b174cf83afb9201be803e31c865348ebe341ca619b01c29e2d740bdcdb509e06b0eb357045288b82fb955af2ed3857beb8b2d717b5d66641b04",
+  "signed_event_hex": "0ab60112208225a669a21ee244ba23bf4a1096ed5445a954ea01967150ccddee723635f1d1180a22203710b2b7c639a2de12f44d95198857d24c79dd21a32f3f464cd1265553eb4aab28c0f2c8ffbc313220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c97787379a01440a2056690b23dafe56de2271519b35601a4b4f4e54ce51439930cf99a731a0ab8b960a208225a669a21ee244ba23bf4a1096ed5445a954ea01967150ccddee723635f1d11240e35000e7fcd34b174cf83afb9201be803e31c865348ebe341ca619b01c29e2d740bdcdb509e06b0eb357045288b82fb955af2ed3857beb8b2d717b5d66641b04"
+}

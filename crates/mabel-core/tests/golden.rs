@@ -18,9 +18,10 @@ use mabel_core::proto::{
     Acceptance, DeclaredKind, EventBody, Role, SignedEvent, event_body::Payload, inception,
 };
 use mabel_core::{
-    BuiltEvent, IdentityId, LedgerId, Position, Root, build_acceptance, build_inception,
-    build_membership_acceptance, build_membership_invitation, build_membership_removal,
-    build_profile_update, build_trust_attestation, build_trust_revocation, build_witness_config,
+    BuiltEvent, IdentityId, LedgerId, Position, Root, build_acceptance,
+    build_endpoint_advertisement, build_inception, build_membership_acceptance,
+    build_membership_invitation, build_membership_removal, build_profile_update,
+    build_trust_attestation, build_trust_revocation, build_witness_config, build_witness_set,
     event_id, sign_input,
 };
 use mabel_proto::prost::Message;
@@ -264,6 +265,42 @@ fn vectors() -> Vec<Vector> {
     )
     .expect("builds");
 
+    // The witness set and the advertisement, the two payloads proposal 006
+    // added. The set names Bob and Alice herself, which is what a self-hosted
+    // identity says; the advertisement names the two endpoints vector 02 named
+    // as raw endpoint ids.
+    let witness_set = build_witness_set(
+        &alice,
+        &at(alice_id, 10, &profile_with_email, T0 + 13 * STEP_MS),
+        &[bob_id, alice_id],
+        T0 + 14 * STEP_MS,
+    )
+    .expect("builds");
+
+    let witness_set_empty = build_witness_set(
+        &alice,
+        &at(alice_id, 11, &witness_set, T0 + 14 * STEP_MS),
+        &[],
+        T0 + 15 * STEP_MS,
+    )
+    .expect("builds");
+
+    let endpoint_advertisement = build_endpoint_advertisement(
+        &alice,
+        &at(alice_id, 12, &witness_set_empty, T0 + 15 * STEP_MS),
+        &witnesses,
+        T0 + 16 * STEP_MS,
+    )
+    .expect("builds");
+
+    let endpoint_advertisement_cleared = build_endpoint_advertisement(
+        &alice,
+        &at(alice_id, 13, &endpoint_advertisement, T0 + 16 * STEP_MS),
+        &[],
+        T0 + 17 * STEP_MS,
+    )
+    .expect("builds");
+
     let key_inputs = json!({
         "alice_secret_key_hex": hex(&alice.to_bytes()),
         "alice_identity_id": alice_id.to_string(),
@@ -501,7 +538,67 @@ fn vectors() -> Vec<Vector> {
                 "hostname": ALICE_HOSTNAME,
                 "email": ALICE_EMAIL,
             }),
-            built: profile_with_email,
+            built: profile_with_email.clone(),
+        },
+        Vector {
+            file: "16-witness-set.json",
+            description: "Alice names the identities that may keep her chain: Bob, and herself, \
+                          which is how a self-hosted identity says it keeps its own.",
+            inputs: json!({
+                "secret_key_hex": hex(&alice.to_bytes()),
+                "ledger": alice_id.to_string(),
+                "seq": 10,
+                "prev": profile_with_email.event_id.to_string(),
+                "prev_timestamp_ms": T0 + 13 * STEP_MS,
+                "now_ms": T0 + 14 * STEP_MS,
+                "witnesses": [bob_id.to_string(), alice_id.to_string()],
+            }),
+            built: witness_set.clone(),
+        },
+        Vector {
+            file: "17-witness-set-empty.json",
+            description: "Alice names nobody: an empty witness set, which is a zero-length \
+                          payload body under a present oneof branch, and says no witness keeps \
+                          this chain.",
+            inputs: json!({
+                "secret_key_hex": hex(&alice.to_bytes()),
+                "ledger": alice_id.to_string(),
+                "seq": 11,
+                "prev": witness_set.event_id.to_string(),
+                "prev_timestamp_ms": T0 + 14 * STEP_MS,
+                "now_ms": T0 + 15 * STEP_MS,
+                "witnesses": Value::Array(Vec::new()),
+            }),
+            built: witness_set_empty.clone(),
+        },
+        Vector {
+            file: "18-endpoint-advertisement.json",
+            description: "Alice publishes the two endpoints that answer for her.",
+            inputs: json!({
+                "secret_key_hex": hex(&alice.to_bytes()),
+                "ledger": alice_id.to_string(),
+                "seq": 12,
+                "prev": witness_set_empty.event_id.to_string(),
+                "prev_timestamp_ms": T0 + 15 * STEP_MS,
+                "now_ms": T0 + 16 * STEP_MS,
+                "endpoints_hex": witnesses.iter().map(|w| hex(w.as_bytes())).collect::<Vec<_>>(),
+            }),
+            built: endpoint_advertisement.clone(),
+        },
+        Vector {
+            file: "19-endpoint-advertisement-cleared.json",
+            description: "Alice advertises no endpoint: nothing answers for her right now, \
+                          which is what an operator appends before decommissioning a machine.",
+            inputs: json!({
+                "secret_key_hex": hex(&alice.to_bytes()),
+                "ledger": alice_id.to_string(),
+                "seq": 13,
+                "prev": endpoint_advertisement.event_id.to_string(),
+                "prev_timestamp_ms": T0 + 16 * STEP_MS,
+                "now_ms": T0 + 17 * STEP_MS,
+                "endpoints_hex": Value::Array(Vec::new()),
+            }),
+            built: endpoint_advertisement_cleared,
         },
     ]
 }
@@ -556,6 +653,12 @@ fn render_payload(payload: Payload) -> Value {
             "display_name": set_name(&p.display_name),
             "hostname": set_name(&p.hostname),
             "email": set_name(&p.email),
+        }}),
+        Payload::EndpointAdvertisement(p) => json!({"endpoint_advertisement": {
+            "endpoints_hex": p.endpoints.iter().map(|e| hex(e.as_slice())).collect::<Vec<_>>(),
+        }}),
+        Payload::WitnessSet(p) => json!({"witness_set": {
+            "witnesses_hex": p.witnesses.iter().map(|w| hex(w.as_slice())).collect::<Vec<_>>(),
         }}),
     }
 }
@@ -711,6 +814,7 @@ fn every_payload_variant_has_a_vector_and_no_file_is_stale() {
     assert_eq!(
         variants,
         vec![
+            "endpoint_advertisement",
             "inception",
             "membership_acceptance",
             "membership_invitation",
@@ -719,6 +823,7 @@ fn every_payload_variant_has_a_vector_and_no_file_is_stale() {
             "trust_attestation",
             "trust_revocation",
             "witness_config",
+            "witness_set",
         ]
     );
 
@@ -789,12 +894,42 @@ fn the_vector_scenario_folds_into_two_valid_ledgers() {
         "13-profile-update-name-only.json",
         "14-profile-update-cleared.json",
         "15-profile-update-with-email.json",
+        "16-witness-set.json",
+        "17-witness-set-empty.json",
+        "18-endpoint-advertisement.json",
+        "19-endpoint-advertisement-cleared.json",
     ];
 
     let (alice, violation) = mabel_core::fold(files(&alice_events));
     assert_eq!(violation, None);
     assert_eq!(alice.principals().len(), 2, "Alice delegated to Bob");
     assert_eq!(alice.controller_keys().len(), 2);
+
+    // The last event of each list payload wins whole, and the tag-11 list
+    // vector 02 wrote is untouched by either (proposal 006 section 3).
+    assert!(
+        alice.witness_identities().is_empty(),
+        "vector 17 named nobody"
+    );
+    assert!(alice.endpoints().is_empty(), "vector 19 advertised nothing");
+    assert_eq!(alice.witness_endpoints().len(), 2, "vector 02 still stands");
+
+    let (named, _) = mabel_core::fold(files(&alice_events[..11]));
+    assert_eq!(named.witness_identities().len(), 2, "vector 16 named two");
+    let set = named
+        .witness_set()
+        .expect("the prefix carries a witness set");
+    assert_eq!(set.seq, 10);
+
+    let (advertised, _) = mabel_core::fold(files(&alice_events[..13]));
+    assert_eq!(advertised.endpoints().len(), 2, "vector 18 named two");
+    assert_eq!(
+        advertised
+            .endpoint_advertisement()
+            .expect("the prefix carries an advertisement")
+            .seq,
+        12
+    );
 
     // The last ProfileUpdate wins whole: vector 15 set all three fields.
     let profile = alice.profile().expect("the chain carries a profile");

@@ -59,12 +59,24 @@ Both roles serve the bundle compiled into the binary. `--ui-dir ui/dist` reads
 it from disk instead, and a binary built with no `ui/dist` answers
 `ui_not_built` on the UI paths and keeps serving `/api`.
 
-The UI on its own, against the frozen fixtures through a mock service worker,
-so no node has to be running:
+The UI with its own dev server, in front of a real node. `mabel dev seed` fills
+an empty home with five identities (one of them a witness), an organization,
+four attestations and a private note, all of them really signed, so there is
+something to look at:
 
 ```sh
-(cd ui && npm run dev)     # port 5173: /wallet, /wallet/lookup, /wallet/verify, /witness
+cargo run -p mabel-cli -- --home /tmp/mabel-dev dev seed
+cargo run -p mabel-cli -- --home /tmp/mabel-dev wallet serve --http 127.0.0.1:9080
+(cd ui && npm run dev)     # port 5173, /api proxied to 127.0.0.1:9080
 ```
+
+`MABEL_API` points that proxy somewhere else. No build ships fake data: the app
+talks to the node that served it, in dev and in a release alike. `npm run
+harness` is the one exception and is not a build anyone installs: it serves the
+screens against the frozen `contracts/http/` documents through a mock service
+worker, for a screenshot or for a state a real node makes hard to reach.
+`npm run screenshots` builds it, captures every route at three widths, and
+reports any page that scrolls sideways.
 
 The whole story, over containers:
 

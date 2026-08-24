@@ -251,6 +251,44 @@ pub struct Profile {
     pub seq: u64,
 }
 
+/// The identities that may keep this ledger, as the last `WitnessSet` named
+/// them (proposal 006 section 1).
+///
+/// Each event replaces the whole set, and `signing_principal` records who said
+/// it: naming a witness set says who may keep the chain, and any current
+/// `CONTROLLER` may append one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WitnessSet {
+    /// The identities named, in the order the event listed them. Empty means
+    /// nobody keeps this chain.
+    pub witnesses: Vec<IdentityId>,
+    /// Who signed the `WitnessSet`.
+    pub signing_principal: SigningPrincipal,
+    /// The `event_id` of that `WitnessSet`.
+    pub event: EventId,
+    /// Its position in the ledger.
+    pub seq: u64,
+}
+
+/// The endpoints that answer for this identity, as the last
+/// `EndpointAdvertisement` named them (proposal 006 section 2).
+///
+/// Each event replaces the whole list, and `signing_principal` records who said
+/// it: re-pointing where an identity answers redirects everyone who resolves
+/// it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EndpointAdvertisement {
+    /// The endpoints advertised, in the order the event listed them. Empty
+    /// means nothing answers for this identity right now.
+    pub endpoints: Vec<EndpointId>,
+    /// Who signed the `EndpointAdvertisement`.
+    pub signing_principal: SigningPrincipal,
+    /// The `event_id` of that `EndpointAdvertisement`.
+    pub event: EventId,
+    /// Its position in the ledger.
+    pub seq: u64,
+}
+
 /// The fold of a valid event prefix (proposal 001 section 3.6).
 ///
 /// A default `LedgerState` is the state before any event: no ledger id, no
@@ -263,7 +301,9 @@ pub struct LedgerState {
     head: Option<Head>,
     principals: BTreeMap<IdentityId, Principal>,
     invitations: BTreeMap<EventId, Invitation>,
-    witnesses: Vec<EndpointId>,
+    witness_endpoints: Vec<EndpointId>,
+    witness_set: Option<WitnessSet>,
+    endpoint_advertisement: Option<EndpointAdvertisement>,
     trust: BTreeMap<EventId, Attestation>,
     profile: Option<Profile>,
 }
@@ -336,9 +376,49 @@ impl LedgerState {
         self.invitations.get(event)
     }
 
-    /// The current witness set, in the order the last `WitnessConfig` listed.
-    pub fn witnesses(&self) -> &[EndpointId] {
-        &self.witnesses
+    /// The identities that may keep this ledger, in the order the last
+    /// `WitnessSet` listed them (proposal 006 section 1).
+    ///
+    /// Empty on a chain that carries no tag-19 event, and empty after a
+    /// `WitnessSet` that named nobody: both mean no identity is named, which is
+    /// what admission asks.
+    pub fn witness_identities(&self) -> &[IdentityId] {
+        match &self.witness_set {
+            Some(set) => &set.witnesses,
+            None => &[],
+        }
+    }
+
+    /// The last `WitnessSet` with the event, position and signing principal
+    /// behind it, or `None` on a chain that carries none.
+    pub fn witness_set(&self) -> Option<&WitnessSet> {
+        self.witness_set.as_ref()
+    }
+
+    /// The endpoints the retired tag-11 `WitnessConfig` named, empty on a chain
+    /// that carries none (proposal 006 section 1).
+    ///
+    /// This never merges with [`LedgerState::endpoints`]: a tag-11 entry is an
+    /// endpoint someone else's chain guessed at, and a tag-18 entry is a fact
+    /// this identity's own controller signed. The two are folded independently,
+    /// whatever order the events appear in.
+    pub fn witness_endpoints(&self) -> &[EndpointId] {
+        &self.witness_endpoints
+    }
+
+    /// The endpoints that answer for this identity, in the order the last
+    /// `EndpointAdvertisement` listed them (proposal 006 section 2).
+    pub fn endpoints(&self) -> &[EndpointId] {
+        match &self.endpoint_advertisement {
+            Some(advertisement) => &advertisement.endpoints,
+            None => &[],
+        }
+    }
+
+    /// The last `EndpointAdvertisement` with the event, position and signing
+    /// principal behind it, or `None` on a chain that carries none.
+    pub fn endpoint_advertisement(&self) -> Option<&EndpointAdvertisement> {
+        self.endpoint_advertisement.as_ref()
     }
 
     /// The profile the last `ProfileUpdate` left, or `None` on a ledger that
@@ -560,13 +640,35 @@ impl LedgerState {
     ) -> Result<Effect, Reason> {
         match payload {
             Payload::Inception(inception) => self.seed_from_inception(id, inception),
-            // A witness config replaces the whole set.
+            // A witness config replaces the whole endpoint list. The payload is
+            // retired for writing and accepted forever (proposal 006
+            // section 1).
             Payload::WitnessConfig(config) => {
-                let mut witnesses = Vec::with_capacity(config.witnesses.len());
+                let mut endpoints = Vec::with_capacity(config.witnesses.len());
                 for witness in &config.witnesses {
-                    witnesses.push(public_key(witness, "WitnessConfig.witnesses")?);
+                    endpoints.push(public_key(witness, "WitnessConfig.witnesses")?);
                 }
-                Ok(Effect::Witnesses(witnesses))
+                Ok(Effect::WitnessEndpoints(endpoints))
+            }
+            // A witness set replaces the whole set of identities that may keep
+            // this ledger. It may be empty, and it may name this ledger itself
+            // (proposal 006 section 1). There is no rule to break here.
+            Payload::WitnessSet(set) => Ok(Effect::WitnessSet {
+                witnesses: set.witnesses.iter().map(|id| identity(id)).collect(),
+                signing_principal: signer.expect("a witness set sits past seq 0"),
+            }),
+            // An advertisement replaces the whole endpoint list. Each entry must
+            // be an ed25519 point, since an endpoint that is not a point can
+            // never be dialled (proposal 006 section 3).
+            Payload::EndpointAdvertisement(advertisement) => {
+                let mut endpoints = Vec::with_capacity(advertisement.endpoints.len());
+                for endpoint in &advertisement.endpoints {
+                    endpoints.push(public_key(endpoint, "EndpointAdvertisement.endpoints")?);
+                }
+                Ok(Effect::Endpoints {
+                    endpoints,
+                    signing_principal: signer.expect("an advertisement sits past seq 0"),
+                })
             }
             // One unrevoked attestation per subject, so "does A trust B" has
             // one answer.
@@ -826,7 +928,29 @@ impl LedgerState {
                 self.ledger = Some(id.into());
                 self.principals = principals;
             }
-            Effect::Witnesses(witnesses) => self.witnesses = witnesses,
+            Effect::WitnessEndpoints(endpoints) => self.witness_endpoints = endpoints,
+            Effect::WitnessSet {
+                witnesses,
+                signing_principal,
+            } => {
+                self.witness_set = Some(WitnessSet {
+                    witnesses,
+                    signing_principal,
+                    event: id,
+                    seq,
+                });
+            }
+            Effect::Endpoints {
+                endpoints,
+                signing_principal,
+            } => {
+                self.endpoint_advertisement = Some(EndpointAdvertisement {
+                    endpoints,
+                    signing_principal,
+                    event: id,
+                    seq,
+                });
+            }
             Effect::Attest {
                 subject,
                 signing_principal,
@@ -919,7 +1043,15 @@ fn check_position(seq: u64, payload: &Payload) -> Result<(), Reason> {
 /// What a checked event changes, produced only once every check has passed.
 enum Effect {
     Seed(Box<Seed>),
-    Witnesses(Vec<EndpointId>),
+    WitnessEndpoints(Vec<EndpointId>),
+    WitnessSet {
+        witnesses: Vec<IdentityId>,
+        signing_principal: SigningPrincipal,
+    },
+    Endpoints {
+        endpoints: Vec<EndpointId>,
+        signing_principal: SigningPrincipal,
+    },
     Attest {
         subject: IdentityId,
         signing_principal: SigningPrincipal,
@@ -1212,6 +1344,8 @@ const fn payload_name(payload: &Payload) -> &'static str {
         Payload::MembershipAcceptance(_) => "MembershipAcceptance",
         Payload::MembershipRemoval(_) => "MembershipRemoval",
         Payload::ProfileUpdate(_) => "ProfileUpdate",
+        Payload::EndpointAdvertisement(_) => "EndpointAdvertisement",
+        Payload::WitnessSet(_) => "WitnessSet",
     }
 }
 
@@ -1247,10 +1381,10 @@ mod tests {
     use super::*;
     use crate::encoding::encode;
     use crate::sign::{
-        BuiltEvent, DetachedAcceptance, Position, Root, build_acceptance, build_inception,
-        build_membership_acceptance, build_membership_invitation, build_membership_removal,
-        build_profile_update, build_trust_attestation, build_trust_revocation,
-        build_witness_config,
+        BuiltEvent, DetachedAcceptance, Position, Root, build_acceptance,
+        build_endpoint_advertisement, build_inception, build_membership_acceptance,
+        build_membership_invitation, build_membership_removal, build_profile_update,
+        build_trust_attestation, build_trust_revocation, build_witness_config, build_witness_set,
     };
     use crate::{MAX_TIMESTAMP_MS, NONCE_BYTES};
     use iroh_base::SecretKey;
@@ -1517,7 +1651,10 @@ mod tests {
         assert!(!state.authorized_signer(&secret(6).public()));
         assert_eq!(state.controller_keys(), [secret(1).public()]);
 
-        assert_eq!(state.witnesses(), [secret(4).public(), secret(5).public()]);
+        assert_eq!(
+            state.witness_endpoints(),
+            [secret(4).public(), secret(5).public()]
+        );
 
         assert_eq!(state.trust().len(), 2);
         let revoked = state.attestation(&attestation).expect("recorded");
@@ -1540,7 +1677,7 @@ mod tests {
     }
 
     #[test]
-    fn a_witness_config_replaces_the_whole_set() {
+    fn a_witness_config_replaces_the_whole_endpoint_list() {
         let root = alice();
         let mut chain = Chain::start(&root);
         chain.push(
@@ -1556,7 +1693,148 @@ mod tests {
             build_witness_config(&secret(1), &chain.at(), &[secret(6).public()], chain.now())
                 .expect("builds"),
         );
-        assert_eq!(chain.state().witnesses(), [secret(6).public()]);
+        assert_eq!(chain.state().witness_endpoints(), [secret(6).public()]);
+    }
+
+    /// The two witness fields come from different payloads, so neither
+    /// overwrites the other whatever order the events arrive in (proposal 006
+    /// section 3).
+    #[test]
+    fn the_witness_set_and_the_tag_eleven_list_fold_independently_in_either_order() {
+        let endpoints = [secret(4).public(), secret(5).public()];
+        let witnesses = [subject(7), subject(8)];
+
+        for tag_eleven_first in [true, false] {
+            let root = alice();
+            let mut chain = Chain::start(&root);
+            let config = |chain: &Chain| {
+                build_witness_config(&secret(1), &chain.at(), &endpoints, chain.now())
+                    .expect("builds")
+            };
+            let set = |chain: &Chain| {
+                build_witness_set(&secret(1), &chain.at(), &witnesses, chain.now()).expect("builds")
+            };
+            if tag_eleven_first {
+                let built = config(&chain);
+                chain.push(built);
+                let built = set(&chain);
+                chain.push(built);
+            } else {
+                let built = set(&chain);
+                chain.push(built);
+                let built = config(&chain);
+                chain.push(built);
+            }
+
+            let state = chain.state();
+            assert_eq!(state.witness_identities(), witnesses, "{tag_eleven_first}");
+            assert_eq!(state.witness_endpoints(), endpoints, "{tag_eleven_first}");
+            assert!(state.endpoints().is_empty(), "{tag_eleven_first}");
+        }
+    }
+
+    /// A witness set replaces the whole set, may be empty and may name the
+    /// ledger itself (proposal 006 section 1).
+    #[test]
+    fn a_witness_set_replaces_the_whole_set_and_records_who_signed_it() {
+        let root = alice();
+        let ledger: IdentityId = root.event_id.into();
+        let mut chain = Chain::start(&root);
+        let built = build_witness_set(&secret(1), &chain.at(), &[subject(7), ledger], chain.now())
+            .expect("builds");
+        let first = chain.push(built);
+
+        let state = chain.state();
+        assert_eq!(state.witness_identities(), [subject(7), ledger]);
+        let set = state
+            .witness_set()
+            .expect("the chain carries a witness set");
+        assert_eq!(set.event, first);
+        assert_eq!(set.seq, 1);
+        assert_eq!(
+            set.signing_principal,
+            SigningPrincipal {
+                identity: ledger,
+                key: secret(1).public(),
+            }
+        );
+
+        // An empty set says nobody keeps this chain, and it replaces the two
+        // named a moment ago.
+        let built = build_witness_set(&secret(1), &chain.at(), &[], chain.now()).expect("builds");
+        chain.push(built);
+        let state = chain.state();
+        assert!(state.witness_identities().is_empty());
+        assert_eq!(state.witness_set().expect("still recorded").seq, 2);
+    }
+
+    /// An advertisement replaces the whole list, may be empty and records who
+    /// signed it (proposal 006 section 2).
+    #[test]
+    fn an_endpoint_advertisement_replaces_the_whole_list_and_records_who_signed_it() {
+        let root = alice();
+        let ledger: IdentityId = root.event_id.into();
+        let mut chain = Chain::start(&root);
+        let built = build_endpoint_advertisement(
+            &secret(1),
+            &chain.at(),
+            &[secret(4).public(), secret(5).public()],
+            chain.now(),
+        )
+        .expect("builds");
+        let first = chain.push(built);
+
+        let state = chain.state();
+        assert_eq!(state.endpoints(), [secret(4).public(), secret(5).public()]);
+        let advertisement = state
+            .endpoint_advertisement()
+            .expect("the chain carries an advertisement");
+        assert_eq!(advertisement.event, first);
+        assert_eq!(advertisement.seq, 1);
+        assert_eq!(
+            advertisement.signing_principal,
+            SigningPrincipal {
+                identity: ledger,
+                key: secret(1).public(),
+            }
+        );
+        assert!(state.witness_endpoints().is_empty());
+
+        let built = build_endpoint_advertisement(&secret(1), &chain.at(), &[], chain.now())
+            .expect("builds");
+        chain.push(built);
+        assert!(chain.state().endpoints().is_empty());
+    }
+
+    #[test]
+    fn an_advertised_endpoint_that_is_not_a_public_key_is_rejected() {
+        let root = alice();
+        let body = EventBody {
+            version: 0,
+            ledger: root.event_id.to_vec(),
+            seq: 1,
+            prev: root.event_id.to_vec(),
+            timestamp_ms: T0,
+            author_key: secret(1).public().as_bytes().to_vec(),
+            // 32 bytes of 0x02 decompress to no ed25519 point, so nothing can
+            // ever dial this endpoint.
+            payload: Some(Payload::EndpointAdvertisement(
+                mabel_proto::v0::EndpointAdvertisement {
+                    endpoints: vec![vec![0x02; ID_BYTES]],
+                },
+            )),
+        };
+        let event = seal(&secret(1), &body);
+        let (_, violation) = fold(vec![root.signed_event, event]);
+        assert_eq!(
+            violation,
+            Some(Violation {
+                seq: 1,
+                reason: Reason::InvalidPublicKey {
+                    field: "EndpointAdvertisement.endpoints",
+                },
+            })
+        );
     }
 
     #[test]
@@ -1861,7 +2139,7 @@ mod tests {
         let head = state.head().expect("the valid prefix has a head");
         assert_eq!(head.seq, 2);
         assert_eq!(head.event_id, attestation);
-        assert_eq!(state.witnesses(), [secret(4).public()]);
+        assert_eq!(state.witness_endpoints(), [secret(4).public()]);
         assert_eq!(state.trust().len(), 1);
         assert!(state.trusts(subject(9)));
         assert!(!state.trusts(subject(10)));

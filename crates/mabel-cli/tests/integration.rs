@@ -108,6 +108,34 @@ impl Home {
         (code, document)
     }
 
+    /// Empties `node.json.witnesses`, so this home names no machine to ask for
+    /// a ledger and reads its own copy instead.
+    fn clear_default_witnesses(&self) {
+        let path = self.path().join("node.json");
+        let mut config: Value =
+            serde_json::from_slice(&std::fs::read(&path).expect("node.json reads"))
+                .expect("node.json is JSON");
+        config["witnesses"] = Value::Array(Vec::new());
+        std::fs::write(&path, serde_json::to_vec_pretty(&config).expect("json")).expect("written");
+    }
+
+    /// Sets `node.json.witness_for`, the witness identities this home takes
+    /// pushes for (proposal 006 section 4). No command edits it yet, so a test
+    /// writes the file the way an operator would.
+    fn set_witness_for(&self, identities: &[&str]) {
+        let path = self.path().join("node.json");
+        let mut config: Value =
+            serde_json::from_slice(&std::fs::read(&path).expect("node.json reads"))
+                .expect("node.json is JSON");
+        config["witness_for"] = Value::Array(
+            identities
+                .iter()
+                .map(|identity| Value::from(*identity))
+                .collect(),
+        );
+        std::fs::write(&path, serde_json::to_vec_pretty(&config).expect("json")).expect("written");
+    }
+
     /// This node's Iroh endpoint id, as every document spells it.
     fn endpoint(&self) -> String {
         text(&self.json(&["node", "id"])["endpoint_id"])
@@ -337,6 +365,7 @@ impl Drop for Daemon {
 /// A running witness: its home, its endpoint id and the ticket that reaches it.
 struct Witness {
     _home: Home,
+    identity: String,
     endpoint: String,
     ticket: String,
     daemon: Daemon,
@@ -346,6 +375,20 @@ impl Witness {
     fn start() -> Self {
         let home = Home::new("witness");
         let endpoint = home.endpoint();
+        // A witness is an identity (proposal 006 section 1): this home mints
+        // one, advertises the machine that answers for it, and names it in
+        // `node.json.witness_for`, which is what makes it take a push.
+        let identity = home.create("keeper");
+        home.json(&[
+            "identity",
+            "endpoints",
+            "replace",
+            "--identity",
+            "keeper",
+            "--endpoints",
+            "auto",
+        ]);
+        home.set_witness_for(&[&identity]);
         let port = free_port();
         let daemon = Daemon::start(
             &home,
@@ -362,6 +405,7 @@ impl Witness {
         daemon.wait_for("witness ");
         Self {
             ticket: ticket(&endpoint, port),
+            identity,
             endpoint,
             _home: home,
             daemon,
@@ -393,24 +437,20 @@ impl Shared {
         let alice = alice_home.create("alice");
         let bob = bob_home.create("bob");
 
-        // Both ledgers name the witness, so both are admissible pushes and both
-        // are fetchable by a verifier that only knows the witness.
-        alice_home.json(&[
-            "witness",
-            "add",
-            "--identity",
-            "alice",
-            "--endpoint",
-            &witness.endpoint,
-        ]);
-        bob_home.json(&[
-            "witness",
-            "add",
-            "--identity",
-            "bob",
-            "--endpoint",
-            &witness.endpoint,
-        ]);
+        // Both ledgers name the witness identity, so both are admissible
+        // pushes, and both homes record the machine that answers for it, which
+        // is where a push dials.
+        for (home, alias) in [(&alice_home, "alice"), (&bob_home, "bob")] {
+            home.json(&["witness", "set-default", &witness.endpoint]);
+            home.json(&[
+                "witness",
+                "add",
+                "--identity",
+                alias,
+                "--witness",
+                &witness.identity,
+            ]);
+        }
         bob_home.json(&[
             "sync",
             "push",
@@ -588,7 +628,12 @@ fn the_whole_story_runs_and_a_fresh_home_verifies_it_from_the_witness_alone() {
     // document and the text a person reads say whose key it was. Nothing here
     // holds Bob's ledger, so the subject is reported unresolved rather than
     // assumed (proposal 001 section 3.7).
-    let founded = alice_home.json(&["verify", "trust", "--issuer", &team, "--subject", bob]);
+    // A home that names a default witness asks it for any ledger, and this one
+    // holds no copy of `team`, so the local answer is read on a second machine
+    // of the same operator that names no witness.
+    let offline = Home::fork(alice_home);
+    offline.clear_default_witnesses();
+    let founded = offline.json(&["verify", "trust", "--issuer", &team, "--subject", bob]);
     assert_shape(
         &founded,
         &fixture("verify-trust", "unresolved-subject"),
@@ -602,7 +647,7 @@ fn the_whole_story_runs_and_a_fresh_home_verifies_it_from_the_witness_alone() {
         serde_json::json!({"identity": alice, "key": alice_key})
     );
     let (code, stdout, stderr) =
-        alice_home.run(&["verify", "trust", "--issuer", &team, "--subject", bob]);
+        offline.run(&["verify", "trust", "--issuer", &team, "--subject", bob]);
     assert_eq!(code, 0, "{stdout}{stderr}");
     assert!(stdout.starts_with("trusted: true"), "{stdout}");
     assert!(
@@ -879,14 +924,17 @@ fn two_witnesses_on_divergent_branches_exit_20_naming_both_sources() {
     let alice = home.create("alice");
     let bob = home.create("bob");
     let carol = home.create("carol");
+    // Both machines keep Alice's chain for the same witness identity, and
+    // `node.json` names both as where to dial.
+    home.json(&["witness", "set-default", &first.endpoint, &second.endpoint]);
     for witness in [&first, &second] {
         home.json(&[
             "witness",
             "add",
             "--identity",
             "alice",
-            "--endpoint",
-            &witness.endpoint,
+            "--witness",
+            &witness.identity,
         ]);
     }
     home.json(&[

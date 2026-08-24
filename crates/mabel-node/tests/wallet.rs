@@ -12,7 +12,7 @@ mod common;
 use std::sync::Arc;
 use std::time::Duration;
 
-use common::{Served, TIMEOUT, secret, subject};
+use common::{Served, TIMEOUT, secret, subject, witness_identity};
 use iroh_base::EndpointId;
 use mabel_core::sign::{Position, build_trust_attestation};
 use mabel_core::{EventId, IdentityId};
@@ -61,12 +61,27 @@ impl Wallet {
             .expect("a rendered identity id parses")
     }
 
-    /// Records `witnesses` on `identity`'s ledger, which is what admits a push.
-    async fn witnesses(&self, identity: IdentityId, witnesses: &[EndpointId]) {
-        let lock = self.core.append_lock(identity).await;
+    /// Names the witness identity every `Served` home here witnesses for, and
+    /// records `endpoints` in `node.json` as where that witness answers.
+    ///
+    /// Two facts, one call, because a push needs both: the chain says who may
+    /// keep the ledger, which is what admits the push (proposal 006 section 4),
+    /// and `node.json` says which machine to dial, which is the bootstrap raw
+    /// endpoint of section 5.4. Resolving a witness identity to its endpoints is
+    /// ticket 035.
+    async fn witnesses(&self, identity: IdentityId, endpoints: &[EndpointId]) {
+        {
+            let lock = self.core.append_lock(identity).await;
+            self.core
+                .set_witnesses(&lock, identity, &[witness_identity()])
+                .expect("the witness set is appended");
+        }
+        let mut config = self.core.home().config().expect("node.json reads");
+        config.witnesses = endpoints.to_vec();
         self.core
-            .set_witnesses(&lock, identity, witnesses)
-            .expect("the witness config is appended");
+            .home()
+            .write_config(&config)
+            .expect("node.json is written");
     }
 
     /// Appends one attestation, holding the ledger's append lock over it.

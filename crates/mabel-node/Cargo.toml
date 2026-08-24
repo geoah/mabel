@@ -27,6 +27,10 @@ tokio = { workspace = true, features = ["rt-multi-thread", "macros", "fs", "sign
 tracing.workspace = true
 
 [dev-dependencies]
+# The retired tag-11 signing path, so the tests can build a pre-006 chain and
+# check that a legacy witness list still folds, still lists and still reads
+# (proposal 006 section 1). No shipped code path reaches it.
+mabel-core = { workspace = true, features = ["serde", "legacy-witness-config"] }
 tempfile.workspace = true
 # `start_paused` runs the graph crawler's whole-run budget on a test clock, so
 # the time cap is exercised without a real sleep (ticket 025).

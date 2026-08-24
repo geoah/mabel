@@ -19,7 +19,7 @@
       "prev": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
       "timestamp_ms": 1700000060000,
       "author_key": "2bflemtufo2kwoqtnc6umfpe43icesvxdiawxl4fecrtfslxq43q",
-      "payload_kind": "witness_config",
+      "payload_kind": "witness_set",
       "payload": {
         "witnesses": [
           "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq",
@@ -34,7 +34,7 @@
       "body": {
         "ok": false,
         "code": 10,
-        "message": "Schema error: witnesses must hold 1 to 16 distinct endpoint ids",
+        "message": "Schema error: witnesses must hold 0 to 16 distinct identity ids",
         "details": {
           "reason": "duplicate_witness",
           "field": "witnesses",

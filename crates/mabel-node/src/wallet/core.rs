@@ -27,10 +27,10 @@ use iroh_base::{EndpointId, SecretKey};
 use mabel_core::artifacts::{AcceptanceFile, IdentityDescriptor, InvitationBundle};
 use mabel_core::fold::{InvitationStatus, LedgerRoot, LedgerState, Reason};
 use mabel_core::sign::{
-    BuildError, BuiltEvent, Position, Root, build_acceptance, build_inception,
-    build_membership_acceptance, build_membership_invitation, build_membership_removal,
-    build_profile_update, build_trust_attestation, build_trust_revocation, build_witness_config,
-    check_profile, ledger_timestamp_ms,
+    BuildError, BuiltEvent, Position, Root, build_acceptance, build_endpoint_advertisement,
+    build_inception, build_membership_acceptance, build_membership_invitation,
+    build_membership_removal, build_profile_update, build_trust_attestation,
+    build_trust_revocation, build_witness_set, check_profile, ledger_timestamp_ms,
 };
 use mabel_core::{EventId, IdentityId, LedgerId, NONCE_BYTES};
 use mabel_proto::prost::Message;
@@ -568,8 +568,11 @@ impl WalletCore {
         })
     }
 
-    /// Appends a `WitnessConfig` recording `witnesses`, replacing the whole
-    /// set (proposal 001 section 3.4).
+    /// Appends a `WitnessSet` naming the identities that may keep this ledger,
+    /// replacing the whole set (proposal 006 section 1).
+    ///
+    /// The set may be empty, which says nobody keeps this chain, and it may
+    /// name this ledger itself.
     ///
     /// # Errors
     ///
@@ -578,11 +581,42 @@ impl WalletCore {
         &self,
         lock: &AppendLock,
         identity: IdentityId,
-        witnesses: &[EndpointId],
+        witnesses: &[IdentityId],
     ) -> Result<Appended, ServiceError> {
         let mut loaded = self.load(identity)?;
         let appended = self.append(lock, identity, &mut loaded, |signer, at, timestamp_ms| {
-            build_witness_config(signer, at, witnesses, timestamp_ms)
+            build_witness_set(signer, at, witnesses, timestamp_ms)
+        })?;
+        self.appended_document(identity, &appended)
+    }
+
+    /// Appends an `EndpointAdvertisement` naming the endpoints that answer for
+    /// this identity, replacing the whole list (proposal 006 section 2).
+    ///
+    /// # Errors
+    ///
+    /// Returns code 20 with reason `no_op_endpoint_advertisement` when the
+    /// ledger already advertises exactly these endpoints in this order, and
+    /// the errors of [`WalletCore::append`].
+    pub fn set_endpoints(
+        &self,
+        lock: &AppendLock,
+        identity: IdentityId,
+        endpoints: &[EndpointId],
+    ) -> Result<Appended, ServiceError> {
+        let mut loaded = self.load(identity)?;
+        if loaded.state.endpoints() == endpoints {
+            return Err(ServiceError::policy(
+                "no_op_endpoint_advertisement",
+                format!(
+                    "{identity} already advertises these {} endpoints: nothing would change",
+                    endpoints.len()
+                ),
+            )
+            .with_detail("identity_id", identity.to_string()));
+        }
+        let appended = self.append(lock, identity, &mut loaded, |signer, at, timestamp_ms| {
+            build_endpoint_advertisement(signer, at, endpoints, timestamp_ms)
         })?;
         self.appended_document(identity, &appended)
     }
@@ -1185,15 +1219,20 @@ impl WalletCore {
         Ok(false)
     }
 
-    /// The witnesses a ledger is pushed to and verified against: the set its
-    /// own `WitnessConfig` records, plus the node-wide default of `node.json`.
+    /// The endpoints a ledger is pushed to and verified against: the retired
+    /// tag-11 list its own chain records, plus the node-wide default of
+    /// `node.json`.
+    ///
+    /// A tag-19 `WitnessSet` names identities, and turning an identity into
+    /// endpoints is resolution, which ticket 035 owns. Until then the endpoints
+    /// a push dials come from `node.json` and from `--to`.
     ///
     /// # Errors
     ///
     /// Returns code 10 for a malformed `node.json`.
     pub fn witnesses_of(&self, ledger: LedgerId) -> Result<Vec<EndpointId>, ServiceError> {
         let mut witnesses = match self.load(ledger) {
-            Ok(loaded) => loaded.state.witnesses().to_vec(),
+            Ok(loaded) => loaded.state.witness_endpoints().to_vec(),
             Err(_) => Vec::new(),
         };
         for endpoint in self.config()?.witnesses {

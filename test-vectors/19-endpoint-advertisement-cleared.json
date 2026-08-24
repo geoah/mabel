@@ -1,0 +1,31 @@
+{
+  "body": {
+    "author_key_hex": "d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c9778737",
+    "ledger_hex": "8225a669a21ee244ba23bf4a1096ed5445a954ea01967150ccddee723635f1d1",
+    "payload": {
+      "endpoint_advertisement": {
+        "endpoints_hex": []
+      }
+    },
+    "prev_hex": "aa4e4124323be33621e3ffed5df9719782b8211198276b807bcff475e7d5ae52",
+    "seq": 13,
+    "timestamp_ms": 1700001020000,
+    "version": 0
+  },
+  "body_hex": "12208225a669a21ee244ba23bf4a1096ed5445a954ea01967150ccddee723635f1d1180d2220aa4e4124323be33621e3ffed5df9719782b8211198276b807bcff475e7d5ae5228e0f0d3ffbc313220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c9778737920100",
+  "description": "Alice advertises no endpoint: nothing answers for her right now, which is what an operator appends before decommissioning a machine.",
+  "event_id": "gkmrkexdt3s6anqittnhsexiis4oc7awnw24ajcy6f6ho76a3a5q",
+  "event_id_hex": "32991512e39ee5e036089cda7912e844b8e17c166db5c02458f17c777fc0d83b",
+  "file": "19-endpoint-advertisement-cleared.json",
+  "inputs": {
+    "endpoints_hex": [],
+    "ledger": "qis2m2ncd3rejordx5fbbfxnkrc2svhkaglhcugm3xxhenrv6hiq",
+    "now_ms": 1700001020000,
+    "prev": "vjhecjbshprtmipd77wv36lrs6blqiirtatwxad3z72hlz6vvzja",
+    "prev_timestamp_ms": 1700000960000,
+    "secret_key_hex": "1111111111111111111111111111111111111111111111111111111111111111",
+    "seq": 13
+  },
+  "signature_hex": "aa47b8b3c2b0886bc72ceb79b68368289b1069f8d15695d041e9b9282837e8eb582b8099ba2b25e0d703d9c9fe87a7adf28c7db5007af059ba64204b2a094f0f",
+  "signed_event_hex": "0a7212208225a669a21ee244ba23bf4a1096ed5445a954ea01967150ccddee723635f1d1180d2220aa4e4124323be33621e3ffed5df9719782b8211198276b807bcff475e7d5ae5228e0f0d3ffbc313220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c97787379201001240aa47b8b3c2b0886bc72ceb79b68368289b1069f8d15695d041e9b9282837e8eb582b8099ba2b25e0d703d9c9fe87a7adf28c7db5007af059ba64204b2a094f0f"
+}

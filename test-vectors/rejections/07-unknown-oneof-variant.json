@@ -1,10 +1,10 @@
 {
   "class": "wire-format",
   "code": "unknown_oneof_variant",
-  "description": "An EventBody whose payload uses tag 18, which v0 does not define.",
+  "description": "An EventBody whose payload uses tag 30, which v0 does not define.",
   "entry": "signed_event",
   "file": "07-unknown-oneof-variant.json",
-  "input_hex": "0a940112208225a669a21ee244ba23bf4a1096ed5445a954ea01967150ccddee723635f1d1180122208225a669a21ee244ba23bf4a1096ed5445a954ea01967150ccddee723635f1d128e0a499ffbc313220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c97787379201220a2056690b23dafe56de2271519b35601a4b4f4e54ce51439930cf99a731a0ab8b96124048dc3fbf5deea3d5709c2e3e51c5450968b86c25ab4f9f032b3a680312e613c7eaec4ba599a68a40b50366514e49452bc6fbd38460a64456a5b6d047299ad704",
-  "reason": "unrecognised EventBody.payload variant, field number 18",
+  "input_hex": "0a940112208225a669a21ee244ba23bf4a1096ed5445a954ea01967150ccddee723635f1d1180122208225a669a21ee244ba23bf4a1096ed5445a954ea01967150ccddee723635f1d128e0a499ffbc313220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c9778737f201220a2056690b23dafe56de2271519b35601a4b4f4e54ce51439930cf99a731a0ab8b96124058c1db8909eea8e4df4112d614d62414457ac97cef312c950db989e8ce1e32e4dc4adae320a670109c24da7a12ec0ca6aea9bb20bce0d84483f6d6c52eb5680d",
+  "reason": "unrecognised EventBody.payload variant, field number 30",
   "rule": "3.1 unrecognised oneof variants"
 }

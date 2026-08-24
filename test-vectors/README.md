@@ -64,6 +64,13 @@ section 4). Vectors 12 to 15 are the profile of proposal 003 section 1 and
 proposal 005, replaced whole four times: a name and a hostname, then a display
 name alone, which clears the hostname, then a zero-length payload body, which
 clears everything, then all three fields at once, the public email included.
+Vectors 16 to 19 are the two payloads of proposal 006, each replaced whole
+twice: a witness set naming Bob and Alice herself, which is what a ledger that
+keeps its own chain says, then an empty one, which says no witness keeps it;
+then an advertisement naming the two endpoints vector 02 named as raw endpoint
+ids, then an empty one, which says nothing answers for her right now. Vector 02
+is the retired tag-11 `WitnessConfig`, which the fold accepts forever and no
+node writes.
 She also founds an organization, an identity-rooted ledger whose
 inception embeds her own, invites Bob as a controller there, admits him with
 the acceptance he signed, and removes him.

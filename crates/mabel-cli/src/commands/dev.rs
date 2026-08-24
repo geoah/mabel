@@ -80,6 +80,16 @@ const PEOPLE: [Person; 3] = [
 /// The organization alice founds.
 const ORGANIZATION: &str = "acme";
 
+/// The witness identity the seed creates.
+///
+/// A witness is an identity like any other (proposal 006 section 1): this one
+/// advertises the seeding node's own endpoint, and every ledger the seed pushes
+/// names it in its `WitnessSet`.
+const WITNESS: &str = "witness";
+
+/// The name the witness identity publishes.
+const WITNESS_NAME: &str = "Seed Witness";
+
 /// The name it publishes.
 const ORGANIZATION_NAME: &str = "Acme Corporation";
 
@@ -106,20 +116,28 @@ const ATTESTATIONS: [(&str, &str); 4] = [
 const CONTACT: (&str, &str, &str) = (CONTROLLER, "bob from the pub", "met at the meetup");
 
 /// Every alias the seed creates, in creation order.
-const ALIASES: [&str; 4] = ["alice", "bob", "carol", ORGANIZATION];
+const ALIASES: [&str; 5] = ["alice", "bob", "carol", ORGANIZATION, WITNESS];
 
-/// `mabel dev seed [--peer <ticket>]`.
+/// `mabel dev seed [--peer <ticket>] [--witness <alias|id>]`.
 ///
 /// # Errors
 ///
 /// Returns code 2 with reason `home_not_empty` when the home already holds an
-/// identity and code 2 for a `--peer` value that is not an endpoint ticket,
+/// identity, code 2 for a `--peer` value that is not an endpoint ticket and
+/// code 2 for a `--witness` value that is neither an id nor a local alias,
 /// plus whatever the commands it calls report.
-pub fn seed(ctx: &Context, tickets: &[String]) -> Result<Outcome> {
+pub fn seed(ctx: &Context, tickets: &[String], named: &[String]) -> Result<Outcome> {
     refuse_a_home_that_holds_an_identity(ctx)?;
-    // A ticket that does not parse stops the run before the first key file is
-    // written, not after the third ledger.
+    // A ticket or a witness id that does not parse stops the run before the
+    // first key file is written, not after the third ledger.
     let endpoints: Vec<EndpointId> = parse_peers(tickets)?.iter().map(|peer| peer.id).collect();
+    let mut given = Vec::with_capacity(named.len());
+    for name in named {
+        let witness = ctx.resolve(name)?;
+        if !given.contains(&witness) {
+            given.push(witness);
+        }
+    }
     let options = AppendOptions {
         no_sync: false,
         peer: tickets.to_vec(),
@@ -168,22 +186,36 @@ pub fn seed(ctx: &Context, tickets: &[String]) -> Result<Outcome> {
     let (subject, nickname, note) = CONTACT;
     contact::set(ctx, subject, Some(nickname), Some(note))?;
 
+    // The witness identity, and the machine that answers for it: this node.
+    // `--endpoints auto` reads `node.key`, so the advertisement names the
+    // endpoint this home would serve reads on (proposal 006 section 2).
+    identity::create(ctx, WITNESS, Kind::Service, None, Some(WITNESS_NAME), None)?;
+    identity::replace_endpoints(ctx, WITNESS, "auto", &options)?;
+    let witness_identity = ctx.resolve_local(WITNESS)?;
+
     let mut ledgers = Vec::with_capacity(ALIASES.len());
     for alias in ALIASES {
         ledgers.push(ctx.resolve_local(alias)?);
     }
 
-    // The witnesses come last, so every append above ran against a ledger that
-    // named none and needed no head query (proposal 001 section 5).
-    for ledger in &ledgers {
-        for endpoint in &endpoints {
-            witness::add(ctx, &ledger.to_string(), &endpoint.to_string(), &options)?;
+    // The witness sets come last, so every append above ran against a ledger
+    // that named none and needed no head query (proposal 001 section 5). They
+    // are written only when a ticket was given, because a seed with nowhere to
+    // push has nothing to say about who keeps its chains.
+    let witnesses = if endpoints.is_empty() {
+        Vec::new()
+    } else {
+        let mut naming = vec![witness_identity];
+        naming.extend(given);
+        for ledger in &ledgers {
+            for witness in &naming {
+                witness::add(ctx, &ledger.to_string(), &witness.to_string(), &options)?;
+            }
         }
-    }
-    if !endpoints.is_empty() {
-        let named: Vec<String> = endpoints.iter().map(ToString::to_string).collect();
-        witness::set_default(ctx, &named)?;
-    }
+        let dialled: Vec<String> = endpoints.iter().map(ToString::to_string).collect();
+        witness::set_default(ctx, &dialled)?;
+        naming.iter().copied().map(ids::identity).collect()
+    };
     let (pushed, graph) = if endpoints.is_empty() {
         (Vec::new(), None)
     } else {
@@ -196,7 +228,7 @@ pub fn seed(ctx: &Context, tickets: &[String]) -> Result<Outcome> {
     }
     let document = SeededHome {
         identities,
-        witnesses: endpoints.iter().map(ids::key).collect(),
+        witnesses,
         pushed,
         graph,
     };
@@ -249,7 +281,7 @@ fn admit_controller(
 
     // The invitee's descriptor, the artifact `mabel identity export` writes.
     let inception = ctx.store(invitee).read_event(0)?;
-    let witnesses = ctx.load(invitee)?.state.witnesses().to_vec();
+    let witnesses = ctx.load(invitee)?.state.witness_endpoints().to_vec();
     let descriptor = IdentityDescriptor::new(&inception, &witnesses)
         .map_err(|error| unbuildable("IdentityDescriptor", &error))?;
     let invitee_key = descriptor.active_key().ok_or_else(|| {
@@ -389,7 +421,7 @@ fn text(document: &SeededHome) -> String {
     }
     for witness in &document.witnesses {
         lines.push(format!(
-            "{witness} witnesses all {} ledgers and is a default in node.json",
+            "{witness} witnesses all {} ledgers and advertises this node's machine",
             identities.len()
         ));
     }

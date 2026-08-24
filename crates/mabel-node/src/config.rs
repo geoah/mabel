@@ -6,6 +6,7 @@
 use std::net::SocketAddr;
 
 use iroh_base::EndpointId;
+use mabel_core::IdentityId;
 use serde::{Deserialize, Serialize};
 
 /// Default HTTP bind address.
@@ -22,6 +23,9 @@ pub const DEFAULT_HTTP_PORT: u16 = 9080;
 
 /// Default storage capacity, 2 GiB (proposal 001 section 5).
 pub const DEFAULT_STORAGE_CAPACITY: u64 = 2 * 1024 * 1024 * 1024;
+
+/// Witness identities one home may witness for (proposal 006 section 4).
+pub const MAX_WITNESS_FOR: usize = 16;
 
 /// What this node is (proposal 001 section 2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -68,6 +72,20 @@ pub struct NodeConfig {
     /// Witness endpoints this node pushes to by default.
     #[serde(default)]
     pub witnesses: Vec<EndpointId>,
+    /// The witness identities this home witnesses for (proposal 006
+    /// section 4).
+    ///
+    /// Empty by default, and empty means this home witnesses for nobody: a
+    /// push for a ledger it neither signs for nor already stores under a live
+    /// witness set is refused. Exposure is an explicit operator act, so a
+    /// wallet does not become a public dump the moment it holds an identity.
+    ///
+    /// An entry names an identity id and nothing else. It does not have to name
+    /// an identity under `identities/`: a witness fleet is several machines
+    /// answering for one witness identity, and only one of them holds that
+    /// identity's keys.
+    #[serde(default, deserialize_with = "witness_for")]
+    pub witness_for: Vec<IdentityId>,
     /// Bytes of stored ledger data this node accepts before refusing more.
     /// Named in full, like the `storage_capacity` the HTTP API reports
     /// (decision 012, contracts/README.md).
@@ -82,6 +100,31 @@ fn default_http_bind() -> SocketAddr {
     DEFAULT_HTTP_BIND
 }
 
+/// Reads `witness_for`: at most [`MAX_WITNESS_FOR`] identity ids, no duplicate.
+///
+/// A malformed id, a repeat or a seventeenth entry is a load error, like every
+/// other bad value in this file: a config that means something other than what
+/// it says is worse than a node that refuses to start.
+fn witness_for<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Vec<IdentityId>, D::Error> {
+    use serde::de::Error;
+
+    let entries = <Vec<IdentityId> as Deserialize>::deserialize(deserializer)?;
+    if entries.len() > MAX_WITNESS_FOR {
+        return Err(D::Error::custom(format!(
+            "witness_for holds {} identities, over the {MAX_WITNESS_FOR}-identity cap",
+            entries.len()
+        )));
+    }
+    for (index, entry) in entries.iter().enumerate() {
+        if entries[index + 1..].contains(entry) {
+            return Err(D::Error::custom(format!("witness_for names {entry} twice")));
+        }
+    }
+    Ok(entries)
+}
+
 fn default_storage_capacity() -> u64 {
     DEFAULT_STORAGE_CAPACITY
 }
@@ -93,6 +136,7 @@ impl Default for NodeConfig {
             http_bind: DEFAULT_HTTP_BIND,
             allowed_hosts: Vec::new(),
             witnesses: Vec::new(),
+            witness_for: Vec::new(),
             storage_capacity: DEFAULT_STORAGE_CAPACITY,
             relay: RelayMode::default(),
         }
@@ -134,7 +178,10 @@ impl NodeConfig {
 
 #[cfg(test)]
 mod tests {
-    use super::{DEFAULT_HTTP_BIND, DEFAULT_STORAGE_CAPACITY, NodeConfig, NodeRole, RelayMode};
+    use super::{
+        DEFAULT_HTTP_BIND, DEFAULT_STORAGE_CAPACITY, MAX_WITNESS_FOR, NodeConfig, NodeRole,
+        RelayMode,
+    };
 
     #[test]
     fn an_empty_object_loads_every_default() {
@@ -145,6 +192,7 @@ mod tests {
         assert_eq!(config.storage_capacity, DEFAULT_STORAGE_CAPACITY);
         assert_eq!(config.relay, RelayMode::N0);
         assert!(config.witnesses.is_empty());
+        assert!(config.witness_for.is_empty());
         assert!(config.allowed_hosts.is_empty());
     }
 
@@ -173,6 +221,7 @@ mod tests {
             http_bind: "127.0.0.1:1234".parse().unwrap(),
             allowed_hosts: vec!["witness.tailnet.example".to_owned()],
             witnesses: vec![key],
+            witness_for: vec![mabel_core::IdentityId::from_bytes([5u8; 32])],
             storage_capacity: 42,
             relay: RelayMode::Disabled,
         };
@@ -210,5 +259,55 @@ mod tests {
     #[test]
     fn a_malformed_witness_endpoint_is_a_load_error() {
         assert!(NodeConfig::from_json(br#"{"witnesses": ["nope"]}"#).is_err());
+    }
+
+    /// `witness_for` names identity ids alone, at most 16, with no repeat
+    /// (proposal 006 section 4). It needs no local key: an entry may name an
+    /// identity this home holds nothing of.
+    #[test]
+    fn witness_for_takes_ids_alone_capped_and_distinct() {
+        let alice = "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq";
+        let bob = "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq";
+
+        let config = NodeConfig::from_json(format!(r#"{{"witness_for": ["{alice}"]}}"#).as_bytes())
+            .expect("one identity loads");
+        assert_eq!(config.witness_for.len(), 1);
+        assert_eq!(config.witness_for[0].to_string(), alice);
+
+        let error = NodeConfig::from_json(
+            format!(r#"{{"witness_for": ["{alice}", "{alice}"]}}"#).as_bytes(),
+        )
+        .expect_err("a repeat is a load error");
+        assert!(error.to_string().contains("twice"), "{error}");
+
+        // An endpoint id renders as 64 hex characters, not 52 base32, so an
+        // operator who pastes one gets a load error rather than a witness set
+        // that means nothing.
+        assert!(
+            NodeConfig::from_json(
+                br#"{"witness_for": ["1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f809"]}"#
+            )
+            .is_err()
+        );
+
+        let over: Vec<String> = std::iter::repeat_n(bob, MAX_WITNESS_FOR + 1)
+            .enumerate()
+            .map(|(index, id)| {
+                // Sixteen distinct ids plus one more, all well formed.
+                let mut bytes = data_encoding::BASE32_NOPAD
+                    .decode(id.to_ascii_uppercase().as_bytes())
+                    .expect("a rendered id decodes");
+                bytes[0] = index as u8;
+                data_encoding::BASE32_NOPAD
+                    .encode(&bytes)
+                    .to_ascii_lowercase()
+            })
+            .collect();
+        let json = format!(
+            r#"{{"witness_for": {}}}"#,
+            serde_json::to_string(&over).unwrap()
+        );
+        let error = NodeConfig::from_json(json.as_bytes()).expect_err("17 is over the cap");
+        assert!(error.to_string().contains("17 identities"), "{error}");
     }
 }

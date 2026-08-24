@@ -341,14 +341,14 @@ fn identity_list_matches_the_fixture_for_a_person_and_an_organization() {
         "--attestation",
         &attestation,
     ]);
-    let endpoint = home.endpoint();
+    let keeper = home.create("keeper");
     home.json(&[
         "witness",
         "add",
         "--identity",
         "alice",
-        "--endpoint",
-        &endpoint,
+        "--witness",
+        &keeper,
     ]);
 
     let document = home.json(&["identity", "list"]);
@@ -358,7 +358,7 @@ fn identity_list_matches_the_fixture_for_a_person_and_an_organization() {
     assert_keys(&document, &expected, "identity-list");
 
     let entries = document["identities"].as_array().expect("an array");
-    assert_eq!(entries.len(), 3, "{document}");
+    assert_eq!(entries.len(), 4, "{document}");
     let person = entries
         .iter()
         .find(|entry| entry["identity_id"] == *alice)
@@ -385,7 +385,7 @@ fn identity_list_matches_the_fixture_for_a_person_and_an_organization() {
     );
     assert_eq!(person["alias"], Value::from("alice"));
     assert_eq!(person["trust"][0]["revoked"], Value::Bool(true));
-    assert_eq!(person["witnesses"][0], Value::from(endpoint));
+    assert_eq!(person["witnesses"][0], Value::from(keeper));
     assert!(
         organization.get("active_key").is_none(),
         "an identity-rooted ledger reports no key of its own: {organization}"
@@ -409,7 +409,13 @@ fn dev_seed_matches_the_fixture_and_fills_an_empty_home() {
         .iter()
         .map(|entry| entry["alias"].as_str().expect("an alias"))
         .collect();
-    assert_eq!(aliases, ["alice", "bob", "carol", "acme"], "{document}");
+    // The seed creates a witness identity too, which is an identity like any
+    // other (proposal 006 section 1).
+    assert_eq!(
+        aliases,
+        ["alice", "bob", "carol", "acme", "witness"],
+        "{document}"
+    );
     assert_eq!(document["witnesses"], Value::Array(Vec::new()));
     assert_eq!(document["pushed"], Value::Array(Vec::new()));
     assert_eq!(document["graph"], Value::Null);
@@ -417,7 +423,7 @@ fn dev_seed_matches_the_fixture_and_fills_an_empty_home() {
     // `identity list` is the surface a person checks a seeded home with.
     let listed = home.json(&["identity", "list"]);
     let listed = listed["identities"].as_array().expect("an array");
-    assert_eq!(listed.len(), 4, "the four seeded identities are listed");
+    assert_eq!(listed.len(), 5, "the five seeded identities are listed");
 
     let find = |alias: &str| {
         seeded
@@ -507,7 +513,7 @@ fn dev_seed_matches_the_fixture_and_fills_an_empty_home() {
     assert_eq!(shown["contact"], Value::Null, "{shown}");
 
     // Every seeded ledger verifies from its own inception.
-    for alias in ["alice", "bob", "carol", "acme"] {
+    for alias in ["alice", "bob", "carol", "acme", "witness"] {
         let report = home.json(&["verify", "ledger", alias]);
         assert_eq!(report["valid"], Value::Bool(true), "{alias}: {report}");
     }
@@ -554,7 +560,7 @@ fn dev_seed_leaves_a_home_the_wallet_core_reads() {
     let opened = NodeHome::open(home.path(), HomeOptions::default()).expect("a seeded home opens");
     let core = WalletCore::new(opened);
     let identities = core.identities().expect("the identities read");
-    assert_eq!(identities.len(), 4);
+    assert_eq!(identities.len(), 5);
 
     let bob = identities
         .iter()
@@ -707,23 +713,120 @@ fn trust_revoke_records_the_revocation_and_trust_list_reports_it() {
 fn witness_add_replaces_the_set_the_ledger_records() {
     let home = Home::new();
     let alice = home.create("alice");
-    let endpoint = home.endpoint();
+    // A witness is an identity, named by its Mabel id (proposal 006 section 1).
+    let witness = home.create("keeper");
     let document = home.json(&[
         "witness",
         "add",
         "--identity",
         "alice",
-        "--endpoint",
-        &endpoint,
+        "--witness",
+        &witness,
     ]);
-    assert_eq!(document["identity_id"], Value::from(alice));
-    assert_eq!(document["endpoint"], Value::from(endpoint.clone()));
-    assert_eq!(document["witnesses"], Value::from(vec![endpoint.clone()]));
+    assert_eq!(document["identity_id"], Value::from(alice.clone()));
+    assert_eq!(document["witness"], Value::from(witness.clone()));
+    assert_eq!(document["witnesses"], Value::from(vec![witness.clone()]));
     assert_eq!(document["head_seq"], Value::from(1));
     assert_eq!(document["head_event"], document["event_id"]);
 
     let shown = home.json(&["identity", "show", "alice"]);
-    assert_eq!(shown["witnesses"], Value::from(vec![endpoint]));
+    assert_eq!(shown["witnesses"], Value::from(vec![witness.clone()]));
+
+    // A second witness is added to the set the ledger already holds, and the
+    // ledger may name itself.
+    let document = home.json(&["witness", "add", "--identity", "alice", "--witness", &alice]);
+    assert_eq!(
+        document["witnesses"],
+        Value::from(vec![witness.clone(), alice.clone()])
+    );
+    assert_eq!(document["head_seq"], Value::from(2));
+
+    // `--endpoint` is gone: an endpoint id is not an identity id, and taking
+    // one here would write a witness set nothing can resolve.
+    let (code, error) = home.failure(&[
+        "witness",
+        "add",
+        "--identity",
+        "alice",
+        "--endpoint",
+        &home.endpoint(),
+    ]);
+    assert_eq!(code, 2);
+    assert_eq!(error["details"]["reason"], Value::from("unknown_argument"));
+}
+
+/// `mabel identity endpoints replace` publishes the machines that answer for an
+/// identity, replacing the whole list (proposal 006 section 2).
+#[test]
+fn identity_endpoints_replace_publishes_the_machines_and_refuses_a_no_op() {
+    let home = Home::new();
+    let alice = home.create("alice");
+    let endpoint = home.endpoint();
+
+    let document = home.json(&[
+        "identity",
+        "endpoints",
+        "replace",
+        "--identity",
+        "alice",
+        "--endpoints",
+        "auto",
+    ]);
+    assert_eq!(document["identity_id"], Value::from(alice.clone()));
+    assert_eq!(
+        document["endpoints"],
+        Value::from(vec![endpoint.clone()]),
+        "auto is this node's own endpoint id: {document}"
+    );
+    assert_eq!(document["previous"], Value::Array(Vec::new()));
+    assert_eq!(document["head_seq"], Value::from(1));
+
+    // The same list again changes nothing, which the command refuses the way
+    // the profile route does.
+    let (code, error) = home.failure(&[
+        "identity",
+        "endpoints",
+        "replace",
+        "--identity",
+        "alice",
+        "--endpoints",
+        &endpoint,
+    ]);
+    assert_eq!(code, 20);
+    assert_eq!(
+        error["details"]["reason"],
+        Value::from("no_op_endpoint_advertisement")
+    );
+
+    // `none` advertises nothing, which is what an operator appends before
+    // decommissioning a machine.
+    let document = home.json(&[
+        "identity",
+        "endpoints",
+        "replace",
+        "--identity",
+        "alice",
+        "--endpoints",
+        "none",
+    ]);
+    assert_eq!(document["endpoints"], Value::Array(Vec::new()));
+    assert_eq!(document["previous"], Value::from(vec![endpoint]));
+    assert_eq!(document["head_seq"], Value::from(2));
+
+    let (code, error) = home.failure(&[
+        "identity",
+        "endpoints",
+        "replace",
+        "--identity",
+        "alice",
+        "--endpoints",
+        "not-an-endpoint",
+    ]);
+    assert_eq!(code, 2);
+    assert_eq!(
+        error["details"]["reason"],
+        Value::from("malformed_endpoint_id")
+    );
 }
 
 #[test]

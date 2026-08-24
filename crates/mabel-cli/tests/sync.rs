@@ -94,6 +94,23 @@ impl Home {
         (code, document)
     }
 
+    /// Sets `node.json.witness_for`, the witness identities this home takes
+    /// pushes for (proposal 006 section 4). No command edits it yet, so a test
+    /// writes the file the way an operator would.
+    fn set_witness_for(&self, identities: &[&str]) {
+        let path = self.path().join("node.json");
+        let mut config: Value =
+            serde_json::from_slice(&std::fs::read(&path).expect("node.json reads"))
+                .expect("node.json is JSON");
+        config["witness_for"] = Value::Array(
+            identities
+                .iter()
+                .map(|identity| Value::from(*identity))
+                .collect(),
+        );
+        std::fs::write(&path, serde_json::to_vec_pretty(&config).expect("json")).expect("written");
+    }
+
     /// This node's Iroh endpoint id, as every document spells it.
     fn endpoint(&self) -> String {
         text(&self.json(&["node", "id"])["endpoint_id"])
@@ -295,10 +312,11 @@ impl Drop for Daemon {
     }
 }
 
-/// A running witness: its home, its endpoint id and the ticket that reaches
-/// it.
+/// A running witness: its home, its witness identity, its endpoint id and the
+/// ticket that reaches it.
 struct Witness {
     _home: Home,
+    identity: String,
     endpoint: String,
     ticket: String,
     daemon: Daemon,
@@ -308,6 +326,21 @@ impl Witness {
     fn start() -> Self {
         let home = Home::new("witness");
         let endpoint = home.endpoint();
+        // A witness is an identity (proposal 006 section 1): this home mints
+        // one, advertises the machine that answers for it, and names it in
+        // `node.json.witness_for`, which is what makes it take a push for a
+        // ledger whose witness set names that identity.
+        let identity = home.create("keeper");
+        home.json(&[
+            "identity",
+            "endpoints",
+            "replace",
+            "--identity",
+            "keeper",
+            "--endpoints",
+            "auto",
+        ]);
+        home.set_witness_for(&[&identity]);
         let port = free_port();
         let daemon = Daemon::start(
             &home,
@@ -324,6 +357,7 @@ impl Witness {
         daemon.wait_for("witness ");
         Self {
             ticket: ticket(&endpoint, port),
+            identity,
             endpoint,
             _home: home,
             daemon,
@@ -335,19 +369,35 @@ impl Witness {
     }
 }
 
-/// A wallet home whose ledger names `witness`, with the ledger pushed to it.
+/// A wallet home whose ledger names `witness`, with the endpoint that answers
+/// for it in `node.json`.
+///
+/// Two facts, because a push needs both: the chain says which identity may keep
+/// the ledger, and `node.json` says which machine to dial for it, which is the
+/// bootstrap raw endpoint of proposal 006 section 5.4.
 fn wallet_with(witness: &Witness) -> (Home, String) {
     let home = Home::new("wallet");
     let alice = home.create("alice");
+    home.json(&["witness", "set-default", &witness.endpoint]);
+    name_witness(&home, "alice", witness);
+    (home, alice)
+}
+
+/// Names `witness`'s identity in `ledger`'s witness set.
+///
+/// The ticket goes with it, because the append first asks the endpoints
+/// `node.json` names where the ledger ends, and reaching one needs its address.
+fn name_witness(home: &Home, ledger: &str, witness: &Witness) {
     home.json(&[
         "witness",
         "add",
         "--identity",
-        "alice",
-        "--endpoint",
-        &witness.endpoint,
+        ledger,
+        "--witness",
+        &witness.identity,
+        "--peer",
+        &witness.ticket,
     ]);
-    (home, alice)
 }
 
 #[test]
@@ -472,13 +522,17 @@ fn an_admitted_controller_appends_to_the_shared_ledger_from_their_own_home() {
     let exchange = TempDir::new().expect("a temp directory");
     let file = |name: &str| exchange.path().join(name);
 
-    // Alice founds the shared ledger, which holds no key of its own.
+    // Alice founds the shared ledger, which holds no key of its own. Both homes
+    // record the witness's machine in `node.json`, which is where a push reads
+    // the endpoints to dial.
     let alice_home = Home::new("wallet");
+    alice_home.json(&["witness", "set-default", &witness.endpoint]);
     alice_home.create("alice");
     let acme = alice_home.found("acme", "alice");
 
     // Bob lives in another home and shares no disk with alice.
     let bob_home = Home::new("wallet");
+    bob_home.json(&["witness", "set-default", &witness.endpoint]);
     let bob = bob_home.create("bob");
     let descriptor = file("bob.descriptor");
     bob_home.export("bob", &descriptor);
@@ -523,14 +577,7 @@ fn an_admitted_controller_appends_to_the_shared_ledger_from_their_own_home() {
     assert_eq!(admitted["acceptance_seq"], Value::from(2));
 
     // The shared ledger names the witness and is pushed to it.
-    alice_home.json(&[
-        "witness",
-        "add",
-        "--identity",
-        "acme",
-        "--endpoint",
-        &witness.endpoint,
-    ]);
+    name_witness(&alice_home, "acme", &witness);
     alice_home.json(&[
         "sync",
         "push",
@@ -662,14 +709,9 @@ fn a_fetched_ledger_with_no_local_controller_key_is_refused_by_name() {
     // Every command that resolves a ledger it must act as says the same thing.
     for arguments in [
         vec!["trust", "add", "--issuer", &alice, "--subject", "carol"],
-        vec![
-            "witness",
-            "add",
-            "--identity",
-            &alice,
-            "--endpoint",
-            NOWHERE,
-        ],
+        // A ledger may name itself as its own witness, so the only thing
+        // wrong here is that this home cannot sign for it.
+        vec!["witness", "add", "--identity", &alice, "--witness", &alice],
         vec!["sync", "push", "--identity", &alice, "--to", NOWHERE],
     ] {
         let (code, document) = reader.failure(&arguments);
@@ -710,9 +752,11 @@ fn a_removed_controllers_append_is_refused_after_the_removal_lands() {
     let file = |name: &str| exchange.path().join(name);
 
     let alice_home = Home::new("wallet");
+    alice_home.json(&["witness", "set-default", &witness.endpoint]);
     alice_home.create("alice");
     let acme = alice_home.found("acme", "alice");
     let bob_home = Home::new("wallet");
+    bob_home.json(&["witness", "set-default", &witness.endpoint]);
     let bob = bob_home.create("bob");
     let descriptor = file("bob.descriptor");
     bob_home.export("bob", &descriptor);
@@ -751,14 +795,7 @@ fn a_removed_controllers_append_is_refused_after_the_removal_lands() {
         "alice",
         &acceptance.display().to_string(),
     ]);
-    alice_home.json(&[
-        "witness",
-        "add",
-        "--identity",
-        "acme",
-        "--endpoint",
-        &witness.endpoint,
-    ]);
+    name_witness(&alice_home, "acme", &witness);
     alice_home.json(&[
         "sync",
         "push",
@@ -911,14 +948,9 @@ fn verify_over_the_network_reports_the_witness_as_its_source() {
 fn a_peer_that_cannot_be_reached_exits_30_with_the_network_prefix() {
     let home = Home::new("wallet");
     home.create("alice");
-    home.json(&[
-        "witness",
-        "add",
-        "--identity",
-        "alice",
-        "--endpoint",
-        NOWHERE,
-    ]);
+    // Nothing answers at this endpoint, and `node.json` is where a push reads
+    // the machines to dial.
+    home.json(&["witness", "set-default", NOWHERE]);
 
     let (code, document) = home.failure(&["sync", "push", "--identity", "alice"]);
     assert_eq!(code, 30);
@@ -1202,20 +1234,51 @@ fn dev_seed_with_a_witness_pushes_every_ledger_and_runs_one_crawl() {
     let witness = Witness::start();
     let home = Home::new("wallet");
 
-    let document = home.json(&["dev", "seed", "--peer", &witness.ticket]);
+    // The ticket says which machine to push to; `--witness` says whose ledger
+    // that machine keeps, which is what the push is admitted under.
+    let document = home.json(&[
+        "dev",
+        "seed",
+        "--peer",
+        &witness.ticket,
+        "--witness",
+        &witness.identity,
+    ]);
     assert_shape(
         &document,
         &fixture("dev-seed", "seeded-with-a-witness"),
         "dev-seed/with-a-witness",
     );
+    // The seed creates its own witness identity and names it beside the one
+    // `--witness` gave, and neither is an endpoint id (proposal 006 section 1).
+    let seeded_witness = text(&document["witnesses"][0]);
     assert_eq!(
         document["witnesses"],
-        Value::Array(vec![Value::from(witness.endpoint.as_str())])
+        Value::Array(vec![
+            Value::from(seeded_witness.as_str()),
+            Value::from(witness.identity.as_str())
+        ])
+    );
+    let witness_identity = document["identities"]
+        .as_array()
+        .expect("an array")
+        .iter()
+        .find(|identity| identity["alias"] == *"witness")
+        .expect("the seed created a witness identity")
+        .clone();
+    assert_eq!(
+        witness_identity["identity_id"],
+        Value::from(seeded_witness.as_str())
+    );
+    assert_eq!(
+        witness_identity["declared_kind"],
+        Value::from("service"),
+        "{witness_identity}"
     );
 
     // One push per seeded ledger, every one accepted by the one witness.
     let pushed = document["pushed"].as_array().expect("an array");
-    assert_eq!(pushed.len(), 4, "{document}");
+    assert_eq!(pushed.len(), 5, "{document}");
     for result in pushed {
         let rows = result["results"].as_array().expect("an array");
         assert_eq!(rows.len(), 1, "{result}");
@@ -1223,12 +1286,15 @@ fn dev_seed_with_a_witness_pushes_every_ledger_and_runs_one_crawl() {
         assert_eq!(rows[0]["status"], Value::from("accepted"), "{result}");
     }
 
-    // Every seeded ledger names the witness, so the config event landed on all
-    // four before the push.
+    // Every seeded ledger names the witness identity, so the witness set landed
+    // on all five before the push, the witness's own ledger included.
     for identity in document["identities"].as_array().expect("an array") {
         assert_eq!(
             identity["witnesses"],
-            Value::Array(vec![Value::from(witness.endpoint.as_str())]),
+            Value::Array(vec![
+                Value::from(seeded_witness.as_str()),
+                Value::from(witness.identity.as_str())
+            ]),
             "{identity}"
         );
     }
@@ -1258,8 +1324,8 @@ fn dev_seed_with_a_witness_pushes_every_ledger_and_runs_one_crawl() {
     let graph = &document["graph"];
     assert_eq!(graph["depth"], Value::from(2));
     assert!(
-        graph["node_count"].as_u64().is_some_and(|count| count >= 4),
-        "the crawl reached the four seeded identities: {graph}"
+        graph["node_count"].as_u64().is_some_and(|count| count >= 5),
+        "the crawl reached the five seeded identities: {graph}"
     );
     assert_eq!(
         home.json(&["graph", "status"])["graph"]["sync_id"],

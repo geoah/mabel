@@ -9,7 +9,10 @@
 #[macro_use]
 mod common;
 
-use common::{Chain, Home, Served, from_endpoint, home, secret};
+use common::{
+    Chain, Home, Served, from_endpoint, home, home_witnessing_for_nobody, secret, subject,
+    witness_identity,
+};
 use mabel_core::proto::RejectCode;
 use mabel_net::error::Rejection;
 use mabel_net::store::StoreError;
@@ -39,7 +42,7 @@ async fn a_push_of_an_unheld_ledger_naming_this_witness_is_admitted() {
     bounded!({
         let served = Served::new().await;
         let mut chain = Chain::new(1);
-        chain.add_witness_config(&[served.endpoint_id]);
+        chain.add_witness();
         let peer = served.dial().await;
 
         let outcome = peer
@@ -80,7 +83,7 @@ async fn a_third_party_may_relay_to_an_already_stored_ledger() {
     bounded!({
         let served = Served::new().await;
         let mut chain = Chain::new(2);
-        chain.add_witness_config(&[served.endpoint_id]);
+        chain.add_witness();
         let attestation = chain.attestation(9);
         chain.add(attestation);
 
@@ -110,8 +113,8 @@ async fn a_push_for_an_unknown_ledger_not_naming_the_witness_is_not_admitted() {
     bounded!({
         let served = Served::new().await;
         let mut chain = Chain::new(3);
-        // The set names somebody else.
-        chain.add_witness_config(&[secret(99).public()]);
+        // The set names a witness identity this home does not witness for.
+        chain.add_witness_set(&[subject(99)]);
         let peer = served.dial().await;
 
         let error = peer
@@ -132,6 +135,73 @@ async fn a_push_for_an_unknown_ledger_not_naming_the_witness_is_not_admitted() {
     });
 }
 
+/// A home whose `witness_for` is empty witnesses for nobody, so it refuses a
+/// push for a ledger it holds no key for, whatever that ledger's witness set
+/// says (proposal 006 section 4).
+#[tokio::test]
+async fn a_home_that_witnesses_for_nobody_answers_not_admitted() {
+    bounded!({
+        let served = Served::over(home_witnessing_for_nobody(), WitnessCaps::default()).await;
+        assert!(served.storage.witness_for().is_empty());
+        let mut chain = Chain::new(4);
+        chain.add_witness();
+        let peer = served.dial().await;
+
+        let error = peer
+            .client
+            .push(chain.ledger, &chain.all())
+            .await
+            .expect_err("this home witnesses for nobody");
+        let rejection = refused(error);
+        assert_eq!(rejection.code, RejectCode::NotAdmitted);
+        assert!(
+            rejection.msg.contains("witnesses for nobody"),
+            "the refusal names the rule: {}",
+            rejection.msg
+        );
+        assert!(
+            peer.client
+                .head(chain.ledger)
+                .await
+                .expect("the read succeeds")
+                .is_none(),
+            "a refused push stores nothing"
+        );
+        served.stop().await;
+    });
+}
+
+/// The same chain lands on a home whose `witness_for` names the witness the
+/// chain's `WitnessSet` names, and a later extension lands too, because the
+/// stored state still names it (clause 2 of proposal 006 section 4).
+#[tokio::test]
+async fn a_push_naming_a_witness_this_home_witnesses_for_is_admitted_and_keeps_growing() {
+    bounded!({
+        let served = Served::new().await;
+        assert_eq!(served.storage.witness_for(), [witness_identity()]);
+        let mut chain = Chain::new(5);
+        chain.add_witness();
+        let peer = served.dial().await;
+
+        let outcome = peer
+            .client
+            .push(chain.ledger, &chain.all())
+            .await
+            .expect("the witness set names an identity this home witnesses for");
+        assert_eq!(outcome.stored, 2);
+
+        chain.add_attestation(9);
+        let outcome = peer
+            .client
+            .push(chain.ledger, &chain.from(2))
+            .await
+            .expect("the stored witness set still names this home's witness");
+        assert_eq!(outcome.head_seq, 2);
+        assert_eq!(outcome.stored, 1);
+        served.stop().await;
+    });
+}
+
 // ------------------------------------------------------- push semantics ----
 
 #[tokio::test]
@@ -139,7 +209,7 @@ async fn a_gapped_push_is_malformed() {
     bounded!({
         let served = Served::new().await;
         let mut chain = Chain::new(4);
-        chain.add_witness_config(&[served.endpoint_id]);
+        chain.add_witness();
         chain.add_attestation(9);
         let peer = served.dial().await;
 
@@ -186,7 +256,7 @@ async fn an_overlapping_re_push_is_idempotent() {
     bounded!({
         let served = Served::new().await;
         let mut chain = Chain::new(5);
-        chain.add_witness_config(&[served.endpoint_id]);
+        chain.add_witness();
         chain.add_attestation(9);
         let peer = served.dial().await;
 
@@ -225,7 +295,7 @@ async fn a_partially_invalid_push_stores_the_valid_prefix_and_names_the_failing_
     bounded!({
         let served = Served::new().await;
         let mut chain = Chain::new(6);
-        chain.add_witness_config(&[served.endpoint_id]);
+        chain.add_witness();
         // Seq 2 is signed by a key this ledger never authorized, and seq 3
         // would be valid if seq 2 were.
         let forged = chain.forged(9);
@@ -269,7 +339,7 @@ async fn the_first_ingest_verifies_the_whole_pushed_chain() {
     bounded!({
         let served = Served::new().await;
         let mut chain = Chain::new(7);
-        chain.add_witness_config(&[served.endpoint_id]);
+        chain.add_witness();
         chain.add_attestation(9);
         // A broken link at seq 3: the event names an event that is not its
         // predecessor, which only a fold over the whole chain catches.
@@ -312,7 +382,7 @@ async fn a_later_push_verifies_the_spliced_suffix_against_the_kept_state() {
     bounded!({
         let served = Served::new().await;
         let mut chain = Chain::new(8);
-        chain.add_witness_config(&[served.endpoint_id]);
+        chain.add_witness();
         let attestation = chain.add_attestation(9);
         let peer = served.dial().await;
         peer.client
@@ -353,7 +423,7 @@ async fn a_fork_push_records_both_events_while_the_first_survives() {
     bounded!({
         let served = Served::new().await;
         let mut chain = Chain::new(9);
-        chain.add_witness_config(&[served.endpoint_id]);
+        chain.add_witness();
         // Two valid events for seq 2; the witness sees this one first.
         let kept = chain.attestation(9);
         let conflicting = chain.attestation(10);
@@ -417,7 +487,7 @@ async fn an_invalid_conflicting_event_is_rejected_and_not_stored() {
     bounded!({
         let served = Served::new().await;
         let mut chain = Chain::new(10);
-        chain.add_witness_config(&[served.endpoint_id]);
+        chain.add_witness();
         let forged = chain.forged(9);
         chain.add_attestation(9);
 
@@ -464,7 +534,7 @@ fn the_ninth_fork_on_one_ledger_is_not_recorded_and_forks_truncated_is_set() {
     let home = home();
     let storage = home.storage(WitnessCaps::default());
     let mut chain = Chain::new(11);
-    chain.add_witness_config(&[home.endpoint_id()]);
+    chain.add_witness();
     // Nine more valid events for seq 2, on top of the one that is stored.
     let candidates: Vec<Vec<u8>> = (0..10)
         .map(|seed| chain.attestation(20 + seed).signed_event)
@@ -544,7 +614,7 @@ fn a_push_over_the_per_ledger_event_cap_is_rejected() {
         ..WitnessCaps::default()
     });
     let mut chain = Chain::new(12);
-    chain.add_witness_config(&[home.endpoint_id()]);
+    chain.add_witness();
     chain.add_attestation(9);
 
     let rejection = rejected(
@@ -576,7 +646,7 @@ fn a_push_over_the_per_ledger_byte_cap_is_rejected() {
         ..WitnessCaps::default()
     });
     let mut chain = Chain::new(13);
-    chain.add_witness_config(&[home.endpoint_id()]);
+    chain.add_witness();
     chain.add_attestation(9);
 
     let rejection = rejected(
@@ -597,9 +667,9 @@ fn a_push_over_the_ledger_count_cap_is_rejected() {
         ..WitnessCaps::default()
     });
     let mut first = Chain::new(14);
-    first.add_witness_config(&[home.endpoint_id()]);
+    first.add_witness();
     let mut second = Chain::new(15);
-    second.add_witness_config(&[home.endpoint_id()]);
+    second.add_witness();
 
     storage
         .push(first.ledger, &first.all(), from_endpoint(1))
@@ -623,7 +693,7 @@ fn a_push_over_the_storage_capacity_from_node_json_is_rejected() {
     ));
     assert_eq!(storage.caps().storage_capacity, 300);
     let mut chain = Chain::new(16);
-    chain.add_witness_config(&[home.endpoint_id()]);
+    chain.add_witness();
     chain.add_attestation(9);
 
     let rejection = rejected(
@@ -645,7 +715,7 @@ fn list_paging_is_stable_in_ascending_ledger_id_order() {
     let mut stored = Vec::new();
     for seed in [21u8, 22, 23, 24] {
         let mut chain = Chain::new(seed);
-        chain.add_witness_config(&[home.endpoint_id()]);
+        chain.add_witness();
         storage
             .push(chain.ledger, &chain.all(), from_endpoint(1))
             .expect("the chain names this witness");
@@ -675,7 +745,7 @@ fn list_paging_is_stable_in_ascending_ledger_id_order() {
 fn a_restart_rebuilds_the_folded_state_from_disk() {
     let home = home();
     let mut chain = Chain::new(25);
-    chain.add_witness_config(&[home.endpoint_id()]);
+    chain.add_witness();
     let attestation = chain.add_attestation(9);
 
     let before = {
@@ -718,7 +788,7 @@ fn the_first_seen_record_and_its_endpoint_survive_later_pushes() {
     let home = home();
     let storage = home.storage(WitnessCaps::default());
     let mut chain = Chain::new(26);
-    chain.add_witness_config(&[home.endpoint_id()]);
+    chain.add_witness();
     storage
         .push(chain.ledger, &chain.all(), from_endpoint(4))
         .expect("the chain names this witness");
@@ -785,7 +855,7 @@ async fn the_runtime_serves_both_surfaces_and_shuts_down() {
             .await
             .expect("the client connects");
         let mut chain = Chain::new(41);
-        chain.add_witness_config(&[endpoint_id]);
+        chain.add_witness();
         let outcome = client
             .push(chain.ledger, &chain.all())
             .await

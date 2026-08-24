@@ -82,9 +82,15 @@ impl WitnessRuntime {
             .caps
             .unwrap_or_else(|| WitnessCaps::from_config(&config));
         let opened = home.clone();
+        // Which identities this home witnesses for is read once, at startup:
+        // an operator who edits `witness_for` restarts the node, exactly as
+        // they do for every other `node.json` value (proposal 006 section 4).
+        let witness_for = config.witness_for.clone();
         let storage = Arc::new(
-            tokio::task::spawn_blocking(move || WitnessStorage::open(opened, endpoint_id, caps))
-                .await??,
+            tokio::task::spawn_blocking(move || {
+                WitnessStorage::open(opened, endpoint_id, caps, witness_for)
+            })
+            .await??,
         );
 
         let endpoint =

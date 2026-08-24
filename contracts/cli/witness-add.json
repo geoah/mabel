@@ -1,16 +1,16 @@
 {
-  "command": "mabel witness add --identity acme --endpoint zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq --json",
+  "command": "mabel witness add --identity acme --witness jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq --json",
   "cases": [
     {
-      "case": "first-endpoint",
-      "command": "mabel witness add --identity acme --endpoint zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq --json",
+      "case": "first-witness",
+      "command": "mabel witness add --identity acme --witness jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq --json",
       "exit_code": 0,
       "document": {
         "ok": true,
         "identity_id": "2okqwhextnpkpmydrgrkk563vbehcklffwfzidxlh5dslawjmn6a",
-        "endpoint": "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq",
+        "witness": "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq",
         "witnesses": [
-          "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq"
+          "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq"
         ],
         "event_id": "4dzeup2wrtqxnb6qegqxmkashov6ebmdfad57ydg3cw5npixxnra",
         "timestamp_ms": 1700000300000,

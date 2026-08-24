@@ -449,14 +449,28 @@ impl WalletService for WalletApiService {
     fn set_witnesses(&self, identity_id: Id, witnesses: Vec<Id>) -> ServiceFuture<'_, Appended> {
         Box::pin(async move {
             let identity = ids::parse_identity(&identity_id)?;
-            let mut endpoints = Vec::with_capacity(witnesses.len());
+            let mut named = Vec::with_capacity(witnesses.len());
             for witness in &witnesses {
-                endpoints.push(ids::parse_endpoint(witness)?);
+                named.push(ids::parse_identity(witness)?);
             }
             let lock = self.core.append_lock(identity).await;
             self.fresh(identity, &lock).await?;
             let core = self.core.clone();
-            spawn(move || core.set_witnesses(&lock, identity, &endpoints)).await
+            spawn(move || core.set_witnesses(&lock, identity, &named)).await
+        })
+    }
+
+    fn set_endpoints(&self, identity_id: Id, endpoints: Vec<Id>) -> ServiceFuture<'_, Appended> {
+        Box::pin(async move {
+            let identity = ids::parse_identity(&identity_id)?;
+            let mut named = Vec::with_capacity(endpoints.len());
+            for endpoint in &endpoints {
+                named.push(ids::parse_endpoint(endpoint)?);
+            }
+            let lock = self.core.append_lock(identity).await;
+            self.fresh(identity, &lock).await?;
+            let core = self.core.clone();
+            spawn(move || core.set_endpoints(&lock, identity, &named)).await
         })
     }
 
@@ -747,16 +761,19 @@ impl Resolver for UnavailableResolver {
 /// Every witness endpoint this wallet knows, ascending, with the stored
 /// ledgers that name it (proposal 004).
 ///
-/// Two sources: the folded `WitnessConfig` of every ledger under `ledgers/`,
-/// which is the same fold the identity document renders from, and the
-/// node-wide defaults of `node.json`. An endpoint only `node.json` names has
-/// an empty `named_by`.
+/// Two sources: the retired tag-11 `WitnessConfig` of every ledger under
+/// `ledgers/`, and the node-wide defaults of `node.json`. An endpoint only
+/// `node.json` names has an empty `named_by`.
+///
+/// A tag-19 `WitnessSet` names identities, not endpoints, so nothing here reads
+/// it: turning a witness identity into the endpoints that answer for it is
+/// resolution, and these rows become identity rows in ticket 037.
 fn known_witnesses(core: &WalletCore) -> Result<Vec<WitnessEntry>, ServiceError> {
     let mut named: BTreeMap<Id, BTreeSet<Id>> = BTreeMap::new();
     for ledger in core.home().ledgers().map_err(storage_error)? {
-        for endpoint in core.load(ledger)?.witnesses() {
+        for endpoint in core.load(ledger)?.state.witness_endpoints() {
             named
-                .entry(endpoint)
+                .entry(ids::key(endpoint))
                 .or_default()
                 .insert(ids::identity(ledger));
         }

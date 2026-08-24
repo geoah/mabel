@@ -1319,6 +1319,7 @@ async fn every_mutating_route_enforces_the_origin_and_content_type_rules() {
         &format!("/api/identities/{ALICE}/contact"),
         "/api/graph/sync",
         &format!("/api/identities/{ALICE}/witnesses"),
+        &format!("/api/identities/{ALICE}/endpoints"),
         &format!("/api/identities/{ALICE}/fetch"),
         &format!("/api/identities/{ALICE}/memberships/invitations"),
         &format!("/api/identities/{ALICE}/memberships/acceptances"),

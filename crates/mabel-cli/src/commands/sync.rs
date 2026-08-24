@@ -41,7 +41,7 @@ pub fn push(
     if witnesses.is_empty() {
         return Err(CliError::usage(
             "no_witness_configured",
-            format!("ledger {identity} names no witness to push to"),
+            format!("no endpoint is configured to push {identity} to"),
         )
         .with_detail("ledger_id", identity.to_string()));
     }

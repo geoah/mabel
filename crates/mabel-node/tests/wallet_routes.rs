@@ -88,11 +88,25 @@ impl Wallet {
             .expect("a rendered identity id parses")
     }
 
-    /// Records `witnesses` on `identity`'s ledger.
-    async fn configure(&self, identity: IdentityId, witnesses: &[EndpointId]) {
+    /// Names the witness identity every `Served` home here witnesses for, which
+    /// is what admits a push (proposal 006 sections 1 and 4).
+    async fn witnesses(&self, identity: IdentityId) {
         let lock = self.core.append_lock(identity).await;
         self.core
-            .set_witnesses(&lock, identity, witnesses)
+            .set_witnesses(&lock, identity, &[common::witness_identity()])
+            .expect("the witness set is appended");
+    }
+
+    /// Appends a retired tag-11 `WitnessConfig` naming `endpoints`, the shape a
+    /// chain written before proposal 006 carries. Nothing writes one any more;
+    /// the fold and every read still accept it.
+    async fn legacy_witnesses(&self, identity: IdentityId, endpoints: &[EndpointId]) {
+        let lock = self.core.append_lock(identity).await;
+        let mut loaded = self.core.load(identity).expect("the ledger loads");
+        self.core
+            .append(&lock, identity, &mut loaded, |signer, at, timestamp_ms| {
+                mabel_core::sign::build_witness_config(signer, at, endpoints, timestamp_ms)
+            })
             .expect("the witness config is appended");
     }
 }
@@ -118,15 +132,15 @@ fn rendered(endpoint: EndpointId) -> Id {
 // -------------------------------------------------------------- witnesses ----
 
 #[tokio::test]
-async fn the_witness_list_names_every_ledger_that_configured_each_endpoint() {
+async fn the_witness_list_names_every_ledger_whose_legacy_config_holds_each_endpoint() {
     let shared = endpoint(1);
     let only_alice = endpoint(2);
     let only_default = endpoint(3);
     let wallet = Wallet::new(&[shared, only_default], &[]).await;
     let alice = wallet.identity("alice");
     let acme = wallet.identity("acme");
-    wallet.configure(alice, &[shared, only_alice]).await;
-    wallet.configure(acme, &[shared]).await;
+    wallet.legacy_witnesses(alice, &[shared, only_alice]).await;
+    wallet.legacy_witnesses(acme, &[shared]).await;
 
     let listed = wallet.service.witnesses().await.expect("a witness list");
     let endpoints: Vec<&str> = listed
@@ -250,7 +264,7 @@ async fn the_witness_ledger_proxy_lists_what_that_witness_holds() {
         let witness = Served::start(WitnessCaps::default()).await;
         let wallet = Wallet::new(&[witness.endpoint_id], std::slice::from_ref(&witness.addr)).await;
         let alice = wallet.identity("alice");
-        wallet.configure(alice, &[witness.endpoint_id]).await;
+        wallet.witnesses(alice).await;
         let pushed = wallet
             .service
             .push(mabel_node::api::service::PushRequest {
@@ -330,7 +344,7 @@ async fn a_fetch_stores_the_ledger_and_answers_the_cli_document() {
         let witness = Served::start(WitnessCaps::default()).await;
         let owner = Wallet::new(&[witness.endpoint_id], std::slice::from_ref(&witness.addr)).await;
         let alice = owner.identity("alice");
-        owner.configure(alice, &[witness.endpoint_id]).await;
+        owner.witnesses(alice).await;
         owner
             .service
             .push(mabel_node::api::service::PushRequest {

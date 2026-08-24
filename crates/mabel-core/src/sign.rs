@@ -7,22 +7,28 @@
 //! pitfall 1).
 //!
 //! These functions check only what the byte layout forces: the size caps, the
-//! timestamp bounds and the witness-set bounds. Full field validation and the
-//! semantic rules belong to the wire-format validator and the fold.
+//! timestamp bounds and the list bounds of the witness set and the endpoint
+//! advertisement. Full field validation and the semantic rules belong to the
+//! wire-format validator and the fold.
+//!
+//! `build_witness_config` is the one exception to "every payload has a builder
+//! here": tag 11 is retired for writing, so it compiles only under the
+//! `legacy-witness-config` feature and its only caller is the vector tests
+//! (proposal 006 section 1).
 
 use iroh_base::{EndpointId, PublicKey, SecretKey};
 use mabel_proto::v0::{
-    Acceptance, DeclaredKind, EventBody, IdentityRoot, Inception, MembershipAcceptance,
-    MembershipInvitation, MembershipRemoval, ProfileUpdate, RawRoot, Role, SignedEvent,
-    TrustAttestation, TrustRevocation, WitnessConfig, event_body::Payload, inception,
+    Acceptance, DeclaredKind, EndpointAdvertisement, EventBody, IdentityRoot, Inception,
+    MembershipAcceptance, MembershipInvitation, MembershipRemoval, ProfileUpdate, RawRoot, Role,
+    SignedEvent, TrustAttestation, TrustRevocation, WitnessSet, event_body::Payload, inception,
 };
 
 use crate::digest::{accept_input, event_id, reserve_commit, sign_input};
 use crate::encoding::encode;
 use crate::id::{EventId, IdentityId, LedgerId};
 use crate::{
-    MAX_ACCEPTANCE_BYTES, MAX_EMBEDDED_INCEPTION_BYTES, MAX_EVENT_BYTES, MAX_TIMESTAMP_MS,
-    MAX_WITNESSES, NONCE_BYTES,
+    MAX_ACCEPTANCE_BYTES, MAX_EMBEDDED_INCEPTION_BYTES, MAX_ENDPOINTS, MAX_EVENT_BYTES,
+    MAX_TIMESTAMP_MS, MAX_WITNESSES, NONCE_BYTES,
 };
 
 /// A signed event and the bytes it is made of.
@@ -110,12 +116,19 @@ pub enum BuildError {
     /// An acceptance blob exceeded the 1024-byte cap.
     #[error("acceptance is {0} bytes, over the 1024-byte cap")]
     AcceptanceTooLarge(usize),
-    /// The witness set was empty or held more than 16 endpoints.
-    #[error("witness set holds {0} endpoints, outside 1..=16")]
+    /// The witness set held more than 16 entries. The retired tag-11 list also
+    /// reports this when it is empty, where it requires at least one.
+    #[error("witness set holds {0} entries, over the 16-entry cap")]
     WitnessCount(usize),
-    /// The witness set repeated an endpoint.
-    #[error("witness set repeats an endpoint")]
+    /// The witness set repeated an entry.
+    #[error("witness set repeats an entry")]
     WitnessDuplicate,
+    /// The advertisement held more than 8 endpoints.
+    #[error("endpoint advertisement holds {0} endpoints, over the 8-endpoint cap")]
+    EndpointCount(usize),
+    /// The advertisement repeated an endpoint.
+    #[error("endpoint advertisement repeats an endpoint")]
+    EndpointDuplicate,
 }
 
 /// The timestamp an appender writes: `max(now_ms, prev.timestamp_ms)`.
@@ -168,7 +181,14 @@ pub fn build_inception(
     seal(signer, inception_body(&author_key, now_ms, payload)?)
 }
 
-/// Builds an event replacing the ledger's whole witness set.
+/// Builds an event replacing the ledger's whole tag-11 endpoint list.
+///
+/// Retired for writing (proposal 006 section 1): no route, command or UI action
+/// reaches this, and it is compiled only under the `legacy-witness-config`
+/// feature, which the vector tests turn on. The golden and rejection vectors
+/// for tag 11 are generated from it and must keep their exact bytes, which is
+/// the whole reason it survives.
+#[cfg(any(test, feature = "legacy-witness-config"))]
 pub fn build_witness_config(
     signer: &SecretKey,
     at: &Position,
@@ -178,17 +198,66 @@ pub fn build_witness_config(
     if witnesses.is_empty() || witnesses.len() > MAX_WITNESSES {
         return Err(BuildError::WitnessCount(witnesses.len()));
     }
-    let mut seen: Vec<&EndpointId> = Vec::with_capacity(witnesses.len());
-    for witness in witnesses {
-        if seen.contains(&witness) {
-            return Err(BuildError::WitnessDuplicate);
-        }
-        seen.push(witness);
-    }
-    let payload = Payload::WitnessConfig(WitnessConfig {
+    distinct(witnesses, BuildError::WitnessDuplicate)?;
+    let payload = Payload::WitnessConfig(mabel_proto::v0::WitnessConfig {
         witnesses: witnesses.iter().map(|w| w.as_bytes().to_vec()).collect(),
     });
     build_append(signer, at, now_ms, payload)
+}
+
+/// Builds an event replacing the whole set of identities that may keep this
+/// ledger (proposal 006 section 1).
+///
+/// The set may be empty, which says nobody keeps this chain, and it may name
+/// this ledger's own identity, which is how a self-hosted identity says it keeps
+/// its own chain. Whether an id names a reachable identity is not a question
+/// this crate can ask: it holds no network and no store.
+pub fn build_witness_set(
+    signer: &SecretKey,
+    at: &Position,
+    witnesses: &[IdentityId],
+    now_ms: u64,
+) -> Result<BuiltEvent, BuildError> {
+    if witnesses.len() > MAX_WITNESSES {
+        return Err(BuildError::WitnessCount(witnesses.len()));
+    }
+    distinct(witnesses, BuildError::WitnessDuplicate)?;
+    let payload = Payload::WitnessSet(WitnessSet {
+        witnesses: witnesses.iter().map(IdentityId::to_vec).collect(),
+    });
+    build_append(signer, at, now_ms, payload)
+}
+
+/// Builds an event replacing the whole list of endpoints that answer for this
+/// identity (proposal 006 section 2).
+///
+/// Whole replacement, not append: one event says "these and only these", so a
+/// rotation repeats the endpoint it keeps. An empty list is legal and says
+/// nothing answers for this identity right now.
+pub fn build_endpoint_advertisement(
+    signer: &SecretKey,
+    at: &Position,
+    endpoints: &[EndpointId],
+    now_ms: u64,
+) -> Result<BuiltEvent, BuildError> {
+    if endpoints.len() > MAX_ENDPOINTS {
+        return Err(BuildError::EndpointCount(endpoints.len()));
+    }
+    distinct(endpoints, BuildError::EndpointDuplicate)?;
+    let payload = Payload::EndpointAdvertisement(EndpointAdvertisement {
+        endpoints: endpoints.iter().map(|e| e.as_bytes().to_vec()).collect(),
+    });
+    build_append(signer, at, now_ms, payload)
+}
+
+/// Refuses a repeated entry, which every list payload forbids.
+fn distinct<T: PartialEq>(entries: &[T], error: BuildError) -> Result<(), BuildError> {
+    for (index, entry) in entries.iter().enumerate() {
+        if entries[index + 1..].contains(entry) {
+            return Err(error);
+        }
+    }
+    Ok(())
 }
 
 /// Builds an attestation that this ledger's identity trusts `subject`.
@@ -641,6 +710,51 @@ mod tests {
         assert_eq!(
             build_witness_config(&secret(1), &at, &repeated, 1_700_000_000_000),
             Err(BuildError::WitnessDuplicate)
+        );
+    }
+
+    /// Tag 19 takes an empty set where tag 11 required one entry, and refuses a
+    /// seventeenth entry and a repeat (proposal 006 sections 1 and 3).
+    #[test]
+    fn a_witness_set_takes_none_and_stops_at_sixteen() {
+        let head = raw_rooted(1_700_000_000_000);
+        let at = position(&head, 1, 1_700_000_000_000);
+        build_witness_set(&secret(1), &at, &[], 1_700_000_000_000)
+            .expect("an empty witness set builds");
+
+        let many: Vec<IdentityId> = (0..17u8)
+            .map(|seed| IdentityId::from_bytes([seed; 32]))
+            .collect();
+        assert_eq!(
+            build_witness_set(&secret(1), &at, &many, 1_700_000_000_000),
+            Err(BuildError::WitnessCount(17))
+        );
+
+        let witness = IdentityId::from_bytes([7u8; 32]);
+        assert_eq!(
+            build_witness_set(&secret(1), &at, &[witness, witness], 1_700_000_000_000),
+            Err(BuildError::WitnessDuplicate)
+        );
+    }
+
+    /// Tag 18 takes an empty list and stops at eight (proposal 006 section 2).
+    #[test]
+    fn an_advertisement_takes_none_and_stops_at_eight() {
+        let head = raw_rooted(1_700_000_000_000);
+        let at = position(&head, 1, 1_700_000_000_000);
+        build_endpoint_advertisement(&secret(1), &at, &[], 1_700_000_000_000)
+            .expect("an empty advertisement builds");
+
+        let many: Vec<EndpointId> = (0..9u8).map(|i| secret(100 + i).public()).collect();
+        assert_eq!(
+            build_endpoint_advertisement(&secret(1), &at, &many, 1_700_000_000_000),
+            Err(BuildError::EndpointCount(9))
+        );
+
+        let repeated = [secret(4).public(), secret(4).public()];
+        assert_eq!(
+            build_endpoint_advertisement(&secret(1), &at, &repeated, 1_700_000_000_000),
+            Err(BuildError::EndpointDuplicate)
         );
     }
 

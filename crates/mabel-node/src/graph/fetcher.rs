@@ -8,7 +8,7 @@
 //! 1. a local copy under `ledgers/`;
 //! 2. `peers.json` hints for that ledger id, plus any the crawl learned;
 //! 3. the node-wide witnesses in `node.json`;
-//! 4. witnesses named by a verified copy of that ledger's own
+//! 4. the endpoints a verified copy names in its retired tag-11
 //!    `WitnessConfig`, reachable only once one of the first three produced a
 //!    copy.
 //!
@@ -72,7 +72,9 @@ pub struct LedgerSummary {
     pub head_seq: u64,
     /// The event at that position.
     pub head_event: EventId,
-    /// The witnesses its latest `WitnessConfig` names, which are source 4.
+    /// The endpoints its retired tag-11 `WitnessConfig` names, which are
+    /// source 4. A tag-19 `WitnessSet` names identities and is resolved to
+    /// endpoints in ticket 035, so nothing here reads it yet.
     pub witnesses: Vec<EndpointId>,
     /// Its current attestations, ascending by position. A revoked
     /// attestation is not an edge.
@@ -108,7 +110,7 @@ impl LedgerSummary {
             email: profile.and_then(|profile| profile.email.clone()),
             head_seq: loaded.head_seq,
             head_event: loaded.head_event,
-            witnesses: loaded.state.witnesses().to_vec(),
+            witnesses: loaded.state.witness_endpoints().to_vec(),
             trust,
         }
     }
@@ -353,7 +355,7 @@ impl NetLedgerFetcher {
                 Ok(Some(loaded)) => {
                     // Source 4 exists only once a copy verified: the witness
                     // set is a fact of the chain that was just folded.
-                    let named = ledger_witness_sources(&planned, loaded.state.witnesses());
+                    let named = ledger_witness_sources(&planned, loaded.state.witness_endpoints());
                     planned.extend(named);
                     candidates.push((next.source, loaded));
                 }

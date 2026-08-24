@@ -1,0 +1,31 @@
+{
+  "body": {
+    "author_key_hex": "d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c9778737",
+    "ledger_hex": "8225a669a21ee244ba23bf4a1096ed5445a954ea01967150ccddee723635f1d1",
+    "payload": {
+      "witness_set": {
+        "witnesses_hex": []
+      }
+    },
+    "prev_hex": "fecf6dae7648015c15bf9d4641d73cdd54cd868ed572948e074b8e69f9f1bf7f",
+    "seq": 11,
+    "timestamp_ms": 1700000900000,
+    "version": 0
+  },
+  "body_hex": "12208225a669a21ee244ba23bf4a1096ed5445a954ea01967150ccddee723635f1d1180b2220fecf6dae7648015c15bf9d4641d73cdd54cd868ed572948e074b8e69f9f1bf7f28a0c7ccffbc313220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c97787379a0100",
+  "description": "Alice names nobody: an empty witness set, which is a zero-length payload body under a present oneof branch, and says no witness keeps this chain.",
+  "event_id": "s4etbmipzt5x6ucitzww2kabhxs3s555vw6bmacfsvhyf32fhisq",
+  "event_id_hex": "970930b10fccfb7f50489e6d6d28013de5b977bdadbc160045954f82ef453a25",
+  "file": "17-witness-set-empty.json",
+  "inputs": {
+    "ledger": "qis2m2ncd3rejordx5fbbfxnkrc2svhkaglhcugm3xxhenrv6hiq",
+    "now_ms": 1700000900000,
+    "prev": "73hw3ltwjaavyfn7tvdedvz43vkm3buo2vzjjdqhjohgt6prx57q",
+    "prev_timestamp_ms": 1700000840000,
+    "secret_key_hex": "1111111111111111111111111111111111111111111111111111111111111111",
+    "seq": 11,
+    "witnesses": []
+  },
+  "signature_hex": "5157f8973dc1646a6d810b29395682711c8b2b2fa6cfbd64f2c02ce9e6c4deacce46eb7b6918885abf5e2eeede0c4a568cbc623d3f60068f8bba74b55d0d750f",
+  "signed_event_hex": "0a7212208225a669a21ee244ba23bf4a1096ed5445a954ea01967150ccddee723635f1d1180b2220fecf6dae7648015c15bf9d4641d73cdd54cd868ed572948e074b8e69f9f1bf7f28a0c7ccffbc313220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c97787379a010012405157f8973dc1646a6d810b29395682711c8b2b2fa6cfbd64f2c02ce9e6c4deacce46eb7b6918885abf5e2eeede0c4a568cbc623d3f60068f8bba74b55d0d750f"
+}

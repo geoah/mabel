@@ -181,10 +181,16 @@ impl Loaded {
             .unwrap_or(DeclaredKind::Person)
     }
 
-    /// The witness set of the latest `WitnessConfig`.
+    /// The identities the latest `WitnessSet` names, which are the identities
+    /// that may keep this ledger (proposal 006 section 1).
     #[must_use]
     pub fn witnesses(&self) -> Vec<Id> {
-        self.state.witnesses().iter().map(ids::key).collect()
+        self.state
+            .witness_identities()
+            .iter()
+            .copied()
+            .map(ids::identity)
+            .collect()
     }
 
     /// Every attestation this ledger issued, revoked ones included, by

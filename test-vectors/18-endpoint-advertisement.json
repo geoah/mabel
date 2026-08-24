@@ -1,0 +1,37 @@
+{
+  "body": {
+    "author_key_hex": "d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c9778737",
+    "ledger_hex": "8225a669a21ee244ba23bf4a1096ed5445a954ea01967150ccddee723635f1d1",
+    "payload": {
+      "endpoint_advertisement": {
+        "endpoints_hex": [
+          "c853ad0f0cd2b619aea92ceec4fd56a24d6499d584ce79257e45cfd8139b60a7",
+          "ee31f83c88a71219a6fcf9bee0da9bc22620588f5a15a6145553504df9649e5c"
+        ]
+      }
+    },
+    "prev_hex": "970930b10fccfb7f50489e6d6d28013de5b977bdadbc160045954f82ef453a25",
+    "seq": 12,
+    "timestamp_ms": 1700000960000,
+    "version": 0
+  },
+  "body_hex": "12208225a669a21ee244ba23bf4a1096ed5445a954ea01967150ccddee723635f1d1180c2220970930b10fccfb7f50489e6d6d28013de5b977bdadbc160045954f82ef453a2528809cd0ffbc313220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c97787379201440a20c853ad0f0cd2b619aea92ceec4fd56a24d6499d584ce79257e45cfd8139b60a70a20ee31f83c88a71219a6fcf9bee0da9bc22620588f5a15a6145553504df9649e5c",
+  "description": "Alice publishes the two endpoints that answer for her.",
+  "event_id": "vjhecjbshprtmipd77wv36lrs6blqiirtatwxad3z72hlz6vvzja",
+  "event_id_hex": "aa4e4124323be33621e3ffed5df9719782b8211198276b807bcff475e7d5ae52",
+  "file": "18-endpoint-advertisement.json",
+  "inputs": {
+    "endpoints_hex": [
+      "c853ad0f0cd2b619aea92ceec4fd56a24d6499d584ce79257e45cfd8139b60a7",
+      "ee31f83c88a71219a6fcf9bee0da9bc22620588f5a15a6145553504df9649e5c"
+    ],
+    "ledger": "qis2m2ncd3rejordx5fbbfxnkrc2svhkaglhcugm3xxhenrv6hiq",
+    "now_ms": 1700000960000,
+    "prev": "s4etbmipzt5x6ucitzww2kabhxs3s555vw6bmacfsvhyf32fhisq",
+    "prev_timestamp_ms": 1700000900000,
+    "secret_key_hex": "1111111111111111111111111111111111111111111111111111111111111111",
+    "seq": 12
+  },
+  "signature_hex": "9dd5af6a0345a18705da06e11645e7ca1ee1a01fa2a334a6a6087501a102858b4c1e0e5917adaa45e722cdb55da3979e7f03f54a10898bd5f068c6d97efe5e08",
+  "signed_event_hex": "0ab60112208225a669a21ee244ba23bf4a1096ed5445a954ea01967150ccddee723635f1d1180c2220970930b10fccfb7f50489e6d6d28013de5b977bdadbc160045954f82ef453a2528809cd0ffbc313220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c97787379201440a20c853ad0f0cd2b619aea92ceec4fd56a24d6499d584ce79257e45cfd8139b60a70a20ee31f83c88a71219a6fcf9bee0da9bc22620588f5a15a6145553504df9649e5c12409dd5af6a0345a18705da06e11645e7ca1ee1a01fa2a334a6a6087501a102858b4c1e0e5917adaa45e722cdb55da3979e7f03f54a10898bd5f068c6d97efe5e08"
+}

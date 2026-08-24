@@ -546,7 +546,8 @@ pub struct Identity {
     pub head_event: Id,
     /// Events in the ledger, `head_seq + 1`.
     pub event_count: u64,
-    /// Witness endpoints from the latest witness config.
+    /// The identities the latest `WitnessSet` names, which are the identities
+    /// that may keep this ledger (proposal 006 section 1).
     pub witnesses: Vec<Id>,
     /// Attestations this identity issued, revoked ones included.
     pub trust: Vec<TrustEntry>,
@@ -572,9 +573,11 @@ pub struct Identity {
 
 /// The event document (`contracts/README.md`, "Shared documents").
 ///
-/// `payload_kind` stays a string and `payload` a JSON object: the seven names
+/// `payload_kind` stays a string and `payload` a JSON object: the payload names
 /// and their keys are frozen in `contracts/README.md`, but one Rust enum per
-/// payload would duplicate `ledger.proto` in a layer that only renders.
+/// payload would duplicate `ledger.proto` in a layer that only renders. The ten
+/// names are the `oneof payload` tags of tags 10 to 19, `witness_set` and
+/// `endpoint_advertisement` among them (proposal 006 section 3).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Event {
@@ -725,8 +728,9 @@ pub struct LedgerPage {
     pub events: Vec<Event>,
 }
 
-/// The answer to an append: `POST /api/trust` and
-/// `POST /api/identities/:identity_id/witnesses`.
+/// The answer to an append: `POST /api/trust`,
+/// `POST /api/identities/:identity_id/witnesses` and
+/// `POST /api/identities/:identity_id/endpoints`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Appended {
@@ -1150,7 +1154,8 @@ pub struct LedgerList {
 pub struct LedgerView {
     /// The summary row.
     pub entry: LedgerEntry,
-    /// Witness endpoints from the ledger's latest witness config.
+    /// The identities the ledger's latest `WitnessSet` names (proposal 006
+    /// section 1).
     pub witnesses: Vec<Id>,
 }
 

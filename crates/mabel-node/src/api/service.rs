@@ -215,8 +215,13 @@ pub trait WalletService: Send + Sync + 'static {
     /// `GET /api/identities/{identity_id}/keys`.
     fn identity_keys(&self, identity_id: Id) -> ServiceFuture<'_, IdentityKeys>;
 
-    /// `POST /api/identities/{identity_id}/witnesses`.
+    /// `POST /api/identities/{identity_id}/witnesses`, whose body names
+    /// identity ids (proposal 006 section 1).
     fn set_witnesses(&self, identity_id: Id, witnesses: Vec<Id>) -> ServiceFuture<'_, Appended>;
+
+    /// `POST /api/identities/{identity_id}/endpoints`, which appends one
+    /// `EndpointAdvertisement` (proposal 006 section 2).
+    fn set_endpoints(&self, identity_id: Id, endpoints: Vec<Id>) -> ServiceFuture<'_, Appended>;
 
     /// `POST /api/identities/{identity_id}/profile`.
     fn replace_profile(&self, request: ReplaceProfile) -> ServiceFuture<'_, ProfileReplaced>;

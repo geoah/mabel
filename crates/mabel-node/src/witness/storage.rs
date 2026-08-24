@@ -23,7 +23,7 @@ use iroh_base::EndpointId;
 use mabel_core::fold::LedgerState;
 use mabel_core::fork::ForkError;
 use mabel_core::proto::{DeclaredKind, RejectCode};
-use mabel_core::{EventId, LedgerId, Reason, validate_fork_record};
+use mabel_core::{EventId, IdentityId, LedgerId, Reason, validate_fork_record};
 use mabel_net::error::Rejection;
 use mabel_net::store::{
     EventPage, ForkRecord, Head, LedgerSummary, Page, Provenance, PushOutcome, StoreError,
@@ -100,8 +100,9 @@ pub struct LedgerReport {
     pub summary: LedgerSummary,
     /// The endpoint the ledger's first event arrived from, provenance only.
     pub source_endpoint: Option<EndpointId>,
-    /// The witness set of the ledger's latest `WitnessConfig`.
-    pub witnesses: Vec<EndpointId>,
+    /// The identities the ledger's latest `WitnessSet` names (proposal 006
+    /// section 1).
+    pub witnesses: Vec<IdentityId>,
 }
 
 /// What `GET /api/node` counts.
@@ -185,7 +186,7 @@ impl Entry {
         LedgerReport {
             summary: self.summary(ledger, cap),
             source_endpoint: self.source_endpoint,
-            witnesses: self.state.witnesses().to_vec(),
+            witnesses: self.state.witness_identities().to_vec(),
         }
     }
 
@@ -205,12 +206,14 @@ struct Index {
     storage_used: u64,
 }
 
-/// A witness's ledgers, its folded-state cache and its caps.
+/// A witness's ledgers, its folded-state cache, its caps and the identities it
+/// witnesses for.
 #[derive(Debug)]
 pub struct WitnessStorage {
     home: NodeHome,
     endpoint: EndpointId,
     caps: WitnessCaps,
+    witness_for: Vec<IdentityId>,
     index: Mutex<Index>,
 }
 
@@ -220,11 +223,17 @@ impl WitnessStorage {
     /// # Errors
     ///
     /// Returns the storage errors of reading the ledger directories.
-    pub fn open(home: NodeHome, endpoint: EndpointId, caps: WitnessCaps) -> Result<Self> {
+    pub fn open(
+        home: NodeHome,
+        endpoint: EndpointId,
+        caps: WitnessCaps,
+        witness_for: Vec<IdentityId>,
+    ) -> Result<Self> {
         let storage = Self {
             home,
             endpoint,
             caps,
+            witness_for,
             index: Mutex::new(Index::default()),
         };
         storage.reload()?;
@@ -237,8 +246,9 @@ impl WitnessStorage {
     ///
     /// Returns the errors of [`NodeHome::config`] and [`WitnessStorage::open`].
     pub fn open_from_config(home: NodeHome, endpoint: EndpointId) -> Result<Self> {
-        let caps = WitnessCaps::from_config(&home.config()?);
-        Self::open(home, endpoint, caps)
+        let config = home.config()?;
+        let caps = WitnessCaps::from_config(&config);
+        Self::open(home, endpoint, caps, config.witness_for)
     }
 
     /// The home this witness stores into.
@@ -257,6 +267,16 @@ impl WitnessStorage {
     #[must_use]
     pub fn caps(&self) -> WitnessCaps {
         self.caps
+    }
+
+    /// The witness identities this home witnesses for, from
+    /// `node.json.witness_for` (proposal 006 section 4).
+    ///
+    /// Empty means this home witnesses for nobody, and every push for a ledger
+    /// it holds no signing key for is refused.
+    #[must_use]
+    pub fn witness_for(&self) -> &[IdentityId] {
+        &self.witness_for
     }
 
     /// Rebuilds the folded-state cache from the event files.
@@ -424,8 +444,8 @@ impl WitnessStorage {
     ///
     /// # Errors
     ///
-    /// Returns `NOT_ADMITTED` for a ledger this witness neither holds nor is
-    /// named a witness of, `MALFORMED` for a gap, `TOO_LARGE` for a cap,
+    /// Returns `NOT_ADMITTED` when [`WitnessStorage::admits`] refuses,
+    /// `MALFORMED` for a gap, `TOO_LARGE` for a cap,
     /// `FORK` when a pushed event contends with a stored one, and `INVALID`
     /// when an event does not verify, with the valid prefix stored first.
     pub fn push(&self, ledger: LedgerId, events: &[Vec<u8>], provenance: Provenance) -> PushResult {
@@ -438,7 +458,7 @@ impl WitnessStorage {
                     head_seq: entry.head_seq,
                     stored: 0,
                 }),
-                None => Err(not_admitted(ledger)),
+                None => Err(not_admitted(ledger, &self.witness_for)),
             };
         }
 
@@ -494,10 +514,12 @@ impl WitnessStorage {
                 "the seq-0 event does not hash to the ledger this push names",
             ));
         }
-        // Admission: the folded witness set must name this witness (proposal
-        // 001 section 5).
-        if !state.witnesses().contains(&self.endpoint) {
-            return Err(not_admitted(ledger));
+        // Admission on the first push, where the stored state is empty: the
+        // pushed state's witness set must name an identity this home witnesses
+        // for, or this home must hold a signing key for the ledger (proposal
+        // 006 section 4).
+        if !self.admits(ledger, None, &state) {
+            return Err(not_admitted(ledger, &self.witness_for));
         }
         let stored = self.store_run(index, ledger, state, &events[..valid], provenance)?;
         match violation {
@@ -552,13 +574,21 @@ impl WitnessStorage {
             });
         }
 
-        let mut state = index
+        let stored_state = index
             .ledgers
             .get(&ledger)
             .expect("the ledger is held")
             .state
             .clone();
+        let mut state = stored_state.clone();
         let (valid, violation) = apply_run(&mut state, suffix);
+        // Admission again, now that both states are known. The stored state is
+        // what admits the removal event itself: a controller who appends a
+        // witness set dropping this home needs that event to reach it
+        // (proposal 006 section 4).
+        if !self.admits(ledger, Some(&stored_state), &state) {
+            return Err(not_admitted(ledger, &self.witness_for));
+        }
         let stored = self.store_run(index, ledger, state, &suffix[..valid], provenance)?;
         match violation {
             Some(reason) => Err(StoreError::invalid(
@@ -567,6 +597,27 @@ impl WitnessStorage {
             )),
             None => Ok(stored),
         }
+    }
+
+    /// Whether this home takes a push for `ledger`, given the state it already
+    /// stores and the state the push folds to (proposal 006 section 4).
+    ///
+    /// Three clauses, in order: this home holds a signing key for the ledger,
+    /// so it controls it; the stored state's witness set names an identity this
+    /// home witnesses for; the pushed state's does. The third is what admits a
+    /// first push, the second is what admits the event that drops this home from
+    /// the set. The gated tag-11 legacy clause is ticket 034.
+    fn admits(&self, ledger: LedgerId, pre: Option<&LedgerState>, post: &LedgerState) -> bool {
+        if self.home.can_sign_for(ledger) {
+            return true;
+        }
+        let named = |state: &LedgerState| {
+            state
+                .witness_identities()
+                .iter()
+                .any(|witness| self.witness_for.contains(witness))
+        };
+        pre.is_some_and(named) || named(post)
     }
 
     /// Writes a verified run of events and updates the index.
@@ -892,9 +943,15 @@ fn too_large(msg: impl Into<String>) -> StoreError {
     StoreError::Rejected(Rejection::new(RejectCode::TooLarge, msg))
 }
 
-fn not_admitted(ledger: LedgerId) -> StoreError {
+fn not_admitted(ledger: LedgerId, witness_for: &[IdentityId]) -> StoreError {
+    if witness_for.is_empty() {
+        return StoreError::not_admitted(format!(
+            "this home witnesses for nobody, so it does not take pushes for {ledger}"
+        ));
+    }
     StoreError::not_admitted(format!(
-        "this witness does not hold {ledger} and the pushed chain does not name it a witness"
+        "the witness set of {ledger} names none of the {} identities this home witnesses for",
+        witness_for.len()
     ))
 }
 

@@ -15,9 +15,9 @@ pub mod witness;
 pub mod witness_run;
 
 use crate::cli::{
-    Cli, Command, ContactCommand, DevCommand, GraphCommand, IdentityCommand, MembershipCommand,
-    NodeCommand, ProfileCommand, SyncCommand, TrustCommand, VerifyCommand, WalletCommand,
-    WitnessCommand,
+    Cli, Command, ContactCommand, DevCommand, EndpointsCommand, GraphCommand, IdentityCommand,
+    MembershipCommand, NodeCommand, ProfileCommand, SyncCommand, TrustCommand, VerifyCommand,
+    WalletCommand, WitnessCommand,
 };
 use crate::context::Context;
 use crate::error::Result;
@@ -53,6 +53,13 @@ fn dispatch(ctx: &Context, cli: &Cli) -> Result<Outcome> {
             ),
             IdentityCommand::List => identity::list(ctx),
             IdentityCommand::Show { identity } => identity::show(ctx, identity),
+            IdentityCommand::Endpoints { command } => match command {
+                EndpointsCommand::Replace {
+                    identity,
+                    endpoints,
+                    append,
+                } => identity::replace_endpoints(ctx, identity, endpoints, append),
+            },
             IdentityCommand::Export { identity, out } => identity::export(ctx, identity, out),
             IdentityCommand::Rotate { .. } => identity::rotate(),
         },
@@ -135,9 +142,9 @@ fn dispatch(ctx: &Context, cli: &Cli) -> Result<Outcome> {
         Command::Witness { command } => match command {
             WitnessCommand::Add {
                 identity,
-                endpoint,
+                witness,
                 append,
-            } => witness::add(ctx, identity, endpoint, append),
+            } => witness::add(ctx, identity, witness, append),
             WitnessCommand::SetDefault { endpoints } => witness::set_default(ctx, endpoints),
             WitnessCommand::Run {
                 http,
@@ -184,7 +191,7 @@ fn dispatch(ctx: &Context, cli: &Cli) -> Result<Outcome> {
             NodeCommand::Ticket { addr, port } => node::ticket(ctx, addr, *port),
         },
         Command::Dev { command } => match command {
-            DevCommand::Seed { peer } => dev::seed(ctx, peer),
+            DevCommand::Seed { peer, witness } => dev::seed(ctx, peer, witness),
         },
     }
 }

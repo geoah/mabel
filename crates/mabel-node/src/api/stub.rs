@@ -226,6 +226,8 @@ pub enum WalletCall {
     IdentityKeys(Id),
     /// `POST /api/identities/{identity_id}/witnesses`.
     SetWitnesses(Id, Vec<Id>),
+    /// `POST /api/identities/{identity_id}/endpoints`.
+    SetEndpoints(Id, Vec<Id>),
     /// `POST /api/identities/{identity_id}/profile`.
     ReplaceProfile(ReplaceProfile),
     /// `POST /api/identities/{identity_id}/verification`.
@@ -463,6 +465,16 @@ impl WalletService for StubWalletService {
     fn set_witnesses(&self, identity_id: Id, witnesses: Vec<Id>) -> ServiceFuture<'_, Appended> {
         self.answer(
             WalletCall::SetWitnesses(identity_id, witnesses),
+            self.witnesses_appended.clone(),
+        )
+    }
+
+    /// Both list appends answer the one `Appended` document, so the
+    /// advertisement route needs no second fixture: the shape is frozen by
+    /// `wallet-post-identity-witnesses.json` (ticket 038 adds the file).
+    fn set_endpoints(&self, identity_id: Id, endpoints: Vec<Id>) -> ServiceFuture<'_, Appended> {
+        self.answer(
+            WalletCall::SetEndpoints(identity_id, endpoints),
             self.witnesses_appended.clone(),
         )
     }

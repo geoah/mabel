@@ -17,17 +17,21 @@ pub use artifacts::{
 };
 pub use digest::{accept_input, event_id, reserve_commit, sign_input};
 pub use fold::{
-    Attestation, Head, Invitation, InvitationStatus, LedgerRoot, LedgerState, Principal, Profile,
-    Reason, SigningPrincipal, Violation, declared_kind_name, fold,
+    Attestation, EndpointAdvertisement, Head, Invitation, InvitationStatus, LedgerRoot,
+    LedgerState, Principal, Profile, Reason, SigningPrincipal, Violation, WitnessSet,
+    declared_kind_name, fold,
 };
 pub use fork::{Fork, ForkError, validate_fork_record};
 pub use id::{EventId, IdentityId, LedgerId, ParseIdError};
 pub use mabel_proto::v0 as proto;
+#[cfg(any(test, feature = "legacy-witness-config"))]
+pub use sign::build_witness_config;
 pub use sign::{
-    BuildError, BuiltEvent, DetachedAcceptance, Position, Root, build_acceptance, build_inception,
-    build_membership_acceptance, build_membership_invitation, build_membership_removal,
-    build_profile_update, build_trust_attestation, build_trust_revocation, build_witness_config,
-    check_profile, ledger_timestamp_ms,
+    BuildError, BuiltEvent, DetachedAcceptance, Position, Root, build_acceptance,
+    build_endpoint_advertisement, build_inception, build_membership_acceptance,
+    build_membership_invitation, build_membership_removal, build_profile_update,
+    build_trust_attestation, build_trust_revocation, build_witness_set, check_profile,
+    ledger_timestamp_ms,
 };
 pub use validate::{
     MessageDescriptor, StandaloneInception, StringRule, WireError, verify_inception_standalone,
@@ -90,8 +94,14 @@ pub const SIG_BYTES: usize = 64;
 /// Length of an inception `nonce` (proposal 001 section 3.3).
 pub const NONCE_BYTES: usize = 16;
 
-/// Maximum number of witnesses in one `WitnessConfig`.
+/// Maximum number of witnesses in one `WitnessSet`, and in the retired
+/// `WitnessConfig` it reuses the cap from (proposal 006 section 3).
 pub const MAX_WITNESSES: usize = 16;
+
+/// Maximum number of endpoints in one `EndpointAdvertisement` (proposal 006
+/// section 2). It bounds what one identity publishes, not what one operation
+/// dials.
+pub const MAX_ENDPOINTS: usize = 8;
 
 #[cfg(test)]
 mod tests {

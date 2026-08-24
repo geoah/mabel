@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode, header};
-use common::{Chain, Home, from_endpoint, home, rendered, secret};
+use common::{Chain, Home, from_endpoint, home, rendered, secret, subject, witness_identity};
 use mabel_core::LedgerId;
 use mabel_node::api::documents::Id;
 use mabel_node::api::service::{EventPageRequest, ForkQuery, PageRequest, WitnessService};
@@ -43,10 +43,9 @@ impl Fixed {
     fn new() -> Self {
         let home = home();
         let storage = home.storage(WitnessCaps::default());
-        let witness = home.endpoint_id();
 
         let mut alice = Chain::new(31);
-        alice.add_witness_config(&[witness, secret(50).public()]);
+        alice.add_witness_set(&[witness_identity(), subject(50)]);
         let attestation = alice.add_attestation(9);
         // Two valid events for seq 3; the revocation is the one stored first.
         let conflicting = alice.attestation(11).signed_event;
@@ -63,7 +62,7 @@ impl Fixed {
             .expect_err("seq 3 already holds another valid event");
 
         let mut bob = Chain::new(32);
-        bob.add_witness_config(&[witness]);
+        bob.add_witness();
         storage
             .push(bob.ledger, &bob.all(), from_endpoint(4))
             .expect("the chain names this witness");
@@ -256,11 +255,8 @@ async fn the_ledger_document_carries_the_witness_set_and_the_row() {
     );
     assert_eq!(
         view.witnesses.iter().map(Id::to_string).collect::<Vec<_>>(),
-        vec![
-            rendered(&fixed.home.endpoint_id()),
-            rendered(&secret(50).public())
-        ],
-        "the set is the order the latest WitnessConfig listed"
+        vec![witness_identity().to_string(), subject(50).to_string()],
+        "the set is the order the latest WitnessSet listed"
     );
 }
 
@@ -341,7 +337,7 @@ async fn the_event_page_matches_the_fixture_and_since_is_inclusive() {
             .collect::<Vec<_>>(),
         vec![
             "inception",
-            "witness_config",
+            "witness_set",
             "trust_attestation",
             "trust_revocation"
         ]

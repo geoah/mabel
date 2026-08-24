@@ -2,18 +2,23 @@
 
 use std::path::Path;
 
+use iroh_base::EndpointId;
 use mabel_core::artifacts::IdentityDescriptor;
 use mabel_core::fold::{LedgerRoot, LedgerState, Reason};
-use mabel_core::sign::{Root, build_inception, build_profile_update, check_profile};
+use mabel_core::sign::{
+    Root, build_endpoint_advertisement, build_inception, build_profile_update, check_profile,
+};
 use mabel_core::{IdentityId, NONCE_BYTES};
-use mabel_node::api::documents::Identity;
+use mabel_node::api::documents::{Id, Identity};
 use mabel_node::keys::generate_secret_key;
 use mabel_node::{IdentityMeta, LedgerMeta, now_ms};
 
-use crate::append::append;
-use crate::cli::Kind;
+use crate::append::{append, ensure_fresh};
+use crate::cli::{AppendOptions, Kind};
 use crate::context::Context;
-use crate::documents::{CreatedIdentity, ExportedIdentity, IdentityList, RootName};
+use crate::documents::{
+    CreatedIdentity, ExportedIdentity, IdentityList, ReplacedEndpoints, RootName,
+};
 use crate::error::{CliError, Result};
 use crate::ids;
 use crate::ledger::Loaded;
@@ -226,6 +231,94 @@ pub fn show(ctx: &Context, name: &str) -> Result<Outcome> {
     Outcome::new(&document, text)
 }
 
+/// `mabel identity endpoints replace --identity <alias|id> --endpoints
+/// auto|none|<endpoint,...>` (proposal 006 section 2).
+///
+/// One event says "these and only these": the list is replaced, never appended
+/// to, so a rotation names the machine it keeps beside the new one. `auto` is
+/// this node's own endpoint id, which is the machine the command is typed on,
+/// and `none` publishes an empty list, which says nothing answers for this
+/// identity right now.
+pub fn replace_endpoints(
+    ctx: &Context,
+    identity: &str,
+    endpoints: &str,
+    options: &AppendOptions,
+) -> Result<Outcome> {
+    let identity = ctx.resolve_local(identity)?;
+    let endpoints = parse_endpoints(ctx, endpoints)?;
+    ensure_fresh(ctx, identity, options)?;
+    let mut loaded = ctx.load(identity)?;
+
+    let previous: Vec<Id> = loaded.state.endpoints().iter().map(ids::key).collect();
+    if loaded.state.endpoints() == endpoints {
+        return Err(CliError::policy(
+            "no_op_endpoint_advertisement",
+            format!(
+                "{identity} already advertises these {} endpoints: nothing would change",
+                endpoints.len()
+            ),
+        )
+        .with_detail("identity_id", identity.to_string()));
+    }
+    let appended = append(ctx, identity, &mut loaded, |signer, at, timestamp_ms| {
+        build_endpoint_advertisement(signer, at, &endpoints, timestamp_ms)
+    })?;
+
+    let document = ReplacedEndpoints {
+        identity_id: ids::identity(identity),
+        endpoints: endpoints.iter().map(ids::key).collect(),
+        previous,
+        event_id: ids::event(appended.event_id),
+        timestamp_ms: appended.timestamp_ms,
+        head_seq: appended.seq,
+        head_event: ids::event(appended.event_id),
+    };
+    let mut text = match document.endpoints.len() {
+        0 => format!(
+            "{identity} advertises no machine as of seq {}",
+            appended.seq
+        ),
+        count => format!(
+            "{identity} advertises {count} {} as of seq {}",
+            if count == 1 { "machine" } else { "machines" },
+            appended.seq
+        ),
+    };
+    for endpoint in &document.endpoints {
+        text.push_str(&format!("\n{endpoint}"));
+    }
+    Outcome::new(&document, text)
+}
+
+/// Reads `--endpoints`: `auto`, `none`, or a comma-separated list.
+///
+/// # Errors
+///
+/// Returns code 2 with reason `malformed_endpoint_id` for an entry that does
+/// not parse and `duplicate_endpoint` for a repeat, which the payload forbids.
+fn parse_endpoints(ctx: &Context, raw: &str) -> Result<Vec<EndpointId>> {
+    if raw == "none" {
+        return Ok(Vec::new());
+    }
+    if raw == "auto" {
+        return Ok(vec![ctx.home().node_key()?.public()]);
+    }
+    let mut endpoints = Vec::new();
+    for value in raw.split(',') {
+        let endpoint = ids::parse_endpoint(value)?;
+        if endpoints.contains(&endpoint) {
+            return Err(CliError::usage(
+                "duplicate_endpoint",
+                format!("{} is named twice", ids::key(&endpoint)),
+            )
+            .with_detail("value", ids::key(&endpoint).to_string()));
+        }
+        endpoints.push(endpoint);
+    }
+    Ok(endpoints)
+}
+
 /// `mabel identity export <alias|id> --out <path>`.
 ///
 /// The descriptor carries the ledger's seq-0 event bytes as they are stored and
@@ -237,7 +330,10 @@ pub fn export(ctx: &Context, name: &str, out: &Path) -> Result<Outcome> {
     let loaded = ctx.load(identity)?;
     loaded.require_valid()?;
     let inception = ctx.store(identity).read_event(0)?;
-    let witnesses = loaded.state.witnesses().to_vec();
+    // The descriptor carries raw endpoints, which is what a reader needs to
+    // dial: the tag-11 list a pre-006 chain holds, and nothing from the tag-19
+    // set, whose entries are identities (proposal 006 section 1).
+    let witnesses = loaded.state.witness_endpoints().to_vec();
     let descriptor = IdentityDescriptor::new(&inception, &witnesses).map_err(|error| {
         crate::artifacts::failure(crate::artifacts::Kind::IdentityDescriptor, &error, out)
     })?;
@@ -252,7 +348,7 @@ pub fn export(ctx: &Context, name: &str, out: &Path) -> Result<Outcome> {
         declared_kind: loaded.declared_kind(),
         root,
         active_key: descriptor.active_key().as_ref().map(ids::key),
-        witnesses: loaded.witnesses(),
+        witnesses: witnesses.iter().map(ids::key).collect(),
         path: out.display().to_string(),
         bytes,
     };

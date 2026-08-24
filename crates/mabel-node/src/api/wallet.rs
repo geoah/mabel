@@ -42,6 +42,7 @@ pub(super) fn router(service: Service) -> Router {
             get(contact).put(set_contact),
         )
         .route("/identities/{identity_id}/witnesses", post(set_witnesses))
+        .route("/identities/{identity_id}/endpoints", post(set_endpoints))
         .route("/identities/{identity_id}/fetch", post(fetch_identity))
         .route("/lookup/{identity_id}", get(lookup))
         .route("/resolve/{hostname}", get(resolve))
@@ -216,6 +217,20 @@ async fn set_witnesses(
     let witnesses = parse::witnesses(&body)?;
     Ok(success(
         service.set_witnesses(identity_id, witnesses).await?,
+    ))
+}
+
+/// The endpoints that answer for this identity, replaced whole (proposal 006
+/// section 2).
+async fn set_endpoints(
+    State(service): State<Service>,
+    Path(identity_id): Path<String>,
+    body: Bytes,
+) -> Result<Response, ServiceError> {
+    let identity_id = parse::id(IdKind::Identity, &identity_id)?;
+    let endpoints = parse::endpoints(&body)?;
+    Ok(success(
+        service.set_endpoints(identity_id, endpoints).await?,
     ))
 }
 

@@ -2028,6 +2028,7 @@ dependencies = [
  "blake3",
  "data-encoding",
  "iroh-base",
+ "mabel-core",
  "mabel-proto",
  "serde",
  "serde_json",

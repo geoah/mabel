@@ -113,11 +113,30 @@ pub struct TrustList {
 pub struct AddedWitness {
     /// The identity whose ledger records the set.
     pub identity_id: Id,
-    /// The endpoint that was added.
-    pub endpoint: Id,
+    /// The witness identity that was added (proposal 006 section 1).
+    pub witness: Id,
     /// The whole set the new event records.
     pub witnesses: Vec<Id>,
-    /// The witness-config event.
+    /// The `WitnessSet` event.
+    pub event_id: Id,
+    /// The `timestamp_ms` it carries.
+    pub timestamp_ms: u64,
+    /// The new head sequence number.
+    pub head_seq: u64,
+    /// The new head event.
+    pub head_event: Id,
+}
+
+/// `mabel identity endpoints replace --json`.
+#[derive(Debug, Serialize)]
+pub struct ReplacedEndpoints {
+    /// The identity whose chain records the list.
+    pub identity_id: Id,
+    /// The whole list the new event records, empty when it advertises nothing.
+    pub endpoints: Vec<Id>,
+    /// What the ledger advertised before this event.
+    pub previous: Vec<Id>,
+    /// The `EndpointAdvertisement` event.
     pub event_id: Id,
     /// The `timestamp_ms` it carries.
     pub timestamp_ms: u64,
@@ -542,8 +561,8 @@ pub struct Membership {
 pub struct SeededHome {
     /// Every identity the seed created, by ascending identity id.
     pub identities: Vec<mabel_node::api::documents::Identity>,
-    /// The witness endpoints every seeded ledger now names, from `--peer`.
-    /// Empty when the seed was given no ticket.
+    /// The witness identities every seeded ledger now names. Empty when the
+    /// seed was given no ticket, since it wrote no witness set.
     pub witnesses: Vec<Id>,
     /// One entry per ledger pushed, in creation order. Empty when the seed was
     /// given no ticket.
