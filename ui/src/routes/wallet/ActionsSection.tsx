@@ -71,8 +71,8 @@ export function ActionsSection({
         </Action>
         <Action
           testId="action-profile"
-          title="Change the public name and website"
-          description="Set what other people see. Both are replaced together, and the old ones stay on the record."
+          title="Change the public name, email and website"
+          description="Set what other people see. All three are replaced together, and the old ones stay on the record."
         >
           <ProfilePanel identity={identity} onAppended={onAppended} />
         </Action>

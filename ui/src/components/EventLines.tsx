@@ -3,14 +3,6 @@ import { useState } from "react";
 import type { LedgerEvent } from "@/api/types";
 import { Identifier } from "@/components/Identifier";
 import { KeyValue, KeyValueTable } from "@/components/KeyValue";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { formatTimestamp } from "@/lib/time";
 
 /**
@@ -19,7 +11,7 @@ import { formatTimestamp } from "@/lib/time";
  */
 const GLOSS: Record<string, string> = {
   inception: "created this identity",
-  profile_update: "changed the public name and website",
+  profile_update: "changed the public name, email and website",
   witness_config: "chose who keeps a copy",
   trust_attestation: "said it trusts someone",
   trust_revocation: "took back trusting someone",
@@ -49,10 +41,10 @@ function EventDetail({ event }: { event: LedgerEvent }) {
 }
 
 /**
- * The record as decision 014 asks for it: one line per entry carrying its
- * position and what it did, each opening into the entry itself. The wallet's own
- * record and a witness's copy of it render through this one component, because
- * the record is the same record.
+ * The ledger as compact rows, not a table: two columns on one tight line each,
+ * the position and what the entry did, and each row opens into the entry itself
+ * (proposal 005). The wallet's own ledger and a witness's copy of it render
+ * through this one component, because it is the same ledger.
  */
 export function EventLines({ events }: { events: LedgerEvent[] }) {
   const [opened, setOpened] = useState<ReadonlySet<number>>(new Set());
@@ -68,61 +60,50 @@ export function EventLines({ events }: { events: LedgerEvent[] }) {
   }
 
   return (
-    <Table stack="none" data-testid="ledger-events">
-      <TableHeader>
-        <TableRow>
-          <TableHead className="w-12">at</TableHead>
-          <TableHead>what happened</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {events.map((event) => {
-          const open = opened.has(event.seq);
-          return [
-            <TableRow key={event.event_id} data-testid={`ledger-event-${event.seq}`}>
-              <TableCell
-                label="at"
+    <ul data-testid="ledger-events" className="divide-y">
+      {events.map((event) => {
+        const open = opened.has(event.seq);
+        return (
+          <li key={event.event_id} data-testid={`ledger-event-${event.seq}`}>
+            <button
+              type="button"
+              data-testid={`event-expand-${event.seq}`}
+              aria-expanded={open}
+              onClick={() => toggle(event.seq)}
+              className="flex w-full items-baseline gap-2 py-1 text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            >
+              <span aria-hidden="true" className="w-3 shrink-0 text-muted-foreground">
+                {open ? "−" : "+"}
+              </span>
+              <span
                 data-testid={`event-seq-${event.seq}`}
-                className="align-top font-mono text-xs"
+                className="w-6 shrink-0 font-mono text-xs text-muted-foreground"
               >
                 {event.seq}
-              </TableCell>
-              <TableCell className="align-top">
-                <button
-                  type="button"
-                  data-testid={`event-expand-${event.seq}`}
-                  aria-expanded={open}
-                  onClick={() => toggle(event.seq)}
-                  className="flex min-h-9 w-full flex-wrap items-baseline gap-x-2 text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              </span>
+              <span className="min-w-0 flex-1">
+                <span data-testid={`event-gloss-${event.seq}`} className="text-sm">
+                  {GLOSS[event.payload_kind] ?? ""}
+                </span>{" "}
+                <span
+                  data-testid={`event-payload-kind-${event.seq}`}
+                  className="font-mono text-xs text-muted-foreground"
                 >
-                  <span aria-hidden="true" className="text-muted-foreground">
-                    {open ? "−" : "+"}
-                  </span>
-                  <span
-                    data-testid={`event-payload-kind-${event.seq}`}
-                    className="font-mono text-xs"
-                  >
-                    {event.payload_kind}
-                  </span>
-                  <span
-                    data-testid={`event-gloss-${event.seq}`}
-                    className="text-xs text-muted-foreground"
-                  >
-                    {GLOSS[event.payload_kind] ?? ""}
-                  </span>
-                </button>
-              </TableCell>
-            </TableRow>,
-            open ? (
-              <TableRow key={`${event.event_id}-detail`} data-testid={`event-detail-${event.seq}`}>
-                <TableCell colSpan={2} className="bg-muted/40">
-                  <EventDetail event={event} />
-                </TableCell>
-              </TableRow>
-            ) : null,
-          ];
-        })}
-      </TableBody>
-    </Table>
+                  {event.payload_kind}
+                </span>
+              </span>
+            </button>
+            {open && (
+              <div
+                data-testid={`event-detail-${event.seq}`}
+                className="rounded-md bg-muted/40 px-2 py-1"
+              >
+                <EventDetail event={event} />
+              </div>
+            )}
+          </li>
+        );
+      })}
+    </ul>
   );
 }

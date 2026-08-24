@@ -72,7 +72,7 @@ function ForkRecordView({ record }: { record: ForkRecord }) {
       <p className="text-xs" data-testid={`fork-statement-${key}`}>
         {record.statement}
       </p>
-      <div className="grid gap-3 lg:grid-cols-2">
+      <div className="grid gap-3">
         <ForkEventPane event={record.kept} side="kept" testId={`fork-kept-${key}`} />
         <ForkEventPane
           event={record.conflicting}

@@ -192,13 +192,18 @@ export interface RemovedResponse {
 }
 
 /**
- * The two fields a ProfileUpdate carries (proposal 003 section 1). The payload
- * replaces the whole document, so an omitted field clears that name; both the
- * request body and the before-and-after diff use this shape.
+ * The three fields a ProfileUpdate carries (proposal 003 section 1, extended by
+ * proposal 005). The payload replaces the whole document, so an omitted field
+ * clears that value; both the request body and the before-and-after diff use
+ * this shape.
+ *
+ * email is a claim and nothing more: the node checks its shape (at most 254
+ * bytes, one `@` with something on each side) and never its deliverability.
  */
 export interface ProfileFields {
   display_name: string | null;
   hostname: string | null;
+  email: string | null;
 }
 
 /**
@@ -488,11 +493,18 @@ export interface IdentityResponse {
  * POST /api/identities. The frozen request is {alias, declared_kind}; founder
  * is the proposal 002 section 6 addition that selects an identity root, and is
  * omitted for a raw root.
+ *
+ * display_name and email are the proposal 005 addition: when either is given
+ * the node appends one ProfileUpdate at seq 1, right after the inception, so a
+ * new identity's first two entries are who it is and what it shows the world.
+ * Both are omitted when the person left the box empty.
  */
 export interface CreateIdentityRequest {
   alias: string;
   declared_kind: DeclaredKind;
   founder?: string;
+  display_name?: string;
+  email?: string;
 }
 
 export interface CreateIdentityResponse {

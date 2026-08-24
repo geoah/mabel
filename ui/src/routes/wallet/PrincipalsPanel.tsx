@@ -1,12 +1,8 @@
-import type {
-  Identity,
-  MembershipView,
-  ResolvedIdentity as ResolvedIdentityDocument,
-} from "@/api/types";
-import { ResolvedIdentity } from "@/components/ResolvedIdentity";
+import type { Identity, MembershipView } from "@/api/types";
+import { IdentityInline, IdentityListScope } from "@/components/identity";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { bareIdentity } from "@/hooks/useResolvedNames";
+import { named, type ResolvedNames } from "@/hooks/useResolvedNames";
 
 /**
  * Who may act on this ledger, and every invitation it ever issued. A ledger
@@ -21,10 +17,13 @@ export function PrincipalsPanel({
   identity: Identity;
   /** GET /api/identities/:identity_id/memberships, null while it is in flight. */
   memberships: MembershipView | null;
-  names: Map<string, ResolvedIdentityDocument>;
+  names: ResolvedNames;
 }) {
   const invitations = memberships?.invitations ?? [];
-  const resolved = (id: string) => names.get(id) ?? bareIdentity(id);
+  const resolved = (id: string) => named(names, id);
+  // An identity-rooted ledger holds no key of its own. That is the one fact
+  // about keys a reader acts on, and this is the one place it is said.
+  const founded = identity.active_key === undefined;
 
   if (identity.principals.length <= 1 && invitations.length === 0) {
     return null;
@@ -34,67 +33,74 @@ export function PrincipalsPanel({
     <Card data-testid="principals-panel">
       <CardHeader>
         <CardTitle>Who can act for this identity</CardTitle>
-        <CardDescription>
+        <CardDescription data-testid="principals-description">
           Everyone allowed to sign for it, and every invitation it has sent
+          {founded ? ". Its controllers sign for it." : ""}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
-        <ul data-testid="principals-list" className="divide-y">
-          {identity.principals.map((principal) => (
-            <li
-              key={principal.identity}
-              data-testid={`principal-row-${principal.identity}`}
-              className="flex flex-wrap items-center gap-x-2 gap-y-1 py-2"
-            >
-              <ResolvedIdentity
-                identity={resolved(principal.identity)}
-                testId={`principal-name-${principal.identity}`}
-                to={`/identities/${principal.identity}`}
-              />
-              <Badge data-testid={`principal-role-${principal.identity}`}>{principal.role}</Badge>
-              {principal.is_root && (
-                <Badge variant="secondary" data-testid={`principal-root-${principal.identity}`}>
-                  founder
-                </Badge>
-              )}
-            </li>
-          ))}
-        </ul>
-        {invitations.length > 0 && (
-          <ul data-testid="invitations-list" className="divide-y border-t">
-            {invitations.map((invitation) => (
+        <IdentityListScope
+          identities={[
+            ...identity.principals.map((principal) => resolved(principal.identity)),
+            ...invitations.map((invitation) => resolved(invitation.invitee)),
+          ]}
+        >
+          <ul data-testid="principals-list" className="divide-y">
+            {identity.principals.map((principal) => (
               <li
-                key={invitation.invitation_event}
-                data-testid={`invitation-row-${invitation.invitee}`}
+                key={principal.identity}
+                data-testid={`principal-row-${principal.identity}`}
                 className="flex flex-wrap items-center gap-x-2 gap-y-1 py-2"
               >
-                <ResolvedIdentity
-                  identity={resolved(invitation.invitee)}
-                  testId={`invitation-name-${invitation.invitee}`}
-                  to={`/identities/${invitation.invitee}`}
+                <IdentityInline
+                  identity={resolved(principal.identity)}
+                  testId={`principal-name-${principal.identity}`}
+                  to={`/identities/${principal.identity}`}
                 />
-                <Badge variant="outline" data-testid={`invitation-role-${invitation.invitee}`}>
-                  {invitation.role}
-                </Badge>
-                <Badge
-                  variant={invitation.status === "open" ? "secondary" : "outline"}
-                  data-testid={`invitation-status-${invitation.invitee}`}
-                >
-                  {invitation.status}
-                </Badge>
-                <span className="text-xs text-muted-foreground">
-                  invited at position {invitation.invitation_seq}
-                </span>
+                <Badge data-testid={`principal-role-${principal.identity}`}>{principal.role}</Badge>
+                {principal.is_root && (
+                  <Badge variant="secondary" data-testid={`principal-root-${principal.identity}`}>
+                    founder
+                  </Badge>
+                )}
               </li>
             ))}
           </ul>
-        )}
+          {invitations.length > 0 && (
+            <ul data-testid="invitations-list" className="divide-y border-t">
+              {invitations.map((invitation) => (
+                <li
+                  key={invitation.invitation_event}
+                  data-testid={`invitation-row-${invitation.invitee}`}
+                  className="flex flex-wrap items-center gap-x-2 gap-y-1 py-2"
+                >
+                  <IdentityInline
+                    identity={resolved(invitation.invitee)}
+                    testId={`invitation-name-${invitation.invitee}`}
+                    to={`/identities/${invitation.invitee}`}
+                  />
+                  <Badge variant="outline" data-testid={`invitation-role-${invitation.invitee}`}>
+                    {invitation.role}
+                  </Badge>
+                  <Badge
+                    variant={invitation.status === "open" ? "secondary" : "outline"}
+                    data-testid={`invitation-status-${invitation.invitee}`}
+                  >
+                    {invitation.status}
+                  </Badge>
+                </li>
+              ))}
+            </ul>
+          )}
+        </IdentityListScope>
         <p data-testid="principals-open-invitations" className="text-xs text-muted-foreground">
           {identity.open_invitation_count === 0
-            ? "No invitation is waiting to be accepted."
+            ? "No invitation to help control this identity is waiting for an answer."
             : `${identity.open_invitation_count} ${
-                identity.open_invitation_count === 1 ? "invitation is" : "invitations are"
-              } still waiting to be accepted.`}
+                identity.open_invitation_count === 1 ? "invitation" : "invitations"
+              } to help control this identity ${
+                identity.open_invitation_count === 1 ? "is" : "are"
+              } still waiting for an answer.`}
         </p>
       </CardContent>
     </Card>

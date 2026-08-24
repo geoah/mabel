@@ -25,11 +25,13 @@ function serveLookup(answer: LookupResponse): void {
 }
 
 describe("an identity this wallet can sign for", () => {
-  it("carries the badge and the actions, and no contact-only section", async () => {
+  it("carries the pill and the actions, and no contact-only section", async () => {
     renderApp(`/identities/${ALICE}`);
     await screen.findByTestId("identity-detail");
 
-    expect(screen.getByTestId("identity-own-badge")).toHaveTextContent("your identity");
+    expect(screen.getByTestId("identity-detail-resolved-pill")).toHaveTextContent(
+      "your identity",
+    );
     expect(screen.getByTestId("identity-actions")).toBeInTheDocument();
     expect(screen.queryByTestId("lookup-result")).not.toBeInTheDocument();
     expect(screen.queryByTestId("identity-fetch")).not.toBeInTheDocument();
@@ -240,7 +242,7 @@ describe("the routes the four-tab wallet left behind", () => {
     renderApp(route);
 
     await screen.findByTestId("identity-detail");
-    expect(screen.getByTestId("identity-detail-identity-id")).toHaveTextContent(ALICE);
+    expect(screen.getByTestId("identity-detail-resolved")).toHaveTextContent(ALICE);
     expect(screen.queryByTestId("route-not-found")).not.toBeInTheDocument();
   });
 });

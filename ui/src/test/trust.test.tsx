@@ -37,9 +37,7 @@ describe("trust add and revoke", () => {
     expect(bodies).toEqual([{ issuer: ALICE, subject: ACME }]);
 
     const row = await screen.findByTestId(`trust-row-${eventId}`);
-    expect(within(row).getByTestId(`trust-state-${eventId}`)).toHaveTextContent(
-      /trusted since position \d+/,
-    );
+    expect(within(row).getByTestId(`trust-state-${eventId}`)).toHaveTextContent("trusted");
   });
 
   it("revokes the attestation it just appended", async () => {
@@ -51,9 +49,7 @@ describe("trust add and revoke", () => {
     await user.click(await screen.findByTestId(`trust-revoke-${eventId}`));
 
     await waitFor(() =>
-      expect(screen.getByTestId(`trust-state-${eventId}`)).toHaveTextContent(
-        /taken back at position \d+/,
-      ),
+      expect(screen.getByTestId(`trust-state-${eventId}`)).toHaveTextContent("taken back"),
     );
     expect(screen.getByTestId(`trust-revoke-${eventId}`)).toBeDisabled();
   });

@@ -18,30 +18,56 @@ describe("identity detail", () => {
     await user.type(screen.getByTestId("ledger-limit"), "2");
     await user.click(screen.getByTestId("ledger-load"));
     await waitFor(() =>
-      expect(screen.getByTestId("ledger-more")).toHaveTextContent("There are more after these."),
+      expect(screen.getByTestId("ledger-range")).toHaveTextContent(
+        `Showing positions 0 to 1 of ${alice.event_count}.`,
+      ),
     );
     expect(screen.getByTestId("event-seq-0")).toHaveTextContent("0");
     expect(screen.queryByTestId("ledger-event-2")).not.toBeInTheDocument();
+    // Nothing before the first page, and more after it.
+    expect(screen.getByTestId("ledger-previous")).toBeDisabled();
+    expect(screen.getByTestId("ledger-next")).not.toBeDisabled();
 
     await user.click(screen.getByTestId("ledger-next"));
 
-    await waitFor(() => expect(screen.getByTestId("ledger-page-since")).toHaveTextContent("2"));
+    await waitFor(() =>
+      expect(screen.getByTestId("ledger-range")).toHaveTextContent(
+        `Showing positions 2 to 3 of ${alice.event_count}.`,
+      ),
+    );
     // since is inclusive, so the page opens at seq 2.
     expect(screen.getByTestId("event-seq-2")).toHaveTextContent("2");
     expect(screen.getByTestId("event-payload-kind-3")).toHaveTextContent("trust_revocation");
-    expect(screen.getByTestId("ledger-more")).toHaveTextContent("There are more after these.");
+    expect(screen.getByTestId("ledger-previous")).not.toBeDisabled();
     expect(screen.queryByTestId("ledger-event-1")).not.toBeInTheDocument();
 
-    // The last page says so, and reports the whole record rather than its page.
+    await user.click(screen.getByTestId("ledger-previous"));
+
+    await waitFor(() =>
+      expect(screen.getByTestId("ledger-range")).toHaveTextContent(
+        `Showing positions 0 to 1 of ${alice.event_count}.`,
+      ),
+    );
+
+    // The last page offers no next, and reports the whole record, not its page.
     await user.clear(screen.getByTestId("ledger-since"));
     await user.type(screen.getByTestId("ledger-since"), String(alice.head_seq));
     await user.click(screen.getByTestId("ledger-load"));
 
-    await waitFor(() =>
-      expect(screen.getByTestId("ledger-more")).toHaveTextContent("These are the last of them."),
+    await waitFor(() => expect(screen.getByTestId("ledger-next")).toBeDisabled());
+    expect(screen.getByTestId("ledger-range")).toHaveTextContent(
+      `Showing positions ${alice.head_seq} to ${alice.head_seq} of ${alice.event_count}.`,
     );
     expect(screen.getByTestId("ledger-event-count")).toHaveTextContent(String(alice.event_count));
     expect(screen.getByTestId("ledger-head-seq")).toHaveTextContent(String(alice.head_seq));
+  });
+
+  it("titles the section Ledger, not Record", async () => {
+    renderApp(`/identities/${ALICE}`);
+
+    const panel = await screen.findByTestId("ledger-panel");
+    expect(panel).toHaveTextContent("Ledger");
+    expect(panel.textContent ?? "").not.toMatch(/^Record/);
   });
 
   // Decision 017: a summary without the entries behind it says so, rather than

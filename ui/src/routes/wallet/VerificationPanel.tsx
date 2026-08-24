@@ -4,7 +4,7 @@ import { type ApiError, forceVerification } from "@/api/client";
 import type { Identity, Verification } from "@/api/types";
 import { ErrorEnvelopeView } from "@/components/ErrorEnvelopeView";
 import { KeyValue, KeyValueTable } from "@/components/KeyValue";
-import { VerificationMark, VerificationNote } from "@/components/ResolvedIdentity";
+import { VerificationMark } from "@/components/identity";
 import { Button } from "@/components/ui/button";
 import { asApiError } from "@/hooks/useResource";
 import { formatTimestamp } from "@/lib/time";
@@ -12,8 +12,8 @@ import { formatTimestamp } from "@/lib/time";
 /**
  * Whether the website this identity claims names it back in DNS. Checking is
  * manual: the GET routes answer from the cache, and this button forces one
- * check and waits for it (proposal 003 section 2). It grants nothing either
- * way, which the standing note under the button says.
+ * check and waits for it (proposal 003 section 2). The verdict is advisory and
+ * gates nothing (decision 015).
  */
 export function VerificationPanel({
   identity,
@@ -79,7 +79,6 @@ export function VerificationPanel({
         {pending ? "checking" : "Check now"}
       </Button>
       {error && <ErrorEnvelopeView error={error} testId="verification-error" />}
-      <VerificationNote testId="verification-note" />
     </div>
   );
 }

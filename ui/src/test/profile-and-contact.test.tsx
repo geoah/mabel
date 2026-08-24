@@ -116,7 +116,8 @@ describe("verification", () => {
     await waitFor(() =>
       expect(screen.getByTestId("verification-mark")).toHaveTextContent("alice.example"),
     );
-    expect(screen.getByTestId("verification-note")).toHaveTextContent("It grants nothing.");
+    // Proposal 005 removed the standing DNS advisory sentence outright.
+    expect(screen.queryByTestId("verification-note")).not.toBeInTheDocument();
   });
 
   it("refuses a check on an identity that claims no hostname", async () => {

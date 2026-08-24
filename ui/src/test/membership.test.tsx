@@ -64,7 +64,9 @@ describe("membership", () => {
     expect(bundle.length).toBeGreaterThan(0);
     // The invitation is on the ledger and open, before anybody accepts it.
     expect(screen.getByTestId(`invitation-status-${ACME}`)).toHaveTextContent("open");
-    expect(screen.getByTestId("identity-detail-open-invitations")).toHaveTextContent("1");
+    expect(screen.getByTestId("identity-detail-open-invitations")).toHaveTextContent(
+      "1 invitation to help control this identity, still waiting for an answer",
+    );
     cleanup();
 
     const acceptance = await accept(bundle);
@@ -81,7 +83,7 @@ describe("membership", () => {
       expect(screen.getByTestId(`principal-role-${ACME}`)).toHaveTextContent("controller"),
     );
     expect(screen.getByTestId(`invitation-status-${ACME}`)).toHaveTextContent("accepted");
-    expect(screen.getByTestId("identity-detail-open-invitations")).toHaveTextContent("0");
+    expect(screen.getByTestId("identity-detail-open-invitations")).toHaveTextContent("none");
 
     fireEvent.change(screen.getByTestId("remove-target"), { target: { value: ACME } });
     await user.click(screen.getByTestId("remove-submit"));

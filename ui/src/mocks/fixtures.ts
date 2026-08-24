@@ -52,8 +52,14 @@ import type {
   WitnessSummary,
 } from "@/api/types";
 
+/** The ids the fixtures share with test-vectors/. */
+export const ALICE = "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq";
+export const BOB = "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq";
+export const ACME = "2okqwhextnpkpmydrgrkk563vbehcklffwfzidxlh5dslawjmn6a";
+
 export const walletNode = walletNodeFixture.response as WalletNodeInfo;
 export const witnessNode = witnessNodeFixture.response as WitnessNodeInfo;
+
 export const seedIdentities = identitiesFixture.response.identities as Identity[];
 export const createdIdentity = createIdentityFixture.response as CreateIdentityResponse;
 export const witnessConfigAppend = witnessesFixture.response as AppendResponse;
@@ -119,10 +125,6 @@ export const seedLookup = lookupFixture.response as LookupResponse;
 /** GET /api/graph, the crawl generation this home last recorded. */
 export const seedGraph = graphFixture.response.graph as Graph;
 
-/** The ids the fixtures share with test-vectors/. */
-export const ALICE = "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq";
-export const BOB = "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq";
-export const ACME = "2okqwhextnpkpmydrgrkk563vbehcklffwfzidxlh5dslawjmn6a";
 /** The foreign identity the lookup fixture answers for, two hops from Alice. */
 export const CAROL = seedLookup.identity.identity_id;
 
@@ -189,7 +191,7 @@ export const errors = {
   /** code 10, Schema error. */
   unknownEnumValue: createIdentityFixture.errors[1] as { status: number; body: ErrorEnvelope },
   /** code 70, no layer prefix. */
-  unsupportedDeclaredKind: createIdentityFixture.errors[4] as {
+  unsupportedDeclaredKind: createIdentityFixture.errors[5] as {
     status: number;
     body: ErrorEnvelope;
   },
@@ -212,6 +214,8 @@ export const errors = {
   noOpProfileUpdate: profileFixture.errors[1] as { status: number; body: ErrorEnvelope },
   /** code 10, a display name that parses as an identity id. */
   invalidDisplayName: profileFixture.errors[2] as { status: number; body: ErrorEnvelope },
+  /** code 10, an email with no at sign (proposal 005). */
+  invalidEmail: profileFixture.errors[3] as { status: number; body: ErrorEnvelope },
   /** code 20 at 409, a forced check on an identity claiming no hostname. */
   noHostnameClaimed: verificationFixture.errors[0] as { status: number; body: ErrorEnvelope },
   /** code 10, a contact nickname past its 64-byte cap. */

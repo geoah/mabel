@@ -76,7 +76,7 @@ export function WitnessesPage() {
             <p data-testid="witness-list-empty">Your wallet knows of no witness yet.</p>
           )}
           {witnesses.data && witnesses.data.witnesses.length > 0 && (
-            <ul data-testid="witness-cards" className="grid gap-2 sm:grid-cols-2">
+            <ul data-testid="witness-cards" className="grid gap-2">
               {witnesses.data.witnesses.map((witness) => (
                 <li key={witness.endpoint_id} className="min-w-0">
                   <WitnessCard witness={witness} />

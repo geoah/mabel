@@ -10,7 +10,7 @@ import type {
 import { ErrorEnvelopeView } from "@/components/ErrorEnvelopeView";
 import { Identifier } from "@/components/Identifier";
 import { KeyValue, KeyValueTable } from "@/components/KeyValue";
-import { ResolvedIdentity, ResolvedIdentityScope } from "@/components/ResolvedIdentity";
+import { IdentityInline, IdentityListScope } from "@/components/identity";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useResource } from "@/hooks/useResource";
@@ -64,9 +64,9 @@ export function EquivocationNotice({
 function Hop({ hop, testId }: { hop: LookupHop; testId: string }) {
   return (
     <li data-testid={testId} className="flex flex-wrap items-center gap-x-2 gap-y-1 py-2">
-      <ResolvedIdentity identity={hop.from} testId={`${testId}-from`} />
+      <IdentityInline identity={hop.from} testId={`${testId}-from`} />
       <span className="text-xs text-muted-foreground">trusts</span>
-      <ResolvedIdentity
+      <IdentityInline
         identity={hop.to}
         testId={`${testId}-to`}
         to={`/identities/${hop.to.identity_id}`}
@@ -104,7 +104,7 @@ function EntryRow({
   return (
     <li data-testid={`lookup-${kind}-row-${identity.identity_id}`} className="space-y-1 py-2">
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-        <ResolvedIdentity
+        <IdentityInline
           identity={identity}
           testId={`lookup-${kind}-name-${identity.identity_id}`}
           to={`/identities/${identity.identity_id}`}
@@ -233,7 +233,7 @@ export function KnowledgeBody({
           ))}
         </div>
       )}
-      <ResolvedIdentityScope identities={listed}>
+      <IdentityListScope identities={listed}>
         <div className="space-y-1">
           <p className="text-xs text-muted-foreground">who they trust</p>
           {response.trust.length === 0 ? (
@@ -276,7 +276,7 @@ export function KnowledgeBody({
             </ul>
           )}
         </div>
-      </ResolvedIdentityScope>
+      </IdentityListScope>
     </div>
   );
 }
@@ -304,7 +304,7 @@ export function KnowledgeSection({ response }: { response: LookupResponse }) {
         <CardDescription>
           <span className="inline-flex flex-wrap items-baseline gap-2">
             following trust out from your
-            <ResolvedIdentity identity={response.from} testId="lookup-from" />
+            <IdentityInline identity={response.from} testId="lookup-from" />
           </span>
         </CardDescription>
       </CardHeader>

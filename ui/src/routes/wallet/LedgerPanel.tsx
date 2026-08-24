@@ -12,8 +12,17 @@ import { useResource } from "@/hooks/useResource";
 const DEFAULT_LIMIT = 8;
 
 /**
- * The record of one identity, one line per entry. `?since=` is inclusive, so a
- * page starts at `seq === since`.
+ * Where the page a reader is looking at sits in the whole ledger. Positions are
+ * counted from zero on the record itself, so the footer names positions rather
+ * than inventing a one-based entry number the ids would disagree with.
+ */
+function pageRange(first: number, last: number, total: number): string {
+  return `Showing positions ${first} to ${last} of ${total}.`;
+}
+
+/**
+ * The ledger of one identity, one compact row per entry. `?since=` is inclusive,
+ * so a page starts at `seq === since`.
  *
  * A summary can arrive without the entries behind it: the node answers a head
  * position for a ledger it knows of and no events for one it never fetched. The
@@ -41,11 +50,12 @@ export function LedgerPanel({
   const held = page.data?.event_count ?? 0;
   // head_seq counts from zero, so a complete record holds head_seq + 1 entries.
   const total = (page.data?.head_seq ?? 0) + 1;
+  const events = page.data?.events ?? [];
 
   return (
     <Card data-testid="ledger-panel">
       <CardHeader>
-        <CardTitle>Record</CardTitle>
+        <CardTitle>Ledger</CardTitle>
         <CardDescription>
           Everything this identity has signed, oldest first. Open a line to read the entry.
         </CardDescription>
@@ -64,8 +74,8 @@ export function LedgerPanel({
         )}
         {page.data && held > 0 && (
           <>
-            <EventLines events={page.data.events} />
-            {held < total ? (
+            <EventLines events={events} />
+            {held < total && (
               <>
                 <p data-testid="ledger-partial" className="text-sm">
                   Your wallet holds{" "}
@@ -76,18 +86,19 @@ export function LedgerPanel({
                 </p>
                 {fetch}
               </>
-            ) : (
+            )}
+            {held >= total && (
               <p className="text-xs text-muted-foreground">
                 <span data-testid="ledger-event-count">{held}</span>{" "}
-                {held === 1 ? "entry" : "entries"} on this record, the newest at position{" "}
-                <span data-testid="ledger-head-seq">{page.data.head_seq}</span>. Showing from
-                position <span data-testid="ledger-page-since">{page.data.since}</span>.{" "}
-                <span data-testid="ledger-more">
-                  {page.data.more ? "There are more after these." : "These are the last of them."}
-                </span>
+                {held === 1 ? "entry" : "entries"} on this ledger, the newest at position{" "}
+                <span data-testid="ledger-head-seq">{page.data.head_seq}</span>.
               </p>
             )}
-            <div className="flex flex-wrap items-end gap-x-4 gap-y-2">
+            {/* The footer: where you are, and the two buttons that move. */}
+            <div
+              data-testid="ledger-footer"
+              className="flex flex-wrap items-end gap-x-4 gap-y-2 border-t pt-3"
+            >
               <div className="flex gap-2">
                 <Button
                   variant="outline"
@@ -116,6 +127,9 @@ export function LedgerPanel({
                   Next
                 </Button>
               </div>
+              <p data-testid="ledger-range" className="text-xs text-muted-foreground">
+                {pageRange(events[0].seq, events[events.length - 1].seq, total)}
+              </p>
               <div className="flex items-end gap-2">
                 <div className="space-y-1">
                   <Label htmlFor="ledger-since">from position</Label>

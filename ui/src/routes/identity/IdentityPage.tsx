@@ -1,32 +1,26 @@
-import { useCallback, useState } from "react";
-import { Link, useParams } from "react-router";
+import { useCallback, useMemo, useState } from "react";
+import { useParams } from "react-router";
 
-import {
-  ApiError,
-  getContact,
-  getIdentity,
-  getMemberships,
-  listIdentities,
-  lookup,
-} from "@/api/client";
-import type {
-  IdentityResponse,
-  LookupResponse,
-  MembershipView,
-  NameProvenance,
-} from "@/api/types";
+import { ApiError, getContact, getIdentity, getMemberships, listIdentities, lookup } from "@/api/client";
+import type { IdentityResponse, LookupResponse, MembershipView, NameProvenance } from "@/api/types";
 import { Action } from "@/components/Action";
 import { ErrorEnvelopeView } from "@/components/ErrorEnvelopeView";
-import { Identifier } from "@/components/Identifier";
+import {
+  factsFromIdentity,
+  factsFromResolved,
+  IdentityCard,
+  IdentityPillScope,
+  pageTestIds,
+  type PillFacts,
+  trustedSubjects,
+} from "@/components/identity";
 import { KeyValue, KeyValueTable } from "@/components/KeyValue";
-import { ResolvedIdentity } from "@/components/ResolvedIdentity";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { useResolvedNames } from "@/hooks/useResolvedNames";
+import { Card } from "@/components/ui/card";
+import { degreesOf, named, useResolvedNames } from "@/hooks/useResolvedNames";
 import { useResource } from "@/hooks/useResource";
 import { ActionsSection } from "@/routes/wallet/ActionsSection";
 import { ContactPanel } from "@/routes/wallet/ContactPanel";
 import { LedgerPanel } from "@/routes/wallet/LedgerPanel";
-import { OverviewCard } from "@/routes/wallet/OverviewCard";
 import { PrincipalsPanel } from "@/routes/wallet/PrincipalsPanel";
 import { TrustPanel, useTrustActions } from "@/routes/wallet/TrustPanel";
 
@@ -75,38 +69,12 @@ const PROVENANCE_SENTENCE: Record<NameProvenance, string> = {
   none: "nothing your wallet knows, so the id is the only label",
 };
 
-/** The overview of a record this wallet does not hold: what it found them called. */
-function CrawledOverview({ answer }: { answer: LookupResponse }) {
-  return (
-    <Card data-testid="identity-detail">
-      <CardHeader>
-        <CardTitle className="text-base">
-          <ResolvedIdentity identity={answer.identity} testId="identity-detail-resolved" />
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <KeyValueTable>
-          <KeyValue label="identity id" testId="identity-detail-identity-id">
-            <Identifier value={answer.identity.identity_id} />
-          </KeyValue>
-          <KeyValue label="name comes from" testId="identity-detail-provenance">
-            {PROVENANCE_SENTENCE[answer.identity.provenance]}
-          </KeyValue>
-          <KeyValue label="record" testId="identity-detail-ledger-summary">
-            your wallet holds no copy of it
-          </KeyValue>
-        </KeyValueTable>
-      </CardContent>
-    </Card>
-  );
-}
-
 /**
  * One identity, local or foreign, stored or not (proposal 004). What varies is
- * a single fact: when this wallet can sign for the record the overview card
- * carries the "your identity" badge and the page carries the actions; otherwise
- * it carries the private note and how you know them. Everything else renders
- * from whatever the wallet holds.
+ * a single fact: when this wallet can sign for the record the card carries the
+ * "your identity" pill and the page carries the actions; otherwise it carries
+ * the private note and how you know them. Everything else renders from whatever
+ * the wallet holds, through the same card a list draws (proposal 005).
  */
 export function IdentityPage() {
   const { identityId = "" } = useParams();
@@ -150,72 +118,101 @@ export function IdentityPage() {
   const names = useResolvedNames(foreign, from);
   const trust = useTrustActions(identityId, refresh);
   const loading = identity.loading || identities.loading;
+  const answer = knowledge.data;
+
+  /**
+   * What the pills on this page read, all of it from documents already loaded:
+   * the identities this home holds, their unrevoked attestations, and the
+   * distances the lookups on this page reported. No request runs for a pill.
+   */
+  const pills = useMemo<PillFacts>(() => {
+    const own = new Set(localIdentities.map((entry) => entry.identity_id));
+    if (canSign) {
+      own.add(identityId);
+    }
+    const degrees = degreesOf(names);
+    if (answer?.degrees !== null && answer?.degrees !== undefined) {
+      degrees.set(answer.identity.identity_id, answer.degrees);
+    }
+    return { own, trusted: trustedSubjects(localIdentities), degrees };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [identities.data, canSign, identityId, names, answer]);
 
   return (
-    <div className="space-y-4">
-      {/* The back link is navigation and nothing else lives in its row. */}
-      <Link
-        to="/wallet"
-        className="inline-flex min-h-10 items-center text-sm underline"
-        data-testid="identity-back"
-      >
-        Wallet
-      </Link>
-      {loading && <p data-testid="identity-detail-loading">loading</p>}
-      {identity.error && (
-        <ErrorEnvelopeView error={identity.error} testId="identity-detail-error" />
-      )}
-      {memberships.error && (
-        <ErrorEnvelopeView error={memberships.error} testId="memberships-error" />
-      )}
-      {held && (
-        <div className="grid gap-4 lg:grid-cols-2">
-          <OverviewCard identity={held} own={canSign} />
-          <LedgerPanel
-            identityId={held.identity_id}
-            version={version}
-            // A record this wallet signs for is never missing its own entries,
-            // so only a stored foreign one offers to fetch the rest.
-            fetch={
-              canSign ? undefined : (
-                <FetchButton
-                  identityId={held.identity_id}
-                  onFetched={refresh}
-                  testId="ledger-fetch-button"
-                />
-              )
-            }
+    <IdentityPillScope facts={pills}>
+      <div className="space-y-4">
+        {loading && <p data-testid="identity-detail-loading">loading</p>}
+        {identity.error && <ErrorEnvelopeView error={identity.error} testId="identity-detail-error" />}
+        {memberships.error && (
+          <ErrorEnvelopeView error={memberships.error} testId="memberships-error" />
+        )}
+        {held && (
+          <>
+            <IdentityCard
+              facts={factsFromIdentity(held)}
+              state="page"
+              testIds={pageTestIds}
+              resolvePrincipal={(principal) => named(names, principal)}
+            />
+            <LedgerPanel
+              identityId={held.identity_id}
+              version={version}
+              // A record this wallet signs for is never missing its own entries,
+              // so only a stored foreign one offers to fetch the rest.
+              fetch={
+                canSign ? undefined : (
+                  <FetchButton
+                    identityId={held.identity_id}
+                    onFetched={refresh}
+                    testId="ledger-fetch-button"
+                  />
+                )
+              }
+            />
+            <TrustPanel identity={held} names={names} actions={trust} />
+            <PrincipalsPanel identity={held} memberships={memberships.data} names={names} />
+          </>
+        )}
+        {held === null && answer && (
+          <>
+            <IdentityCard
+              facts={factsFromResolved(answer.identity, { stale: answer.stale })}
+              state="page"
+              testIds={pageTestIds}
+            />
+            <Card className="p-3 sm:p-4">
+              <KeyValueTable>
+                <KeyValue label="name comes from" testId="identity-detail-provenance">
+                  {PROVENANCE_SENTENCE[answer.identity.provenance]}
+                </KeyValue>
+              </KeyValueTable>
+            </Card>
+          </>
+        )}
+        {knowledge.error && <ErrorEnvelopeView error={knowledge.error} testId="lookup-error" />}
+        {!canSign && (
+          <>
+            <ContactSection identityId={identityId} />
+            {answer && <KnowledgeSection response={answer} />}
+            {from === null && !identity.loading && (
+              <p data-testid="lookup-no-root" className="text-sm">
+                Your wallet holds no identity of its own to answer from.
+              </p>
+            )}
+          </>
+        )}
+        {held === null && !identity.loading && !identity.error && (
+          <FetchPanel identityId={identityId} onFetched={refresh} />
+        )}
+        {canSign && held && (
+          <ActionsSection
+            identity={held}
+            memberships={memberships.data}
+            trust={trust}
+            onAppended={refresh}
           />
-          <TrustPanel identity={held} names={names} actions={trust} />
-          <PrincipalsPanel identity={held} memberships={memberships.data} names={names} />
-        </div>
-      )}
-      {held === null && knowledge.data && <CrawledOverview answer={knowledge.data} />}
-      {knowledge.error && (
-        <ErrorEnvelopeView error={knowledge.error} testId="lookup-error" />
-      )}
-      {!canSign && (
-        <>
-          <ContactSection identityId={identityId} />
-          {knowledge.data && <KnowledgeSection response={knowledge.data} />}
-          {from === null && !identity.loading && (
-            <p data-testid="lookup-no-root" className="text-sm">
-              Your wallet holds no identity of its own to answer from.
-            </p>
-          )}
-        </>
-      )}
-      {held === null && !identity.loading && !identity.error && (
-        <FetchPanel identityId={identityId} onFetched={refresh} />
-      )}
-      {canSign && held && (
-        <ActionsSection
-          identity={held}
-          memberships={memberships.data}
-          trust={trust}
-          onAppended={refresh}
-        />
-      )}
-    </div>
+        )}
+      </div>
+    </IdentityPillScope>
   );
 }

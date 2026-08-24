@@ -43,7 +43,7 @@ describe("the identity card list", () => {
     );
   });
 
-  it("makes the whole card the link to the identity page", async () => {
+  it("links the card at the identity page, on the id its heading draws", async () => {
     const { user } = renderApp("/wallet");
     await screen.findByTestId("identity-cards");
 
@@ -53,7 +53,7 @@ describe("the identity card list", () => {
     await user.click(link);
 
     await screen.findByTestId("identity-detail");
-    expect(screen.getByTestId("identity-detail-identity-id")).toHaveTextContent(ACME);
+    expect(screen.getByTestId("identity-detail-resolved")).toHaveTextContent(ACME);
   });
 
   it("offers no selection: no radio, no remembered identity", async () => {
@@ -88,7 +88,7 @@ describe("the wallet search box", () => {
     await user.click(screen.getByTestId("wallet-search-submit"));
 
     await screen.findByTestId("identity-detail");
-    expect(screen.getByTestId("identity-detail-identity-id")).toHaveTextContent(ALICE);
+    expect(screen.getByTestId("identity-detail-resolved")).toHaveTextContent(ALICE);
     expect(resolved).toEqual([]);
   });
 
@@ -101,7 +101,7 @@ describe("the wallet search box", () => {
     await user.click(screen.getByTestId("wallet-search-submit"));
 
     await screen.findByTestId("identity-detail");
-    expect(screen.getByTestId("identity-detail-identity-id")).toHaveTextContent(ALICE);
+    expect(screen.getByTestId("identity-detail-resolved")).toHaveTextContent(ALICE);
     expect(resolved).toEqual(["alice.example"]);
   });
 

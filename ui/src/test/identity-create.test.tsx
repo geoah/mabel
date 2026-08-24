@@ -64,6 +64,109 @@ describe("identity create", () => {
     ]);
   });
 
+  it("names the alias as the private nickname, and the other two as public", async () => {
+    await openCreateForm();
+
+    expect(screen.getByLabelText("Private nickname (only this device sees it)")).toBe(
+      screen.getByTestId("identity-create-alias"),
+    );
+    expect(screen.getByLabelText("Public name (optional)")).toBe(
+      screen.getByTestId("identity-create-display-name"),
+    );
+    expect(screen.getByLabelText("Public email (optional)")).toBe(
+      screen.getByTestId("identity-create-email"),
+    );
+    // The private nickname comes first, then the two public fields, then the
+    // kind and the founder (proposal 005).
+    const order = [
+      "identity-create-alias",
+      "identity-create-display-name",
+      "identity-create-email",
+      "identity-create-declared-kind",
+      "identity-create-founder",
+    ].map((testId) => screen.getByTestId(testId));
+    for (let index = 1; index < order.length; index += 1) {
+      expect(
+        order[index - 1].compareDocumentPosition(order[index]) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    }
+  });
+
+  it("publishes a public name and email at creation, and shows them on the new card", async () => {
+    const bodies: unknown[] = [];
+    server.events.on("request:start", async ({ request }) => {
+      if (request.method === "POST" && request.url.endsWith("/api/identities")) {
+        bodies.push(await request.clone().json());
+      }
+    });
+
+    const { user } = await openCreateForm();
+
+    await user.type(screen.getByTestId("identity-create-alias"), "dana");
+    await user.type(screen.getByTestId("identity-create-display-name"), "Dana Dane");
+    await user.type(screen.getByTestId("identity-create-email"), "dana@dana.example");
+    await user.click(screen.getByTestId("identity-create-submit"));
+
+    const created = await screen.findByTestId("identity-create-result-identity-id");
+    const identityId = created.textContent ?? "";
+    expect(bodies).toEqual([
+      {
+        alias: "dana",
+        declared_kind: "person",
+        display_name: "Dana Dane",
+        email: "dana@dana.example",
+      },
+    ]);
+    expect(screen.getByTestId("identity-create-result-email")).toHaveTextContent(
+      "dana@dana.example",
+    );
+
+    // The public fields become one entry on the new record, right after the one
+    // that created it, so the card names them straight away.
+    const card = await screen.findByTestId(`identity-card-${identityId}`);
+    expect(within(card).getByTestId(`identity-card-name-${identityId}-name`)).toHaveTextContent(
+      "Dana Dane",
+    );
+    expect(within(card).getByTestId(`identity-card-email-${identityId}`)).toHaveTextContent(
+      "dana@dana.example",
+    );
+    expect(within(card).getByTestId(`identity-card-head-seq-${identityId}`)).toHaveTextContent(
+      "at position 1",
+    );
+  });
+
+  it("sends neither public field when both boxes are left empty", async () => {
+    const bodies: unknown[] = [];
+    server.events.on("request:start", async ({ request }) => {
+      if (request.method === "POST" && request.url.endsWith("/api/identities")) {
+        bodies.push(await request.clone().json());
+      }
+    });
+
+    const { user } = await openCreateForm();
+
+    await user.type(screen.getByTestId("identity-create-alias"), "quiet");
+    await user.click(screen.getByTestId("identity-create-submit"));
+
+    const identityId = (await screen.findByTestId("identity-create-result-identity-id")).textContent;
+    expect(bodies).toEqual([{ alias: "quiet", declared_kind: "person" }]);
+    expect(screen.queryByTestId("identity-create-result-email")).not.toBeInTheDocument();
+    expect(screen.queryByTestId(`identity-card-email-${identityId}`)).not.toBeInTheDocument();
+  });
+
+  it("refuses an email with no at sign, and mints nothing", async () => {
+    const { user } = await openCreateForm();
+
+    await user.type(screen.getByTestId("identity-create-alias"), "typo");
+    await user.type(screen.getByTestId("identity-create-email"), "dana.example");
+    await user.click(screen.getByTestId("identity-create-submit"));
+
+    const envelope = await screen.findByTestId("identity-create-error");
+    expect(within(envelope).getByTestId("error-reason")).toHaveTextContent("invalid_email");
+    expect(screen.queryByTestId("identity-create-result")).not.toBeInTheDocument();
+  });
+
   it("renders the code 2 envelope when the node rejects a missing alias", async () => {
     const { user } = await openCreateForm();
 

@@ -1,8 +1,12 @@
 import { listLedgers } from "@/api/client";
 import { ErrorEnvelopeView } from "@/components/ErrorEnvelopeView";
-import { type IdentityCardEntry, IdentityCardList } from "@/components/IdentityCardList";
+import {
+  bareIdentity,
+  factsFromResolved,
+  type IdentityCardEntry,
+  IdentityCardList,
+} from "@/components/identity";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { bareIdentity } from "@/hooks/useResolvedNames";
 import { useResource } from "@/hooks/useResource";
 
 import { WITNESS_HOLDINGS_NOTE, WITNESS_READ_ONLY_NOTE } from "./notes";
@@ -10,15 +14,17 @@ import { WITNESS_HOLDINGS_NOTE, WITNESS_READ_ONLY_NOTE } from "./notes";
 /**
  * The witness node's own route: what this one witness holds, as the same
  * identity card list the wallet draws (proposal 004). A witness resolves no
- * names and follows no trust links, so every card is its record id.
+ * names, follows no trust links and holds no wallet, so every card is its record
+ * id and no card wears a pill.
  */
 export function WitnessHome() {
   const page = useResource(() => listLedgers({ limit: 256 }), []);
   const entries: IdentityCardEntry[] = (page.data?.entries ?? []).map((entry) => ({
-    identity: bareIdentity(entry.ledger_id),
-    declaredKind: entry.declared_kind,
-    headSeq: entry.head_seq,
-    to: `/witness/ledgers/${entry.ledger_id}`,
+    facts: factsFromResolved(bareIdentity(entry.ledger_id), {
+      declaredKind: entry.declared_kind,
+      headSeq: entry.head_seq,
+      to: `/witness/ledgers/${entry.ledger_id}`,
+    }),
     markers:
       entry.fork_count > 0 ? (
         <span data-testid={`identity-card-fork-count-${entry.ledger_id}`}>

@@ -3,7 +3,7 @@ import { MemoryRouter } from "react-router";
 import { describe, expect, it } from "vitest";
 
 import type { Identity, VerificationStatus } from "@/api/types";
-import { OverviewCard } from "@/routes/wallet/OverviewCard";
+import { factsFromIdentity, IdentityCard, pageTestIds } from "@/components/identity";
 import { ACME, ALICE, seedIdentities } from "@/mocks/fixtures";
 
 import { renderApp, renderComponent } from "./render";
@@ -25,12 +25,12 @@ function withVerification(status: VerificationStatus, stale = false): Identity {
 function overview(identity: Identity) {
   return renderComponent(
     <MemoryRouter>
-      <OverviewCard identity={identity} />
+      <IdentityCard facts={factsFromIdentity(identity)} state="page" testIds={pageTestIds} />
     </MemoryRouter>,
   );
 }
 
-describe("overview table", () => {
+describe("the identity page's top section", () => {
   it.each([
     ["verified", false, "verified"],
     ["verified", true, "stale-verified"],
@@ -43,17 +43,12 @@ describe("overview table", () => {
     const mark = screen.getByTestId("identity-detail-hostname-verification");
     expect(mark).toHaveAttribute("data-verification", state);
     expect(mark).toHaveTextContent("alice.example");
-    expect(screen.getByTestId("identity-detail-verification-note")).toHaveTextContent(
-      "It grants nothing.",
-    );
   });
 
   it("renders no marker at all for an identity claiming no hostname", () => {
     overview(withVerification("unclaimed"));
 
-    expect(
-      screen.queryByTestId("identity-detail-hostname-verification"),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByTestId("identity-detail-hostname-verification")).not.toBeInTheDocument();
     expect(screen.getByTestId("identity-detail-hostname")).toHaveTextContent("none");
   });
 
@@ -63,51 +58,36 @@ describe("overview table", () => {
 
     // Every row is a key and a value on one line: the label column and the
     // value column are siblings, never stacked (decision 014).
-    const row = screen.getByTestId("identity-detail-identity-id-row");
-    expect(within(row).getByText("identity id").tagName).toBe("DT");
+    const row = screen.getByTestId("identity-detail-created-row");
+    expect(within(row).getByText("created").tagName).toBe("DT");
     expect(screen.getByTestId("identity-detail-created")).toHaveTextContent("2023-11-14");
     expect(screen.getByTestId("identity-detail-declared-kind")).toHaveTextContent("person");
     expect(screen.getByTestId("identity-detail-event-count")).toHaveTextContent("9");
     expect(screen.getByTestId("identity-detail-head-seq")).toHaveTextContent("8");
     expect(screen.getByTestId("identity-detail-trusted-count")).toHaveTextContent("1 identity");
-    expect(screen.getByTestId("identity-detail-open-invitations")).toHaveTextContent("0");
+    expect(screen.getByTestId("identity-detail-open-invitations")).toHaveTextContent("none");
   });
 
-  // The two roots differ in one fact, and it is a sentence, never a null.
-  it("says in words that a raw-rooted identity holds a key of its own", () => {
-    overview(alice);
-
-    expect(screen.getByTestId("identity-detail-keys")).toHaveTextContent(
-      "this identity signs with a key of its own, and holds a spare to replace it with",
-    );
-  });
-
-  it("says in words that an identity-rooted one is signed for by its controllers", async () => {
-    renderApp(`/identities/${ACME}`);
-    await screen.findByTestId("identity-detail");
-
-    expect(screen.getByTestId("identity-detail-keys")).toHaveTextContent(
-      "this identity holds no key of its own; its controllers sign for it",
-    );
-    expect(screen.getByTestId("identity-detail-keys")).not.toHaveTextContent("null");
-  });
-
-  it("carries the owner badge beside the name, not in the back-link row", async () => {
+  it("carries the your-identity pill beside the name", async () => {
     renderApp(`/identities/${ALICE}`);
     await screen.findByTestId("identity-detail");
 
-    const badge = screen.getByTestId("identity-own-badge");
-    expect(badge).toHaveTextContent("your identity");
-    // Beside the name in the card heading, not in the row the back link owns.
-    expect(screen.getByTestId("identity-detail-resolved").parentElement?.contains(badge)).toBe(
-      true,
-    );
-    expect(screen.getByTestId("identity-back").contains(badge)).toBe(false);
+    const pill = await screen.findByTestId("identity-detail-resolved-pill");
+    expect(pill).toHaveTextContent("your identity");
+    expect(pill).toHaveAttribute("data-pill", "own");
+    expect(screen.getByTestId("identity-detail-resolved").contains(pill)).toBe(true);
+  });
+
+  it("drops the back link: the browser has one, and the nav has two entries", async () => {
+    renderApp(`/identities/${ALICE}`);
+    await screen.findByTestId("identity-detail");
+
+    expect(screen.queryByTestId("identity-back")).not.toBeInTheDocument();
   });
 });
 
 describe("ledger lines", () => {
-  it("shows one line per event as its sequence and type, with no payload until it is opened", async () => {
+  it("shows one line per event as its position and what it did, with no payload until it is opened", async () => {
     const { user } = renderApp(`/identities/${ALICE}`);
     await screen.findByTestId("ledger-events");
 
@@ -127,6 +107,14 @@ describe("ledger lines", () => {
     expect(screen.queryByTestId("event-detail-0")).not.toBeInTheDocument();
   });
 
+  it("draws the rows as a list, not a table", async () => {
+    renderApp(`/identities/${ALICE}`);
+
+    const rows = await screen.findByTestId("ledger-events");
+    expect(rows.tagName).toBe("UL");
+    expect(rows.querySelector("table")).toBeNull();
+  });
+
   it("opens one event without opening the others", async () => {
     const { user } = renderApp(`/identities/${ALICE}`);
     await screen.findByTestId("ledger-events");
@@ -139,17 +127,27 @@ describe("ledger lines", () => {
 });
 
 describe("state and actions", () => {
-  it("lists who this identity trusts, with the revoked attestations folded away", async () => {
+  it("lists who this identity trusts in words, with no position and the revoked folded away", async () => {
     renderApp(`/identities/${ALICE}`);
     await screen.findByTestId("trust-panel");
 
     const [revoked, unrevoked] = alice.trust;
     expect(screen.getByTestId(`trust-state-${unrevoked.attestation_event}`)).toHaveTextContent(
-      `trusted since position ${unrevoked.attestation_seq}`,
+      "trusted",
     );
-    expect(within(screen.getByTestId("trust-list")).queryByTestId(
-      `trust-row-${revoked.attestation_event}`,
-    )).not.toBeInTheDocument();
+    expect(screen.getByTestId(`trust-state-${revoked.attestation_event}`)).toHaveTextContent(
+      "taken back",
+    );
+    for (const record of alice.trust) {
+      expect(screen.getByTestId(`trust-state-${record.attestation_event}`).textContent).not.toMatch(
+        /position/,
+      );
+    }
+    expect(
+      within(screen.getByTestId("trust-list")).queryByTestId(
+        `trust-row-${revoked.attestation_event}`,
+      ),
+    ).not.toBeInTheDocument();
     expect(
       within(screen.getByTestId("trust-revoked")).getByTestId(
         `trust-row-${revoked.attestation_event}`,
@@ -162,9 +160,9 @@ describe("state and actions", () => {
     await screen.findByTestId("trust-list");
 
     const unrevoked = alice.trust[1];
-    const link = within(screen.getByTestId(`trust-row-${unrevoked.attestation_event}`)).getByTestId(
-      `trust-subject-${unrevoked.attestation_event}-link`,
-    );
+    const link = within(
+      screen.getByTestId(`trust-row-${unrevoked.attestation_event}`),
+    ).getByTestId(`trust-subject-${unrevoked.attestation_event}-link`);
     expect(link).toHaveAttribute("href", `/identities/${unrevoked.subject}`);
   });
 
@@ -216,6 +214,13 @@ describe("state and actions", () => {
     await screen.findByTestId("identity-detail");
 
     expect(screen.queryByTestId("principals-panel")).not.toBeInTheDocument();
-    expect(screen.getByTestId("identity-detail-principal-count")).toHaveTextContent("1");
+    // The one principal it has is still named on the card, as an identity.
+    expect(
+      screen.getByTestId(`identity-detail-principal-${acmeFounder()}-link`),
+    ).toHaveAttribute("href", `/identities/${acmeFounder()}`);
   });
 });
+
+function acmeFounder(): string {
+  return seedIdentities.find((identity) => identity.identity_id === ACME)!.principals[0].identity;
+}

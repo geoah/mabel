@@ -4,6 +4,7 @@ import {
   acceptInvitation,
   admit,
   ApiError,
+  createIdentity,
   fetchIdentity,
   forceVerification,
   getContact,
@@ -179,10 +180,52 @@ describe("contact", () => {
   });
 });
 
+describe("creating an identity with a profile", () => {
+  it("appends one profile_update at seq 1, right after the inception", async () => {
+    const response = await createIdentity({
+      alias: "dana",
+      declared_kind: "person",
+      display_name: "Dana Dane",
+      email: "dana@dana.example",
+    });
+
+    expect(response.identity.head_seq).toBe(1);
+    expect(response.identity.event_count).toBe(2);
+    expect(response.identity.profile).toMatchObject({
+      display_name: "Dana Dane",
+      hostname: null,
+      email: "dana@dana.example",
+      seq: 1,
+    });
+    expect(response.inception_event).toBe(response.identity.identity_id);
+  });
+
+  it("leaves a new identity with no profile when neither public field is given", async () => {
+    const response = await createIdentity({ alias: "quiet", declared_kind: "person" });
+
+    expect(response.identity.head_seq).toBe(0);
+    expect(response.identity.profile).toBeNull();
+  });
+
+  it("refuses a misshapen email before it mints anything", async () => {
+    const before = (await listIdentities()).identities.length;
+    const error = await rejection(() =>
+      createIdentity({ alias: "typo", declared_kind: "person", email: "dana.example" }),
+    );
+
+    expect(error.reason).toBe("invalid_email");
+    expect((await listIdentities()).identities).toHaveLength(before);
+  });
+});
+
 describe("profile and verification", () => {
   it("refuses a replacement whose effect equals the current profile", async () => {
     const error = await rejection(() =>
-      replaceProfile(ALICE, { display_name: "Alice Ashworth", hostname: "alice.example" }),
+      replaceProfile(ALICE, {
+        display_name: "Alice Ashworth",
+        hostname: "alice.example",
+        email: "alice@alice.example",
+      }),
     );
 
     expect(error.status).toBe(409);
@@ -190,7 +233,7 @@ describe("profile and verification", () => {
     expect(error.code).toBe(20);
   });
 
-  it("refuses a body that names only one of the two keys", async () => {
+  it("refuses a body that names only some of the three keys", async () => {
     const error = await rejection(() =>
       replaceProfile(ALICE, { display_name: "Alice A." } as never),
     );
@@ -199,15 +242,45 @@ describe("profile and verification", () => {
     expect(error.details.field).toBe("hostname");
   });
 
+  it("refuses an email with no local part, and signs nothing", async () => {
+    const error = await rejection(() =>
+      replaceProfile(ALICE, { display_name: "Alice A.", hostname: null, email: "@alice.example" }),
+    );
+
+    expect(error.status).toBe(400);
+    expect(error.reason).toBe("invalid_email");
+    expect(error.details.field).toBe("email");
+  });
+
+  it("replaces all three fields at once, so an omitted email clears it", async () => {
+    const response = await replaceProfile(ALICE, {
+      display_name: "Alice A.",
+      hostname: null,
+      email: null,
+    });
+
+    expect(response.previous.email).toBe("alice@alice.example");
+    expect(response.profile.email).toBeNull();
+    expect(response.event.payload).toEqual({ display_name: "Alice A." });
+  });
+
   it("appends a profile_update and clears the name an omitted field names", async () => {
-    const response = await replaceProfile(ALICE, { display_name: "Alice A.", hostname: null });
+    const response = await replaceProfile(ALICE, {
+      display_name: "Alice A.",
+      hostname: null,
+      email: "alice@alice.example",
+    });
 
     expect(response.previous).toEqual({
       display_name: "Alice Ashworth",
       hostname: "alice.example",
+      email: "alice@alice.example",
     });
     expect(response.event.payload_kind).toBe("profile_update");
-    expect(response.event.payload).toEqual({ display_name: "Alice A." });
+    expect(response.event.payload).toEqual({
+      display_name: "Alice A.",
+      email: "alice@alice.example",
+    });
 
     const identity = await getIdentity(ALICE);
     expect(identity.identity.profile?.hostname).toBeNull();
@@ -217,7 +290,11 @@ describe("profile and verification", () => {
   });
 
   it("starts a changed hostname at unverified, then verifies it on a forced check", async () => {
-    await replaceProfile(ALICE, { display_name: "Alice Ashworth", hostname: "ashworth.example" });
+    await replaceProfile(ALICE, {
+      display_name: "Alice Ashworth",
+      hostname: "ashworth.example",
+      email: "alice@alice.example",
+    });
 
     const before = await getIdentity(ALICE);
     expect(before.identity.verification.status).toBe("unverified");

@@ -1,12 +1,20 @@
+import { useMemo } from "react";
 import { Link, useParams } from "react-router";
 
 import { listIdentities, listWitnessLedgers } from "@/api/client";
 import { ErrorEnvelopeView } from "@/components/ErrorEnvelopeView";
-import { type IdentityCardEntry, IdentityCardList } from "@/components/IdentityCardList";
+import {
+  factsFromResolved,
+  type IdentityCardEntry,
+  IdentityCardList,
+  IdentityPillScope,
+  type PillFacts,
+  trustedSubjects,
+} from "@/components/identity";
 import { Identifier } from "@/components/Identifier";
 import { Alert } from "@/components/ui/alert";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { bareIdentity, useResolvedNames } from "@/hooks/useResolvedNames";
+import { degreesOf, named, useResolvedNames } from "@/hooks/useResolvedNames";
 import { useResource } from "@/hooks/useResource";
 
 /**
@@ -39,15 +47,17 @@ export function WitnessLedgersPage() {
   const { endpointId = "" } = useParams();
   const page = useResource(() => listWitnessLedgers(endpointId), [endpointId]);
   const identities = useResource(listIdentities, []);
-  const from = identities.data?.identities[0]?.identity_id ?? null;
+  const held = identities.data?.identities ?? [];
+  const from = held[0]?.identity_id ?? null;
   const ledgerIds = (page.data?.ledgers ?? []).map((ledger) => ledger.ledger_id);
   const names = useResolvedNames(ledgerIds, from);
 
   const entries: IdentityCardEntry[] = (page.data?.ledgers ?? []).map((ledger) => ({
-    identity: names.get(ledger.ledger_id) ?? bareIdentity(ledger.ledger_id),
-    declaredKind: ledger.declared_kind,
-    headSeq: ledger.head_seq,
-    to: `/identities/${ledger.ledger_id}`,
+    facts: factsFromResolved(named(names, ledger.ledger_id), {
+      declaredKind: ledger.declared_kind,
+      headSeq: ledger.head_seq,
+      to: `/identities/${ledger.ledger_id}`,
+    }),
     markers:
       ledger.fork_count > 0 ? (
         <span data-testid={`identity-card-fork-count-${ledger.ledger_id}`}>
@@ -56,45 +66,56 @@ export function WitnessLedgersPage() {
       ) : null,
   }));
   const unreachable = page.error?.reason === "witness_unreachable" ? page.error : null;
+  // Each name came from one lookup, so the distance it carries costs nothing
+  // more: the pills on this screen fire no request of their own.
+  const pills = useMemo<PillFacts>(
+    () => ({
+      own: new Set(held.map((identity) => identity.identity_id)),
+      trusted: trustedSubjects(held),
+      degrees: degreesOf(names),
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [identities.data, names],
+  );
 
   return (
-    <div className="space-y-4">
-      <Link
-        to="/witnesses"
-        className="inline-flex min-h-10 items-center text-sm underline"
-        data-testid="witness-ledgers-back"
-      >
-        Witnesses
-      </Link>
-      <Card data-testid="witness-ledgers">
-        <CardHeader>
-          <CardTitle className="flex flex-wrap items-baseline gap-2">
-            What this witness holds
-            <Identifier value={endpointId} />
-          </CardTitle>
-          <CardDescription>
-            Asked when this page loaded, and saved nowhere. A record missing here may still be on
-            another witness.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {page.loading && <p data-testid="witness-ledgers-loading">loading</p>}
-          {unreachable && (
-            <Unreachable endpointId={endpointId} message={unreachable.message} />
-          )}
-          {page.error && !unreachable && (
-            <ErrorEnvelopeView error={page.error} testId="witness-ledgers-error" />
-          )}
-          {page.data && (
-            <IdentityCardList
-              entries={entries}
-              testId="identity-cards"
-              empty="This witness holds no record."
-              emptyTestId="witness-ledgers-empty"
-            />
-          )}
-        </CardContent>
-      </Card>
-    </div>
+    <IdentityPillScope facts={pills}>
+      <div className="space-y-4">
+        <Link
+          to="/witnesses"
+          className="inline-flex min-h-10 items-center text-sm underline"
+          data-testid="witness-ledgers-back"
+        >
+          Witnesses
+        </Link>
+        <Card data-testid="witness-ledgers">
+          <CardHeader>
+            <CardTitle className="flex flex-wrap items-baseline gap-2">
+              What this witness holds
+              <Identifier value={endpointId} />
+            </CardTitle>
+            <CardDescription>
+              Asked when this page loaded, and saved nowhere. A record missing here may still be on
+              another witness.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {page.loading && <p data-testid="witness-ledgers-loading">loading</p>}
+            {unreachable && <Unreachable endpointId={endpointId} message={unreachable.message} />}
+            {page.error && !unreachable && (
+              <ErrorEnvelopeView error={page.error} testId="witness-ledgers-error" />
+            )}
+            {page.data && (
+              <IdentityCardList
+                entries={entries}
+                testId="identity-cards"
+                empty="This witness holds no record."
+                emptyTestId="witness-ledgers-empty"
+              />
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    </IdentityPillScope>
   );
 }

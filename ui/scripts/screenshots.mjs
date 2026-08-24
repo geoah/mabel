@@ -58,6 +58,17 @@ const SCREENS = [
     },
   },
   {
+    // The card's middle state: opened in place, which is the identity page's
+    // top section drawn inside a list entry (proposal 005).
+    name: "wallet-home-card-expanded",
+    path: "/wallet",
+    ready: `identity-card-expand-${ALICE}`,
+    async act(page) {
+      await page.getByTestId(`identity-card-expand-${ALICE}`).click();
+      await page.getByTestId(`identity-card-details-${ALICE}`).waitFor();
+    },
+  },
+  {
     name: "wallet-home-resolve",
     path: "/wallet",
     ready: "wallet-search-input",

@@ -33,8 +33,10 @@ export function App() {
   const links = witness ? WITNESS_LINKS : WALLET_LINKS;
 
   return (
-    // pb-20 keeps the last card clear of the bar the nav becomes on a phone.
-    <div className="mx-auto max-w-6xl px-3 pt-3 pb-20 sm:px-4 sm:pt-4 md:pb-4">
+    // One readable column at every width, and margins rather than a second
+    // column on a desktop (proposal 005). pb-20 keeps the last card clear of the
+    // bar the nav becomes on a phone.
+    <div className="mx-auto w-full max-w-2xl px-3 pt-3 pb-20 sm:px-4 sm:pt-4 md:pb-4">
       {/*
         The header names the app and nothing else. Decision 017: a counter the
         header cannot explain does not belong in the header.

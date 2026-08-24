@@ -5,15 +5,14 @@ import type {
   ResolvedIdentity as ResolvedIdentityDocument,
   VerificationStatus,
 } from "@/api/types";
-import { Identifier } from "@/components/Identifier";
 import { cn } from "@/lib/utils";
 
 /**
- * One component renders every identity that carries a name, so no screen can
- * forget the anti-spoofing rules of proposal 003 section 4: a name is plain
- * text and an id and a hostname are monospace, the id is always beside the
- * name, two entries resolving to the same name both show their full ids, and
- * nothing here sorts, matches or deduplicates on a name.
+ * The naming rules both identity components obey, so no screen can forget the
+ * anti-spoofing rules of proposal 003 section 4: a name is plain text and an id
+ * and a hostname are monospace, the id is always beside the name, two entries
+ * resolving to the same name both show their full ids, and nothing here sorts,
+ * matches or deduplicates on a name.
  */
 
 /** Which source the shown name came from; "id" means there is no name. */
@@ -64,7 +63,7 @@ const DuplicateNameContext = createContext<ReadonlySet<string>>(new Set<string>(
  * Wraps one list so its entries know which names it repeats. Without a scope an
  * identity renders alone and its id is truncated as usual.
  */
-export function ResolvedIdentityScope({
+export function IdentityListScope({
   identities,
   children,
 }: {
@@ -77,16 +76,10 @@ export function ResolvedIdentityScope({
   );
 }
 
-/** The same standing caveat the declared kind carries (decision 015). */
-export const VERIFICATION_NOTE =
-  "A matching website shows only that whoever set up its DNS named this identity. It grants nothing.";
-
-export function VerificationNote({ testId }: { testId: string }) {
-  return (
-    <p data-testid={testId} className="text-xs text-muted-foreground">
-      {VERIFICATION_NOTE}
-    </p>
-  );
+/** True when another entry of the same list resolves to this same name. */
+export function useSharedName(name: string | null): boolean {
+  const duplicates = useContext(DuplicateNameContext);
+  return name !== null && duplicates.has(name);
 }
 
 /** verified with a stale marker is its own rendered state, never a plain check. */
@@ -126,10 +119,7 @@ const MARKS: Record<Exclude<VerificationState, "unclaimed">, Mark> = {
   },
 };
 
-export function verificationState(
-  status: VerificationStatus,
-  stale: boolean,
-): VerificationState {
+export function verificationState(status: VerificationStatus, stale: boolean): VerificationState {
   return status === "verified" && stale ? "stale-verified" : status;
 }
 
@@ -154,12 +144,11 @@ export function VerificationMark({
   }
   const state = verificationState(status, stale);
   const mark = MARKS[state as Exclude<VerificationState, "unclaimed">];
-  const sentence = mark.sentence.replace("HOSTNAME", hostname);
   return (
     <span
       data-testid={testId}
       data-verification={state}
-      title={`${state}: ${sentence}. ${VERIFICATION_NOTE}`}
+      title={`${state}: ${mark.sentence.replace("HOSTNAME", hostname)}`}
       className={cn("inline-flex items-baseline gap-1 text-xs", mark.tone)}
     >
       <span aria-hidden="true">{mark.glyph}</span>
@@ -170,72 +159,22 @@ export function VerificationMark({
   );
 }
 
-interface ResolvedIdentityProps {
-  identity: ResolvedIdentityDocument;
-  /** True when the identity document reports its verified result as aged. */
-  stale?: boolean;
-  /** Lands on the wrapper; the name, id and verdict add their own suffixes. */
-  testId?: string;
-  /** Routes the id, for the ids that address a screen. */
-  to?: string;
-  /** Drops the id's expand and copy buttons, for a name drawn inside a link. */
-  plain?: boolean;
-  className?: string;
-}
-
-/**
- * One foreign or local identity: its resolved name as plain text, its id beside
- * it in the identifier style, and its hostname verdict when it claims one.
- */
-export function ResolvedIdentity({
-  identity,
-  stale = false,
-  testId,
-  to,
-  plain = false,
-  className,
-}: ResolvedIdentityProps) {
-  const duplicates = useContext(DuplicateNameContext);
-  const { name, source } = resolveName(identity);
-  // Two entries of one list resolving to the same name both drop the
-  // truncation, because the id is the only thing telling them apart.
-  const shared = name !== null && duplicates.has(name);
-
-  return (
-    <span
-      data-testid={testId}
-      data-identity-id={identity.identity_id}
-      data-name-source={source}
-      data-shared-name={String(shared)}
-      className={cn("inline-flex flex-wrap items-baseline gap-x-2 gap-y-0.5", className)}
-    >
-      {name !== null && (
-        <span data-testid={testId && `${testId}-name`} className="text-sm">
-          {name}
-        </span>
-      )}
-      <Identifier
-        value={identity.identity_id}
-        full={shared}
-        plain={plain}
-        to={to}
-        linkTestId={testId && `${testId}-link`}
-        className="text-muted-foreground"
-      />
-      <VerificationMark
-        status={identity.verification_status}
-        hostname={identity.hostname}
-        stale={stale}
-        testId={testId && `${testId}-verification`}
-      />
-    </span>
-  );
+/** The document an id with no name at all renders as: the id is the label. */
+export function bareIdentity(identityId: string): ResolvedIdentityDocument {
+  return {
+    identity_id: identityId,
+    display_name: null,
+    alias: null,
+    hostname: null,
+    verification_status: "unclaimed",
+    provenance: "none",
+  };
 }
 
 /**
  * The ResolvedIdentity the node would return for an identity this home holds,
  * built from the identity document so the local screens and the crawled ones
- * render through the same component.
+ * render through the same two components.
  */
 export function resolvedFrom(identity: Identity): ResolvedIdentityDocument {
   const displayName = identity.profile?.display_name ?? null;

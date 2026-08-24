@@ -18,6 +18,7 @@ import type {
 } from "@/api/types";
 import { Base64Upload } from "@/components/Base64Upload";
 import { ErrorEnvelopeView } from "@/components/ErrorEnvelopeView";
+import { bareIdentity, IdentityInline } from "@/components/identity";
 import { Identifier } from "@/components/Identifier";
 import { KeyValue, KeyValueTable } from "@/components/KeyValue";
 import { Button } from "@/components/ui/button";
@@ -203,7 +204,10 @@ export function InviteForm({
         <Result testId="invite-result">
           <KeyValueTable>
             <KeyValue label="you invited" testId="invite-result-invitee">
-              <Identifier value={invited.invitee} />
+              <IdentityInline
+                identity={bareIdentity(invited.invitee)}
+                to={`/identities/${invited.invitee}`}
+              />
             </KeyValue>
             <KeyValue label="as" testId="invite-result-role">
               {invited.role}
@@ -277,7 +281,10 @@ export function AcceptForm({ identity }: { identity: Identity }) {
         <Result testId="accept-result">
           <KeyValueTable>
             <KeyValue label="the identity inviting you" testId="accept-ledger-id">
-              <Identifier value={accepted.ledger_id} />
+              <IdentityInline
+                identity={bareIdentity(accepted.ledger_id)}
+                to={`/identities/${accepted.ledger_id}`}
+              />
             </KeyValue>
             <KeyValue label="declared kind" testId="accept-declared-kind">
               {accepted.declared_kind}
@@ -294,7 +301,10 @@ export function AcceptForm({ identity }: { identity: Identity }) {
               <span className="space-y-1">
                 {accepted.controllers.map((controller) => (
                   <span key={controller.identity} className="block">
-                    <Identifier value={controller.identity} />
+                    <IdentityInline
+                      identity={bareIdentity(controller.identity)}
+                      to={`/identities/${controller.identity}`}
+                    />
                   </span>
                 ))}
               </span>
@@ -391,7 +401,10 @@ export function AdmitForm({
         <Result testId="admit-result">
           <KeyValueTable>
             <KeyValue label="you confirmed" testId="admit-result-invitee">
-              <Identifier value={admitted.invitee} />
+              <IdentityInline
+                identity={bareIdentity(admitted.invitee)}
+                to={`/identities/${admitted.invitee}`}
+              />
             </KeyValue>
             <KeyValue label="as" testId="admit-result-role">
               {admitted.role}
@@ -487,7 +500,10 @@ export function RemoveForm({
         <Result testId="remove-result">
           <KeyValueTable>
             <KeyValue label="removed" testId="remove-result-target">
-              <Identifier value={removed.target} />
+              <IdentityInline
+                identity={bareIdentity(removed.target)}
+                to={`/identities/${removed.target}`}
+              />
             </KeyValue>
             <KeyValue label="taken off this identity" testId="remove-result-principal">
               {removed.principal_removed ? "yes" : "no"}

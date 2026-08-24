@@ -15,7 +15,7 @@ import { HOSTNAME_CONSENT_KEY, useConsent } from "@/lib/preferences";
  * remembered per node home (proposal 003, Consequences).
  */
 const HOSTNAME_CONSENT_SENTENCES = [
-  "Every name and website you set here stays readable forever by anyone who knows this identity's id.",
+  "Every name, email and website you set here stays readable forever by anyone who knows this identity's id.",
   "Changing it later hides nothing: the old ones stay on the record, and copies are already out there.",
 ];
 
@@ -29,9 +29,10 @@ function shown(value: string | null): string {
 }
 
 /**
- * Profile replacement, never a patch: both fields are always sent and an empty
- * box clears that name. The confirmation shows the before-and-after diff, the
- * same one `mabel profile replace` prints (proposal 003 section 1).
+ * Profile replacement, never a patch: all three fields are always sent and an
+ * empty box clears that one. The confirmation shows the before-and-after diff,
+ * the same one `mabel profile replace` prints (proposal 003 section 1, extended
+ * with the public email by proposal 005).
  */
 export function ProfilePanel({
   identity,
@@ -43,8 +44,10 @@ export function ProfilePanel({
   const current: ProfileFields = {
     display_name: identity.profile?.display_name ?? null,
     hostname: identity.profile?.hostname ?? null,
+    email: identity.profile?.email ?? null,
   };
   const [displayName, setDisplayName] = useState(current.display_name ?? "");
+  const [email, setEmail] = useState(current.email ?? "");
   const [hostname, setHostname] = useState(current.hostname ?? "");
   const [proposed, setProposed] = useState<ProfileFields | null>(null);
   const [pending, setPending] = useState(false);
@@ -65,6 +68,7 @@ export function ProfilePanel({
     setProposed({
       display_name: trimmedOrNull(displayName),
       hostname: trimmedOrNull(hostname),
+      email: trimmedOrNull(email),
     });
   }
 
@@ -95,12 +99,15 @@ export function ProfilePanel({
         <KeyValue label="public name now" testId="profile-current-display-name">
           {shown(current.display_name)}
         </KeyValue>
+        <KeyValue label="public email now" testId="profile-current-email">
+          {shown(current.email)}
+        </KeyValue>
         <KeyValue label="website now" testId="profile-current-hostname">
           <span className="font-mono text-xs">{shown(current.hostname)}</span>
         </KeyValue>
       </KeyValueTable>
       <p className="text-xs text-muted-foreground">
-        Both are replaced together. Leaving a box empty clears that one.
+        All three are replaced together. Leaving a box empty clears that one.
       </p>
       <form onSubmit={propose} className="space-y-2" data-testid="profile-replace-form">
         <div className="space-y-1">
@@ -111,6 +118,16 @@ export function ProfilePanel({
             value={displayName}
             onChange={(event) => setDisplayName(event.target.value)}
             placeholder="Alice Ashworth"
+          />
+        </div>
+        <div className="space-y-1">
+          <Label htmlFor="profile-email">Public email</Label>
+          <Input
+            id="profile-email"
+            data-testid="profile-email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            placeholder="alice@alice.example"
           />
         </div>
         <div className="space-y-1">
@@ -138,6 +155,10 @@ export function ProfilePanel({
               <span data-testid="profile-diff-display-name-after">
                 {shown(proposed.display_name)}
               </span>
+            </KeyValue>
+            <KeyValue label="public email" testId="profile-diff-email">
+              <span data-testid="profile-diff-email-before">{shown(current.email)}</span> becomes{" "}
+              <span data-testid="profile-diff-email-after">{shown(proposed.email)}</span>
             </KeyValue>
             <KeyValue label="website" testId="profile-diff-hostname">
               <span data-testid="profile-diff-hostname-before" className="font-mono text-xs">

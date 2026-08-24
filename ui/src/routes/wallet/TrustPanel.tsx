@@ -3,17 +3,18 @@ import { type FormEvent, useCallback, useState } from "react";
 import { addTrust, type ApiError, revokeTrust } from "@/api/client";
 import type { Identity, ResolvedIdentity as ResolvedIdentityDocument, TrustRecord } from "@/api/types";
 import { ErrorEnvelopeView } from "@/components/ErrorEnvelopeView";
-import { Identifier } from "@/components/Identifier";
 import {
-  ResolvedIdentity,
-  ResolvedIdentityScope,
+  IdentityInline,
+  IdentityListScope,
   resolveName,
   resolvedFrom,
-} from "@/components/ResolvedIdentity";
+} from "@/components/identity";
+import { Identifier } from "@/components/Identifier";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { named, type ResolvedNames } from "@/hooks/useResolvedNames";
 import { asApiError } from "@/hooks/useResource";
 
 /**
@@ -119,18 +120,18 @@ function TrustRow({
       data-testid={`trust-row-${record.attestation_event}`}
       className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2"
     >
-      <ResolvedIdentity
+      <IdentityInline
         identity={resolved}
         testId={`trust-subject-${record.attestation_event}`}
         to={`/identities/${record.subject}`}
       />
+      {/* Two words, and no position: where on the record it happened is not
+          something a reader of an address book acts on (proposal 005). */}
       <span
         data-testid={`trust-state-${record.attestation_event}`}
         className="text-xs text-muted-foreground"
       >
-        {record.revoked
-          ? `taken back at position ${record.revocation_seq}`
-          : `trusted since position ${record.attestation_seq}`}
+        {record.revoked ? "taken back" : "trusted"}
       </span>
       <Button
         variant="outline"
@@ -157,20 +158,12 @@ export function TrustPanel({
   actions,
 }: {
   identity: Identity;
-  /** The crawl's name for each subject, keyed by identity id. */
-  names: Map<string, ResolvedIdentityDocument>;
+  /** The crawl's name and distance for each subject, keyed by identity id. */
+  names: ResolvedNames;
   actions: TrustActions;
 }) {
   const owner = resolveName(resolvedFrom(identity)).name;
-  const resolved = (subject: string): ResolvedIdentityDocument =>
-    names.get(subject) ?? {
-      identity_id: subject,
-      display_name: null,
-      alias: null,
-      hostname: null,
-      verification_status: "unclaimed",
-      provenance: "none",
-    };
+  const resolved = (subject: string): ResolvedIdentityDocument => named(names, subject);
   const unrevoked = identity.trust.filter((record) => !record.revoked);
   const revoked = identity.trust.filter((record) => record.revoked);
 
@@ -184,7 +177,7 @@ export function TrustPanel({
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
-        <ResolvedIdentityScope identities={identity.trust.map((record) => resolved(record.subject))}>
+        <IdentityListScope identities={identity.trust.map((record) => resolved(record.subject))}>
           {unrevoked.length === 0 ? (
             <p data-testid="trust-list-empty" className="text-sm">
               This identity has not said it trusts anyone yet.
@@ -221,7 +214,7 @@ export function TrustPanel({
               </ul>
             </details>
           )}
-        </ResolvedIdentityScope>
+        </IdentityListScope>
         {actions.appended && (
           <p data-testid="trust-appended-event" className="text-xs">
             Saved as entry <Identifier value={actions.appended} />

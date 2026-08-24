@@ -335,6 +335,10 @@ export function createIdentity(body: Partial<CreateIdentityRequest>): CreateIden
     // identity with a raw root (proposal 002 section 2).
     find(body.founder);
   }
+  // Both public fields are checked before anything is minted, so a refused
+  // email never leaves an identity behind with no profile on it.
+  checkDisplayName(body.display_name ?? null);
+  checkEmail(body.email ?? null);
   const identityId = mintId(body.alias);
   const rawRoot = !body.founder;
   const activeKey = String(createdIdentity.identity.active_key);
@@ -404,6 +408,16 @@ export function createIdentity(body: Partial<CreateIdentityRequest>): CreateIden
       },
     },
   ]);
+  // Proposal 005: a public name or email given at creation lands as one
+  // ProfileUpdate at seq 1, so a new identity's first two entries are who it is
+  // and what it shows the world.
+  if (body.display_name !== undefined || body.email !== undefined) {
+    replaceProfile(identityId, {
+      display_name: body.display_name ?? null,
+      hostname: null,
+      email: body.email ?? null,
+    });
+  }
   return { ok: true, identity, inception_event: identityId };
 }
 
@@ -1224,6 +1238,55 @@ function verdictAfterReplacement(current: Verification, hostname: string | null)
   };
 }
 
+/** The profile as it stands now, which is what a replacement diffs against. */
+function profileFields(identity: Identity): ProfileFields {
+  return {
+    display_name: identity.profile?.display_name ?? null,
+    hostname: identity.profile?.hostname ?? null,
+    email: identity.profile?.email ?? null,
+  };
+}
+
+/**
+ * The canonical encoding forbids a proto3 default on the wire, so a cleared
+ * field is simply absent from the payload.
+ */
+function profilePayload(fields: ProfileFields): Record<string, unknown> {
+  return {
+    ...(fields.display_name === null ? {} : { display_name: fields.display_name }),
+    ...(fields.hostname === null ? {} : { hostname: fields.hostname }),
+    ...(fields.email === null ? {} : { email: fields.email }),
+  };
+}
+
+/**
+ * The email shape proposal 005 fixes: at most 254 bytes, exactly one `@` with
+ * at least one byte on each side. Deliverability is never checked: the address
+ * is a claim on a record, like everything else on one.
+ */
+function checkEmail(value: string | null): void {
+  if (value === null) {
+    return;
+  }
+  const parts = value.split("@");
+  const shaped = parts.length === 2 && parts[0].length > 0 && parts[1].length > 0;
+  const tooLong = new TextEncoder().encode(value).length > 254;
+  if (shaped && !tooLong) {
+    return;
+  }
+  const detail = tooLong
+    ? "it is longer than 254 bytes"
+    : parts.length < 2
+      ? "it holds no at sign"
+      : "it needs one at sign with a byte on each side";
+  failWith(400, {
+    ok: false,
+    code: 10,
+    message: `Schema error: ProfileUpdate.email is not a valid email: ${detail}`,
+    details: { reason: "invalid_email", field: "email", value },
+  });
+}
+
 /** A display name that parses as an identity id is refused before signing. */
 function checkDisplayName(value: string | null): void {
   if (value !== null && /^[a-z2-7]{52}$/.test(value)) {
@@ -1242,7 +1305,9 @@ export function replaceProfile(
   body: Partial<ProfileFields>,
 ): ReplaceProfileResponse {
   const identity = find(identityId);
-  for (const field of ["display_name", "hostname"] as const) {
+  // Every field is required and may be null: a partial body over a
+  // whole-document payload is how a published value disappears by accident.
+  for (const field of ["display_name", "hostname", "email"] as const) {
     if (!(field in body)) {
       failWith(400, {
         ok: false,
@@ -1254,12 +1319,15 @@ export function replaceProfile(
   }
   const displayName = body.display_name ?? null;
   const hostname = body.hostname ?? null;
+  const email = body.email ?? null;
   checkDisplayName(displayName);
-  const previous: ProfileFields = {
-    display_name: identity.profile?.display_name ?? null,
-    hostname: identity.profile?.hostname ?? null,
-  };
-  if (previous.display_name === displayName && previous.hostname === hostname) {
+  checkEmail(email);
+  const previous = profileFields(identity);
+  if (
+    previous.display_name === displayName &&
+    previous.hostname === hostname &&
+    previous.email === email
+  ) {
     failWith(409, {
       ok: false,
       code: 20,
@@ -1269,20 +1337,17 @@ export function replaceProfile(
         ledger_id: identityId,
         display_name: displayName,
         hostname,
+        email,
         profile_event: identity.profile?.event ?? null,
         profile_seq: identity.profile?.seq ?? null,
       },
     });
   }
-  // The canonical encoding forbids a proto3 default on the wire, so a cleared
-  // name is simply absent from the payload.
-  const event = append(identity, "profile_update", {
-    ...(displayName === null ? {} : { display_name: displayName }),
-    ...(hostname === null ? {} : { hostname }),
-  });
+  const event = append(identity, "profile_update", profilePayload({ display_name: displayName, hostname, email }));
   identity.profile = {
     display_name: displayName,
     hostname,
+    email,
     signing_principal: signingPrincipal(identity),
     event: event.event_id,
     seq: event.seq,

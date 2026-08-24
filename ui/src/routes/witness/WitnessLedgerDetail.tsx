@@ -1,7 +1,7 @@
 import { Link, useParams } from "react-router";
 
 import { getLedger, getLedgerEvents } from "@/api/client";
-import { DeclaredKindNote, DeclaredKindValue } from "@/components/DeclaredKind";
+import { DeclaredKindValue } from "@/components/DeclaredKind";
 import { ErrorEnvelopeView } from "@/components/ErrorEnvelopeView";
 import { EventLines } from "@/components/EventLines";
 import { Identifier } from "@/components/Identifier";
@@ -20,7 +20,7 @@ function WitnessLedgerEvents({ ledgerId }: { ledgerId: string }) {
   return (
     <Card data-testid="ledger-panel">
       <CardHeader>
-        <CardTitle>Record</CardTitle>
+        <CardTitle>Ledger</CardTitle>
         <CardDescription>
           Everything this identity has signed, oldest first. Open a line to read the entry.
         </CardDescription>
@@ -125,7 +125,6 @@ export function WitnessLedgerDetail() {
                   )}
                 </KeyValue>
               </KeyValueTable>
-              <DeclaredKindNote testId="witness-detail-declared-kind-note" />
               <p
                 className="text-xs text-muted-foreground"
                 data-testid="witness-detail-holdings-note"
