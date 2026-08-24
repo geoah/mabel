@@ -1,0 +1,5 @@
+# This crate is its own workspace, so it has its own target directory.
+target/
+# `cargo tauri ios init` regenerates the Xcode project, and it holds absolute
+# paths from the machine that ran it. CI generates it on every run.
+src-tauri/gen/

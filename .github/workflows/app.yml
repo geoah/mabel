@@ -35,6 +35,39 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # The node embedding compiles without the webview glue, so the cheap checks
+  # run on linux with no webkit and no Xcode: format, clippy, and the test that
+  # boots the wallet node on a temp home and asks it GET /api/node. It needs no
+  # ui/dist, because the embed in mabel-node is declared allow_missing.
+  checks:
+    name: Node embedding checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt,clippy
+          rustup default stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            app/src-tauri/target
+          key: app-checks-${{ hashFiles('app/src-tauri/Cargo.lock') }}
+          restore-keys: app-checks-
+
+      - run: cargo fmt --check
+        working-directory: app/src-tauri
+      - run: cargo clippy --no-default-features --all-targets -- -D warnings
+        working-directory: app/src-tauri
+      - run: cargo test --no-default-features
+        working-directory: app/src-tauri
+
   macos:
     name: macOS app
     runs-on: macos-latest
@@ -90,15 +123,17 @@ jobs:
         # upload-artifact drops the executable bit, which would leave an .app
         # that cannot be launched. ditto keeps the bundle intact.
         run: |
+          set -eux
           cd app/src-tauri/target/release/bundle/macos
-          ditto -c -k --sequesterRsrc --keepParent Mabel.app Mabel-macos.zip
+          bundle=$(ls -d ./*.app | head -1)
+          ditto -c -k --sequesterRsrc --keepParent "$bundle" mabel-macos.zip
 
       - uses: actions/upload-artifact@v4
         with:
           name: mabel-app-${{ steps.sha.outputs.short }}-macos
           if-no-files-found: error
           path: |
-            app/src-tauri/target/release/bundle/macos/Mabel-macos.zip
+            app/src-tauri/target/release/bundle/macos/mabel-macos.zip
             app/src-tauri/target/release/bundle/dmg/*.dmg
 
   ios:
@@ -147,38 +182,34 @@ jobs:
         run: cargo install tauri-cli --version ${{ env.TAURI_CLI_VERSION }} --locked
 
       - name: Generate the Xcode project
-        # app/src-tauri/gen is not committed: it holds absolute paths from the
-        # machine that generated it, so every run regenerates it.
-        run: cargo tauri ios init --skip-targets-install
+        # app/src-tauri/gen is not committed: cargo-mobile2 writes absolute paths
+        # from the machine that generated it into the project, and it is a
+        # generated artifact of tauri.conf.json. Every run regenerates it, which
+        # also means a stale project can never be the reason a build passes.
+        run: cargo tauri ios init --ci --skip-targets-install
         working-directory: app/src-tauri
 
       - name: Build for the simulator, unsigned
         # Device and App Store builds need an Apple signing certificate and a
         # provisioning profile, which this repository does not hold. A simulator
         # build needs neither, so this is what CI can prove.
-        run: |
-          set -eux
-          project=$(ls -d gen/apple/*.xcodeproj | head -1)
-          scheme=$(xcodebuild -project "$project" -list -json \
-            | python3 -c 'import json,sys; print(next(s for s in json.load(sys.stdin)["project"]["schemes"] if s.endswith("_iOS")))')
-          xcodebuild build \
-            -project "$project" \
-            -scheme "$scheme" \
-            -configuration debug \
-            -sdk iphonesimulator \
-            -destination "generic/platform=iOS Simulator" \
-            -derivedDataPath simulator-build \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY="" \
-            ENABLE_BITCODE=NO
+        #
+        # xcodebuild cannot be driven directly here: the "Build Rust Code" phase
+        # of the generated project runs `cargo tauri ios xcode-script`, which
+        # reads its options over a local socket that only `tauri ios build`
+        # serves. So the CLI drives the build. `--no-sign` skips code signing and
+        # `--archive-only` stops before the IPA export, which is the step that
+        # needs a certificate.
+        run: cargo tauri ios build --debug --target aarch64-sim --no-sign --archive-only
         working-directory: app/src-tauri
 
       - name: Zip the simulator app
+        # The archive holds the simulator bundle. ditto keeps the executable bit
+        # that upload-artifact would drop.
         run: |
           set -eux
           cd app/src-tauri
-          app=$(find simulator-build/Build/Products -maxdepth 2 -name "*.app" -print -quit)
+          app=$(find gen/apple/build -name "*.app" -type d -print | head -1)
           test -n "$app"
           ditto -c -k --sequesterRsrc --keepParent "$app" mabel-ios-simulator.zip
 

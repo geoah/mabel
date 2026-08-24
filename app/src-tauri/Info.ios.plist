@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Merged into the generated Info.plist by `tauri ios build` and `tauri ios dev`.
+
+  App Transport Security already exempts IP addresses, so loading
+  http://127.0.0.1:<port> in the webview needs no exception; NSAllowsLocalNetworking
+  states it rather than leaving it to that rule. The local network description is
+  what iOS shows when the Iroh endpoint looks for peers on the same network.
+-->
+<plist version="1.0">
+  <dict>
+    <key>NSAppTransportSecurity</key>
+    <dict>
+      <key>NSAllowsLocalNetworking</key>
+      <true/>
+    </dict>
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>Mabel looks for mabel nodes on this network to sync ledgers directly instead of through a relay.</string>
+  </dict>
+</plist>

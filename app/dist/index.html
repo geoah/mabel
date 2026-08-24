@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Mabel</title>
+    <style>
+      :root { color-scheme: dark light; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        background: #12141c;
+        color: #e8eaf2;
+        font: 15px/1.6 ui-sans-serif, system-ui, -apple-system, sans-serif;
+      }
+      main { max-width: 34rem; padding: 2rem; }
+      h1 { font-size: 1.25rem; margin: 0 0 0.75rem; }
+      code { background: #1e2130; padding: 0.1rem 0.3rem; border-radius: 4px; }
+      p { margin: 0 0 0.75rem; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>The wallet node did not start</h1>
+      <p>
+        Mabel runs its wallet node inside this app and shows the page that node
+        serves. This page is what you see when the node could not bind its
+        listeners or could not open its home.
+      </p>
+      <p>
+        The reason is in the app's log. On macOS, run the binary from a terminal
+        to read it:
+        <code>/Applications/Mabel.app/Contents/MacOS/Mabel</code>.
+      </p>
+      <p>
+        A home whose <code>node.key</code> is readable by other users is refused
+        on purpose. Quit the app, fix the permissions to <code>0600</code>, and
+        start it again.
+      </p>
+    </main>
+  </body>
+</html>

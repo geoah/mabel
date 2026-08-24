@@ -147,3 +147,24 @@ by [002-unified-ledger.md](docs/proposals/002-unified-ledger.md) and
 [contracts/](contracts/README.md) freezes the HTTP responses and the `--json`
 documents. A response that does not match a fixture is a bug in the node or
 the CLI, not in the fixture.
+
+## The app
+
+[app/](app/README.md) is a Tauri v2 app for macOS and iOS: a wallet node running
+in the app process, with the same wallet UI in a webview in front of it. It calls
+the same `WalletRuntime::start` that `mabel wallet serve` calls, binds the HTTP
+API to an ephemeral loopback port, and opens its window on
+`http://127.0.0.1:<port>/wallet`. It keeps its own node home under the app data
+directory rather than `~/.mabel`.
+
+```sh
+(cd ui && npm ci && npm run build)                      # the node embeds ui/dist
+cargo install tauri-cli --version 2.11.4 --locked
+(cd app/src-tauri && cargo tauri dev)
+```
+
+`app/src-tauri` is its own cargo workspace, so `cargo build --workspace` and
+`cargo test --workspace` at the repository root do not build tauri.
+[.github/workflows/app.yml](.github/workflows/app.yml) builds the unsigned macOS
+bundle and an unsigned iOS simulator build on every push to `main` and uploads
+both as workflow artifacts.

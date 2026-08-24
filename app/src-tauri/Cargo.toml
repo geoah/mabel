@@ -1,0 +1,53 @@
+# This table is deliberately empty and deliberately here: it makes app/src-tauri
+# its own workspace root, so the root manifest needs no change and
+# `cargo test --workspace` at the repo root never builds tauri.
+[workspace]
+
+[package]
+name = "mabel-app"
+description = "The mabel wallet as a macOS and iOS app, running the wallet node in process"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.91"
+license = "MIT"
+
+# staticlib and cdylib are what `tauri ios build` links the app against; rlib is
+# what the binary and the tests use.
+[lib]
+name = "mabel_app"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "mabel-app"
+path = "src/main.rs"
+required-features = ["tauri-app"]
+
+[features]
+default = ["tauri-app"]
+# The webview glue. Without it the crate is the node embedding and nothing
+# else, which is what a machine with no webkit or no Xcode can still check:
+# `cargo check --no-default-features` and `cargo test --no-default-features`.
+tauri-app = ["dep:tauri", "dep:tauri-build"]
+
+[dependencies]
+mabel-node = { path = "../../crates/mabel-node" }
+anyhow = "1.0.104"
+tauri = { version = "2.11.5", optional = true }
+tokio = { version = "1.53.1", features = [
+    "rt-multi-thread",
+    "macros",
+    "sync",
+    "net",
+    "io-util",
+] }
+tracing = "0.1.44"
+tracing-subscriber = "0.3.23"
+
+[build-dependencies]
+tauri-build = { version = "2.6.3", features = [], optional = true }
+
+[dev-dependencies]
+tempfile = "3.27.0"
+
+[profile.release]
+strip = true

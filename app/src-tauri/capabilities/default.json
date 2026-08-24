@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "The window itself, and nothing else. The wallet UI is served by the node over loopback HTTP and is granted no capability, so the page cannot reach tauri.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}
