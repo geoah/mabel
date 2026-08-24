@@ -25,3 +25,12 @@ never move.
   the second event, the alias becomes the private nickname, and the UI renders
   every identity through one inline component and one expandable card on a
   mobile-first single column. Accepted.
+- [006-witness-identities-and-reachability.md](006-witness-identities-and-reachability.md):
+  a witness is a Mabel identity rather than a raw Iroh endpoint id, an
+  `EndpointAdvertisement` event (payload tag 18) publishes the endpoints that
+  answer for an identity, `WitnessSet` (tag 19) replaces the write path of
+  `WitnessConfig` (tag 11) and makes a witness removable, admission is gated by
+  `node.json.witness_for`, resolution grows to eight sources under one dial
+  budget, DNS gains a `mabel-endpoints=` record, a `mabel://<id>?endpoints=`
+  link is the shareable form, and the wallet and witness HTTP APIs and stores
+  merge into one node API and one store. Proposed.
