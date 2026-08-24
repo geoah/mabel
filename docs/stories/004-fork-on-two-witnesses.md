@@ -111,11 +111,11 @@ overlay would recreate the shared network under the other specs.
    docker exec mabel-alice-two sh -c 'mabel sync push --identity alice --to '"$witness_id"' \
      --peer "$(cat /shared/witness.ticket)" --json'
    ```
-8. Open witness one's UI at `http://127.0.0.1:9080/witness`. In the ledger
-   table, `witness-ledger-fork-count-<alice_id>` reads `1` and
-   `witness-ledger-forks-truncated-<alice_id>` reads `forks_truncated false`.
-   Click `witness-ledger-link-<alice_id>` and read the Forks card on the
-   detail page.
+8. Open witness one's UI at `http://127.0.0.1:9080/witness`, which is the
+   identity card list of what this witness holds. Alice's card carries
+   `identity-card-fork-count-<alice_id>` reading `1 fork record`; no other card
+   carries that element at all. Click `identity-card-link-<alice_id>` and read
+   the summary and the Forks card on the identity page.
 9. A fresh verifier asks both witnesses:
    ```sh
    docker run --rm --network mabel_mabel \
@@ -153,6 +153,12 @@ overlay would recreate the shared network under the other specs.
   http://127.0.0.1:9080/api/ledgers/<alice_id>` answers `entry.head_seq: 3`,
   `entry.head_event == kept_event`, `entry.fork_count: 1`,
   `entry.forks_truncated: false`, and `witnesses` listing both endpoint ids.
+- Step 8's card list draws a fork count only where the witness recorded one:
+  exactly one `identity-card-fork-count-*` element exists on the page, and it
+  is alice's. The page shows no `forks_truncated` flag, because the redesigned
+  route does not render one; `GET /api/ledgers/<alice_id>` above is where that
+  flag is read.
+- Step 8's identity page reads `witness-detail-fork-count` `1`.
 - Step 8's fork record, at `fork-record-<alice_id>-3`:
   - `fork-statement-<alice_id>-3` reads exactly `two distinct validly signed
     events exist at seq 3 of <alice_id>, produced by whoever held signing
@@ -195,3 +201,7 @@ exceeds the story text above.
   /api/identities/<alice_id>/ledger?since=3` on both wallets rather than
   through `curl` and `jq`, and step 8 also waits on `witness-ledger-detail`,
   the container the story does not name.
+- The `forks_truncated` flag left the witness UI with the operator table
+  (proposal 004). The spec keeps it pinned on `GET
+  /api/ledgers/<alice_id>`, which is the only surface that reports it for the
+  list, and reads `witness-detail-fork-count` on the identity page.

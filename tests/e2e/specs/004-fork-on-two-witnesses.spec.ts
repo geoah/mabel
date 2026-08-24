@@ -84,19 +84,24 @@ test("first seen wins: witness one still serves the kept branch", async () => {
   expect(ledger.body.entry.head_seq).toBe(3);
   expect(ledger.body.entry.head_event).toBe(state.keptEvent);
   expect(ledger.body.entry.fork_count).toBe(1);
+  // The UI no longer draws this flag on the list, so the route is where it is
+  // pinned: nothing stopped recording, so the count is exact.
   expect(ledger.body.entry.forks_truncated).toBe(false);
   expect([...ledger.body.witnesses].sort()).toEqual([state.witnessId, state.witnessTwoId].sort());
 });
 
 test("step 8: the fork record in witness one's UI", async () => {
   await page.goto(`${WITNESS_URL}/witness`);
-  await expect(page.getByTestId(`witness-ledger-fork-count-${state.aliceId}`)).toHaveText("1");
-  await expect(page.getByTestId(`witness-ledger-forks-truncated-${state.aliceId}`)).toHaveText(
-    "forks_truncated false",
+  // The card list is the witness route now (proposal 004), and a fork count is
+  // drawn on a card only when the witness recorded one.
+  await expect(page.getByTestId(`identity-card-fork-count-${state.aliceId}`)).toHaveText(
+    "1 fork record",
   );
+  await expect(page.locator('[data-testid^="identity-card-fork-count-"]')).toHaveCount(1);
 
-  await page.getByTestId(`witness-ledger-link-${state.aliceId}`).click();
+  await page.getByTestId(`identity-card-link-${state.aliceId}`).click();
   await expect(page.getByTestId("witness-ledger-detail")).toBeVisible();
+  await expect(page.getByTestId("witness-detail-fork-count")).toHaveText("1");
 
   const key = `${state.aliceId}-3`;
   await expect(page.getByTestId(`fork-record-${key}`)).toBeVisible();

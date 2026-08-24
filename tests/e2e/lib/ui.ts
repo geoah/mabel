@@ -15,11 +15,25 @@ export async function identifier(scope: Page | Locator, testId: string): Promise
   return read;
 }
 
+/**
+ * Opens the create form, which the wallet home folds away behind
+ * `identity-create-summary` (proposal 004). Clicking a summary toggles it, so
+ * the click is skipped when the form is already on the screen.
+ */
+export async function openCreateForm(page: Page): Promise<void> {
+  const form = page.getByTestId("identity-create-form");
+  if (!(await form.isVisible())) {
+    await page.getByTestId("identity-create-summary").click();
+  }
+  await expect(form).toBeVisible();
+}
+
 /** Story 001 step 3: create one identity in a wallet UI and record its id. */
 export async function createIdentity(
   page: Page,
   options: { alias: string; kind?: string; founder?: string },
 ): Promise<{ identityId: string; inceptionEvent: string }> {
+  await openCreateForm(page);
   await page.getByTestId("identity-create-alias").fill(options.alias);
   if (options.kind) {
     await page.getByTestId("identity-create-declared-kind").selectOption(options.kind);
@@ -35,11 +49,34 @@ export async function createIdentity(
   };
 }
 
-/** Opens one identity's page from the wallet home. */
+/**
+ * Opens one identity's page from the wallet home, by clicking its card. The
+ * whole card is one link, and the page it opens is `/identities/<id>`: one
+ * identity is one page, local or foreign (proposal 004).
+ */
 export async function openIdentity(page: Page, base: string, identityId: string): Promise<void> {
   await page.goto(`${base}/wallet`);
-  await page.getByTestId(`identity-link-${identityId}`).click();
+  await page.getByTestId(`identity-card-link-${identityId}`).click();
+  await expect(page).toHaveURL(`${base}/identities/${identityId}`);
   await expect(page.getByTestId("identity-detail")).toBeVisible();
+}
+
+/**
+ * Opens any identity's page through the one search box on the wallet home. An
+ * identity id navigates without asking the node anything; a hostname is
+ * resolved through `GET /api/resolve/<hostname>` first.
+ */
+export async function searchIdentity(
+  page: Page,
+  base: string,
+  query: string,
+  expectedId: string,
+): Promise<void> {
+  await page.goto(`${base}/wallet`);
+  await expect(page.getByTestId("wallet-search")).toBeVisible();
+  await page.getByTestId("wallet-search-input").fill(query);
+  await page.getByTestId("wallet-search-submit").click();
+  await expect(page).toHaveURL(`${base}/identities/${expectedId}`);
 }
 
 /** Story 001 step 6: name one witness on this identity's chain. */
@@ -95,17 +132,16 @@ export async function addTrust(page: Page, subject: string): Promise<string> {
   return identifier(page, "trust-appended-event");
 }
 
-/** Story 003 step 7: run one trust verification on the wallet's verify page. */
-export async function verifyTrustInUi(
-  page: Page,
-  base: string,
-  fields: { issuer: string; subject: string; from: string },
-): Promise<void> {
-  await page.goto(`${base}/wallet`);
-  await page.getByTestId("nav-verify").click();
-  await page.getByTestId("verify-trust-issuer").fill(fields.issuer);
-  await page.getByTestId("verify-trust-subject").fill(fields.subject);
-  await page.getByTestId("verify-trust-from").fill(fields.from);
-  await submitAndAwait(page, "verify-trust-submit", "/api/verify");
-  await expect(page.getByTestId("verify-report")).toBeVisible();
+/**
+ * The ids of the identity cards on the screen now, in the order they are drawn.
+ * `identity-card-link-<id>` is the one testid a card carries exactly once.
+ */
+export async function cardIds(page: Page): Promise<string[]> {
+  await expect(page.getByTestId("identity-cards")).toBeVisible();
+  const testIds = await page
+    .locator('[data-testid^="identity-card-link-"]')
+    .evaluateAll((elements) =>
+      elements.map((element) => element.getAttribute("data-testid") ?? ""),
+    );
+  return testIds.map((testId) => testId.replace("identity-card-link-", ""));
 }

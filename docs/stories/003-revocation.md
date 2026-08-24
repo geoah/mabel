@@ -28,7 +28,7 @@ repository root.
    attestation naming bob, pushed to the witness, and a fresh home already
    answered `trusted: true`. Keep `alice_id`, `bob_id`, `witness_id` and
    `alice_attestation`.
-2. In alice's UI open `identity-link-<alice_id>`. The trust table shows
+2. In alice's UI open `identity-card-link-<alice_id>`. The trust list shows
    `trust-row-<alice_attestation>` with `trust-state-<alice_attestation>`
    reading `unrevoked`.
 3. Attest bob a second time, before revoking anything. One unrevoked
@@ -54,17 +54,23 @@ repository root.
      --from "$witness_id"
    ```
    Run it again with `--json` for the document assertions.
-7. Read the same answer in alice's UI. Click `nav-verify`, put `alice_id` into
-   `verify-trust-issuer`, `bob_id` into `verify-trust-subject`, `witness_id`
-   into `verify-trust-from`, and click `verify-trust-submit`.
+7. Read the same answer from alice's own home instead of an empty one.
+   Verification is a CLI concern (proposal 004): the wallet UI has no verify
+   screen, so the same command runs in her container, which needs `--peer`
+   because a CLI process holds no seeded witness address:
+   ```sh
+   dc exec -T alice sh -c 'mabel verify trust --issuer '"$alice_id"' \
+     --subject '"$bob_id"' --from '"$witness_id"' \
+     --peer "$(cat /shared/witness.ticket)"'
+   ```
 8. Alice attests bob again: click `nav-wallet`, open
-   `identity-link-<alice_id>`, paste `bob_id` into `trust-add-subject`, click
-   `trust-add-submit`. A second row appears, `trust-state-<second attestation>`
-   reads `unrevoked`, `identity-detail-head-seq` reads `4`. Record the event id
-   as `second_attestation`. This is the same command step 3 refused: the policy
+   `identity-card-link-<alice_id>`, paste `bob_id` into `trust-add-subject`,
+   click `trust-add-submit`. A second row appears, and
+   `trust-state-<second attestation>` reads `unrevoked` with
+   `identity-detail-head-seq` reading `4`. Record the event id as
+   `second_attestation`. This is the same command step 3 refused: the policy
    refuses only a second *unrevoked* attestation for one subject.
-9. Click `sync-push-submit` again, then repeat step 6 in a new container and
-   step 7 in the UI.
+9. Click `sync-push-submit` again, then repeat step 6 in a new container.
 
 ## Verified outcomes
 
@@ -109,26 +115,29 @@ repository root.
   statement `valid as of seq 4 of <alice_id>, fetched from <witness_id> at
   <RFC 3339 UTC>; no revocation up to seq 4`. The revoked attestation stays in
   `revoked_attestations`.
-- The UI verify page of step 7 agrees with the container of step 6:
-  `verify-report-trusted-badge` reads `false`, `verify-report-statement` is the
-  revocation sentence verbatim, `verify-report-revoked-count` reads `1`,
-  `verify-report-signing-principal` reads `null` and
-  `verify-report-revoked-<alice_attestation>` is a row in
-  `verify-report-revoked-attestations`.
-- Run again after step 9, the same page reads `verify-report-trusted-badge`
-  `true`, `verify-report-attestation-seq` `4`, and still lists
-  `verify-report-revoked-<alice_attestation>`: revocation is history, not
-  deletion.
+- Step 7 prints the same four lines step 6 printed, from a home that holds
+  alice's ledger. Where the report is read from does not change it, because
+  `--from` pins the source; only the fetch time inside the statement moves.
+- Step 6's document also reads `signing_principal: null`, with
+  `subject_control` and `verified_means` carrying the two standing sentences
+  the text form printed as its last two lines.
+- Run again after step 9, the document reads `trusted: true`,
+  `attestation_seq: 4`, `signing_principal.identity == alice_id`, and a
+  one-element `revoked_attestations` still naming `alice_attestation` with
+  `revocation_seq: 3`: revocation is history, not deletion.
 
 ## Deviations
 
 Where `tests/e2e/specs/003-revocation.spec.ts` departs from or exceeds the
 story text above.
 
-- The spec asserts container testids the story never names, because the shared
-  UI helpers wait on them: `identity-detail` and `verify-report`.
-- Step 9's UI report is read further than the story states: the spec also
-  reads `verify-report-attestation-event` and asserts it carries
-  `second_attestation`.
+- The spec asserts one container testid the story never names, because the
+  shared UI helpers wait on it: `identity-detail`.
 - Step 9 repeats step 6 in its `--json` form only. Step 6 already pins the
   text form line by line, and the document is what step 9 adds.
+- Steps 7 and 9 lost their UI half with the verify tab (proposal 004). What the
+  report screen asserted, the verdict, the statement, the revoked list and the
+  null signing principal, is asserted on the `--json` document instead, and
+  step 7 became the same command run from alice's own home.
+- Step 7 compares its four lines against step 6's with the RFC 3339 time
+  masked: two reads of one witness are two fetch times.

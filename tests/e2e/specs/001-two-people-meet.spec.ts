@@ -9,8 +9,8 @@ import {
   verifier,
   WITNESS_URL,
 } from "../lib/docker";
-import { createIdentityCli, expectExit, story001Steps1to7 } from "../lib/stories";
-import { addTrust, identifier, openIdentity, push } from "../lib/ui";
+import { compareIds, createIdentityCli, expectExit, story001Steps1to7 } from "../lib/stories";
+import { addTrust, cardIds, identifier, openIdentity, push } from "../lib/ui";
 
 /** docs/stories/001-two-people-meet.md */
 test.describe.configure({ mode: "serial" });
@@ -202,6 +202,29 @@ test("steps 13 and 14: the subject nobody can read", async () => {
   const carolLedger = await apiGet(WITNESS_URL, `/api/ledgers/${carolId}`);
   expect(carolLedger.status).toBe(404);
   expect(carolLedger.body.details.reason).toBe("ledger_not_held");
+});
+
+test("the wallet home draws one card per identity, and the card is the page", async () => {
+  await alicePage.goto(`${ALICE_URL}/wallet`);
+  // GET /api/identities answers in ascending identity id order, and the card
+  // list renders what it answered.
+  expect(await cardIds(alicePage)).toEqual([aliceId, carolId].sort(compareIds));
+
+  await expect(alicePage.getByTestId(`identity-card-name-${aliceId}-name`)).toHaveText("alice");
+  await expect(alicePage.getByTestId(`identity-card-declared-kind-${aliceId}`)).toHaveText(
+    "person",
+  );
+  await expect(alicePage.getByTestId(`identity-card-head-seq-${aliceId}`)).toHaveText(
+    "head seq 3",
+  );
+  // Carol was created and never appended to, so her card reads seq 0.
+  await expect(alicePage.getByTestId(`identity-card-head-seq-${carolId}`)).toHaveText(
+    "head seq 0",
+  );
+  await expect(alicePage.getByTestId(`identity-card-link-${aliceId}`)).toHaveAttribute(
+    "href",
+    `/identities/${aliceId}`,
+  );
 });
 
 test("the identifier a spec reads is the whole value", async () => {

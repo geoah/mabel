@@ -4,9 +4,15 @@
 - Surfaces: witness UI, CLI, witness HTTP API
 - Test: `tests/e2e/specs/005-witness-operator.spec.ts`
 
-Someone runs a witness and wants to know what it holds. The debug route
-enumerates one witness's own store, pages through it, names the fork it
-recorded, and issues nothing but reads.
+Someone runs a witness and wants to know what it holds. The debug route is the
+same two screens the wallet has, read-only: the card list of its holdings and
+one page per ledger. It names the fork it recorded and issues nothing but
+reads.
+
+Proposal 004 took the node card, the ledger table, its paging controls and the
+event form out of that route. Everything they showed is still answered by the
+witness API, so this story reads on the screen what the screen draws and on the
+route what the route reports.
 
 ## Actors
 
@@ -26,8 +32,8 @@ for the reason story 004 states), and step 11 tears them down.
 1. Run story 004 steps 1 to 7, stopping before its teardown. Witness one now
    holds alice's ledger at seq 3 and has recorded one fork record for it. Keep
    `alice_id` and `witness_id`.
-2. Give the witness enough ledgers to page. Carol and dave exist in alice's
-   home from story 004 but were never pushed:
+2. Give the witness five ledgers. Carol and dave exist in alice's home from
+   story 004 but were never pushed:
    ```sh
    dc exec -T alice mabel identity create --alias erin --kind person
    dc exec -T alice mabel identity create --alias mabel-demo-co \
@@ -40,21 +46,35 @@ for the reason story 004 states), and step 11 tears them down.
    ```
    Record `org_id`. The witness now holds five ledgers, four `person` and one
    `organization`.
-3. Open `http://127.0.0.1:9080/witness`. Read the Node card.
-4. Read the Ledgers card. Four rows are shown, the first four ledger ids in
-   ascending order, because the page size is 4 and the list orders by ledger
-   id so paging is stable. Ledger ids are digests, so which four they are is
-   whatever the ordering says: read the row ids from the DOM and assert per
-   page, never "the org is on page one".
-5. Click `witness-ledger-next`, then `witness-ledger-previous`.
-6. Read the declared kind of each visible row on both pages, and the note under
-   the table.
-7. Read the fork count of each visible row on both pages.
-8. Click `witness-ledger-link-<alice_id>`, from whichever page holds it. On the
-   detail page read the summary
-   card, then set `witness-events-since` to `2`, `witness-events-limit` to `1`
-   and click `witness-events-load`.
-9. Read the Forks card on the same page: it is filtered to this ledger.
+3. Read the node facts, which the UI no longer draws:
+   `curl -fsS http://127.0.0.1:9080/api/node`.
+4. Open `http://127.0.0.1:9080/witness`. It is one card list, `identity-cards`,
+   holding all five ledgers with no paging control anywhere: the route asks for
+   every ledger it holds at once. Read the two standing notes above the list.
+   Ledger ids are digests, so which card is where is whatever the ordering
+   says: read the ids out of the DOM and assert per card, never "the org is
+   first".
+5. Read the declared kind of each card,
+   `identity-card-declared-kind-<ledger_id>`.
+6. Read the fork counts. A card carries
+   `identity-card-fork-count-<ledger_id>` only when the witness recorded a fork
+   for that ledger, so exactly one card carries it.
+7. Page the route instead of the screen. Paging is still how the store is read
+   over HTTP, and the order is what makes it stable:
+   ```sh
+   curl -fsS 'http://127.0.0.1:9080/api/ledgers?offset=0&limit=4'
+   curl -fsS 'http://127.0.0.1:9080/api/ledgers?offset=4&limit=4'
+   ```
+8. Click `identity-card-link-<alice_id>`. On the identity page read the summary
+   card, then the Ledger card, which draws one line per event: click
+   `event-expand-3` to open the head event. Then page the events on the route,
+   which is where `since` and `limit` live now:
+   ```sh
+   curl -fsS 'http://127.0.0.1:9080/api/ledgers/'"$alice_id"'/events?since=2&limit=1'
+   ```
+9. Read the Forks card on the same page: it holds the records of this ledger
+   and no other. Open `http://127.0.0.1:9080/witness/ledgers/<org_id>`, a
+   ledger with no fork record, which draws no Forks card at all.
 10. Try to write. Record the store first, so the "nothing changed" claim is
     checked rather than asserted, then send three requests the witness must
     refuse:
@@ -78,48 +98,49 @@ for the reason story 004 states), and step 11 tears them down.
 
 ## Verified outcomes
 
-- Step 3: `witness-read-only-note` reads `every request this route issues is a
-  read`. `witness-node-role` reads `witness`, `witness-node-relay` reads
-  `disabled`, `witness-node-endpoint-id` carries `witness_id`,
-  `witness-node-ledger-count` reads `5`, `witness-node-fork-count` reads `1`,
-  and `witness-node-storage-capacity` reads `2147483648`.
-- Step 4: `witness-ledger-offset` reads `offset 0`, `witness-ledger-limit`
-  reads `limit 4`, `witness-ledger-more` reads `more true`,
-  `witness-ledger-previous` is disabled, and exactly four
-  `witness-ledger-row-*` elements are present, in ascending ledger id order.
-- `witness-holdings-note` reads `this is what this one witness holds, a
-  diagnostic and not an index: a ledger missing here may still exist on another
-  witness`. There is no global discovery and no "who trusts B" query (flag D).
-- Step 5: after Next, `witness-ledger-offset` reads `offset 4`, one row is
-  shown, `witness-ledger-more` reads `more false`, `witness-ledger-next` is
-  disabled and `witness-ledger-previous` is enabled. After Previous, the first
-  page returns unchanged.
-- Step 6, across both pages: `witness-ledger-declared-kind-<org_id>` reads
-  `organization` and the four person rows read `person`. Which page each falls
-  on follows from the digest order, so the assertion is per visible row.
-  `witness-ledger-declared-kind-note` reads `declared kind is advisory: it
-  gates no authorization, no payload validity and no verification outcome`.
-- Step 7, across both pages: `witness-ledger-fork-count-<alice_id>` reads `1`,
-  every other row reads `0`, and every `witness-ledger-forks-truncated-*`
-  visible reads `forks_truncated false`.
-- Step 8's summary: `witness-detail-head-seq` reads `3`,
-  `witness-detail-event-count` reads `4`, `witness-detail-fork-count` reads
-  `1`, `witness-detail-forks-truncated` reads `false`, and
-  `witness-detail-witnesses` lists two endpoint ids, witness one and witness
-  two, because that is what alice's chain says. `witness-detail-source-endpoint`
-  carries the endpoint that pushed, which is provenance, not authorization.
-- Step 8's events: `witness-events-page-since` reads `2`,
-  `witness-events-page-limit` reads `1`, `witness-events-more` reads `true`,
-  and exactly one row, `witness-event-2`, is shown:
-  `since` is inclusive. Loading with `since` 0 and `limit` 8 shows four rows
-  whose `witness-event-payload-kind-*` values are, in order, `inception`,
-  `witness_config`, `witness_config`, `trust_attestation`.
-- Step 9: `witness-forks-filter` is present and names `alice_id`, one record
-  `fork-record-<alice_id>-3` is shown, and `witness-forks-more` reads `more
-  false`. Filtering to a ledger with no fork
-  (`http://127.0.0.1:9080/witness/ledgers/<org_id>`) shows
-  `witness-forks-empty` reading `this witness recorded no fork for this
-  ledger`.
+- Step 3: the node document answers `role: "witness"`, `relay: "disabled"`,
+  `endpoint_id == witness_id`, `ledger_count: 5`, `fork_count: 1` and
+  `storage_capacity: 2147483648`.
+- Step 4: `witness-read-only-note` reads `every request this route issues is a
+  read` and `witness-holdings-note` reads `this is what this one witness holds,
+  a diagnostic and not an index: a ledger missing here may still exist on
+  another witness`. There is no global discovery and no "who trusts B" query
+  (flag D).
+- Step 4: five `identity-card-link-*` elements are present, their ledger ids in
+  ascending order, and that order is the order `GET
+  /api/ledgers?offset=0&limit=256` answers in.
+- Step 5: `identity-card-declared-kind-<org_id>` reads `organization` and the
+  four person cards read `person`. Which card falls where follows from the
+  digest order, so the assertion is per card.
+- Step 6: `identity-card-fork-count-<alice_id>` reads `1 fork record`, and it
+  is the only `identity-card-fork-count-*` element on the page.
+- Step 7: the first request answers `offset: 0`, `limit: 4`, `more: true` and
+  four entries; the second answers `offset: 4`, `more: false` and one entry.
+  The two pages together name every ledger exactly once, in the same ascending
+  order the cards are drawn in.
+- Step 8's summary: `witness-detail-ledger-id` carries `alice_id`,
+  `witness-detail-declared-kind` reads `person`, `witness-detail-head-seq`
+  reads `3`, `witness-detail-event-count` reads `4`,
+  `witness-detail-fork-count` reads `1`, and `witness-detail-witnesses` lists
+  two endpoint ids, witness one and witness two, because that is what alice's
+  chain says. `witness-detail-source-endpoint` carries the endpoint that
+  pushed, which is provenance, not authorization.
+  `witness-detail-declared-kind-note` reads `declared kind is advisory: it
+  gates no authorization, no payload validity and no verification outcome` and
+  `witness-detail-holdings-note` repeats the holdings sentence.
+- Step 8's chain: `ledger-event-count` reads `4`, `ledger-head-seq` reads `3`,
+  and four `ledger-event-*` rows are drawn whose `event-payload-kind-*` values
+  are, in order, `inception`, `witness_config`, `witness_config`,
+  `trust_attestation`. Opening `event-expand-3` shows `event-detail-3`, whose
+  `event-id-3` carries the `entry.head_event` the ledger route reports. The
+  wallet's ledger and a witness's copy of it render through the same component,
+  because the chain is the same chain.
+- Step 8's event page answers `since: 2`, `limit: 1`, `more: true` and one
+  event whose `seq` is 2: `since` is inclusive.
+- Step 9: `witness-forks` is present with exactly one `fork-record-*` element,
+  `fork-record-<alice_id>-3`. On `<org_id>`'s page `witness-forks` is absent
+  and `GET /api/forks?ledger_id=<org_id>` answers `entries: []`: a ledger with
+  no fork record has nothing to say.
 - Step 10, first request: HTTP 405, body `{"ok": false, "code": 2, ...}` with
   `message` exactly `POST is not allowed on /api/ledgers` and
   `details.reason == "method_not_allowed"`.
@@ -148,8 +169,12 @@ the story text above.
   `witness_two_id`, and `witness-detail-source-endpoint` holds alice's node
   endpoint id: the second machine's push of the conflicting branch was
   rejected, so the endpoint that stored this ledger is alice's own.
-- Step 10 records the store through `GET /api/ledgers?offset=0&limit=256`
-  rather than through `/tmp/before.json` and `/tmp/after.json`. The three
-  refused requests are the story's `curl` commands.
-- The spec also waits on the table containers the story does not name:
-  `witness-ledger-table`, `witness-ledger-detail` and `witness-events-table`.
+- Steps 3, 7, 8 and 10 read the API through `apiGet` rather than through `curl`
+  and `/tmp/*.json` files. The three refused requests of step 10 are the
+  story's `curl` commands, because a refusal is about headers and status codes.
+- The spec also waits on the containers the story does not name:
+  `identity-cards`, `witness-ledger-detail` and `ledger-events`.
+- `forks_truncated` is asserted nowhere on the screen. The redesigned route
+  draws the flag in `witness-detail-fork-count`'s sentence only when a witness
+  stopped recording, which this witness did not, so the flag is pinned on the
+  ledger route in story 004 instead.

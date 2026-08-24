@@ -7,6 +7,12 @@ seven are implemented; each story names its spec, and a "Deviations" section
 lists where that spec departs from the story text. Template:
 [../templates/story.md](../templates/story.md).
 
+The UI is three primitives and nothing else (proposal 004): the identity card
+list, the witness card list, and one identity page at `/identities/<id>` for
+every identity, local or foreign. Nav is `nav-wallet` and `nav-witnesses`.
+There is no verify screen, no lookup screen and no identity selector, so a
+story that verified in the UI verifies on the CLI instead.
+
 Every story starts from the compose topology of
 [../../docker/compose.yaml](../../docker/compose.yaml): one witness on
 `http://127.0.0.1:9080` and two wallets on `http://127.0.0.1:9081` and
@@ -33,16 +39,20 @@ whole value, because the hidden middle characters stay in the DOM in an
   with a founder, an invitation admitted across two homes, and a verifier told
   which principal signed for the ledger.
 - [003-revocation.md](003-revocation.md): trust revoked in the UI, read back by
-  a fresh verifier with the flag-R wording, then re-attested.
+  a fresh verifier with the flag-R wording, then re-attested. Verification is a
+  CLI concern (proposal 004), so every report here is read on the CLI.
 - [004-fork-on-two-witnesses.md](004-fork-on-two-witnesses.md): two divergent
   branches on two witnesses, the fork record in the witness UI, and a
   multi-source verify that exits 20 naming both sources.
-- [005-witness-operator.md](005-witness-operator.md): the witness debug route,
-  paging, declared kinds, fork counts and read-only enforcement.
+- [005-witness-operator.md](005-witness-operator.md): the witness debug route
+  as the card list and the identity page, declared kinds, fork counts,
+  read-only enforcement, and the paging the route still answers after the
+  controls left the screen.
 - [006-stale-append.md](006-stale-append.md): a shared-ledger append that lost
   the race, the exit-50 recovery, and the retry that lands.
 - [007-profile-and-verification.md](007-profile-and-verification.md): display
-  names, the five DNS verification states, private contact notes and lookup
-  with degrees of separation. The one story that also needs
+  names, the five DNS verification states, private contact notes, degrees of
+  separation on a foreign identity page, opening an identity by hostname, and
+  browsing what a witness holds. The one story that also needs
   [../../docker/compose.dns.yaml](../../docker/compose.dns.yaml), the test
   resolver overlay; its spec brings the topology up with that overlay itself.

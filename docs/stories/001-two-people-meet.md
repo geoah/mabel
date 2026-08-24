@@ -30,9 +30,12 @@ repository root.
    three services report healthy. Read the witness endpoint id,
    `witness_id="$(dc exec -T witness cat /shared/witness.id)"`, a 52-character
    lowercase base32 string.
-2. Open `http://127.0.0.1:9081/wallet`. `node-info` shows `node-role` `wallet`
-   and `identity-list-empty` reads `no identities in this node home`.
-3. Type `alice` into `identity-create-alias`, leave
+2. Open `http://127.0.0.1:9081/wallet`. The nav holds two entries and no third,
+   `nav-wallet` and `nav-witnesses`, the search box `wallet-search` is there,
+   and `identity-list-empty` reads `no identities in this node home`. The role
+   itself is a fact of `GET /api/node`, which answers `role: "wallet"`.
+3. Click `identity-create-summary` to unfold the create form, which the wallet
+   home keeps closed. Type `alice` into `identity-create-alias`, leave
    `identity-create-declared-kind` at `person`, leave `identity-create-founder`
    empty, click `identity-create-submit`. `identity-create-result-identity-id`
    appears; record its identifier `data-value` as `alice_id`.
@@ -51,7 +54,8 @@ repository root.
    ```
    Each export prints `exported <id> to <path> (N bytes)` and a second line
    `declared kind person, raw root, 0 witnesses`.
-6. In alice's UI click `identity-link-<alice_id>`. On the identity page put
+6. In alice's UI click `identity-card-link-<alice_id>`: the whole card is one
+   link to `/identities/<alice_id>`. On the identity page put
    `$witness_id` into `witness-add-endpoint` and click `witness-add-submit`.
    `witness-add-head-seq` reads `head_seq 1` and `witness-row-<witness_id>`
    appears. Do the same in bob's UI.
@@ -145,6 +149,16 @@ repository root.
 - `GET http://127.0.0.1:9080/api/ledgers/<carol_id>` answers 404 with
   `details.reason == "ledger_not_held"`: the witness holds no copy of the
   subject, which is exactly what step 14 reported.
+- After step 13 alice's wallet home draws one card per identity, in the
+  ascending identity id order `GET /api/identities` answers in:
+  `identity-cards` holds `identity-card-<alice_id>` and
+  `identity-card-<carol_id>`. Alice's card reads
+  `identity-card-name-<alice_id>-name` `alice`,
+  `identity-card-declared-kind-<alice_id>` `person` and
+  `identity-card-head-seq-<alice_id>` `head seq 3`; carol's reads `head seq 0`,
+  because she was created and never appended to.
+  `identity-card-link-<alice_id>` points at `/identities/<alice_id>`: the card
+  is the page, and there is no selection state anywhere.
 
 ## Deviations
 
@@ -157,3 +171,9 @@ story text above.
   52-character value is what `data-value` holds.
 - Step 13 creates carol with `--json` added, so the spec can read `carol_id`
   from the document instead of parsing the text form.
+- Step 2's role assertion goes through `GET /api/node`. Proposal 004 removed
+  the node card from the wallet home, so no testid carries the role; the two
+  nav entries and the search box are what the spec reads on the screen.
+- The shared `createIdentity` helper clicks `identity-create-summary` only when
+  the form is not already on the screen: a summary click toggles, so a second
+  one would close the form the previous step opened.

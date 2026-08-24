@@ -18,8 +18,14 @@ import {
   WITNESS_URL,
   writeFileBase64,
 } from "../lib/docker";
-import { BASE32_ID, createIdentityCli, expectExit, story001Steps1to7 } from "../lib/stories";
-import { addTrust, identifier, openIdentity, push } from "../lib/ui";
+import {
+  BASE32_ID,
+  compareIds,
+  createIdentityCli,
+  expectExit,
+  story001Steps1to7,
+} from "../lib/stories";
+import { addTrust, cardIds, identifier, openIdentity, push, searchIdentity } from "../lib/ui";
 
 /** docs/stories/007-profile-and-verification.md */
 test.describe.configure({ mode: "serial" });
@@ -724,8 +730,11 @@ test("step 10: the graph is synchronized from the UI, and carol is two hops away
   // witness before alice reads it from there.
   expectExit(dcSh("bob", 'mabel sync push --identity bob --peer "$(cat /shared/witness.ticket)"'), 0);
 
-  await alicePage.goto(`${ALICE_URL}/wallet/lookup`);
-  await expect(alicePage.getByTestId("graph-empty")).toBeVisible();
+  // The sync control is in the header of every wallet screen, with the counts
+  // of the crawl this home holds; there is no graph screen (proposal 004).
+  await alicePage.goto(`${ALICE_URL}/wallet`);
+  await expect(alicePage.getByTestId("graph-sync")).toBeVisible();
+  await expect(alicePage.getByTestId("graph-sync-counts")).toHaveCount(0);
   await alicePage.getByTestId("graph-sync-button").click();
 
   // The first sync in this node home states what becomes observable before
@@ -796,7 +805,26 @@ test("step 10: the graph is synchronized from the UI, and carol is two hops away
   expect(lines[2]).toBe("2 degrees in this crawl");
   expect(lines[5]).toBe("0 attestations out, 1 in (best effort: who this crawl read)");
 
-  await alicePage.goto(`${ALICE_URL}/wallet/lookup/${carolId}`);
+  // Carol's page is the identity page, reached by pasting her id into the one
+  // search box on the wallet home. The crawl's answer renders on it.
+  await searchIdentity(alicePage, ALICE_URL, carolId, carolId);
+  await expect(alicePage.getByTestId("identity-detail")).toBeVisible();
+  expect(await identifier(alicePage, "identity-detail-identity-id")).toBe(carolId);
+  await expect(alicePage.getByTestId("identity-detail-ledger-summary")).toHaveText(
+    "not stored in this node home",
+  );
+  await expect(alicePage.getByTestId("identity-detail-provenance")).toHaveText(
+    "nothing this home holds, so the id is the only label",
+  );
+  // Nothing about a foreign page pretends this wallet can act for it.
+  await expect(alicePage.getByTestId("identity-own-badge")).toHaveCount(0);
+  await expect(alicePage.getByTestId("identity-actions")).toHaveCount(0);
+
+  await expect(alicePage.getByTestId("lookup-result")).toBeVisible();
+  await expect(alicePage.getByTestId("lookup-from")).toHaveAttribute(
+    "data-identity-id",
+    aliceId,
+  );
   await expect(alicePage.getByTestId("lookup-degrees")).toHaveText("2 hops");
   // The number is only an answer next to the question the row asks.
   await expect(alicePage.getByTestId("lookup-degrees-row").locator("dt")).toHaveText(
@@ -811,6 +839,9 @@ test("step 10: the graph is synchronized from the UI, and carol is two hops away
   await expect(
     alicePage.getByTestId(`lookup-reverse-row-${bobId}`),
   ).toBeVisible();
+  // This crawl is fresh and reached everything, so neither disclosure is drawn.
+  await expect(alicePage.getByTestId("lookup-graph-stale")).toHaveCount(0);
+  await expect(alicePage.getByTestId("lookup-graph-truncated")).toHaveCount(0);
 });
 
 test("step 11: an identity nobody in this crawl trusts answers with no path", async () => {
@@ -832,11 +863,45 @@ test("step 11: an identity nobody in this crawl trusts answers with no path", as
   expect(answer.status).toBe(200);
   expect(answer.body.degrees).toBeNull();
 
-  await alicePage.goto(`${ALICE_URL}/wallet/lookup/${witnessId}`);
+  await searchIdentity(alicePage, ALICE_URL, witnessId, witnessId);
+  await expect(alicePage.getByTestId("lookup-result")).toBeVisible();
   await expect(alicePage.getByTestId("lookup-degrees")).toHaveText("none");
   await expect(alicePage.getByTestId("lookup-degrees-none")).toContainText(
     "no path was found within this crawl's caps",
   );
+});
+
+test("step 12: the search box takes a hostname and opens the identity it names", async () => {
+  // The wallet's one search box resolves a hostname through the node and
+  // navigates to the id the TXT record names (proposal 004). It verifies
+  // nothing: the identity's own advisory verdict is what the page draws.
+  const resolved = await apiGet(ALICE_URL, "/api/resolve/alice.example");
+  expect(resolved.body.status).toBe("resolved");
+  expect(resolved.body.identity_id).toBe(aliceId);
+
+  await searchIdentity(alicePage, ALICE_URL, "alice.example", aliceId);
+  await expect(alicePage.getByTestId("identity-detail")).toBeVisible();
+  expect(await identifier(alicePage, "identity-detail-identity-id")).toBe(aliceId);
+  await expect(alicePage.getByTestId("identity-own-badge")).toHaveText("your identity");
+  await expect(alicePage.getByTestId("identity-detail-hostname-verification")).toHaveAttribute(
+    "data-verification",
+    "verified",
+  );
+
+  // A hostname the resolver answers for and no mabel record backs says what
+  // the lookup answered, and navigates nowhere.
+  await alicePage.goto(`${ALICE_URL}/wallet`);
+  await alicePage.getByTestId("wallet-search-input").fill("nobody.example");
+  await alicePage.getByTestId("wallet-search-submit").click();
+  const status = alicePage.getByTestId("wallet-search-status");
+  await expect(status).toHaveAttribute("data-status", "no_record");
+  await expect(status).toContainText("_mabel.nobody.example.");
+  await expect(status).toContainText("holds no mabel record");
+  await expect(alicePage).toHaveURL(`${ALICE_URL}/wallet`);
+
+  const missing = await apiGet(ALICE_URL, "/api/resolve/nobody.example");
+  expect(missing.body.status).toBe("no_record");
+  expect(missing.body.identity_id).toBeNull();
 });
 
 test("a sync writes a new generation and swaps current.json", async () => {
@@ -913,4 +978,81 @@ test("bob taking alice's name changes what is shown, never which id is shown", a
   // The overview of alice's own identity carries the same name and her id.
   await expect(alicePage.getByTestId("identity-detail-resolved-name")).toHaveText("Alice Example");
   expect(await identifier(alicePage, "identity-detail-identity-id")).toBe(aliceId);
+});
+
+test("step 13: the witnesses screen, what one holds, and one deliberate fetch", async () => {
+  // A wallet knows a witness from a ledger that names it and from its own
+  // defaults; there is no global directory (proposal 004).
+  const listed = await apiGet(ALICE_URL, "/api/witnesses");
+  expect(listed.body.witnesses).toHaveLength(1);
+  expect(listed.body.witnesses[0].endpoint_id).toBe(witnessId);
+  expect(listed.body.witnesses[0].named_by).toEqual([aliceId]);
+  expect(listed.body.witnesses[0].is_node_default).toBe(true);
+
+  await alicePage.goto(`${ALICE_URL}/wallet`);
+  await alicePage.getByTestId("nav-witnesses").click();
+  await expect(alicePage).toHaveURL(`${ALICE_URL}/witnesses`);
+  await expect(alicePage.getByTestId("witness-cards")).toBeVisible();
+  await expect(alicePage.getByTestId(`witness-card-named-by-${witnessId}`)).toHaveText(
+    "named by 1 identity",
+  );
+  await expect(alicePage.getByTestId(`witness-card-default-${witnessId}`)).toHaveText(
+    "node default",
+  );
+  // The card carries the endpoint id and every identity whose chain names it.
+  const onCard = await alicePage
+    .getByTestId(`witness-card-${witnessId}`)
+    .locator("[data-value]")
+    .evaluateAll((elements) => elements.map((element) => element.getAttribute("data-value") ?? ""));
+  expect(onCard).toEqual([witnessId, aliceId]);
+
+  // What that witness holds, asked live over the sync protocol and rendered as
+  // the same identity card list.
+  await alicePage.getByTestId(`witness-card-link-${witnessId}`).click();
+  await expect(alicePage.getByTestId("witness-ledgers")).toBeVisible();
+  const held = await cardIds(alicePage);
+  expect([...held].sort(compareIds)).toEqual([aliceId, bobId, carolId].sort(compareIds));
+  await expect(alicePage.getByTestId(`identity-card-declared-kind-${carolId}`)).toHaveText(
+    "person",
+  );
+  await expect(alicePage.getByTestId(`identity-card-head-seq-${carolId}`)).toHaveText(
+    "head seq 1",
+  );
+
+  const proxied = await apiGet(ALICE_URL, `/api/witnesses/${witnessId}/ledgers?offset=0&limit=256`);
+  expect(proxied.body.endpoint_id).toBe(witnessId);
+  expect(proxied.body.more).toBe(false);
+  expect(proxied.body.ledgers.map((ledger: any) => ledger.ledger_id)).toEqual(held);
+
+  // A card opens the identity page, and browsing a witness stored nothing:
+  // this home still holds no copy of carol's ledger.
+  await alicePage.getByTestId(`identity-card-link-${carolId}`).click();
+  await expect(alicePage).toHaveURL(`${ALICE_URL}/identities/${carolId}`);
+  await expect(alicePage.getByTestId("identity-fetch")).toBeVisible();
+  expect(stdoutLines(expectExit(dcExec("alice", ["ls", "/data/ledgers"]), 0))).toEqual([aliceId]);
+
+  // Fetching is the one action a page offers for a ledger this home does not
+  // hold, and the stored page is its confirmation.
+  await alicePage.getByTestId("identity-fetch-button").click();
+  await expect(alicePage.getByTestId("ledger-panel")).toBeVisible();
+  await expect(alicePage.getByTestId("identity-fetch")).toHaveCount(0);
+  await expect(alicePage.getByTestId("identity-detail-head-seq")).toHaveText("1");
+  // Storing a ledger is not controlling it.
+  await expect(alicePage.getByTestId("identity-own-badge")).toHaveCount(0);
+  await expect(alicePage.getByTestId("identity-actions")).toHaveCount(0);
+
+  const stored = await apiGet(ALICE_URL, `/api/identities/${carolId}`);
+  expect(stored.body.identity.head_seq).toBe(1);
+  expect(
+    stdoutLines(expectExit(dcExec("alice", ["ls", "/data/ledgers"]), 0)).sort(),
+  ).toEqual([aliceId, carolId].sort());
+
+  // A fetch writes `ledgers/<carol_id>` and no link: no key here signs for
+  // carol, so nothing was recorded under `identities/`, the wallet home still
+  // lists one identity, and that is what leaves the page read-only.
+  expect(dcExec("alice", ["test", "-e", `/data/identities/${carolId}`]).status).not.toBe(0);
+  const listedAfter = await apiGet(ALICE_URL, "/api/identities");
+  expect(listedAfter.body.identities.map((identity: any) => identity.identity_id)).toEqual([
+    aliceId,
+  ]);
 });

@@ -56,9 +56,10 @@ machines; two admitted controllers acting from their own homes is ticket 031.
    the wait is not optional: an `exec` that lands first fails on a home that is
    not a home yet.
 4. In alice's UI at `http://127.0.0.1:9081/wallet`, open
-   `identity-link-<org_id>`, paste `bob_id` into `trust-add-subject` and click
-   `trust-add-submit`. It succeeds: the witness is at seq 3, alice is at seq 3,
-   nobody has moved. `identity-detail-head-seq` reads `4`. Alice does not push.
+   `identity-card-link-<org_id>`, paste `bob_id` into `trust-add-subject` and
+   click `trust-add-submit`. It succeeds: the witness is at seq 3, alice is at
+   seq 3, nobody has moved. `identity-detail-head-seq` reads `4`. Alice does
+   not push.
 5. The second machine attests someone else on the same ledger and pushes:
    ```sh
    docker exec mabel-alice-two sh -c 'mabel trust add --issuer mabel-demo-co \
@@ -155,3 +156,7 @@ story text above.
 - Step 11 tears the second machine down through the same helper the other
   stories use, which also removes `mabel-witness-two`. Nothing started it
   here, so that removal is a no-op.
+- Every screen this story drives survived proposal 004: the Ledger card, the
+  trust form and the error envelope all sit on `/identities/<org_id>`, which is
+  now the only place an identity is shown. Only the way step 4 opens that page
+  changed, from a row link to the card link.

@@ -5,8 +5,9 @@
 - Test: `tests/e2e/specs/007-profile-and-verification.spec.ts`
 
 Alice gives her ledger a display name and a hostname, a TXT record backs the
-hostname, and the wallet shows the verification state. Alice then looks bob's
-contact up and sees how she knows him.
+hostname, and the wallet shows the verification state. Alice then opens carol's
+identity page and sees how she knows her, opens alice.example by hostname, and
+browses what the witness holds.
 
 This is the one story that runs against `docker/compose.dns.yaml`, the test
 resolver overlay of ticket 032. The spec brings the topology down and up again
@@ -90,7 +91,9 @@ docker/compose.dns.yaml`, run from the repository root.
 7. Repeat steps 4 and 6 in bob's wallet with `--hostname bob.example`, whose
    TXT record names carol, and once more with `--hostname nobody.example`,
    which has no record.
-8. Open alice's identity view in the wallet UI. The overview is one compact
+8. Open alice's identity page at `http://127.0.0.1:9081/identities/<alice_id>`,
+   which is where every identity is shown, local or foreign (proposal 004). The
+   overview is one compact
    key-value table (`identity-detail`): name, copyable id, declared kind,
    alias, created, hostname with its verification mark, contact, and the
    counts. Read the `identity-detail-hostname` row for each of the three cases
@@ -105,7 +108,12 @@ docker/compose.dns.yaml`, run from the repository root.
    The same store answers `GET` and `PUT
    /api/identities/<bob_id>/contact`, and it accepts foreign ids.
 10. Synchronize the graph from alice's wallet UI, with `graph-sync-button` in
-    the header, and look carol up:
+    the header, then open carol's page: paste `carol_id` into
+    `wallet-search-input` on the wallet home and click `wallet-search-submit`,
+    which navigates to `/identities/<carol_id>`. Carol's ledger is not in
+    alice's home, so the page renders what the crawl read: the "How you know
+    them" section (`lookup-result`) with the path, the degrees and the two
+    lists. The same answer from the CLI and the route:
     ```sh
     dc exec -T alice sh -c 'mabel graph sync --peer "$(cat /shared/witness.ticket)"'
     dc exec -T alice mabel lookup "$carol_id" --from alice
@@ -116,7 +124,30 @@ docker/compose.dns.yaml`, run from the repository root.
     sync needs `--peer`: that process holds no seeded peer address, while the
     running wallet started with the witness's ticket.
 11. Look up an identity nobody in the crawl trusts, for the empty answer:
-    `dc exec -T alice mabel lookup "$witness_id" --from alice`.
+    `dc exec -T alice mabel lookup "$witness_id" --from alice`, and open
+    `/identities/<witness_id>` through the same search box.
+12. Open an identity by hostname. The search box takes a hostname as well as an
+    id, resolves it through the node and navigates to what the TXT record
+    names:
+    ```sh
+    curl -fsS http://127.0.0.1:9081/api/resolve/alice.example
+    curl -fsS http://127.0.0.1:9081/api/resolve/nobody.example
+    ```
+    Type `alice.example` into `wallet-search-input` and click
+    `wallet-search-submit`: the wallet lands on alice's own page. Type
+    `nobody.example` and the wallet stays where it is and says what the lookup
+    answered. Resolving is navigation, never verification: the page still draws
+    alice's own advisory verdict.
+13. Browse the witness. Click `nav-witnesses`, read the witness card, click
+    `witness-card-link-<witness_id>` for what that witness holds, and click
+    carol's card. Her ledger is not in this home, so the page offers one
+    action: click `identity-fetch-button`, and the same page then renders as a
+    stored ledger.
+    ```sh
+    curl -fsS http://127.0.0.1:9081/api/witnesses
+    curl -fsS 'http://127.0.0.1:9081/api/witnesses/'"$witness_id"'/ledgers?offset=0&limit=256'
+    dc exec -T alice ls /data/ledgers
+    ```
 
 ## Verified outcomes
 
@@ -182,18 +213,55 @@ docker/compose.dns.yaml`, run from the repository root.
   `truncated_by`, carol's outgoing trust list (empty here, so
   `lookup-trust-empty`) and a reverse list shaped `{best_effort: true,
   entries: [...]}`, labelled best effort every time it is shown
-  (`lookup-reverse-label`).
+  (`lookup-reverse-label`). `lookup-from` carries `alice_id`, the root the
+  answer came from.
+- Step 10's page is a foreign identity's page, so it carries no
+  `identity-own-badge` and no `identity-actions`,
+  `identity-detail-ledger-summary` reads `not stored in this node home`, and
+  `identity-detail-provenance` reads `nothing this home holds, so the id is the
+  only label`: no profile and no local nickname name carol here. The crawl is
+  fresh and reached everything, so neither `lookup-graph-stale` nor
+  `lookup-graph-truncated` is drawn.
 - Step 11 answers 200 with `degrees: null` and an empty path list, stated as
   "shortest path found in this crawl" (`lookup-degrees` reads "none", and
   `lookup-degrees-none` says a path was not found within this crawl's caps)
   and never as "no relationship".
+- Step 12: `GET /api/resolve/alice.example` answers `status: "resolved"` with
+  `identity_id == alice_id`, and the search box lands on
+  `/identities/<alice_id>`, which carries `identity-own-badge` reading `your
+  identity` and `identity-detail-hostname-verification` with
+  `data-verification` `verified`. `GET /api/resolve/nobody.example` answers
+  `status: "no_record"` with `identity_id: null`, and the search box stays on
+  `/wallet` with `wallet-search-status` carrying `data-status` `no_record` and
+  reading `_mabel.nobody.example.` and `holds no mabel record`.
+- Step 13: `GET /api/witnesses` answers one witness, `endpoint_id ==
+  witness_id`, `named_by == [alice_id]` (alice's is the only ledger this home
+  holds, and its chain names that witness) and `is_node_default: true` (the
+  overlay set it). The card repeats both: `witness-card-named-by-<witness_id>`
+  reads `named by 1 identity`, `witness-card-default-<witness_id>` reads `node
+  default`, and the identifiers on the card are the endpoint id and `alice_id`.
+- Step 13's drill-in renders what the witness holds as the identity card list:
+  three cards, `alice_id`, `bob_id` and `carol_id`, in the order `GET
+  /api/witnesses/<witness_id>/ledgers` answers, which reports `more: false`.
+  Carol's card reads `identity-card-declared-kind-<carol_id>` `person` and
+  `identity-card-head-seq-<carol_id>` `head seq 1`.
+- Step 13's fetch is the only thing that writes. Before it, carol's card leads
+  to a page carrying `identity-fetch` and `dc exec -T alice ls /data/ledgers`
+  holds `alice_id` alone: browsing a witness stores nothing. After
+  `identity-fetch-button`, the same page draws `ledger-panel`,
+  `identity-detail-head-seq` reads `1`, `identity-fetch` is gone, and
+  `/data/ledgers` holds `alice_id` and `carol_id`. Storing a ledger is not
+  controlling it: no key in this home signs for carol, so the fetch wrote no
+  `identities/<carol_id>` link, `GET /api/identities` still lists `alice_id`
+  alone, and the page carries no `identity-own-badge` and no
+  `identity-actions`.
 - `mabel graph sync` writes a new generation under
   `graph/generations/<sync_id>/` and swaps `graph/current.json` atomically. A
   lookup running during a sync reads the previous generation whole, never a
   half-written one.
-- The crawl writes no stranger's ledger: after step 10, alice's `ledgers/`
-  holds exactly the ledgers she controlled or fetched deliberately, and carol's
-  is not among them.
+- The crawl writes no stranger's ledger: after step 10, and until step 13
+  fetches one on purpose, alice's `ledgers/` holds only `alice_id`. A crawl
+  keeps what it reads in a generation, never as a replica.
 
 ## Deviations from the surface this story was drafted against
 
@@ -205,6 +273,10 @@ docker/compose.dns.yaml`, run from the repository root.
   only what the home already holds. The CLI process has no seeded peer
   address, unlike the running wallet, which starts with the witness's ticket.
   The story runs the first sync through the UI and passes `--peer` to the CLI.
+- Steps 12 and 13 are new with proposal 004: the hostname search box, the
+  witness card list, the witness drill-in and the explicit fetch did not exist
+  when this story was drafted. Step 13 runs last in the spec, because its fetch
+  is the one write that would break "the crawl writes no stranger's ledger".
 - A day cannot pass in a suite that runs in three minutes, so the stale case
   is set up by writing `/data/verification/<alice_id>.json` in alice's
   container with `checked_at_ms` 25 hours back. The cache is a rebuildable
@@ -212,6 +284,10 @@ docker/compose.dns.yaml`, run from the repository root.
 - Bob's ledger is pushed to the witness once more immediately before step 10.
   His profile events matter to the crawl, and alice can only read them from
   the witness.
+- Step 13's fetch names no witness. `POST /api/identities/<carol_id>/fetch`
+  with `from: null` asks the known witnesses in the crawler's source order,
+  which is what the button sends; the running wallet holds the witness's
+  address because its container started with the ticket.
 - The spec asserts two things the story's outcomes do not name:
   `graph-sync-counts` reads `3 identities, 3 attestations` after the first
   sync, and `/data/graph/generations` holds at most two entries, because

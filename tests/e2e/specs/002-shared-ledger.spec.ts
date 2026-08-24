@@ -12,7 +12,7 @@ import {
   verifier,
 } from "../lib/docker";
 import { expectExit, story002Steps1to8 } from "../lib/stories";
-import { addTrust, addWitness, identifier, openIdentity, push, verifyTrustInUi } from "../lib/ui";
+import { addTrust, addWitness, openIdentity, push } from "../lib/ui";
 
 /** docs/stories/002-shared-ledger.md */
 test.describe.configure({ mode: "serial" });
@@ -20,6 +20,8 @@ test.describe.configure({ mode: "serial" });
 const RFC3339_UTC = "\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z";
 const SUBJECT_CONTROL =
   "subject control was not proven to this verifier; the issuer is responsible for out-of-band confirmation";
+const VERIFIED_MEANS =
+  "Verified means this identity signed this statement at this position in its chain. It is not proof that the statement is true, not proof of legal identity, and not proof of unique humanity.";
 
 let alicePage: Page;
 let bobPage: Page;
@@ -226,20 +228,30 @@ test("step 14: a verifier is told which principal signed", async () => {
     0,
   );
   const lines = stdoutLines(text);
+  expect(lines).toHaveLength(5);
   expect(lines[0]).toBe("trusted: true");
   expect(lines[1]).toMatch(statement);
   expect(lines[2]).toBe(`signed by principal ${aliceId} (${aliceKey})`);
+  expect(lines[3]).toBe(SUBJECT_CONTROL);
+  expect(lines[4]).toBe(VERIFIED_MEANS);
 
-  await verifyTrustInUi(alicePage, ALICE_URL, {
-    issuer: orgId,
-    subject: bobId,
-    from: witnessId,
-  });
-  await expect(alicePage.getByTestId("verify-report-trusted-badge")).toHaveText("true");
-  await expect(alicePage.getByTestId("verify-report-statement")).toHaveText(statement);
-  expect(await identifier(alicePage, "verify-report-signing-principal")).toBe(aliceId);
-  await expect(alicePage.getByTestId("verify-report-signing-principal")).toContainText(aliceKey);
-  await expect(alicePage.getByTestId("verify-report-subject-control")).toHaveText(SUBJECT_CONTROL);
+  // The same report as a document. Verification is a CLI concern (proposal
+  // 004): the wallet UI has no verify screen to read it back on.
+  const document = json(
+    expectExit(
+      dcSh(
+        "alice",
+        `mabel verify trust --issuer mabel-demo-co --subject ${bobId} --from ${witnessId} --peer "$(cat /shared/witness.ticket)" --json`,
+      ),
+      0,
+    ),
+  );
+  expect(document.trusted).toBe(true);
+  expect(document.statement).toMatch(statement);
+  expect(document.signing_principal.identity).toBe(aliceId);
+  expect(document.signing_principal.key).toBe(aliceKey);
+  expect(document.subject_control).toBe(SUBJECT_CONTROL);
+  expect(document.verified_means).toBe(VERIFIED_MEANS);
 });
 
 test("a fresh home reaches the same answer", async () => {

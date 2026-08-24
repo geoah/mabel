@@ -1,8 +1,17 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import { ALICE_URL, apiGet, BOB_URL, json, mabel, stdoutLines, verifier } from "../lib/docker";
+import {
+  ALICE_URL,
+  apiGet,
+  BOB_URL,
+  dcSh,
+  json,
+  mabel,
+  stdoutLines,
+  verifier,
+} from "../lib/docker";
 import { expectExit, story001Steps1to7 } from "../lib/stories";
-import { addTrust, identifier, openIdentity, push, verifyTrustInUi } from "../lib/ui";
+import { addTrust, openIdentity, push } from "../lib/ui";
 
 /** docs/stories/003-revocation.md */
 test.describe.configure({ mode: "serial" });
@@ -12,6 +21,11 @@ const SUBJECT_CONTROL =
   "subject control was not proven to this verifier; the issuer is responsible for out-of-band confirmation";
 const VERIFIED_MEANS =
   "Verified means this identity signed this statement at this position in its chain. It is not proof that the statement is true, not proof of legal identity, and not proof of unique humanity.";
+
+/** The RFC 3339 fetch time inside a statement, which every read moves. */
+function masked(lines: string[]): string[] {
+  return lines.map((line) => line.replace(/\d{4}-\d{2}-\d{2}T[\d:]+Z/, "<time>"));
+}
 
 let alicePage: Page;
 let bobPage: Page;
@@ -165,18 +179,24 @@ test("steps 5 to 7: a fresh verifier reads the revocation", async () => {
   expect(document.revoked_attestations[0].attestation_seq).toBe(2);
   expect(document.revoked_attestations[0].revocation_seq).toBe(3);
   expect(document.head_seq).toBe(3);
+  expect(document.statement).toMatch(statement);
   expect(document.statement).not.toContain("unrevoked");
+  // signing_principal is null in the document too, not only in the text form.
+  expect(document.signing_principal).toBeNull();
+  expect(document.subject_control).toBe(SUBJECT_CONTROL);
+  expect(document.verified_means).toBe(VERIFIED_MEANS);
 
-  await verifyTrustInUi(alicePage, ALICE_URL, { issuer: aliceId, subject: bobId, from: witnessId });
-  await expect(alicePage.getByTestId("verify-report-trusted-badge")).toHaveText("false");
-  await expect(alicePage.getByTestId("verify-report-statement")).toHaveText(statement);
-  await expect(alicePage.getByTestId("verify-report-revoked-count")).toHaveText("1");
-  await expect(alicePage.getByTestId("verify-report-signing-principal")).toHaveText("null");
-  await expect(
-    alicePage
-      .getByTestId("verify-report-revoked-attestations")
-      .getByTestId(`verify-report-revoked-${aliceAttestation}`),
-  ).toBeVisible();
+  // Step 7: the same question from alice's own home rather than an empty one.
+  // A CLI process holds no seeded witness address, so it needs --peer, and
+  // only the fetch time inside the statement moves between two reads.
+  const fromHome = expectExit(
+    dcSh(
+      "alice",
+      `mabel verify trust --issuer ${aliceId} --subject ${bobId} --from ${witnessId} --peer "$(cat /shared/witness.ticket)"`,
+    ),
+    0,
+  );
+  expect(masked(stdoutLines(fromHome))).toEqual(masked(lines));
 });
 
 test("steps 8 and 9: attested again, and revocation stays history", async () => {
@@ -209,6 +229,12 @@ test("steps 8 and 9: attested again, and revocation stays history", async () => 
   expect(document.attestation_event).toBe(secondAttestation);
   expect(document.attestation_seq).toBe(4);
   expect(document.revoked_count).toBe(1);
+  // Revocation is history, not deletion: the seq-3 revocation is still listed
+  // beside the attestation that now stands.
+  expect(document.revoked_attestations).toHaveLength(1);
+  expect(document.revoked_attestations[0].attestation_event).toBe(aliceAttestation);
+  expect(document.revoked_attestations[0].revocation_seq).toBe(3);
+  expect(document.signing_principal.identity).toBe(aliceId);
   // A standing attestation keeps the plain clause; the seq-3 revocation
   // stays in revoked_attestations (revoked_count above).
   expect(document.statement).toMatch(
@@ -216,12 +242,4 @@ test("steps 8 and 9: attested again, and revocation stays history", async () => 
       `^valid as of seq 4 of ${aliceId}, fetched from ${witnessId} at ${RFC3339_UTC}; no revocation up to seq 4$`,
     ),
   );
-
-  await verifyTrustInUi(alicePage, ALICE_URL, { issuer: aliceId, subject: bobId, from: witnessId });
-  await expect(alicePage.getByTestId("verify-report-trusted-badge")).toHaveText("true");
-  await expect(alicePage.getByTestId("verify-report-attestation-seq")).toHaveText("4");
-  await expect(
-    alicePage.getByTestId(`verify-report-revoked-${aliceAttestation}`),
-  ).toBeVisible();
-  expect(await identifier(alicePage, "verify-report-attestation-event")).toBe(secondAttestation);
 });

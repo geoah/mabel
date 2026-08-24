@@ -95,10 +95,16 @@ export async function story001Steps1to7(
       [bobPage, BOB_URL],
     ] as const) {
       await page.goto(`${url}/wallet`);
-      await expect(page.getByTestId("node-role")).toHaveText("wallet");
+      // The nav is two entries and no third, which is what says this node
+      // serves a wallet; the role itself is a fact of the node document.
+      await expect(page.getByTestId("nav-wallet")).toBeVisible();
+      await expect(page.getByTestId("nav-witnesses")).toBeVisible();
+      await expect(page.getByTestId("wallet-search")).toBeVisible();
       await expect(page.getByTestId("identity-list-empty")).toHaveText(
         "no identities in this node home",
       );
+      const node = await apiGet(url, "/api/node");
+      expect(node.body.role).toBe("wallet");
     }
 
     const alice = await createIdentity(alicePage, { alias: "alice", kind: "person" });
