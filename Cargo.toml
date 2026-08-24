@@ -30,6 +30,11 @@ iroh = "1.0.3"
 iroh-base = { version = "1.0.3", default-features = false, features = ["key"] }
 iroh-tickets = "1.0.0"
 prost = "0.14.4"
+# The two QR encoders of proposal 006 section 7 come from one crate: the
+# built-in unicode renderer draws the square `mabel identity share --qr` prints,
+# and the `svg` feature draws the one the UI shows. `image` is left off: nothing
+# here writes a raster.
+qrcode = { version = "0.14.1", default-features = false, features = ["svg"] }
 prost-build = "0.14.4"
 protoc-bin-vendored = "3.2.0"
 rust-embed = "8.12.0"

@@ -167,6 +167,22 @@ pub enum IdentityCommand {
         #[command(subcommand)]
         command: EndpointsCommand,
     },
+    /// Print an identity as one `mabel://` link, and optionally a QR square
+    /// and a file.
+    Share {
+        /// The identity, by alias, id or link.
+        identity: String,
+        /// `auto` for the machines the identity advertises, `none` for a link
+        /// with no hint, or a comma-separated list of up to four endpoint ids.
+        #[arg(long, value_name = "AUTO_OR_ENDPOINTS", default_value = "auto")]
+        endpoints: String,
+        /// Also write the link to this file, one line, UTF-8.
+        #[arg(long, value_name = "PATH")]
+        out: Option<PathBuf>,
+        /// Also print the link as a QR square.
+        #[arg(long)]
+        qr: bool,
+    },
     /// Write an identity's `IdentityDescriptor` file, the artifact an invitation
     /// embeds.
     Export {
@@ -476,11 +492,11 @@ pub enum SyncCommand {
     },
     /// Fetch a ledger from a peer, verify it from nothing and store it.
     Fetch {
-        /// The ledger to fetch.
+        /// The ledger to fetch, by alias, id or link.
         ledger_id: String,
-        /// The endpoint to fetch from.
+        /// The endpoint to fetch from. Required unless a link named one.
         #[arg(long, value_name = "ENDPOINT_ID")]
-        from: String,
+        from: Option<String>,
         /// Endpoint ticket to seed into address lookup. Repeatable.
         #[arg(long, value_name = "TICKET")]
         peer: Vec<String>,

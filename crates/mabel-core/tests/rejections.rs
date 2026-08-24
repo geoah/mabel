@@ -2693,6 +2693,15 @@ fn every_golden_vector_passes_the_validator() {
         if path.extension().and_then(|e| e.to_str()) != Some("json") {
             continue;
         }
+        // The event vectors are numbered; `links.json` holds no event.
+        let numbered = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .and_then(|name| name.as_bytes().get(..2))
+            .is_some_and(|head| head.iter().all(u8::is_ascii_digit));
+        if !numbered {
+            continue;
+        }
         let document = read_json(&path);
         let signed = decode_hex(&field(&document, "signed_event_hex"));
         let body = decode_hex(&field(&document, "body_hex"));

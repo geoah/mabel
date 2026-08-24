@@ -80,7 +80,7 @@ pub fn replace(
     json: bool,
     options: &AppendOptions,
 ) -> Result<Outcome> {
-    let identity = ctx.resolve_local(name)?;
+    let identity = ctx.resolve_local_hinted(name, "--identity")?;
 
     let previous = ctx.load(identity)?.profile();
     refuse_no_op(identity, previous.as_ref(), fields)?;

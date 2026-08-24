@@ -4,7 +4,12 @@
 //! The check is advisory. It never gates ledger validity (decision 015) and
 //! runs on the wallet node only; a witness reports a hostname as claimed.
 
-use mabel_core::{IdentityId, MAX_HOSTNAME_BYTES, MAX_HOSTNAME_LABEL_BYTES};
+use data_encoding::BASE32_NOPAD;
+use iroh_base::EndpointId;
+use mabel_core::id::ID_STR_LEN;
+use mabel_core::{
+    ID_BYTES, IdentityId, MAX_ENDPOINTS, MAX_HOSTNAME_BYTES, MAX_HOSTNAME_LABEL_BYTES, render_id,
+};
 use serde::{Deserialize, Serialize};
 
 use super::resolver::{Resolver, TxtRecord};
@@ -14,6 +19,19 @@ pub const TXT_LABEL: &str = "_mabel";
 
 /// The prefix a matching TXT record carries, compared case-insensitively.
 pub const TXT_PREFIX: &str = "mabel=";
+
+/// The second recognised prefix at the same label, compared the same way
+/// (proposal 006 section 6).
+pub const TXT_ENDPOINTS_PREFIX: &str = "mabel-endpoints=";
+
+/// Most endpoints one label may name, between all its records.
+///
+/// The same cap the payload carries: one number for "how many machines answer
+/// for one identity", wherever the list is read. A TXT character-string holds
+/// 255 bytes and `mabel-endpoints=` plus four ids is 227, so a zone publishing
+/// 5 to 8 splits them across two character-strings in one record, which the
+/// concatenation rule joins back with no separator.
+pub const MAX_LABEL_ENDPOINTS: usize = MAX_ENDPOINTS;
 
 /// How many CNAME links the check follows before giving up.
 pub const MAX_CNAME_LINKS: usize = 4;
@@ -239,6 +257,109 @@ pub fn mabel_claim(value: &[u8]) -> Option<&str> {
     Some(std::str::from_utf8(rest).unwrap_or(""))
 }
 
+/// The text after a case-insensitive `mabel-endpoints=` prefix, or `None` when
+/// the record is something else (proposal 006 section 6).
+#[must_use]
+pub fn endpoints_claim(value: &[u8]) -> Option<&str> {
+    let prefix = TXT_ENDPOINTS_PREFIX.len();
+    let (head, rest) = value.split_at_checked(prefix)?;
+    if !head.eq_ignore_ascii_case(TXT_ENDPOINTS_PREFIX.as_bytes()) {
+        return None;
+    }
+    Some(std::str::from_utf8(rest).unwrap_or(""))
+}
+
+/// The endpoints the records at one label name, unioned and sorted ascending
+/// by their rendered base32 (proposal 006 section 6).
+///
+/// One overflow rule, discard whole, at both levels. A record with an
+/// unparseable element, an empty element, a duplicate element, more than eight
+/// elements, or a byte outside the codec's alphabet and the comma is discarded
+/// whole; if the surviving records name more than eight distinct endpoints
+/// between them, the label's set is discarded whole and reads as absent.
+/// Nothing is trimmed to fit: choosing which eight of nine an operator meant is
+/// a guess.
+///
+/// This is row 1 of the applicability matrix, the hostname the caller supplied:
+/// what comes back belongs to the identity this same response resolved to.
+#[must_use]
+pub fn endpoints_at_label(records: &[TxtRecord]) -> Vec<EndpointId> {
+    let mut endpoints: Vec<EndpointId> = Vec::new();
+    for record in records {
+        let value = record.value();
+        let Some(listed) = endpoints_claim(&value) else {
+            continue;
+        };
+        // A record that breaks a rule is discarded whole and leaves the
+        // records beside it standing.
+        let Some(parsed) = record_endpoints(listed) else {
+            continue;
+        };
+        for endpoint in parsed {
+            if !endpoints.contains(&endpoint) {
+                endpoints.push(endpoint);
+            }
+        }
+    }
+    if endpoints.len() > MAX_LABEL_ENDPOINTS {
+        return Vec::new();
+    }
+    // Two wallets derive the same set from the same zone, whatever order a
+    // resolver returned the records in. The rendered form orders it, not the
+    // bytes: base32 spells values 26 to 31 as the digits 2 to 7, which sort
+    // before the letters in ASCII and after them in the codec.
+    endpoints.sort_by_key(|endpoint| render_id(endpoint.as_bytes()));
+    endpoints
+}
+
+/// The endpoints at one label, read for an identity that merely claimed the
+/// hostname: only when a `mabel=` record at the same label names that identity
+/// (row 2 of the applicability matrix, proposal 006 section 6).
+///
+/// The hostname came from the ledger's own `ProfileUpdate`, a stale local copy
+/// or the stored crawl generation, so the zone has to say this identity is one
+/// of the names it answers for. A zone that names other endpoints and not this
+/// identity offers this identity nothing.
+///
+/// Nothing here is verification: the five verification statuses are about
+/// `mabel=` alone, and no endpoints record is ever read, written or cached by
+/// `verification/<identity_id>.json`.
+#[must_use]
+pub fn endpoints_for_claim(records: &[TxtRecord], identity: IdentityId) -> Vec<EndpointId> {
+    let names_identity = records.iter().any(|record| {
+        mabel_claim(&record.value())
+            .and_then(|claimed| claimed.parse::<IdentityId>().ok())
+            .is_some_and(|claimed| claimed == identity)
+    });
+    if names_identity {
+        endpoints_at_label(records)
+    } else {
+        Vec::new()
+    }
+}
+
+/// One record's list, or `None` when the record is discarded whole.
+fn record_endpoints(listed: &str) -> Option<Vec<EndpointId>> {
+    let mut endpoints: Vec<EndpointId> = Vec::new();
+    for element in listed.split(',') {
+        // An empty element and an element of the wrong length are both refused
+        // here, before anything decodes.
+        if element.len() != ID_STR_LEN {
+            return None;
+        }
+        let decoded = BASE32_NOPAD
+            .decode(element.to_ascii_uppercase().as_bytes())
+            .ok()?;
+        let bytes: [u8; ID_BYTES] = decoded.try_into().ok()?;
+        let endpoint = EndpointId::from_bytes(&bytes).ok()?;
+        if endpoints.contains(&endpoint) || endpoints.len() == MAX_LABEL_ENDPOINTS {
+            return None;
+        }
+        endpoints.push(endpoint);
+    }
+    Some(endpoints)
+}
+
 /// A CNAME target as an absolute lowercase name.
 fn absolute(target: &str) -> String {
     let lowered = target.to_ascii_lowercase();
@@ -301,13 +422,33 @@ pub fn check_hostname(text: &str) -> Result<(), &'static str> {
 
 #[cfg(test)]
 mod tests {
-    use mabel_core::IdentityId;
+    use iroh_base::{EndpointId, SecretKey};
+    use mabel_core::{IdentityId, render_id};
 
     use super::super::resolver::{StubResolver, TxtRecord};
-    use super::{VerificationStatus, query_name, verify_hostname};
+    use super::{
+        TXT_ENDPOINTS_PREFIX, VerificationStatus, endpoints_at_label, endpoints_for_claim,
+        query_name, verify_hostname,
+    };
 
     const HOSTNAME: &str = "alice.example";
     const NAME: &str = "_mabel.alice.example.";
+
+    /// One machine that answers, by seed. Every one is a real curve point,
+    /// which the parser checks.
+    fn endpoint(seed: u8) -> EndpointId {
+        SecretKey::from_bytes(&[seed; 32]).public()
+    }
+
+    fn spelled(seed: u8) -> String {
+        render_id(endpoint(seed).as_bytes())
+    }
+
+    /// One `mabel-endpoints=` record over these seeds.
+    fn hint(seeds: &[u8]) -> TxtRecord {
+        let listed: Vec<String> = seeds.iter().copied().map(spelled).collect();
+        TxtRecord::from_strings([format!("{TXT_ENDPOINTS_PREFIX}{}", listed.join(","))])
+    }
 
     fn identity() -> IdentityId {
         IdentityId::from_bytes([7u8; 32])
@@ -596,5 +737,152 @@ mod tests {
         assert!(VerificationStatus::Mismatched.is_decisive());
         assert!(!VerificationStatus::Unverified.is_decisive());
         assert!(!VerificationStatus::Unreachable.is_decisive());
+    }
+
+    // ------------------------------------------- mabel-endpoints= records ----
+
+    /// Two records at one label produce the same sorted set whatever order the
+    /// resolver returns them in, and one of the ids is split across two
+    /// character-strings inside its record (proposal 006 section 6).
+    #[test]
+    fn records_at_one_label_are_unioned_and_sorted_whatever_order_they_arrive_in() {
+        let split = {
+            let listed = format!("{TXT_ENDPOINTS_PREFIX}{}", spelled(0x22));
+            let (head, tail) = listed.split_at(listed.len() - 20);
+            TxtRecord::from_strings([head, tail])
+        };
+        let first = hint(&[0x11, 0x33]);
+        let one_way = endpoints_at_label(&[first.clone(), split.clone()]);
+        let other_way = endpoints_at_label(&[split, first]);
+
+        assert_eq!(one_way, other_way);
+        assert_eq!(one_way.len(), 3);
+        let rendered: Vec<String> = one_way
+            .iter()
+            .map(|endpoint| render_id(endpoint.as_bytes()))
+            .collect();
+        let mut sorted = rendered.clone();
+        sorted.sort();
+        assert_eq!(rendered, sorted, "sorted ascending by rendered base32");
+    }
+
+    /// A record with nine endpoints, a duplicate, an empty element or an
+    /// element that does not parse is discarded whole, and the record beside it
+    /// still reads.
+    #[test]
+    fn a_record_that_breaks_a_rule_is_discarded_whole() {
+        let good = hint(&[0x11]);
+        let nine = hint(&[0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29]);
+        let duplicate = hint(&[0x31, 0x31]);
+        let empty_element = TxtRecord::from_strings([format!(
+            "{TXT_ENDPOINTS_PREFIX}{},,{}",
+            spelled(0x41),
+            spelled(0x42)
+        )]);
+        let unparseable =
+            TxtRecord::from_strings([format!("{TXT_ENDPOINTS_PREFIX}{},nope", spelled(0x51))]);
+        let not_a_point =
+            TxtRecord::from_strings([format!("{TXT_ENDPOINTS_PREFIX}{}", render_id(&[0x02; 32]))]);
+        let whitespace = TxtRecord::from_strings([format!(
+            "{TXT_ENDPOINTS_PREFIX}{}, {}",
+            spelled(0x61),
+            spelled(0x62)
+        )]);
+
+        for bad in [
+            nine,
+            duplicate,
+            empty_element,
+            unparseable,
+            not_a_point,
+            whitespace,
+        ] {
+            assert_eq!(
+                endpoints_at_label(std::slice::from_ref(&bad)),
+                Vec::new(),
+                "the record is discarded whole"
+            );
+            assert_eq!(
+                endpoints_at_label(&[bad, good.clone()]),
+                vec![endpoint(0x11)],
+                "the record beside it still reads"
+            );
+        }
+    }
+
+    /// Eight distinct endpoints across two records read; nine read as absent,
+    /// and nothing is trimmed to fit.
+    #[test]
+    fn a_label_naming_more_than_eight_endpoints_reads_as_absent() {
+        let four = hint(&[0x11, 0x12, 0x13, 0x14]);
+        let another_four = hint(&[0x15, 0x16, 0x17, 0x18]);
+        assert_eq!(
+            endpoints_at_label(&[four.clone(), another_four.clone()]).len(),
+            8
+        );
+
+        let ninth = hint(&[0x19]);
+        assert_eq!(
+            endpoints_at_label(&[four.clone(), another_four.clone(), ninth]),
+            Vec::new()
+        );
+
+        // A repeat across records is one endpoint, not two, so eight distinct
+        // ids in nine slots still read.
+        assert_eq!(
+            endpoints_at_label(&[four.clone(), another_four, four]).len(),
+            8
+        );
+    }
+
+    #[test]
+    fn the_endpoints_prefix_is_matched_case_insensitively_and_other_records_are_ignored() {
+        let shouted = TxtRecord::from_strings([format!("MaBeL-EnDpOiNtS={}", spelled(0x11))]);
+        assert_eq!(endpoints_at_label(&[shouted]), vec![endpoint(0x11)]);
+
+        let other = TxtRecord::from_strings(["v=spf1 -all"]);
+        let claim = TxtRecord::from_strings([format!("mabel={}", identity())]);
+        assert_eq!(endpoints_at_label(&[other, claim]), Vec::new());
+    }
+
+    /// Row 2 of the applicability matrix: a hostname taken from a ledger's own
+    /// claim yields endpoints only when the same response names that identity.
+    #[test]
+    fn a_claimed_hostname_yields_endpoints_only_when_the_zone_names_that_identity() {
+        let hints = hint(&[0x11, 0x12]);
+        let claims_alice = TxtRecord::from_strings([format!("mabel={}", identity())]);
+        let claims_someone_else = TxtRecord::from_strings([format!("mabel={}", other())]);
+
+        assert_eq!(
+            endpoints_for_claim(&[claims_alice.clone(), hints.clone()], identity()).len(),
+            2
+        );
+        // A zone naming other endpoints and not this identity offers this
+        // identity nothing, even though the caller row would read them.
+        assert_eq!(
+            endpoints_for_claim(&[claims_someone_else.clone(), hints.clone()], identity()),
+            Vec::new()
+        );
+        assert_eq!(
+            endpoints_for_claim(std::slice::from_ref(&hints), identity()),
+            Vec::new(),
+            "an endpoints record alone says nothing about who it answers for"
+        );
+        assert_eq!(
+            endpoints_at_label(&[claims_someone_else, hints]).len(),
+            2,
+            "row 1 reads the same records for the identity the response resolved to"
+        );
+    }
+
+    /// A zone with an endpoints record and no `mabel=` record is still
+    /// `unverified`: the endpoints record never touches the five statuses.
+    #[tokio::test]
+    async fn an_endpoints_record_alone_leaves_the_claim_unverified() {
+        let resolver = StubResolver::new().with_records(NAME, vec![hint(&[0x11, 0x12])]);
+        let outcome = verify_hostname(&resolver, HOSTNAME, identity()).await;
+
+        assert_eq!(outcome.status, VerificationStatus::Unverified);
+        assert_eq!(outcome.detail, format!("{NAME} holds no mabel= TXT record"));
     }
 }

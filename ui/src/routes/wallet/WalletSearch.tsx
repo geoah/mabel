@@ -1,7 +1,7 @@
 import { type FormEvent, useState } from "react";
 import { useNavigate } from "react-router";
 
-import { type ApiError, resolveHostname } from "@/api/client";
+import { type ApiError, resolveInput } from "@/api/client";
 import type { ResolveStatus } from "@/api/types";
 import { ErrorEnvelopeView } from "@/components/ErrorEnvelopeView";
 import { InlineField, InlineForm } from "@/components/InlineForm";
@@ -29,8 +29,8 @@ const STATUS_SENTENCE: Record<NamelessStatus, string> = {
 /**
  * The one box on the wallet front page, drawn bare under its heading: the page
  * is flat sections, not cards inside cards. A Mabel ID opens its page directly.
- * Anything else is treated as a hostname and resolved through the node, which
- * either names an identity or says what the TXT lookup answered.
+ * Anything else, a hostname or a mabel:// link, is resolved through the node,
+ * which either names an identity or says what the TXT lookup answered.
  */
 export function WalletSearch() {
   const navigate = useNavigate();
@@ -53,14 +53,16 @@ export function WalletSearch() {
     }
     setPending(true);
     try {
-      const answer = await resolveHostname(wanted);
+      const answer = await resolveInput(wanted);
       if (answer.identity_id !== null) {
         void navigate(`/identities/${answer.identity_id}`);
         return;
       }
       // Only a resolved answer carries an id (contracts/README.md, "Resolve"),
-      // so what is left here is one of the three that names none.
-      if (answer.status !== "resolved") {
+      // so what is left here is one of the three that names none. A hostname is
+      // the only kind that queries anything, so it is the only kind that lands
+      // here with a status to read.
+      if (answer.hostname !== null && answer.status !== null && answer.status !== "resolved") {
         setStatus({ hostname: answer.hostname, status: answer.status });
       }
     } catch (thrown) {

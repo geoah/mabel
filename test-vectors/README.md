@@ -54,6 +54,32 @@ generator is an ignored test in `crates/mabel-core/tests/rejections.rs`:
 cargo test -p mabel-core --features gen-vectors -- --ignored gen_rejections
 ```
 
+## Link vectors
+
+`links.json` holds the `mabel://` grammar of proposal 006 section 7, which is
+a pure function over a string and carries no event. `accepted` pins what one
+input parses to and what that parse renders back as; `refused` pins one case
+per refusal rule, every one refused whole.
+
+| Field | Meaning |
+|---|---|
+| `accepted[].input` | the string handed to the parser |
+| `accepted[].identity_id` | the identity it names |
+| `accepted[].endpoints` | the endpoint hints, in the order the link names them |
+| `accepted[].rendered` | the canonical form, always lowercase |
+| `refused[].input` | the string handed to the parser, as given |
+| `refused[].code` | `invalid_mabel_link`, the one refusal spelling |
+| `refused[].reason` | the clause naming the rule, for human review |
+
+`rendered` is authoritative for the render direction: an uppercased input and
+an input with a trailing slash render as the same one string, and that string
+parses back to the same link. The generator is an ignored test in
+`crates/mabel-core/tests/links.rs`:
+
+```sh
+cargo test -p mabel-core --features gen-vectors -- --ignored gen_links
+```
+
 ## The scenario
 
 Alice (secret key `0x11` repeated) creates a raw-rooted ledger, configures two

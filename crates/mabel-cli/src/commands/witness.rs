@@ -27,7 +27,7 @@ pub fn add(
     witness: &str,
     options: &AppendOptions,
 ) -> Result<Outcome> {
-    let identity = ctx.resolve_local(identity)?;
+    let identity = ctx.resolve_local_hinted(identity, "--identity")?;
     let witness = ctx.resolve(witness)?;
     ensure_fresh(ctx, identity, options)?;
     let mut loaded = ctx.load(identity)?;

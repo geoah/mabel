@@ -60,8 +60,8 @@ pub fn invite(
     out: &Path,
     options: &AppendOptions,
 ) -> Result<Outcome> {
-    let ledger = ctx.resolve_local(ledger)?;
-    let signer = ctx.resolve_local(by)?;
+    let ledger = ctx.resolve_local_hinted(ledger, "--ledger")?;
+    let signer = ctx.resolve_local_hinted(by, "--by")?;
     let descriptor = artifacts::read_identity_descriptor(invitee)?;
     let invitee_key = descriptor.active_key().ok_or_else(|| {
         CliError::policy(
@@ -140,7 +140,7 @@ pub fn accept(
     yes: bool,
     json: bool,
 ) -> Result<Outcome> {
-    let identity = ctx.resolve_local(name)?;
+    let identity = ctx.resolve_local_hinted(name, "--identity")?;
     let read = artifacts::read_invitation_bundle(bundle)?;
     let summary = read
         .summary()
@@ -216,8 +216,8 @@ pub fn admit(
     path: &Path,
     options: &AppendOptions,
 ) -> Result<Outcome> {
-    let ledger = ctx.resolve_local(ledger)?;
-    let signer = ctx.resolve_local(by)?;
+    let ledger = ctx.resolve_local_hinted(ledger, "--ledger")?;
+    let signer = ctx.resolve_local_hinted(by, "--by")?;
     let file = artifacts::read_acceptance_file(path)?;
     ensure_fresh(ctx, ledger, options)?;
     let mut loaded = ctx.load(ledger)?;
@@ -279,8 +279,8 @@ pub fn remove(
     member: &str,
     options: &AppendOptions,
 ) -> Result<Outcome> {
-    let ledger = ctx.resolve_local(ledger)?;
-    let signer = ctx.resolve_local(by)?;
+    let ledger = ctx.resolve_local_hinted(ledger, "--ledger")?;
+    let signer = ctx.resolve_local_hinted(by, "--by")?;
     let target = ctx.resolve(member)?;
     ensure_fresh(ctx, ledger, options)?;
     let mut loaded = ctx.load(ledger)?;

@@ -829,6 +829,156 @@ fn identity_endpoints_replace_publishes_the_machines_and_refuses_a_no_op() {
     );
 }
 
+/// `mabel identity share` prints one link, and `auto` falls back to this node
+/// when the home signs for the identity and the chain advertises nothing
+/// (proposal 006 section 7).
+#[test]
+fn identity_share_prints_one_link_a_file_and_a_qr_square() {
+    let home = Home::new();
+    let alice = home.create("alice");
+    let endpoint = home.endpoint();
+
+    let document = home.json(&["identity", "share", "alice"]);
+    assert_eq!(document["identity_id"], Value::from(alice.clone()));
+    assert_eq!(document["endpoints"], Value::from(vec![endpoint.clone()]));
+    assert_eq!(document["endpoints_from"], Value::from("node"));
+    assert_eq!(
+        document["link"],
+        Value::from(format!("mabel://{alice}?endpoints={endpoint}"))
+    );
+
+    // What the chain advertises wins over the node it is typed on.
+    let other = "5yy7qpeiu4jbtjx47g7obwu3yitcaweplik2mfcvknie36letzoa";
+    home.json(&[
+        "identity",
+        "endpoints",
+        "replace",
+        "--identity",
+        "alice",
+        "--endpoints",
+        other,
+    ]);
+    let document = home.json(&["identity", "share", "alice"]);
+    assert_shape(
+        &document,
+        &fixture("identity-share", "advertised-endpoints"),
+        "identity-share",
+    );
+    assert_eq!(document["endpoints"], Value::from(vec![other]));
+    assert_eq!(document["endpoints_from"], Value::from("advertised"));
+
+    // `none` shares the identity alone, and the link renders with no query.
+    let document = home.json(&["identity", "share", "alice", "--endpoints", "none"]);
+    assert_eq!(document["endpoints"], Value::Array(Vec::new()));
+    assert_eq!(document["link"], Value::from(format!("mabel://{alice}")));
+
+    // `--out` writes one line, UTF-8, with a trailing newline and no BOM.
+    let file = home.path().join("alice.mabel");
+    let document = home.json(&[
+        "identity",
+        "share",
+        "alice",
+        "--endpoints",
+        other,
+        "--out",
+        &file.display().to_string(),
+    ]);
+    assert_shape(
+        &document,
+        &fixture("identity-share", "written-to-a-file"),
+        "identity-share",
+    );
+    let written = std::fs::read(&file).expect("the file is written");
+    assert_eq!(
+        String::from_utf8(written.clone()).expect("UTF-8"),
+        format!("mabel://{alice}?endpoints={other}\n")
+    );
+    assert_eq!(document["bytes"], Value::from(written.len()));
+    assert!(!written.starts_with(&[0xEF, 0xBB, 0xBF]), "no BOM");
+
+    // The link caps at four machines, and five are refused whole rather than
+    // trimmed to fit.
+    let five = [
+        "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq",
+        "5yy7qpeiu4jbtjx47g7obwu3yitcaweplik2mfcvknie36letzoa",
+        "2bflemtufo2kwoqtnc6umfpe43icesvxdiawxl4fecrtfslxq43q",
+        "wc4jrpu3zdgqe6a7lxvks2tmn5ybhoif7dqar3jgy6ptu4le2vwq",
+        "fd2ijzgxe3qk64jeqbgwjgqcg2cnmyyrfwghb6oar2wbg5ddxvla",
+    ]
+    .join(",");
+    let (code, error) = home.failure(&["identity", "share", "alice", "--endpoints", &five]);
+    assert_eq!(code, 2);
+    assert_eq!(
+        error["details"]["reason"],
+        Value::from("invalid_mabel_link")
+    );
+    assert_eq!(
+        error["details"]["detail"],
+        Value::from("endpoints names more than 4 endpoints, the link cap")
+    );
+
+    // The QR square is drawn on the text surface only.
+    let (code, stdout, _) = home.run(&["identity", "share", "alice", "--qr"]);
+    assert_eq!(code, 0, "{stdout}");
+    assert!(stdout.contains(&format!("mabel://{alice}")), "{stdout}");
+    assert!(
+        stdout
+            .lines()
+            .filter(|line| line.contains('\u{2588}'))
+            .count()
+            > 10,
+        "a QR square is drawn: {stdout}"
+    );
+}
+
+/// A link is accepted wherever an alias or an id is, and the endpoints it hints
+/// at are ignored with a warning on an operand that signs locally (proposal 006
+/// section 7).
+#[test]
+fn a_link_names_an_identity_on_every_operand_and_is_refused_whole() {
+    let home = Home::new();
+    let alice = home.create("alice");
+    let endpoint = home.endpoint();
+    let link = format!("mabel://{alice}?endpoints={endpoint}");
+
+    // A read that takes `<alias|id>` takes the link and answers about alice.
+    let document = home.json(&["identity", "show", &link]);
+    assert_eq!(document["identity_id"], Value::from(alice.clone()));
+    assert_eq!(document["alias"], Value::from("alice"));
+
+    // An operand that signs warns about the hints it cannot use, on stderr,
+    // and still does the work.
+    let (code, stdout, stderr) = home.run(&[
+        "identity",
+        "endpoints",
+        "replace",
+        "--identity",
+        &link,
+        "--endpoints",
+        "auto",
+    ]);
+    assert_eq!(code, 0, "{stdout}{stderr}");
+    assert!(stderr.contains("--identity"), "{stderr}");
+    assert!(stderr.contains("warning: ignoring"), "{stderr}");
+
+    // Every refusal is whole, with one reason and the string as it was typed.
+    for bad in [
+        format!("mabel://{alice}?endpoints={endpoint},nope"),
+        format!("mabel://{alice}/profile"),
+        format!("mabel://{alice}#top"),
+        format!("https://{alice}"),
+    ] {
+        let (code, error) = home.failure(&["identity", "show", &bad]);
+        assert_eq!(code, 2, "{bad}");
+        assert_eq!(
+            error["details"]["reason"],
+            Value::from("invalid_mabel_link"),
+            "{bad}"
+        );
+        assert_eq!(error["details"]["input"], Value::from(bad.clone()), "{bad}");
+    }
+}
+
 #[test]
 fn verify_ledger_matches_the_fixture() {
     let home = Home::new();

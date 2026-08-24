@@ -346,11 +346,13 @@ export function listWitnessLedgers(
 }
 
 /**
- * One TXT lookup of _mabel.<hostname>., for navigation. It is never cached and
- * it verifies nothing: a resolved id still renders its own advisory verdict.
+ * One Mabel ID, one hostname or one mabel:// link, for navigation. A hostname
+ * costs one TXT lookup; the other two are answered from the string. Nothing is
+ * cached and nothing is verified: a resolved id still renders its own advisory
+ * verdict.
  */
-export function resolveHostname(hostname: string): Promise<ResolveResponse> {
-  return get<ResolveResponse>(`/resolve/${encodeURIComponent(hostname)}`);
+export function resolveInput(input: string): Promise<ResolveResponse> {
+  return get<ResolveResponse>(`/resolve?input=${encodeURIComponent(input)}`);
 }
 
 // Witness routes, read-only.

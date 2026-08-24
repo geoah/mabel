@@ -39,7 +39,7 @@ profile.
 | `http/wallet-put-identity-contact.json` | `PUT /api/identities/:identity_id/contact` |
 | `http/wallet-post-identity-fetch.json` | `POST /api/identities/:identity_id/fetch` |
 | `http/wallet-get-lookup.json` | `GET /api/lookup/:identity_id?from=` |
-| `http/wallet-get-resolve.json` | `GET /api/resolve/:hostname` |
+| `http/wallet-get-resolve.json` | `GET /api/resolve?input=` |
 | `http/wallet-get-witnesses.json` | `GET /api/witnesses` |
 | `http/wallet-get-witness-ledgers.json` | `GET /api/witnesses/:endpoint_id/ledgers?offset&limit` |
 | `http/wallet-get-graph.json` | `GET /api/graph` |
@@ -62,6 +62,7 @@ profile.
 | `cli/identity-list.json` | `mabel identity list --json` |
 | `cli/identity-show.json` | `mabel identity show --json` |
 | `cli/identity-export.json` | `mabel identity export --json` |
+| `cli/identity-share.json` | `mabel identity share --json` |
 | `cli/profile-replace.json` | `mabel profile replace --json` |
 | `cli/contact-set.json` | `mabel contact set --json` and `mabel contact show --json` |
 | `cli/graph-sync.json` | `mabel graph sync --json` and `mabel graph status --json` |
@@ -579,12 +580,20 @@ reviewer can overrule them cheaply, before consumers are written.
   with code 30 and reason `witness_unreachable`, naming the endpoint in
   `details.endpoint_id`. One spelling covers the ledger list and the fetch
   route.
-- `GET /api/resolve/:hostname` runs one TXT lookup and writes nothing: it
-  never reads or fills the verification cache of proposal 003 section 2.
-  Navigation is not verification, and a hostname typed into a search box is
-  not a claim any ledger made. Its four statuses (`resolved`, `no_record`,
+- `GET /api/resolve?input=` takes one identity id, one hostname or one
+  `mabel://` link and says which it read in `input_kind` (`identity`,
+  `hostname` or `link`). It writes nothing: it never reads or fills the
+  verification cache of proposal 003 section 2. Navigation is not
+  verification, and a hostname typed into a search box is not a claim any
+  ledger made. Its four statuses (`resolved`, `no_record`,
   `mismatched_records`, `unreachable`) are a separate vocabulary from the five
-  of `verification.status`.
+  of `verification.status`, and `status` is `null` on the two kinds that query
+  nothing. `endpoints` holds the link's hints, or the `mabel-endpoints=`
+  records at the label a hostname resolved to, sorted ascending by rendered
+  base32. The route decodes `input` exactly once and the link grammar refuses
+  percent-encoding, so `%252f` is refused with code 2 and reason
+  `invalid_mabel_link` rather than decoded twice; a repeated or unknown query
+  key is `unknown_query_parameter` (proposal 006 sections 6 and 7).
 - `POST /api/identities/:identity_id/fetch` answers the document
   `contracts/cli/sync-fetch.json` pins for `mabel sync fetch --json`, because
   it is the same operation over the same wallet core. A `from` naming an

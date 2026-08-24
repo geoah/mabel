@@ -692,12 +692,23 @@ export interface WitnessLedgerListResponse {
  */
 export type ResolveStatus = "resolved" | "no_record" | "mismatched_records" | "unreachable";
 
-/** GET /api/resolve/:hostname. Never cached: this is navigation, not verification. */
+/** Which of the three things ?input= carried (proposal 006 section 7). */
+export type ResolveInputKind = "identity" | "hostname" | "link";
+
+/**
+ * GET /api/resolve?input=. Never cached: this is navigation, not verification.
+ *
+ * status is null on the two kinds that query nothing, an id and a link;
+ * endpoints holds the machines a link hinted at, or the mabel-endpoints=
+ * records at the label a hostname resolved to.
+ */
 export interface ResolveResponse {
   ok: true;
-  hostname: string;
+  input_kind: ResolveInputKind;
   identity_id: string | null;
-  status: ResolveStatus;
+  hostname: string | null;
+  endpoints: string[];
+  status: ResolveStatus | null;
 }
 
 /** POST /api/identities/:identity_id/fetch. null tries the known witnesses in order. */

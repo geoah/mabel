@@ -1,0 +1,202 @@
+{
+  "accepted": [
+    {
+      "case": "identity-only",
+      "description": "One identity id and nothing else, the shortest link.",
+      "endpoints": [],
+      "identity_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+      "input": "mabel://sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+      "rendered": "mabel://sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq"
+    },
+    {
+      "case": "one-endpoint",
+      "description": "One machine to ask, which is what a bootstrap needs.",
+      "endpoints": [
+        "25mxso54coridgucpr3k3nx3vcsjv3qap5e7fuezfwm3qjnnfrea"
+      ],
+      "identity_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+      "input": "mabel://sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq?endpoints=25mxso54coridgucpr3k3nx3vcsjv3qap5e7fuezfwm3qjnnfrea",
+      "rendered": "mabel://sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq?endpoints=25mxso54coridgucpr3k3nx3vcsjv3qap5e7fuezfwm3qjnnfrea"
+    },
+    {
+      "case": "four-endpoints",
+      "description": "The link cap: four endpoints, in the order the link names them.",
+      "endpoints": [
+        "25mxso54coridgucpr3k3nx3vcsjv3qap5e7fuezfwm3qjnnfrea",
+        "y2bcmn6h2mioyv3cppqaxisz2jjxjh2kv5sei4gp7pstunpxgjba",
+        "gs2nsbbrk3fw3tyl5mfcssnxkwojidjlznw35dctvgzqe6hdu5da",
+        "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq"
+      ],
+      "identity_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+      "input": "mabel://sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq?endpoints=25mxso54coridgucpr3k3nx3vcsjv3qap5e7fuezfwm3qjnnfrea,y2bcmn6h2mioyv3cppqaxisz2jjxjh2kv5sei4gp7pstunpxgjba,gs2nsbbrk3fw3tyl5mfcssnxkwojidjlznw35dctvgzqe6hdu5da,zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq",
+      "rendered": "mabel://sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq?endpoints=25mxso54coridgucpr3k3nx3vcsjv3qap5e7fuezfwm3qjnnfrea,y2bcmn6h2mioyv3cppqaxisz2jjxjh2kv5sei4gp7pstunpxgjba,gs2nsbbrk3fw3tyl5mfcssnxkwojidjlznw35dctvgzqe6hdu5da,zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq"
+    },
+    {
+      "case": "uppercase",
+      "description": "An uppercase link parses and renders lowercase; the codec is case-insensitive and the rendering is not.",
+      "endpoints": [
+        "25mxso54coridgucpr3k3nx3vcsjv3qap5e7fuezfwm3qjnnfrea"
+      ],
+      "identity_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+      "input": "MABEL://SFTTWJZD755EJZZANTFEYYLON5ZHR7VJQRJYWRULVBOS77PCVUYQ?ENDPOINTS=25MXSO54CORIDGUCPR3K3NX3VCSJV3QAP5E7FUEZFWM3QJNNFREA",
+      "rendered": "mabel://sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq?endpoints=25mxso54coridgucpr3k3nx3vcsjv3qap5e7fuezfwm3qjnnfrea"
+    },
+    {
+      "case": "trailing-slash",
+      "description": "The path may be a single slash, which renders away.",
+      "endpoints": [],
+      "identity_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+      "input": "mabel://sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq/",
+      "rendered": "mabel://sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq"
+    },
+    {
+      "case": "slash-then-query",
+      "description": "A single slash before the query is the same link.",
+      "endpoints": [
+        "y2bcmn6h2mioyv3cppqaxisz2jjxjh2kv5sei4gp7pstunpxgjba"
+      ],
+      "identity_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+      "input": "mabel://sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq/?endpoints=y2bcmn6h2mioyv3cppqaxisz2jjxjh2kv5sei4gp7pstunpxgjba",
+      "rendered": "mabel://sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq?endpoints=y2bcmn6h2mioyv3cppqaxisz2jjxjh2kv5sei4gp7pstunpxgjba"
+    }
+  ],
+  "description": "The mabel:// link grammar of proposal 006 section 7: what parses, what it renders back as, and every rule that refuses the whole string.",
+  "file": "links.json",
+  "max_endpoints": 4,
+  "prefix": "mabel://",
+  "refusal_code": "invalid_mabel_link",
+  "refused": [
+    {
+      "case": "other-scheme",
+      "code": "invalid_mabel_link",
+      "input": "https://sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+      "reason": "it does not begin with mabel://"
+    },
+    {
+      "case": "scheme-without-authority",
+      "code": "invalid_mabel_link",
+      "input": "mabel:/sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+      "reason": "it does not begin with mabel://"
+    },
+    {
+      "case": "bare-identity-id",
+      "code": "invalid_mabel_link",
+      "input": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+      "reason": "it does not begin with mabel://"
+    },
+    {
+      "case": "fragment",
+      "code": "invalid_mabel_link",
+      "input": "mabel://sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq#machines",
+      "reason": "it holds a fragment"
+    },
+    {
+      "case": "percent-encoded-slash",
+      "code": "invalid_mabel_link",
+      "input": "mabel://sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq%2f",
+      "reason": "it holds percent-encoding"
+    },
+    {
+      "case": "double-encoded-slash",
+      "code": "invalid_mabel_link",
+      "input": "mabel://sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq%252f",
+      "reason": "it holds percent-encoding"
+    },
+    {
+      "case": "trailing-space",
+      "code": "invalid_mabel_link",
+      "input": "mabel://sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq ",
+      "reason": "it holds whitespace"
+    },
+    {
+      "case": "inner-tab",
+      "code": "invalid_mabel_link",
+      "input": "mabel://\tsfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+      "reason": "it holds whitespace"
+    },
+    {
+      "case": "userinfo",
+      "code": "invalid_mabel_link",
+      "input": "mabel://alice@sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+      "reason": "the authority holds userinfo"
+    },
+    {
+      "case": "port",
+      "code": "invalid_mabel_link",
+      "input": "mabel://sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq:443",
+      "reason": "the authority holds a port"
+    },
+    {
+      "case": "two-ids-in-the-authority",
+      "code": "invalid_mabel_link",
+      "input": "mabel://sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyqsfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+      "reason": "the authority is not one identity id"
+    },
+    {
+      "case": "path-segment",
+      "code": "invalid_mabel_link",
+      "input": "mabel://sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq/profile",
+      "reason": "it holds a path segment"
+    },
+    {
+      "case": "empty-second-segment",
+      "code": "invalid_mabel_link",
+      "input": "mabel://sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq//",
+      "reason": "it holds a path segment"
+    },
+    {
+      "case": "empty-query",
+      "code": "invalid_mabel_link",
+      "input": "mabel://sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq?",
+      "reason": "the query is empty"
+    },
+    {
+      "case": "unknown-query-key",
+      "code": "invalid_mabel_link",
+      "input": "mabel://sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq?witness=25mxso54coridgucpr3k3nx3vcsjv3qap5e7fuezfwm3qjnnfrea",
+      "reason": "the query holds a key other than endpoints"
+    },
+    {
+      "case": "repeated-endpoints-key",
+      "code": "invalid_mabel_link",
+      "input": "mabel://sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq?endpoints=25mxso54coridgucpr3k3nx3vcsjv3qap5e7fuezfwm3qjnnfrea&endpoints=y2bcmn6h2mioyv3cppqaxisz2jjxjh2kv5sei4gp7pstunpxgjba",
+      "reason": "the query holds endpoints more than once"
+    },
+    {
+      "case": "empty-endpoints",
+      "code": "invalid_mabel_link",
+      "input": "mabel://sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq?endpoints=",
+      "reason": "endpoints names nothing"
+    },
+    {
+      "case": "empty-element",
+      "code": "invalid_mabel_link",
+      "input": "mabel://sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq?endpoints=25mxso54coridgucpr3k3nx3vcsjv3qap5e7fuezfwm3qjnnfrea,,y2bcmn6h2mioyv3cppqaxisz2jjxjh2kv5sei4gp7pstunpxgjba",
+      "reason": "endpoints holds an empty element"
+    },
+    {
+      "case": "duplicate-endpoint",
+      "code": "invalid_mabel_link",
+      "input": "mabel://sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq?endpoints=25mxso54coridgucpr3k3nx3vcsjv3qap5e7fuezfwm3qjnnfrea,25mxso54coridgucpr3k3nx3vcsjv3qap5e7fuezfwm3qjnnfrea",
+      "reason": "endpoints names one endpoint twice"
+    },
+    {
+      "case": "five-endpoints",
+      "code": "invalid_mabel_link",
+      "input": "mabel://sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq?endpoints=25mxso54coridgucpr3k3nx3vcsjv3qap5e7fuezfwm3qjnnfrea,y2bcmn6h2mioyv3cppqaxisz2jjxjh2kv5sei4gp7pstunpxgjba,gs2nsbbrk3fw3tyl5mfcssnxkwojidjlznw35dctvgzqe6hdu5da,zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq,wjer3ficvyuggcrlvszobr2fcd743uziym2p6pqtsptvwljr47oa",
+      "reason": "endpoints names more than 4 endpoints, the link cap"
+    },
+    {
+      "case": "three-good-and-one-bad",
+      "code": "invalid_mabel_link",
+      "input": "mabel://sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq?endpoints=25mxso54coridgucpr3k3nx3vcsjv3qap5e7fuezfwm3qjnnfrea,y2bcmn6h2mioyv3cppqaxisz2jjxjh2kv5sei4gp7pstunpxgjba,gs2nsbbrk3fw3tyl5mfcssnxkwojidjlznw35dctvgzqe6hdu5da,nope",
+      "reason": "an endpoint is not 52 base32 characters under the id codec"
+    },
+    {
+      "case": "endpoint-not-a-point",
+      "code": "invalid_mabel_link",
+      "input": "mabel://sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq?endpoints=aibaeaqcaibaeaqcaibaeaqcaibaeaqcaibaeaqcaibaeaqcaiba",
+      "reason": "an endpoint does not decompress to an ed25519 point"
+    }
+  ]
+}

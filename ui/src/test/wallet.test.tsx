@@ -11,9 +11,9 @@ import { renderApp } from "./render";
 function resolveCalls(): string[] {
   const asked: string[] = [];
   server.events.on("request:start", ({ request }) => {
-    const { pathname } = new URL(request.url);
-    if (pathname.startsWith("/api/resolve/")) {
-      asked.push(decodeURIComponent(pathname.slice("/api/resolve/".length)));
+    const url = new URL(request.url);
+    if (url.pathname === "/api/resolve") {
+      asked.push(url.searchParams.get("input") ?? "");
     }
   });
   return asked;

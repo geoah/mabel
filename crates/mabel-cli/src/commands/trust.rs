@@ -18,7 +18,7 @@ use crate::render::Outcome;
 
 /// `mabel trust add --issuer <alias|id> --subject <alias|id>`.
 pub fn add(ctx: &Context, issuer: &str, subject: &str, options: &AppendOptions) -> Result<Outcome> {
-    let issuer = ctx.resolve_local(issuer)?;
+    let issuer = ctx.resolve_local_hinted(issuer, "--issuer")?;
     let subject = ctx.resolve(subject)?;
     ensure_fresh(ctx, issuer, options)?;
     let mut loaded = ctx.load(issuer)?;
@@ -50,7 +50,7 @@ pub fn revoke(
     attestation: &str,
     options: &AppendOptions,
 ) -> Result<Outcome> {
-    let issuer = ctx.resolve_local(issuer)?;
+    let issuer = ctx.resolve_local_hinted(issuer, "--issuer")?;
     let target = ids::parse_event(attestation)?;
     ensure_fresh(ctx, issuer, options)?;
     let mut loaded = ctx.load(issuer)?;

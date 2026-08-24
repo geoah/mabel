@@ -146,6 +146,53 @@ pub struct ReplacedEndpoints {
     pub head_event: Id,
 }
 
+/// `mabel identity share --json` (proposal 006 section 7).
+#[derive(Debug, Serialize)]
+pub struct SharedIdentity {
+    /// The identity the link names.
+    pub identity_id: Id,
+    /// The link, lowercase, the one string that is shared.
+    pub link: String,
+    /// The machines the link hints at, in the order it names them.
+    pub endpoints: Vec<Id>,
+    /// Where the hints came from: `advertised`, `node`, `flag` or `none`.
+    pub endpoints_from: EndpointSource,
+    /// The `.mabel` file that was written, `null` without `--out`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    /// Its length in bytes, `null` without `--out`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bytes: Option<u64>,
+}
+
+/// Where the endpoints in a shared link came from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EndpointSource {
+    /// The identity's own `EndpointAdvertisement`.
+    Advertised,
+    /// This node's endpoint id, because the home signs for the identity and the
+    /// chain advertises nothing.
+    Node,
+    /// The list `--endpoints` named.
+    Flag,
+    /// Nothing: the link names the identity alone.
+    None,
+}
+
+impl EndpointSource {
+    /// The clause a person reads after the link.
+    #[must_use]
+    pub const fn clause(self) -> &'static str {
+        match self {
+            Self::Advertised => "advertised by the identity",
+            Self::Node => "this node, which signs for the identity",
+            Self::Flag => "named on the command line",
+            Self::None => "none: the link names the identity alone",
+        }
+    }
+}
+
 /// The profile a replacement overwrote, every field as the fold reported it.
 #[derive(Debug, Serialize)]
 pub struct PreviousProfile {

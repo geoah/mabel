@@ -44,6 +44,7 @@ import type {
   RemovedResponse,
   ReplaceProfileResponse,
   ResolveResponse,
+  ResolveStatus,
   ResolvedIdentity,
   Role,
   RootName,
@@ -1220,41 +1221,81 @@ export const UNREACHABLE_HOSTNAME = "unreachable.example";
 export const MISMATCHED_HOSTNAME = "mismatched.example";
 
 /**
- * GET /api/resolve/:hostname. No DNS is queried: the mock answers resolved for
- * a hostname a stored profile claims, and carries one hostname per other
- * verdict so each one renders in the harness and in a test.
+ * GET /api/resolve?input=. No DNS is queried: the mock answers resolved for a
+ * hostname a stored profile claims, and carries one hostname per other verdict
+ * so each one renders in the harness and in a test. A Mabel ID and a link are
+ * answered from the string, which is what the node does.
  */
-export function resolveHostname(hostname: string): ResolveResponse {
-  if (!/^[a-z0-9][a-z0-9.-]*$/.test(hostname)) {
+export function resolveInput(input: string): ResolveResponse {
+  if (/^[a-z2-7]{52}$/i.test(input)) {
+    return {
+      ok: true,
+      input_kind: "identity",
+      identity_id: input.toLowerCase(),
+      hostname: null,
+      endpoints: [],
+      status: null,
+    };
+  }
+  if (/:\/\//.test(input) || /^mabel:/i.test(input)) {
+    const link = /^mabel:\/\/([a-z2-7]{52})\/?(?:\?endpoints=([a-z2-7]{52}(?:,[a-z2-7]{52}){0,3}))?$/i.exec(
+      input,
+    );
+    if (!link) {
+      failWith(400, {
+        ok: false,
+        code: 2,
+        message: `${input} is not a mabel link: it does not begin with mabel://`,
+        details: {
+          reason: "invalid_mabel_link",
+          input,
+          detail: "it does not begin with mabel://",
+        },
+      });
+    }
+    return {
+      ok: true,
+      input_kind: "link",
+      identity_id: link![1].toLowerCase(),
+      hostname: null,
+      endpoints: (link![2] ?? "").toLowerCase().split(",").filter(Boolean),
+      status: null,
+    };
+  }
+  if (!/^[a-z0-9][a-z0-9.-]*$/.test(input)) {
     failWith(400, {
       ok: false,
       code: 10,
-      message: `Schema error: ${hostname} is not a hostname: it holds a character outside [a-z0-9-]`,
+      message: `Schema error: ${input} is not a hostname: it holds a character outside [a-z0-9-]`,
       details: {
         reason: "malformed_hostname",
-        value: hostname,
+        value: input,
         detail: "it holds a character outside [a-z0-9-]",
       },
     });
   }
+  const hostname = input;
   const claimed = state.identities.find(
     (identity) => identity.profile?.hostname === hostname,
   );
+  const answer = (status: ResolveStatus, identityId: string | null): ResolveResponse => ({
+    ok: true,
+    input_kind: "hostname",
+    identity_id: identityId,
+    hostname,
+    endpoints: [],
+    status,
+  });
   if (claimed) {
-    return {
-      ok: true,
-      hostname,
-      identity_id: claimed.identity_id,
-      status: "resolved",
-    };
+    return answer("resolved", claimed.identity_id);
   }
   if (hostname === UNREACHABLE_HOSTNAME) {
-    return { ok: true, hostname, identity_id: null, status: "unreachable" };
+    return answer("unreachable", null);
   }
   if (hostname === MISMATCHED_HOSTNAME) {
-    return { ok: true, hostname, identity_id: null, status: "mismatched_records" };
+    return answer("mismatched_records", null);
   }
-  return { ok: true, hostname, identity_id: null, status: "no_record" };
+  return answer("no_record", null);
 }
 
 /**

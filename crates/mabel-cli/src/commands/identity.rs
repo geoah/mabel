@@ -8,16 +8,19 @@ use mabel_core::fold::{LedgerRoot, LedgerState, Reason};
 use mabel_core::sign::{
     Root, build_endpoint_advertisement, build_inception, build_profile_update, check_profile,
 };
-use mabel_core::{IdentityId, NONCE_BYTES};
+use mabel_core::{IdentityId, MabelLink, NONCE_BYTES};
 use mabel_node::api::documents::{Id, Identity};
 use mabel_node::keys::generate_secret_key;
 use mabel_node::{IdentityMeta, LedgerMeta, now_ms};
+use qrcode::QrCode;
+use qrcode::render::unicode;
 
 use crate::append::{append, ensure_fresh};
 use crate::cli::{AppendOptions, Kind};
 use crate::context::Context;
 use crate::documents::{
-    CreatedIdentity, ExportedIdentity, IdentityList, ReplacedEndpoints, RootName,
+    CreatedIdentity, EndpointSource, ExportedIdentity, IdentityList, ReplacedEndpoints, RootName,
+    SharedIdentity,
 };
 use crate::error::{CliError, Result};
 use crate::ids;
@@ -56,7 +59,7 @@ pub fn create(
     let created_at_ms = now_ms();
 
     let founder = match founder {
-        Some(name) => Some(ctx.resolve_local(name)?),
+        Some(name) => Some(ctx.resolve_local_hinted(name, "--founder")?),
         None => None,
     };
     let (built, keys) = match founder {
@@ -245,7 +248,7 @@ pub fn replace_endpoints(
     endpoints: &str,
     options: &AppendOptions,
 ) -> Result<Outcome> {
-    let identity = ctx.resolve_local(identity)?;
+    let identity = ctx.resolve_local_hinted(identity, "--identity")?;
     let endpoints = parse_endpoints(ctx, endpoints)?;
     ensure_fresh(ctx, identity, options)?;
     let mut loaded = ctx.load(identity)?;
@@ -317,6 +320,117 @@ fn parse_endpoints(ctx: &Context, raw: &str) -> Result<Vec<EndpointId>> {
         endpoints.push(endpoint);
     }
     Ok(endpoints)
+}
+
+/// `mabel identity share <alias|id|link> [--endpoints auto|none|<endpoint,...>]
+/// [--out <file>] [--qr]` (proposal 006 section 7).
+///
+/// One string carries an identity and up to four machines that answer for it.
+/// `auto` reads the machines the identity advertises on its own chain, and falls
+/// back to this node's endpoint id when this home signs for the identity and the
+/// chain advertises nothing: a ledger nobody has heard of is reachable at the
+/// machine that just minted it. A link handed in as the operand names the
+/// identity; its own hints are not carried over, because what to hint at is
+/// what `--endpoints` is for.
+///
+/// # Errors
+///
+/// Returns code 2 with `invalid_mabel_link` when the endpoints do not fit the
+/// link grammar, which caps at four, and code 1 when `--out` cannot be written.
+pub fn share(
+    ctx: &Context,
+    name: &str,
+    endpoints: &str,
+    out: Option<&Path>,
+    qr: bool,
+) -> Result<Outcome> {
+    let identity = ctx.resolve(name)?;
+    let (endpoints, from) = share_endpoints(ctx, identity, endpoints)?;
+    let link = MabelLink::new(identity, &endpoints).map_err(|error| {
+        CliError::usage(
+            error.reason(),
+            format!("{identity} cannot be shared with these endpoints: {error}"),
+        )
+        .with_detail("identity", identity.to_string())
+        .with_detail("detail", error.clause())
+    })?;
+    let link = link.to_string();
+
+    // One line, UTF-8, a trailing newline and no BOM: a file a reader can cat
+    // into anything that takes a link.
+    let written = match out {
+        Some(path) => Some((
+            path.display().to_string(),
+            crate::artifacts::write(path, format!("{link}\n").as_bytes())?,
+        )),
+        None => None,
+    };
+
+    let document = SharedIdentity {
+        identity_id: ids::identity(identity),
+        link: link.clone(),
+        endpoints: endpoints.iter().map(ids::key).collect(),
+        endpoints_from: from,
+        path: written.as_ref().map(|(path, _)| path.clone()),
+        bytes: written.as_ref().map(|(_, bytes)| *bytes),
+    };
+    let mut text = format!("{link}\nendpoints: {}", from.clause());
+    for endpoint in &document.endpoints {
+        text.push_str(&format!("\n{endpoint}"));
+    }
+    if let Some((path, bytes)) = &written {
+        text.push_str(&format!("\nwrote {path} ({bytes} bytes)"));
+    }
+    if qr {
+        text.push('\n');
+        text.push_str(&qr_square(&link)?);
+    }
+    Outcome::new(&document, text)
+}
+
+/// Reads `--endpoints` for a link: `auto`, `none`, or a list.
+fn share_endpoints(
+    ctx: &Context,
+    identity: IdentityId,
+    raw: &str,
+) -> Result<(Vec<EndpointId>, EndpointSource)> {
+    if raw == "none" {
+        return Ok((Vec::new(), EndpointSource::None));
+    }
+    if raw != "auto" {
+        return Ok((parse_endpoints(ctx, raw)?, EndpointSource::Flag));
+    }
+    // The chain is authoritative about the machines that answer for it. A
+    // ledger this home does not hold says nothing either way.
+    let advertised = if ctx.holds(identity) {
+        ctx.load(identity)?.state.endpoints().to_vec()
+    } else {
+        Vec::new()
+    };
+    if !advertised.is_empty() {
+        return Ok((advertised, EndpointSource::Advertised));
+    }
+    if ctx.home().can_sign_for(identity) {
+        return Ok((vec![ctx.endpoint_id()?], EndpointSource::Node));
+    }
+    Ok((Vec::new(), EndpointSource::None))
+}
+
+/// The link as a QR square, drawn in half-block characters so it scans off a
+/// terminal.
+fn qr_square(link: &str) -> Result<String> {
+    let code = QrCode::new(link.as_bytes()).map_err(|error| {
+        CliError::internal(
+            "qr_encoding_failed",
+            format!("{link} does not encode: {error}"),
+        )
+    })?;
+    Ok(code
+        .render::<unicode::Dense1x2>()
+        .quiet_zone(true)
+        .dark_color(unicode::Dense1x2::Light)
+        .light_color(unicode::Dense1x2::Dark)
+        .build())
 }
 
 /// `mabel identity export <alias|id> --out <path>`.

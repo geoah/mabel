@@ -41,9 +41,10 @@
 //! - `GET /api/witnesses/{endpoint_id}/ledgers` names its array `ledgers` and
 //!   drops the three `witness-get-ledgers.json` fields that come from the
 //!   witness's own `meta.json` rather than from the `List` answer.
-//! - `GET /api/resolve/{hostname}` never reads or writes the verification
-//!   cache. Its four statuses are navigation, not the five-status verdict of
-//!   proposal 003 section 2.
+//! - `GET /api/resolve?input=` never reads or writes the verification cache.
+//!   Its four statuses are navigation, not the five-status verdict of proposal
+//!   003 section 2, and it takes an identity id, a hostname or a `mabel://`
+//!   link (proposal 006 section 7).
 //! - An unknown query parameter is refused with code 2, matching the
 //!   "unknown route or parameter" row of the table in `contracts/README.md`.
 //! - `limit` above a route's maximum is clamped, not refused; the response

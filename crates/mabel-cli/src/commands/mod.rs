@@ -60,6 +60,12 @@ fn dispatch(ctx: &Context, cli: &Cli) -> Result<Outcome> {
                     append,
                 } => identity::replace_endpoints(ctx, identity, endpoints, append),
             },
+            IdentityCommand::Share {
+                identity,
+                endpoints,
+                out,
+                qr,
+            } => identity::share(ctx, identity, endpoints, out.as_deref(), *qr),
             IdentityCommand::Export { identity, out } => identity::export(ctx, identity, out),
             IdentityCommand::Rotate { .. } => identity::rotate(),
         },
@@ -162,7 +168,7 @@ fn dispatch(ctx: &Context, cli: &Cli) -> Result<Outcome> {
                 ledger_id,
                 from,
                 peer,
-            } => sync::fetch(ctx, ledger_id, from, peer),
+            } => sync::fetch(ctx, ledger_id, from.as_deref(), peer),
         },
         Command::Verify { command } => match command {
             VerifyCommand::Ledger {

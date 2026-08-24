@@ -8,7 +8,7 @@
 use std::path::{Path, PathBuf};
 
 use iroh_base::{EndpointId, SecretKey};
-use mabel_core::{IdentityId, LedgerId};
+use mabel_core::{IdentityId, LedgerId, MabelLink};
 use mabel_node::api::documents::{Identity, Verification};
 use mabel_node::verification::VerificationStore;
 use mabel_node::wallet::{contact_document, verification_document};
@@ -55,16 +55,22 @@ impl Context {
         self.home.root().to_path_buf()
     }
 
-    /// Resolves an id or a local alias to an id.
+    /// Resolves an id, a local alias or a `mabel://` link to an id.
     ///
     /// An id resolves to itself whether or not this home holds it, which is
-    /// what lets `--subject` name someone else's identity.
+    /// what lets `--subject` name someone else's identity. A link resolves to
+    /// the identity it names; the machines it hints at are dropped here, and a
+    /// command that dials reads them through [`Context::resolve_hinted`].
     ///
     /// # Errors
     ///
     /// Returns code 2 with reason `unknown_alias` when no local identity
-    /// carries the name.
+    /// carries the name, and `invalid_mabel_link` for a string that means to be
+    /// a link and is not.
     pub fn resolve(&self, name: &str) -> Result<IdentityId> {
+        if MabelLink::looks_like_link(name) {
+            return Ok(parse_link(name)?.identity());
+        }
         if let Ok(id) = name.parse::<IdentityId>() {
             return Ok(id);
         }
@@ -77,6 +83,52 @@ impl Context {
             CliError::usage("unknown_alias", format!("no identity here is named {name}"))
                 .with_detail("alias", name),
         )
+    }
+
+    /// Resolves a name and keeps the machines a link hinted at.
+    ///
+    /// The hints apply to the subject that is fetched, and to nothing else: an
+    /// alias and a bare id hint at nothing, so a caller that dials falls back
+    /// to whatever it would have used (proposal 006 section 7).
+    ///
+    /// # Errors
+    ///
+    /// Returns the errors of [`Context::resolve`].
+    pub fn resolve_hinted(&self, name: &str) -> Result<(IdentityId, Vec<EndpointId>)> {
+        if MabelLink::looks_like_link(name) {
+            let link = parse_link(name)?;
+            return Ok((link.identity(), link.endpoints().to_vec()));
+        }
+        Ok((self.resolve(name)?, Vec::new()))
+    }
+
+    /// Resolves a name that must be an identity this home signs for, warning
+    /// when a link on `flag` hinted at machines.
+    ///
+    /// A local signer is reached from this home, so there is nothing to dial and
+    /// the hints do nothing. Saying so on stderr beats a flag that looks
+    /// obeyed and is not (proposal 006 section 7).
+    ///
+    /// # Errors
+    ///
+    /// Returns the errors of [`Context::resolve_local`].
+    pub fn resolve_local_hinted(&self, name: &str, flag: &str) -> Result<IdentityId> {
+        let (identity, hints) = self.resolve_hinted(name)?;
+        if !hints.is_empty() {
+            // stderr, not a tracing event: a warning about a flag has to be
+            // seen without `--verbose`, and stdout carries the document.
+            eprintln!(
+                "warning: ignoring the {} {} the link on {flag} names: {identity} is signed for \
+                 by this home",
+                hints.len(),
+                if hints.len() == 1 {
+                    "endpoint"
+                } else {
+                    "endpoints"
+                }
+            );
+        }
+        self.resolve_local(&identity.to_string())
     }
 
     /// Resolves a name that must be an identity this home can act as.
@@ -216,6 +268,24 @@ impl Context {
     pub fn source(&self) -> Result<mabel_node::api::documents::Id> {
         Ok(ids::key(&self.endpoint_id()?))
     }
+}
+
+/// One `mabel://` link, refused whole and with one reason (proposal 006
+/// section 7).
+///
+/// # Errors
+///
+/// Returns code 2 with reason `invalid_mabel_link`, `details.input` holding the
+/// string as it was typed.
+pub fn parse_link(input: &str) -> Result<MabelLink> {
+    MabelLink::parse(input).map_err(|error| {
+        CliError::usage(
+            error.reason(),
+            format!("{input} is not a mabel link: {error}"),
+        )
+        .with_detail("input", input)
+        .with_detail("detail", error.clause())
+    })
 }
 
 /// The refusal a ledger this home stores but cannot sign for answers.

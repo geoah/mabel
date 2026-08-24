@@ -9,6 +9,7 @@ pub mod encoding;
 pub mod fold;
 pub mod fork;
 pub mod id;
+pub mod link;
 pub mod sign;
 pub mod validate;
 
@@ -23,6 +24,10 @@ pub use fold::{
 };
 pub use fork::{Fork, ForkError, validate_fork_record};
 pub use id::{EventId, IdentityId, LedgerId, ParseIdError};
+pub use link::{
+    INVALID_MABEL_LINK, InvalidLink, LINK_ENDPOINTS_KEY, LINK_PREFIX, LINK_SCHEME,
+    MAX_LINK_ENDPOINTS, MabelLink, render_id,
+};
 pub use mabel_proto::v0 as proto;
 #[cfg(any(test, feature = "legacy-witness-config"))]
 pub use sign::build_witness_config;

@@ -1,6 +1,6 @@
 //! The four wallet routes proposal 004 adds, over a real node home.
 //!
-//! `GET /api/witnesses` and `GET /api/resolve/{hostname}` run offline: the
+//! `GET /api/witnesses` and `GET /api/resolve?input=` run offline: the
 //! first reads the home, the second reads a stub resolver. `GET
 //! /api/witnesses/{endpoint_id}/ledgers` and `POST
 //! /api/identities/{identity_id}/fetch` run against a witness serving
@@ -16,8 +16,8 @@ use std::time::Duration;
 use common::Served;
 use iroh_base::{EndpointId, SecretKey};
 use mabel_core::IdentityId;
-use mabel_node::api::documents::{DeclaredKind, Id, ResolveStatus};
-use mabel_node::api::service::{FetchIdentity, WalletService};
+use mabel_node::api::documents::{DeclaredKind, Id, ResolveInputKind, ResolveStatus};
+use mabel_node::api::service::{FetchIdentity, ResolveInput, WalletService};
 use mabel_node::verification::{StubResolver, TxtRecord, VerificationStore};
 use mabel_node::wallet::{WalletApiService, WalletCore, WalletSync};
 use mabel_node::witness::WitnessCaps;
@@ -192,14 +192,106 @@ async fn a_matching_txt_record_resolves_to_the_identity_it_names() {
 
     let resolved = wallet
         .service
-        .resolve("alice.example".to_owned())
+        .resolve(ResolveInput::Hostname("alice.example".to_owned()))
         .await
         .expect("an answer");
-    assert_eq!(resolved.status, ResolveStatus::Resolved);
+    assert_eq!(resolved.input_kind, ResolveInputKind::Hostname);
+    assert_eq!(resolved.status, Some(ResolveStatus::Resolved));
     assert_eq!(resolved.identity_id, Some(id(alice)));
-    assert_eq!(resolved.hostname, "alice.example");
+    assert_eq!(resolved.hostname.as_deref(), Some("alice.example"));
+    assert!(resolved.endpoints.is_empty(), "the zone hints at nothing");
     // One lookup, of the absolute label, and no CNAME chase.
     assert_eq!(resolver.queries(), vec!["_mabel.alice.example.".to_owned()]);
+}
+
+/// An identity id and a link are answered from the string alone: neither
+/// queries DNS, and a link's hints come back in the order it named them
+/// (proposal 006 section 7).
+#[tokio::test]
+async fn an_identity_id_and_a_link_are_answered_without_a_lookup() {
+    let wallet = Wallet::plain().await;
+    let alice = wallet.identity("alice");
+    let resolver = Arc::new(StubResolver::new());
+    let wallet = wallet.with_resolver(resolver.clone());
+
+    let resolved = wallet
+        .service
+        .resolve(ResolveInput::Identity(id(alice)))
+        .await
+        .expect("an answer");
+    assert_eq!(resolved.input_kind, ResolveInputKind::Identity);
+    assert_eq!(resolved.identity_id, Some(id(alice)));
+    assert_eq!(resolved.hostname, None);
+    assert_eq!(resolved.status, None, "nothing was queried");
+    assert!(resolved.endpoints.is_empty());
+
+    let hints = vec![rendered(endpoint(1)), rendered(endpoint(2))];
+    let resolved = wallet
+        .service
+        .resolve(ResolveInput::Link {
+            identity_id: id(alice),
+            endpoints: hints.clone(),
+        })
+        .await
+        .expect("an answer");
+    assert_eq!(resolved.input_kind, ResolveInputKind::Link);
+    assert_eq!(resolved.identity_id, Some(id(alice)));
+    assert_eq!(resolved.hostname, None);
+    assert_eq!(resolved.status, None);
+    assert_eq!(resolved.endpoints, hints);
+
+    assert!(resolver.queries().is_empty(), "no lookup ran");
+}
+
+/// Row 1 of the applicability matrix: a hostname the caller supplied yields
+/// the endpoints at that label for the identity the same response resolved to,
+/// and a response that resolved to no identity reports none (proposal 006
+/// section 6).
+#[tokio::test]
+async fn a_supplied_hostname_carries_the_endpoints_at_its_label() {
+    let wallet = Wallet::plain().await;
+    let alice = wallet.identity("alice");
+    let hints = format!(
+        "mabel-endpoints={},{}",
+        rendered(endpoint(1)),
+        rendered(endpoint(2))
+    );
+    let resolver = Arc::new(
+        StubResolver::new()
+            .with_records(
+                "_mabel.alice.example.",
+                vec![
+                    TxtRecord::from_strings([format!("mabel={alice}")]),
+                    TxtRecord::from_strings([hints.clone()]),
+                ],
+            )
+            // A zone naming machines and no identity resolves to nobody, so it
+            // offers nobody's endpoints.
+            .with_records(
+                "_mabel.machines.example.",
+                vec![TxtRecord::from_strings([hints])],
+            ),
+    );
+    let wallet = wallet.with_resolver(resolver);
+
+    let resolved = wallet
+        .service
+        .resolve(ResolveInput::Hostname("alice.example".to_owned()))
+        .await
+        .expect("an answer");
+    assert_eq!(resolved.identity_id, Some(id(alice)));
+    let mut expected = vec![rendered(endpoint(1)), rendered(endpoint(2))];
+    expected.sort_by(|left, right| left.as_str().cmp(right.as_str()));
+    assert_eq!(resolved.endpoints, expected, "sorted by rendered base32");
+
+    let resolved = wallet
+        .service
+        .resolve(ResolveInput::Hostname("machines.example".to_owned()))
+        .await
+        .expect("an answer");
+    assert_eq!(resolved.status, Some(ResolveStatus::NoRecord));
+    assert_eq!(resolved.identity_id, None);
+    assert!(resolved.endpoints.is_empty(), "{resolved:?}");
 }
 
 #[tokio::test]
@@ -226,10 +318,10 @@ async fn a_label_with_no_mabel_record_is_no_record_and_one_that_does_not_parse_i
     ] {
         let resolved = wallet
             .service
-            .resolve(hostname.to_owned())
+            .resolve(ResolveInput::Hostname(hostname.to_owned()))
             .await
             .expect("an answer");
-        assert_eq!(resolved.status, expected, "{hostname}");
+        assert_eq!(resolved.status, Some(expected), "{hostname}");
         assert_eq!(resolved.identity_id, None, "{hostname}");
     }
 }
@@ -246,7 +338,7 @@ async fn resolving_a_hostname_writes_no_verification_entry() {
 
     wallet
         .service
-        .resolve("alice.example".to_owned())
+        .resolve(ResolveInput::Hostname("alice.example".to_owned()))
         .await
         .expect("an answer");
 
@@ -291,9 +383,14 @@ async fn the_witness_ledger_proxy_lists_what_that_witness_holds() {
         assert_eq!(page.offset, 0);
         assert_eq!(page.limit, 256);
         assert!(!page.more);
-        assert_eq!(page.ledgers.len(), 1);
-        let row = &page.ledgers[0];
-        assert_eq!(row.ledger_id, id(alice));
+        // Alice's ledger and the witness identity's own, which the witness home
+        // stores so it may take a ledger at all (proposal 006 section 4.1).
+        assert_eq!(page.ledgers.len(), 2);
+        let row = page
+            .ledgers
+            .iter()
+            .find(|row| row.ledger_id == id(alice))
+            .expect("the witness holds alice's ledger");
         assert_eq!(row.declared_kind, DeclaredKind::Person);
         assert_eq!(row.head_seq, 1, "inception plus the witness config");
         assert_eq!(row.event_count, 2);

@@ -18,7 +18,7 @@ import {
   lookup,
   removePrincipal,
   replaceProfile,
-  resolveHostname,
+  resolveInput,
   setContact,
   syncGraph,
 } from "@/api/client";
@@ -359,7 +359,7 @@ describe("witnesses", () => {
 
 describe("resolve", () => {
   it("names the identity whose profile claims the hostname", async () => {
-    const response = await resolveHostname("alice.example");
+    const response = await resolveInput("alice.example");
 
     expect(response.status).toBe("resolved");
     expect(response.identity_id).toBe(ALICE);
@@ -370,14 +370,14 @@ describe("resolve", () => {
     [MISMATCHED_HOSTNAME, "mismatched_records"],
     [UNREACHABLE_HOSTNAME, "unreachable"],
   ])("answers %s with status %s and no identity", async (hostname, status) => {
-    const response = await resolveHostname(hostname);
+    const response = await resolveInput(hostname);
 
     expect(response.status).toBe(status);
     expect(response.identity_id).toBeNull();
   });
 
   it("refuses a string that cannot be a hostname", async () => {
-    const error = await rejection(() => resolveHostname("alice_example"));
+    const error = await rejection(() => resolveInput("alice_example"));
 
     expect(error.status).toBe(400);
     expect(error.reason).toBe("malformed_hostname");

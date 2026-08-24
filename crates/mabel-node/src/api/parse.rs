@@ -16,11 +16,11 @@ use super::error::ServiceError;
 use super::service::{
     AcceptInvitation, AddTrust, AdmitAcceptance, CreateIdentity, EventPageRequest, FetchIdentity,
     ForkQuery, Invite, LookupRequest, PageRequest, PushRequest, RemoveMembership, ReplaceProfile,
-    SetContact,
+    ResolveInput, SetContact,
 };
 use crate::contacts::{ContactTextError, MAX_NICKNAME_BYTES, MAX_NOTE_BYTES, normalize};
 use crate::verification::check_hostname;
-use mabel_core::{MAX_ENDPOINTS, MAX_WITNESSES};
+use mabel_core::{MAX_ENDPOINTS, MAX_WITNESSES, MabelLink};
 
 /// The query string, one value per name.
 pub(super) type Query = HashMap<String, String>;
@@ -688,7 +688,96 @@ pub(super) fn fetch_identity(identity_id: Id, bytes: &[u8]) -> Result<FetchIdent
     Ok(FetchIdentity { identity_id, from })
 }
 
-/// The `{hostname}` path segment of `GET /api/resolve/{hostname}`.
+/// `?input=` on `GET /api/resolve`: one identity id, one hostname or one
+/// `mabel://` link (proposal 006 section 7).
+///
+/// The parameter is decoded exactly once, here, which is what a query decoder
+/// does; the decoded bytes go to the link grammar unchanged, and that grammar
+/// refuses percent-encoding outright. So `%252f` decodes once to `%2f` and is
+/// refused rather than decoded again into `/`. No layer below this one decodes
+/// anything.
+///
+/// The raw query string is read pair by pair rather than through a map, because
+/// a map cannot tell `input` sent twice from `input` sent once.
+///
+/// # Errors
+///
+/// Returns code 2 with `unknown_query_parameter` for any other key and for a
+/// repeated `input`, `missing_field` when `input` is absent or empty,
+/// `invalid_mabel_link` for a string that means to be a link and is not, and
+/// `malformed_hostname` for anything else that is neither an id nor a hostname.
+pub(super) fn resolve(raw_query: Option<&str>) -> Result<ResolveInput, ServiceError> {
+    const INPUT: &str = "input";
+
+    let mut given: Option<String> = None;
+    for pair in raw_query.unwrap_or_default().split('&') {
+        if pair.is_empty() {
+            continue;
+        }
+        let (name, value) = pair.split_once('=').unwrap_or((pair, ""));
+        if name != INPUT {
+            return Err(ServiceError::usage(
+                "unknown_query_parameter",
+                format!("{name} is not a parameter of this route"),
+            )
+            .with_detail("parameter", name));
+        }
+        if given.is_some() {
+            return Err(ServiceError::usage(
+                "unknown_query_parameter",
+                format!("{INPUT} may be given once"),
+            )
+            .with_detail("parameter", INPUT));
+        }
+        given = Some(decode_once(value));
+    }
+    let input = given.filter(|value| !value.is_empty()).ok_or_else(|| {
+        ServiceError::usage("missing_field", format!("{INPUT} is required"))
+            .with_detail("field", INPUT)
+    })?;
+
+    if MabelLink::looks_like_link(&input) {
+        let link = MabelLink::parse(&input).map_err(|error| {
+            ServiceError::usage(
+                error.reason(),
+                format!("{input} is not a mabel link: {error}"),
+            )
+            .with_detail("input", input.clone())
+            .with_detail("detail", error.clause())
+        })?;
+        return Ok(ResolveInput::Link {
+            identity_id: render_id(link.identity().as_bytes()),
+            endpoints: link
+                .endpoints()
+                .iter()
+                .map(|endpoint| render_id(endpoint.as_bytes()))
+                .collect(),
+        });
+    }
+    if let Some(identity) = Id::parse(&input) {
+        return Ok(ResolveInput::Identity(identity));
+    }
+    Ok(ResolveInput::Hostname(hostname(&input)?))
+}
+
+/// One pass of percent-decoding, leaving a malformed escape as its own bytes so
+/// the grammar below refuses it rather than a decoder guessing at it.
+///
+/// Nothing is trimmed: a link is refused whole, whitespace included, and the
+/// hostname parser does its own trimming for the one kind that tolerates it.
+fn decode_once(value: &str) -> String {
+    percent_encoding::percent_decode_str(value)
+        .decode_utf8_lossy()
+        .into_owned()
+}
+
+/// 32 bytes as the base32 id every document spells.
+fn render_id(bytes: &[u8; 32]) -> Id {
+    Id::parse(&mabel_core::render_id(bytes)).expect("32 bytes render as 52 base32 characters")
+}
+
+/// The hostname kind of `GET /api/resolve?input=`, and the `hostname` field of
+/// a profile.
 ///
 /// The same syntax a profile hostname must satisfy, so a name this route
 /// accepts is a name a ledger could claim (proposal 003 section 2).
@@ -729,14 +818,16 @@ pub(super) fn method_not_allowed(method: &str, path: &str) -> ServiceError {
 #[cfg(test)]
 mod tests {
     use super::{
-        IdKind, MAX_EVENT_LIMIT, Query, create_identity, endpoints, event_page, fetch_identity,
-        fork_query, hostname, id, ledger_page, limit, witnesses,
+        IdKind, MAX_EVENT_LIMIT, Query, ResolveInput, create_identity, endpoints, event_page,
+        fetch_identity, fork_query, hostname, id, ledger_page, limit, resolve, witnesses,
     };
     use crate::api::documents::Id;
     use serde_json::json;
 
     const ALICE: &str = "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq";
     const BOB: &str = "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq";
+    /// A real endpoint id, which the link grammar checks is a curve point.
+    const WITNESS_ONE: &str = "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq";
 
     fn query(pairs: &[(&str, &str)]) -> Query {
         pairs
@@ -876,6 +967,94 @@ mod tests {
         let body = json!({"from": "witness-one"}).to_string();
         let error = fetch_identity(ledger, body.as_bytes()).expect_err("not an endpoint id");
         assert_eq!(error.reason(), "malformed_endpoint_id");
+    }
+
+    /// `?input=` reads one of three kinds, and says which (proposal 006
+    /// section 7).
+    #[test]
+    fn resolve_reads_an_id_a_hostname_and_a_link() {
+        let query = format!("input={ALICE}");
+        assert_eq!(
+            resolve(Some(&query)).expect("an identity id"),
+            ResolveInput::Identity(Id::parse(ALICE).expect("a fixture id"))
+        );
+        assert_eq!(
+            resolve(Some("input=Alice.Example")).expect("a hostname"),
+            ResolveInput::Hostname("alice.example".to_owned())
+        );
+
+        // `://` is percent-encoded by any honest client, so the one decode
+        // this layer does has to happen before the grammar reads the string.
+        let link = format!("input=mabel%3A%2F%2F{ALICE}%3Fendpoints%3D{WITNESS_ONE}");
+        assert_eq!(
+            resolve(Some(&link)).expect("a link"),
+            ResolveInput::Link {
+                identity_id: Id::parse(ALICE).expect("a fixture id"),
+                endpoints: vec![Id::parse(WITNESS_ONE).expect("a fixture id")],
+            }
+        );
+        // An uppercase paste is the same link, rendered lowercase.
+        let shouted = format!("input=MABEL://{}", ALICE.to_ascii_uppercase());
+        assert_eq!(
+            resolve(Some(&shouted)).expect("a link"),
+            ResolveInput::Link {
+                identity_id: Id::parse(ALICE).expect("a fixture id"),
+                endpoints: Vec::new(),
+            }
+        );
+    }
+
+    /// A string that means to be a link is refused as one rather than looked
+    /// up as a hostname, and `%252f` is refused rather than decoded twice.
+    #[test]
+    fn resolve_refuses_a_broken_link_and_never_decodes_twice() {
+        let error = resolve(Some(&format!("input=mabel%3A%2F%2F{ALICE}%252f")))
+            .expect_err("percent-encoding");
+        assert_eq!(error.reason(), "invalid_mabel_link");
+        assert_eq!(error.code(), 2);
+        assert_eq!(
+            error.details()["input"],
+            json!(format!("mabel://{ALICE}%2f")),
+            "the string as this layer received it, decoded once"
+        );
+        assert_eq!(
+            error.details()["detail"],
+            json!("it holds percent-encoding")
+        );
+
+        // Three good endpoints and one bad one are refused together.
+        let error = resolve(Some(&format!(
+            "input=mabel%3A%2F%2F{ALICE}%3Fendpoints%3D{WITNESS_ONE},nope"
+        )))
+        .expect_err("one bad endpoint");
+        assert_eq!(error.reason(), "invalid_mabel_link");
+
+        // A hostname-shaped string is not a link attempt and gets the hostname
+        // refusal instead.
+        assert_eq!(
+            resolve(Some("input=alice_example"))
+                .expect_err("not a hostname")
+                .reason(),
+            "malformed_hostname"
+        );
+    }
+
+    #[test]
+    fn resolve_refuses_a_repeated_input_an_unknown_key_and_no_input() {
+        let error =
+            resolve(Some(&format!("input={ALICE}&input=alice.example"))).expect_err("input twice");
+        assert_eq!(error.reason(), "unknown_query_parameter");
+        assert_eq!(error.details()["parameter"], json!("input"));
+
+        let error = resolve(Some("hostname=alice.example")).expect_err("not a parameter");
+        assert_eq!(error.reason(), "unknown_query_parameter");
+        assert_eq!(error.details()["parameter"], json!("hostname"));
+
+        for query in [None, Some(""), Some("input=")] {
+            let error = resolve(query).expect_err("no input");
+            assert_eq!(error.reason(), "missing_field", "{query:?}");
+            assert_eq!(error.details()["field"], json!("input"), "{query:?}");
+        }
     }
 
     #[test]

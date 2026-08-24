@@ -1,11 +1,16 @@
 {
-  "route": "/api/resolve/:hostname",
+  "route": "/api/resolve?input=alice.example",
   "method": "GET",
   "request": null,
   "response": {
     "ok": true,
-    "hostname": "alice.example",
+    "input_kind": "hostname",
     "identity_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+    "hostname": "alice.example",
+    "endpoints": [
+      "5yy7qpeiu4jbtjx47g7obwu3yitcaweplik2mfcvknie36letzoa",
+      "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq"
+    ],
     "status": "resolved"
   },
   "errors": [
@@ -19,6 +24,43 @@
           "reason": "malformed_hostname",
           "value": "alice_ashworth.example",
           "detail": "a label holds a character outside [a-z0-9-]"
+        }
+      }
+    },
+    {
+      "status": 400,
+      "body": {
+        "ok": false,
+        "code": 2,
+        "message": "mabel://sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq%2f is not a mabel link: it holds percent-encoding",
+        "details": {
+          "reason": "invalid_mabel_link",
+          "input": "mabel://sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq%2f",
+          "detail": "it holds percent-encoding"
+        }
+      }
+    },
+    {
+      "status": 400,
+      "body": {
+        "ok": false,
+        "code": 2,
+        "message": "input may be given once",
+        "details": {
+          "reason": "unknown_query_parameter",
+          "parameter": "input"
+        }
+      }
+    },
+    {
+      "status": 400,
+      "body": {
+        "ok": false,
+        "code": 2,
+        "message": "input is required",
+        "details": {
+          "reason": "missing_field",
+          "field": "input"
         }
       }
     },

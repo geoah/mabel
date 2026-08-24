@@ -173,8 +173,8 @@ export const handlers = [
     );
   }),
 
-  http.get("/api/resolve/:hostname", ({ params }) =>
-    answer(() => store.resolveHostname(String(params.hostname))),
+  http.get("/api/resolve", ({ request }) =>
+    answer(() => store.resolveInput(new URL(request.url).searchParams.get("input") ?? "")),
   ),
 
   // The witness routes, all of them reads.

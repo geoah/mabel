@@ -18,7 +18,7 @@ use super::documents::{DeclaredKind, RoleName};
 use super::error::{ErrorLayer, ServiceError};
 use super::service::{
     EventPageRequest, FetchIdentity, ForkQuery, LookupRequest, PageRequest, PushRequest,
-    ReplaceProfile, SetContact,
+    ReplaceProfile, ResolveInput, SetContact,
 };
 use super::stub::{
     FIXTURES, Fixture, StubWalletService, StubWitnessService, WalletCall, WitnessCall,
@@ -44,7 +44,7 @@ const ORIGIN: &str = "http://127.0.0.1:9080";
 /// The reasons this module produces itself, before any service is called.
 /// Every other reason in a fixture's `errors` array comes from a service, and
 /// the round-trip test below drives those through the stub.
-const API_OWNED_REASONS: [&str; 13] = [
+const API_OWNED_REASONS: [&str; 15] = [
     "host_not_loopback",
     "origin_mismatch",
     "content_type_not_json",
@@ -56,6 +56,8 @@ const API_OWNED_REASONS: [&str; 13] = [
     "malformed_endpoint_id",
     "malformed_hostname",
     "malformed_query_parameter",
+    "unknown_query_parameter",
+    "invalid_mabel_link",
     "malformed_base64",
     "duplicate_witness",
 ];
@@ -853,7 +855,11 @@ async fn wallet_get_resolve_matches_the_fixture_and_passes_the_hostname_through(
     let stub = Arc::new(StubWalletService::new());
     let (status, body) = run_wallet(name, &stub).await;
     expect_response(name, status, &body);
-    assert_eq!(stub.call(), WalletCall::Resolve(HOSTNAME.to_owned()));
+    assert_eq!(
+        stub.call(),
+        WalletCall::Resolve(ResolveInput::Hostname(HOSTNAME.to_owned()))
+    );
+    assert_eq!(body["input_kind"], json!("hostname"));
     assert_eq!(body["status"], json!("resolved"));
     assert_eq!(body["identity_id"], json!(ALICE));
 
@@ -862,12 +868,73 @@ async fn wallet_get_resolve_matches_the_fixture_and_passes_the_hostname_through(
     let stub = Arc::new(StubWalletService::new());
     let (status, body) = send(
         wallet(&stub),
-        request("GET", "/api/resolve/alice_ashworth.example", &Value::Null),
+        request(
+            "GET",
+            "/api/resolve?input=alice_ashworth.example",
+            &Value::Null,
+        ),
     )
     .await;
     assert_eq!(status, expected_status);
     assert_eq!(body, expected);
     assert!(stub.calls().is_empty());
+}
+
+/// The other two input kinds reach the service as themselves, and the link's
+/// hints reach it in the order the link named them (proposal 006 section 7).
+#[tokio::test]
+async fn wallet_get_resolve_takes_an_identity_id_and_a_link() {
+    let stub = Arc::new(StubWalletService::new());
+    let (status, _) = send(
+        wallet(&stub),
+        request("GET", &format!("/api/resolve?input={ALICE}"), &Value::Null),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        stub.call(),
+        WalletCall::Resolve(ResolveInput::Identity(id(ALICE)))
+    );
+
+    let stub = Arc::new(StubWalletService::new());
+    let uri = format!(
+        "/api/resolve?input=mabel%3A%2F%2F{ALICE}%3Fendpoints%3D{WITNESS_ONE}%2C{WITNESS_TWO}"
+    );
+    let (status, _) = send(wallet(&stub), request("GET", &uri, &Value::Null)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        stub.call(),
+        WalletCall::Resolve(ResolveInput::Link {
+            identity_id: id(ALICE),
+            endpoints: vec![id(WITNESS_ONE), id(WITNESS_TWO)],
+        })
+    );
+}
+
+/// `%252f` decodes once to `%2f` and is refused as a link, not decoded again
+/// into a path separator. The refusal names the string the layer received.
+#[tokio::test]
+async fn wallet_get_resolve_refuses_a_double_encoded_link_and_a_repeated_input() {
+    let name = "wallet-get-resolve.json";
+    for (reason, query) in [
+        (
+            "invalid_mabel_link",
+            format!("input=mabel%3A%2F%2F{ALICE}%252f"),
+        ),
+        (
+            "unknown_query_parameter",
+            format!("input={ALICE}&input=alice.example"),
+        ),
+        ("missing_field", "input=".to_owned()),
+    ] {
+        let (expected_status, expected) = fixture_error(name, reason);
+        let stub = Arc::new(StubWalletService::new());
+        let uri = format!("/api/resolve?{query}");
+        let (status, body) = send(wallet(&stub), request("GET", &uri, &Value::Null)).await;
+        assert_eq!(status, expected_status, "{reason}");
+        assert_eq!(body, expected, "{reason}");
+        assert!(stub.calls().is_empty(), "{reason}");
+    }
 }
 
 #[tokio::test]

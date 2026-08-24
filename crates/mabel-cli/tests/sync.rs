@@ -430,9 +430,14 @@ fn sync_push_matches_the_fixture_and_the_witness_stores_the_ledger() {
     );
     assert_eq!(results[0]["status"], Value::from("accepted"));
     assert_eq!(results[0]["stored"], Value::from(2));
+    // One machine answers for this witness identity, and it is the machine that
+    // was just pushed to, so the only evidence for it comes from itself: hinted
+    // (proposal 006 section 4.2, condition 4).
+    assert_eq!(results[0]["binding"], Value::from("hinted"));
 
-    // The text names the witness and what it did.
-    let (code, stdout, _) = home.run(&[
+    // The text names the witness and what it did, and the warning about the
+    // binding goes to stderr, where it does not disturb the report.
+    let (code, stdout, stderr) = home.run(&[
         "sync",
         "push",
         "--identity",
@@ -440,11 +445,169 @@ fn sync_push_matches_the_fixture_and_the_witness_stores_the_ledger() {
         "--peer",
         &witness.ticket,
     ]);
-    assert_eq!(code, 0, "{stdout}");
+    assert_eq!(code, 0, "{stdout}{stderr}");
     assert!(stdout.contains("1 of 1 witnesses accepted"), "{stdout}");
     assert!(stdout.contains("accepted, stored 0"), "{stdout}");
+    assert!(
+        stderr.contains(&format!(
+            "warning: nobody's ledger confirms that {} answers for a witness",
+            witness.endpoint
+        )),
+        "a hinted push warns and still succeeds: {stderr}"
+    );
 
     witness.stop();
+}
+
+/// Proposal 006 section 4.2: a binding is `verified` only on evidence that did
+/// not come from the endpoint it vouches for, which needs a second machine
+/// answering for the same witness identity.
+///
+/// The second machine is also the fleet case of section 4.1: it holds the
+/// witness identity's id and a copy of its ledger, and no key of it.
+#[test]
+fn a_second_machine_for_the_witness_identity_verifies_the_binding() {
+    // Both homes exist before either daemon serves: a witness's index is built
+    // at startup, so the advertisement naming both machines has to be on the
+    // ledger before the first one begins serving it.
+    let first_home = Home::new("witness");
+    let first_endpoint = first_home.endpoint();
+    let identity = first_home.create("keeper");
+    let second_home = Home::new("witness");
+    let second_endpoint = second_home.endpoint();
+    first_home.json(&[
+        "identity",
+        "endpoints",
+        "replace",
+        "--identity",
+        "keeper",
+        "--endpoints",
+        &format!("{first_endpoint},{second_endpoint}"),
+    ]);
+    first_home.set_witness_for(&[&identity]);
+
+    let first_port = free_port();
+    let first = Daemon::start(
+        &first_home,
+        "witness",
+        &[
+            "witness",
+            "run",
+            "--http",
+            "127.0.0.1:0",
+            "--iroh-port",
+            &first_port.to_string(),
+        ],
+    );
+    first.wait_for("witness ");
+    let first_ticket = ticket(&first_endpoint, first_port);
+
+    // A fetch, not a push: a machine that holds no copy of the witness identity
+    // cannot be pushed one, because the copy it is missing is what a push for a
+    // ledger it does not store would be admitted under.
+    second_home.json(&[
+        "sync",
+        "fetch",
+        &identity,
+        "--from",
+        &first_endpoint,
+        "--peer",
+        &first_ticket,
+    ]);
+    second_home.set_witness_for(&[&identity]);
+    let second_port = free_port();
+    let second = Daemon::start(
+        &second_home,
+        "witness",
+        &[
+            "witness",
+            "run",
+            "--http",
+            "127.0.0.1:0",
+            "--iroh-port",
+            &second_port.to_string(),
+        ],
+    );
+    second.wait_for("witness ");
+    let second_ticket = ticket(&second_endpoint, second_port);
+
+    // Alice names the witness identity once and pushes to both its machines.
+    let home = Home::new("wallet");
+    home.create("alice");
+    home.json(&["witness", "set-default", &first_endpoint, &second_endpoint]);
+    home.json(&[
+        "witness",
+        "add",
+        "--identity",
+        "alice",
+        "--witness",
+        &identity,
+        "--peer",
+        &first_ticket,
+        "--peer",
+        &second_ticket,
+    ]);
+    let document = home.json(&[
+        "sync",
+        "push",
+        "--identity",
+        "alice",
+        "--peer",
+        &first_ticket,
+        "--peer",
+        &second_ticket,
+    ]);
+
+    let results = document["results"]
+        .as_array()
+        .expect("one row per endpoint");
+    assert_eq!(results.len(), 2, "{document}");
+    let row = |endpoint: &str| {
+        results
+            .iter()
+            .find(|row| row["endpoint"] == *endpoint)
+            .unwrap_or_else(|| panic!("no row for {endpoint}: {document}"))
+            .clone()
+    };
+    assert_eq!(
+        row(&first_endpoint)["status"],
+        Value::from("accepted"),
+        "{document}"
+    );
+    assert_eq!(
+        row(&second_endpoint)["status"],
+        Value::from("accepted"),
+        "{document}"
+    );
+    // The witness ledger came from the first machine, so it verifies the second
+    // machine and says nothing about itself.
+    assert_eq!(
+        row(&second_endpoint)["binding"],
+        Value::from("verified"),
+        "{document}"
+    );
+    assert_eq!(row(&first_endpoint)["binding"], Value::from("hinted"));
+
+    // The binding is on disk under the witness identity, as a derived cache.
+    let bindings: Value = serde_json::from_slice(
+        &std::fs::read(
+            home.path()
+                .join("bindings")
+                .join(format!("{identity}.json")),
+        )
+        .expect("the binding file was written"),
+    )
+    .expect("the binding file is JSON");
+    assert_eq!(bindings["identity"], Value::from(identity.as_str()));
+    let bound = bindings["endpoints"].as_array().expect("an array");
+    assert_eq!(bound.len(), 1, "{bindings}");
+    assert!(
+        bound[0]["head_seq"].as_u64().is_some_and(|seq| seq >= 1),
+        "{bindings}"
+    );
+
+    assert_eq!(second.interrupt(), 0, "the second witness stops cleanly");
+    assert_eq!(first.interrupt(), 0, "the first witness stops cleanly");
 }
 
 #[test]
@@ -504,6 +667,66 @@ fn sync_fetch_stores_a_ledger_this_home_never_held() {
         report["sources_queried"],
         Value::from(vec![witness.endpoint.as_str()])
     );
+
+    witness.stop();
+}
+
+/// A shared link is the only string a fetch needs: `mabel identity share`
+/// names the machine to ask, and `mabel sync fetch <link>` asks it with no
+/// `--from` (proposal 006 section 7).
+#[test]
+fn a_shared_link_round_trips_through_a_fetch_with_no_from() {
+    let witness = Witness::start();
+    let (publisher, alice) = wallet_with(&witness);
+    publisher.json(&[
+        "sync",
+        "push",
+        "--identity",
+        "alice",
+        "--peer",
+        &witness.ticket,
+    ]);
+
+    let shared = publisher.json(&[
+        "identity",
+        "share",
+        "alice",
+        "--endpoints",
+        &witness.endpoint,
+    ]);
+    assert_eq!(shared["identity_id"], Value::from(alice.as_str()));
+    assert_eq!(shared["endpoints_from"], Value::from("flag"));
+    let link = text(&shared["link"]);
+    assert_eq!(
+        link,
+        format!("mabel://{alice}?endpoints={}", witness.endpoint)
+    );
+
+    let reader = Home::new("wallet");
+    let document = reader.json(&["sync", "fetch", &link, "--peer", &witness.ticket]);
+    assert_eq!(document["ledger_id"], Value::from(alice.as_str()));
+    assert_eq!(document["source"], Value::from(witness.endpoint.as_str()));
+    assert_eq!(document["stored"], Value::from(2));
+
+    // The same link on an operand that signs locally warns on stderr, names
+    // the flag, and does the work anyway.
+    let (code, stdout, stderr) = publisher.run(&[
+        "sync",
+        "push",
+        "--identity",
+        &link,
+        "--peer",
+        &witness.ticket,
+    ]);
+    assert_eq!(code, 0, "{stdout}{stderr}");
+    assert!(stderr.contains("warning: ignoring"), "{stderr}");
+    assert!(stderr.contains("--identity"), "{stderr}");
+    assert!(stdout.contains(&alice), "{stdout}");
+
+    // A fetch that names neither a source nor a link is a usage failure.
+    let (code, error) = reader.failure(&["sync", "fetch", &alice]);
+    assert_eq!(code, 2);
+    assert_eq!(error["details"]["reason"], Value::from("missing_argument"));
 
     witness.stop();
 }

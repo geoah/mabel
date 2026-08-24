@@ -860,7 +860,15 @@ fn every_payload_variant_has_a_vector_and_no_file_is_stale() {
                 .to_string_lossy()
                 .into_owned()
         })
-        .filter(|name| name.ends_with(".json"))
+        // The event vectors are numbered; `links.json` is the link grammar of
+        // proposal 006 section 7 and belongs to `links.rs`.
+        .filter(|name| {
+            name.ends_with(".json")
+                && name
+                    .as_bytes()
+                    .get(..2)
+                    .is_some_and(|head| head.iter().all(u8::is_ascii_digit))
+        })
         .collect();
     on_disk.sort();
     let mut expected: Vec<String> = built.iter().map(|f| f.to_string()).collect();
@@ -993,7 +1001,15 @@ fn gen_vectors() {
     std::fs::create_dir_all(&dir).expect("create test-vectors/");
     for stale in std::fs::read_dir(&dir).expect("test-vectors/ exists") {
         let path = stale.expect("entry").path();
-        if path.extension().and_then(|e| e.to_str()) == Some("json") {
+        // Only the numbered event vectors this generator owns. `links.json`
+        // holds the link vectors of proposal 006 section 7 and is written by
+        // `gen_links` in `links.rs`.
+        let numbered = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .and_then(|name| name.as_bytes().get(..2))
+            .is_some_and(|head| head.iter().all(u8::is_ascii_digit));
+        if path.extension().and_then(|e| e.to_str()) == Some("json") && numbered {
             std::fs::remove_file(&path).expect("remove a stale vector");
         }
     }
