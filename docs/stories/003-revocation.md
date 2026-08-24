@@ -30,7 +30,7 @@ repository root.
    `alice_attestation`.
 2. In alice's UI open `identity-card-link-<alice_id>`. The trust list shows
    `trust-row-<alice_attestation>` with `trust-state-<alice_attestation>`
-   reading `trusted since position 2`.
+   reading `trusted`.
 3. Attest bob a second time, before revoking anything. One unrevoked
    attestation per subject is the rule, so this is refused:
    ```sh
@@ -40,10 +40,13 @@ repository root.
    `bob_id` into `trust-add-subject` and click `trust-add-submit` for the same
    refusal in the UI.
 4. Click `trust-revoke-<alice_attestation>`. `trust-appended-event` shows the
-   revocation event id, `trust-state-<alice_attestation>` now reads `taken back
-   at position 3`, the `trust-revoke-<alice_attestation>` button is disabled and
-   `identity-detail-head-seq` reads `3`. The attestation stays in the table:
-   the chain is the full history (decision 003).
+   revocation event id, `trust-state-<alice_attestation>` now reads `taken
+   back`, the `trust-revoke-<alice_attestation>` button is disabled and
+   `identity-detail-head-seq` reads `3`. The row leaves the standing list for
+   the folded `trust-revoked` list, whose `trust-revoked-summary` reads `1 taken
+   back, still on the record`, and `trust-list-empty` reads `This identity has
+   not said it trusts anyone yet.` The attestation stays on the screen: the
+   chain is the full history (decision 003).
 5. Click `action-push-summary`, then `sync-push-submit`.
    `push-status-<witness_id>` reads `accepted` and `push-stored-<witness_id>`
    reads `1`.
@@ -68,7 +71,7 @@ repository root.
 8. Alice attests bob again: click `nav-wallet`, open
    `identity-card-link-<alice_id>`, click `action-trust-summary`, paste `bob_id`
    into `trust-add-subject`, click `trust-add-submit`. A second row appears, and
-   `trust-state-<second attestation>` reads `trusted since position 4` with
+   `trust-state-<second attestation>` reads `trusted` with
    `identity-detail-head-seq` reading `4`. Record the event id as
    `second_attestation`. This is the same command step 3 refused: the policy
    refuses only a second *unrevoked* attestation for one subject.
@@ -140,6 +143,9 @@ story text above.
   because it fills the form without the helper.
 - Step 9 repeats step 6 in its `--json` form only. Step 6 already pins the
   text form line by line, and the document is what step 9 adds.
+- Step 4 reads `trust-state-<alice_attestation>` after the row has moved into
+  the closed `trust-revoked` list. The element stays in the DOM, so its text
+  and the disabled revoke button are readable without opening the list.
 - Steps 7 and 9 lost their UI half with the verify tab (proposal 004). What the
   report screen asserted, the verdict, the statement, the revoked list and the
   null signing principal, is asserted on the `--json` document instead, and

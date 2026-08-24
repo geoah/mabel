@@ -128,7 +128,7 @@ machines; two admitted controllers acting from their own homes is ticket 031.
   pushed, which is the difference between this story and story 004.
 - Step 8 succeeds: `trust-appended-event` shows a new event id,
   `identity-detail-head-seq` reads `5`, and a row for the new attestation reads
-  `trusted since position 5`.
+  `trusted`.
 - Step 9's push report reads `push-status-<witness_id>` `accepted` and
   `push-stored-<witness_id>` `1`.
 - Step 10 exits 0 and prints `trusted: true`, then `valid as of seq 5 of
@@ -152,6 +152,9 @@ story text above.
   panel that opens at those values and refetches only when one of them
   changes. The spec moves the limit to 16, loads, moves it back to 8 and loads
   again, which is the same read.
+- Step 7 counts the five rows as `li[data-testid^="ledger-event-"]` under
+  `ledger-events`. Proposal 005 draws the ledger as compact rows rather than a
+  table, so a line is a list item.
 - "The event id alice signed in step 4 appears nowhere in the ledger" is
   checked against `GET /api/identities/<org_id>/ledger?since=0&limit=16` in
   alice's home: the five events it returns do not include that id.

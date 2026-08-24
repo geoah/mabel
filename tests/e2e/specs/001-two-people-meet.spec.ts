@@ -16,7 +16,15 @@ import {
   expectExit,
   story001Steps1to7,
 } from "../lib/stories";
-import { addTrust, cardIds, identifier, openAction, openIdentity, push } from "../lib/ui";
+import {
+  addTrust,
+  cardIds,
+  createIdentity,
+  identifier,
+  openAction,
+  openIdentity,
+  push,
+} from "../lib/ui";
 
 /** docs/stories/001-two-people-meet.md */
 test.describe.configure({ mode: "serial" });
@@ -72,9 +80,8 @@ test("step 8: alice attests bob", async () => {
   await openIdentity(alicePage, ALICE_URL, aliceId);
   aliceAttestation = await addTrust(alicePage, bobId);
   await expect(alicePage.getByTestId(`trust-row-${aliceAttestation}`)).toBeVisible();
-  await expect(alicePage.getByTestId(`trust-state-${aliceAttestation}`)).toHaveText(
-    "trusted since position 2",
-  );
+  // Proposal 005: a trust row is two words and no position.
+  await expect(alicePage.getByTestId(`trust-state-${aliceAttestation}`)).toHaveText("trusted");
   await expect(alicePage.getByTestId("identity-detail-head-seq")).toHaveText("2");
 
   const identity = await apiGet(ALICE_URL, `/api/identities/${aliceId}`);
@@ -86,9 +93,7 @@ test("step 8: alice attests bob", async () => {
 test("step 9: bob attests alice, in a second ledger", async () => {
   await openIdentity(bobPage, BOB_URL, bobId);
   const bobAttestation = await addTrust(bobPage, aliceId);
-  await expect(bobPage.getByTestId(`trust-state-${bobAttestation}`)).toHaveText(
-    "trusted since position 2",
-  );
+  await expect(bobPage.getByTestId(`trust-state-${bobAttestation}`)).toHaveText("trusted");
   await expect(bobPage.getByTestId("identity-detail-head-seq")).toHaveText("2");
   expect(bobAttestation).not.toBe(aliceAttestation);
 });
@@ -255,5 +260,61 @@ test("the wallet home draws one card per identity, and the card is the page", as
 
 test("the identifier a spec reads is the whole value", async () => {
   await openIdentity(alicePage, ALICE_URL, aliceId);
-  expect(await identifier(alicePage, "identity-detail-identity-id")).toBe(aliceId);
+  // Proposal 005 draws the page's heading through the inline identity
+  // component, so the id sits inside `identity-detail-resolved` rather than in
+  // a row of its own.
+  expect(await identifier(alicePage, "identity-detail-resolved")).toBe(aliceId);
+});
+
+test("step 16: a new identity that publishes a name and an email from birth", async () => {
+  // Proposal 005: the create form takes the private nickname plus the two
+  // public facts, and the node appends one ProfileUpdate at seq 1 right after
+  // the inception. Dana is created last and never witnessed or pushed, so the
+  // sequence arithmetic of steps 6 to 14 is untouched.
+  await alicePage.goto(`${ALICE_URL}/wallet`);
+  const dana = await createIdentity(alicePage, {
+    alias: "dana",
+    kind: "person",
+    displayName: "Dana Example",
+    email: "dana@dana.example",
+  });
+  await expect(alicePage.getByTestId("identity-create-result-profile")).toBeVisible();
+  await expect(alicePage.getByTestId("identity-create-result-display-name")).toHaveText(
+    "Dana Example",
+  );
+  await expect(alicePage.getByTestId("identity-create-result-email")).toHaveText(
+    "dana@dana.example",
+  );
+
+  // Two entries on a record that was just made: what it is, and what it shows
+  // the world.
+  const identity = await apiGet(ALICE_URL, `/api/identities/${dana.identityId}`);
+  expect(identity.status).toBe(200);
+  expect(identity.body.identity.head_seq).toBe(1);
+  expect(identity.body.identity.event_count).toBe(2);
+  expect(identity.body.identity.profile.display_name).toBe("Dana Example");
+  expect(identity.body.identity.profile.email).toBe("dana@dana.example");
+  expect(identity.body.identity.profile.hostname).toBeNull();
+  expect(identity.body.identity.profile.seq).toBe(1);
+
+  const ledger = await apiGet(ALICE_URL, `/api/identities/${dana.identityId}/ledger?since=0&limit=8`);
+  expect(ledger.body.events.map((event: any) => event.payload_kind)).toEqual([
+    "inception",
+    "profile_update",
+  ]);
+  expect(ledger.body.events[1].payload).toEqual({
+    display_name: "Dana Example",
+    hostname: null,
+    email: "dana@dana.example",
+  });
+
+  // The card list names her by the name she publishes, not by the nickname
+  // only this device sees, and carries the public email beside it.
+  await alicePage.goto(`${ALICE_URL}/wallet`);
+  await expect(alicePage.getByTestId(`identity-card-name-${dana.identityId}-name`)).toHaveText(
+    "Dana Example",
+  );
+  await expect(alicePage.getByTestId(`identity-card-email-${dana.identityId}`)).toHaveText(
+    "dana@dana.example",
+  );
 });

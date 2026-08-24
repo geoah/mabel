@@ -38,11 +38,12 @@ those forms render.
    `identity-create-founder`, and click `identity-create-submit`. Record
    `identity-create-result-identity-id` as `org_id`.
 3. Open `identity-card-link-<org_id>`. `identity-detail-declared-kind` reads
-   `organization` and `identity-detail-keys` reads `this identity holds no key
-   of its own; its controllers sign for it`: an identity-rooted ledger holds no
-   key of its own and its controllers sign for it (decision 002 as amended).
-   Decision 017 replaced the two 52-character key values with that sentence, so
-   the values themselves are read from the routes:
+   `organization` and `identity-detail-founded` reads `Its controllers sign for
+   it.`: an identity-rooted ledger holds no key of its own and its controllers
+   sign for it (decision 002 as amended). Decision 017 replaced the two
+   52-character key values with that sentence and proposal 005 moved it beside
+   the principals it is about, so the values themselves are read from the
+   routes:
    `GET http://127.0.0.1:9081/api/identities/<org_id>` carries no `active_key`
    and no `reserve_commit` (absent, not null), and
    `GET http://127.0.0.1:9081/api/identities/<org_id>/keys` answers 409 with
@@ -101,8 +102,8 @@ those forms render.
 11. Back in alice's UI on the `org_id` page, click `action-trust-summary`, paste
     `bob_id` into `trust-add-subject` and click `trust-add-submit`. The shared
     ledger holds no key, so alice's key signs for it (decision 004: any single
-    current controller). `trust-state-<attestation>` reads `trusted since
-    position 3` and `identity-detail-head-seq` reads `3`. Record the event id as
+    current controller). `trust-state-<attestation>` reads `trusted` and
+    `identity-detail-head-seq` reads `3`. Record the event id as
     `org_attestation`.
 12. Push before the ledger names a witness, which the witness refuses:
     ```sh
@@ -141,7 +142,7 @@ those forms render.
   per principal: `principal-role-<alice_id>` and `principal-role-<bob_id>` both
   read `controller`, `principal-root-<alice_id>` is present and
   `principal-root-<bob_id>` is absent, and `principals-open-invitations` reads
-  `No invitation is waiting to be accepted.`
+  `No invitation to help control this identity is waiting for an answer.`
 - Step 10's accept document, the `controller-on-a-raw-root` case of
   `contracts/cli/membership-accept.json`, answers `ledger_id == alice_id`,
   `declared_kind: "person"`, `root: "raw"`, `controller_on_raw_root: true` and
@@ -208,6 +209,10 @@ story text above.
 - The refusal in step 10 is checked further than the story states: after the
   accept without `--yes` exits 2, `test ! -f /tmp/raw.acceptance` confirms
   nothing was written.
+- Step 3's key sentence is read from `identity-detail-founded`, which proposal
+  005 moved into the card's "who can act for it" row so the sentence sits beside
+  whoever signs. The shared `story002Steps1to8` helper asserts it, because
+  story 006 opens with that step too.
 - Step 14 lost its UI half with the verify tab (proposal 004). What the report
   screen asserted, the statement, the signing principal and the two standing
   sentences, is now asserted on the CLI text form line by line and on the

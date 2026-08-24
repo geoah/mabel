@@ -43,13 +43,32 @@ export async function openAction(page: Page, testId: string): Promise<void> {
   await expect(action).toHaveJSProperty("open", true);
 }
 
-/** Story 001 step 3: create one identity in a wallet UI and record its id. */
+/**
+ * Story 001 step 3: create one identity in a wallet UI and record its id.
+ *
+ * `displayName` and `email` are the two public facts proposal 005 lets a new
+ * identity carry from birth. Giving either makes the node append one
+ * `ProfileUpdate` at seq 1, so a caller that wants an identity at seq 0 leaves
+ * both out.
+ */
 export async function createIdentity(
   page: Page,
-  options: { alias: string; kind?: string; founder?: string },
+  options: {
+    alias: string;
+    kind?: string;
+    founder?: string;
+    displayName?: string;
+    email?: string;
+  },
 ): Promise<{ identityId: string; inceptionEvent: string }> {
   await openCreateForm(page);
   await page.getByTestId("identity-create-alias").fill(options.alias);
+  if (options.displayName) {
+    await page.getByTestId("identity-create-display-name").fill(options.displayName);
+  }
+  if (options.email) {
+    await page.getByTestId("identity-create-email").fill(options.email);
+  }
   if (options.kind) {
     await page.getByTestId("identity-create-declared-kind").selectOption(options.kind);
   }

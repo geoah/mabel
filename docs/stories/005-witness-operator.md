@@ -124,9 +124,9 @@ for the reason story 004 states), and step 11 tears them down.
   two endpoint ids, witness one and witness two, because that is what alice's
   chain says. `witness-detail-source-endpoint` carries the endpoint that
   pushed, which is provenance, not authorization.
-  `witness-detail-declared-kind-note` reads `Anyone can declare any kind. It
-  grants nothing and proves nothing.` and `witness-detail-holdings-note`
-  repeats the holdings sentence.
+  Proposal 005 removed the declared-kind advisory sentence outright, so
+  `witness-detail-declared-kind-note` is absent from the page, and
+  `witness-detail-holdings-note` repeats the holdings sentence.
 - Step 8's chain: `ledger-event-count` reads `4`, `ledger-head-seq` reads `3`,
   and four `ledger-event-*` rows are drawn whose `event-payload-kind-*` values
   are, in order, `inception`, `witness_config`, `witness_config`,
@@ -173,6 +173,10 @@ the story text above.
   story's `curl` commands, because a refusal is about headers and status codes.
 - The spec also waits on the containers the story does not name:
   `identity-cards`, `witness-ledger-detail` and `ledger-events`.
+- Step 8 counts the chain's rows as `li[data-testid^="ledger-event-"]` under
+  `ledger-events`. Proposal 005 draws the ledger as compact rows rather than a
+  table, so a line is a list item; the wallet's own ledger and this witness's
+  copy still render through the one component.
 - `forks_truncated` is asserted nowhere on the screen. The redesigned route
   draws the flag in `witness-detail-fork-count`'s sentence only when a witness
   stopped recording, which this witness did not, so the flag is pinned on the

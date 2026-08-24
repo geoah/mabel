@@ -100,8 +100,9 @@ docker/compose.dns.yaml`, run from the repository root.
    above and for carol, who claims no hostname. The mark sits inside that row
    as `identity-detail-hostname-verification`, and carol's row carries no
    mark at all. On carol's page in bob's UI open `action-verification`, which
-   starts closed: `verification-status` reads `this identity claims no website`
-   and `verification-note` carries the standing caveat.
+   starts closed: `verification-status` reads `this identity claims no website`,
+   and it says only that, because proposal 005 removed the DNS advisory
+   sentence (`verification-note`) from every surface.
 9. Set a private contact note on bob, which is local and never signed:
    ```sh
    dc exec -T alice mabel contact set "$bob_id" --nickname "Bob from the pub" \
@@ -164,14 +165,19 @@ docker/compose.dns.yaml`, run from the repository root.
 - Step 4 appends one `ProfileUpdate` (payload tag 17) to alice's ledger.
   `GET /api/identities/<alice_id>` answers `profile.display_name == "Alice
   Example"`, `profile.hostname == "alice.example"`, `profile.seq` equal to the
-  new head, and `profile.signing_principal.identity == alice_id`.
+  new head, and `profile.signing_principal.identity == alice_id`. Proposal 005
+  added `email` to the profile and replacement stays whole, so both the
+  command's `previous` object and the ledger event's payload carry all three
+  fields: `{display_name, hostname, email}`, with `email: null` for an identity
+  that has published none.
 - Step 5 exits 20 with `details.reason == "no_op_profile_update"` and appends
   nothing: an update whose effect equals the current folded profile is refused
   before signing.
 - A profile replace that omits `--hostname` clears the hostname, and the
   cleared field is absent from the wire rather than encoded empty: the ledger
-  event reports `payload.hostname: null`, and an empty string would have been
-  refused as an encoded default before it was signed.
+  event reports `payload.hostname: null` (and `payload.email: null` beside it),
+  and an empty string would have been refused as an encoded default before it
+  was signed.
 - A `display_name` that parses as a valid identity id is refused with
   `invalid_display_name`, and so is one carrying a bidi or zero-width control:
   a name can never masquerade as an identifier, and one class covers every
@@ -202,16 +208,16 @@ docker/compose.dns.yaml`, run from the repository root.
   than 24 hours, a warning glyph for `mismatched`, dimmed text for
   `unverified` and `unreachable`, and, for `unclaimed`, no mark at all and the
   row reading `none`. A stale verified row also says `may be out of date`.
-  `identity-detail-verification-note` reads `A matching website shows only that
-  whoever set up its DNS named this identity. It grants nothing.`, the same
-  standing caveat the declared kind carries. Verification gates
-  nothing: the ledger and every verification report read the same with and
-  without it.
+  Proposal 005 removed the DNS advisory sentence outright, so
+  `identity-detail-verification-note` is absent from the page. Verification
+  gates nothing: the ledger and every verification report read the same with
+  and without it.
 - The name never renders like an id: the display name is plain text
   (`identity-detail-resolved-name`), the id and the hostname are monospace
-  with the copy control, the id is always beside the name
-  (`identity-detail-identity-id`), and two entries resolving to one name both
-  show their full ids. No screen sorts, matches or deduplicates on a name.
+  with the copy control, the id is always beside the name (inside
+  `identity-detail-resolved`, the one inline identity the page's heading
+  draws), and two entries resolving to one name both show their full ids. No
+  screen sorts, matches or deduplicates on a name.
 - Step 9 writes `contacts/<bob_id>.json` in alice's home only. Bob's wallet and
   the witness show no trace of it, and nothing about it is signed or pushed.
 - Step 10 answers `degrees: 2`, drawn as `2 steps` under the label `how far
@@ -226,7 +232,9 @@ docker/compose.dns.yaml`, run from the repository root.
   everyone who does` every time it is shown (`lookup-reverse-label`).
   `lookup-from` carries `alice_id`, the root the answer came from.
 - Step 10's page is a foreign identity's page, so it carries no
-  `identity-own-badge` and no `identity-actions`,
+  `identity-actions` and its pill is the crawl's distance, never ownership:
+  `identity-detail-resolved-pill` carries `data-pill` `degree` and reads
+  `trusted (2d)`.
   `identity-detail-ledger-summary` reads `your wallet holds no copy of it`, and
   `identity-detail-provenance` reads `nothing your wallet knows, so the id is
   the only label`: no profile and no local nickname name carol here. The crawl is
@@ -238,8 +246,8 @@ docker/compose.dns.yaml`, run from the repository root.
   never stated as "no relationship".
 - Step 12: `GET /api/resolve/alice.example` answers `status: "resolved"` with
   `identity_id == alice_id`, and the search box lands on
-  `/identities/<alice_id>`, which carries `identity-own-badge` reading `your
-  identity` and `identity-detail-hostname-verification` with
+  `/identities/<alice_id>`, which carries `identity-detail-resolved-pill`
+  reading `your identity` and `identity-detail-hostname-verification` with
   `data-verification` `verified`. `GET /api/resolve/nobody.example` answers
   `status: "no_record"` with `identity_id: null`, and the search box stays on
   `/wallet` with `wallet-search-status` carrying `data-status` `no_record` and
@@ -264,8 +272,8 @@ docker/compose.dns.yaml`, run from the repository root.
   `/data/ledgers` holds `alice_id` and `carol_id`. Storing a ledger is not
   controlling it: no key in this home signs for carol, so the fetch wrote no
   `identities/<carol_id>` link, `GET /api/identities` still lists `alice_id`
-  alone, and the page carries no `identity-own-badge` and no
-  `identity-actions`.
+  alone, and the page carries no `identity-actions` and a
+  `identity-detail-resolved-pill` still reading `data-pill` `degree`.
 - `mabel graph sync` writes a new generation under
   `graph/generations/<sync_id>/` and swaps `graph/current.json` atomically. A
   lookup running during a sync reads the previous generation whole, never a
@@ -315,7 +323,13 @@ docker/compose.dns.yaml`, run from the repository root.
   across two screens rather than inside one list: bob publishes alice's
   display name, and the spec reads alice's trust row for bob and alice's own
   overview. The full-id rendering of duplicates within one list is covered by
-  `ui/src/test/resolved-identity.test.tsx`.
+  `ui/src/test/identity-inline.test.tsx`.
+- The pill on an identity page is asserted by its `data-pill` attribute rather
+  than by absence. Proposal 005 replaced `identity-own-badge` with the one pill
+  both identity components draw, and a foreign page draws that pill too, so
+  "nothing pretends this wallet can act for it" is checked as `data-pill`
+  reading `degree`, not as a missing element. The degree comes from the stored
+  crawl, which this story synchronizes before it reads carol's page.
 - "Verification gates nothing" is checked by rerunning the pinned trust
   verification of story 001 step 12 after the whole DNS sequence. Two of its
   fields are expected to move, so the comparison drops `fetched_at_ms` and

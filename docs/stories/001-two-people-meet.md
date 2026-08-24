@@ -36,7 +36,11 @@ repository root.
    below.` The role itself is a fact of `GET /api/node`, which answers `role:
    "wallet"`.
 3. Click `identity-create-summary` to unfold the create form, which the wallet
-   home keeps closed. Type `alice` into `identity-create-alias`, leave
+   home keeps closed. Type `alice` into `identity-create-alias`, labelled
+   `Private nickname (only this device sees it)` because it never leaves this
+   device (proposal 005). Leave the two optional public fields
+   `identity-create-display-name` and `identity-create-email` empty, so this
+   identity publishes nothing and its head stays at position 0. Leave
    `identity-create-declared-kind` at `person`, leave `identity-create-founder`
    empty, click `identity-create-submit`. `identity-create-result-identity-id`
    appears; record its identifier `data-value` as `alice_id`.
@@ -68,7 +72,7 @@ repository root.
 8. In alice's UI click `action-trust-summary`, paste `bob_id` into
    `trust-add-subject` and click `trust-add-submit`. `trust-appended-event`
    shows the new event id, a row `trust-row-<attestation>` appears,
-   `trust-state-<attestation>` reads `trusted since position 2` and
+   `trust-state-<attestation>` reads `trusted` and
    `identity-detail-head-seq` reads `2`. Record the event id as
    `alice_attestation`.
 9. In bob's UI do the same with `alice_id` as the subject. Trust is one-way
@@ -115,6 +119,12 @@ repository root.
     same two values are what `GET
     http://127.0.0.1:9081/api/identities/<alice_id>/keys` answers (decision
     017).
+16. A new identity that publishes something from birth. In alice's UI unfold
+    the create form again, type `dana` into `identity-create-alias`, `Dana
+    Example` into `identity-create-display-name`, `dana@dana.example` into
+    `identity-create-email`, leave the kind at `person` and click
+    `identity-create-submit`. Record `dana_id`. Dana is never witnessed and
+    never pushed, so nothing earlier in this story moves.
 
 ## Verified outcomes
 
@@ -173,6 +183,23 @@ repository root.
   == alice_id`, an `active_secret_key` and a `reserve_secret_key` matching what
   the two boxes hold, and an `active_key` equal to `identity.active_key` of the
   identity document.
+- Step 16: giving a public name or email makes the node append one
+  `ProfileUpdate` at seq 1 right after the inception, so a new identity's first
+  two entries are what it is and what it shows the world (proposal 005). The
+  create result draws `identity-create-result-profile`, whose
+  `identity-create-result-display-name` reads `Dana Example` and
+  `identity-create-result-email` reads `dana@dana.example`. `GET
+  /api/identities/<dana_id>` answers `head_seq: 1`, `event_count: 2`,
+  `profile.display_name == "Dana Example"`, `profile.email ==
+  "dana@dana.example"`, `profile.hostname: null` and `profile.seq: 1`. `GET
+  /api/identities/<dana_id>/ledger?since=0&limit=8` answers two events whose
+  `payload_kind` values are `inception` then `profile_update`, the second
+  carrying `{display_name: "Dana Example", hostname: null, email:
+  "dana@dana.example"}`.
+- Step 16 on the wallet home: a card is named by the name the identity
+  publishes, not by the nickname only this device sees, so
+  `identity-card-name-<dana_id>-name` reads `Dana Example` and
+  `identity-card-email-<dana_id>` reads `dana@dana.example`.
 
 ## Deviations
 
@@ -181,8 +208,17 @@ story text above.
 
 - The spec asserts two testids the story never names. `identity-detail` is how
   the shared `openIdentity` helper knows an identity page opened, and
-  `identity-detail-identity-id` is read in a last test that checks the whole
-  52-character value is what `data-value` holds.
+  `identity-detail-resolved` is read in a test that checks the whole
+  52-character value is what `data-value` holds. Proposal 005 draws the page's
+  heading through the one inline identity component, so the id sits inside that
+  element rather than in a row of its own.
+- Step 16 is where the create-with-a-profile capability of proposal 005 is
+  pinned, rather than in step 3. Steps 6 to 14 depend on exact positions
+  (`witness_config` at 1, the first attestation at 2), and a profile entry at
+  seq 1 would move every one of them. A third identity created last, asserted
+  and left unwitnessed, changes nothing those steps read. The spec runs it after
+  the wallet-home card test for the same reason: that test pins the card list as
+  exactly `alice_id` and `carol_id`.
 - Step 13 creates carol with `--json` added, so the spec can read `carol_id`
   from the document instead of parsing the text form.
 - Step 2's role assertion goes through `GET /api/node`. Proposal 004 removed

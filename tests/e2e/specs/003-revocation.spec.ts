@@ -86,9 +86,8 @@ test("step 1: story 001 steps 1 to 12, alice at seq 2 and verified", async () =>
 test("step 2: the attestation reads unrevoked", async () => {
   await openIdentity(alicePage, ALICE_URL, aliceId);
   await expect(alicePage.getByTestId(`trust-row-${aliceAttestation}`)).toBeVisible();
-  await expect(alicePage.getByTestId(`trust-state-${aliceAttestation}`)).toHaveText(
-    "trusted since position 2",
-  );
+  // Proposal 005: a trust row is two words and no position.
+  await expect(alicePage.getByTestId(`trust-state-${aliceAttestation}`)).toHaveText("trusted");
 });
 
 test("step 3: a second unrevoked attestation for one subject is refused", async () => {
@@ -127,8 +126,14 @@ test("step 3: a second unrevoked attestation for one subject is refused", async 
 test("step 4: the revocation names the attestation event", async () => {
   await alicePage.getByTestId(`trust-revoke-${aliceAttestation}`).click();
   await expect(alicePage.getByTestId("trust-appended-event")).toBeVisible();
-  await expect(alicePage.getByTestId(`trust-state-${aliceAttestation}`)).toHaveText(
-    "taken back at position 3",
+  // A row taken back keeps its testids and moves into the folded
+  // `trust-revoked` list, which is on the record and off the standing list.
+  await expect(alicePage.getByTestId(`trust-state-${aliceAttestation}`)).toHaveText("taken back");
+  await expect(alicePage.getByTestId("trust-revoked-summary")).toHaveText(
+    "1 taken back, still on the record",
+  );
+  await expect(alicePage.getByTestId("trust-list-empty")).toHaveText(
+    "This identity has not said it trusts anyone yet.",
   );
   await expect(alicePage.getByTestId(`trust-revoke-${aliceAttestation}`)).toBeDisabled();
   await expect(alicePage.getByTestId("identity-detail-head-seq")).toHaveText("3");
@@ -208,9 +213,7 @@ test("steps 8 and 9: attested again, and revocation stays history", async () => 
   await alicePage.getByTestId("nav-wallet").click();
   await openIdentity(alicePage, ALICE_URL, aliceId);
   secondAttestation = await addTrust(alicePage, bobId);
-  await expect(alicePage.getByTestId(`trust-state-${secondAttestation}`)).toHaveText(
-    "trusted since position 4",
-  );
+  await expect(alicePage.getByTestId(`trust-state-${secondAttestation}`)).toHaveText("trusted");
   await expect(alicePage.getByTestId("identity-detail-head-seq")).toHaveText("4");
   expect(secondAttestation).not.toBe(aliceAttestation);
 

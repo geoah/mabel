@@ -127,8 +127,10 @@ test("step 7: alice's home holds the second machine's event at seq 4", async () 
   await alicePage.getByTestId("ledger-limit").fill("8");
   await alicePage.getByTestId("ledger-load").click();
   await expect(alicePage.getByTestId("ledger-event-4")).toBeVisible();
+  // Proposal 005 draws the ledger as compact rows rather than a table, so a
+  // line is an `li` under `ledger-events`.
   await expect(
-    alicePage.getByTestId("ledger-events").locator('tr[data-testid^="ledger-event-"]'),
+    alicePage.getByTestId("ledger-events").locator('li[data-testid^="ledger-event-"]'),
   ).toHaveCount(5);
   for (const [seq, kind] of [
     [0, "inception"],
@@ -175,9 +177,7 @@ test("steps 8 and 9: the retry is the same action, run again", async () => {
   await expect(alicePage.getByTestId("trust-appended-event")).toBeVisible();
   const attestation = await identifier(alicePage, "trust-appended-event");
   await expect(alicePage.getByTestId("identity-detail-head-seq")).toHaveText("5");
-  await expect(alicePage.getByTestId(`trust-state-${attestation}`)).toHaveText(
-    "trusted since position 5",
-  );
+  await expect(alicePage.getByTestId(`trust-state-${attestation}`)).toHaveText("trusted");
 
   await push(alicePage, witnessId, { stored: 1 });
 });

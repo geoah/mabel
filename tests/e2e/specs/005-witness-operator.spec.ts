@@ -22,7 +22,6 @@ test.describe.configure({ mode: "serial" });
 
 const HOLDINGS_NOTE =
   "This is what this one witness holds. A record missing here may still be on another witness.";
-const DECLARED_KIND_NOTE = "Anyone can declare any kind. It grants nothing and proves nothing.";
 const READ_ONLY_NOTE = "This page only reads. Nothing here changes anything.";
 
 let page: Page;
@@ -163,9 +162,10 @@ test("step 8: one ledger's summary and its chain, on the identity page", async (
   await expect(page.getByTestId("witness-detail-head-seq")).toHaveText("3");
   await expect(page.getByTestId("witness-detail-event-count")).toHaveText("4");
   await expect(page.getByTestId("witness-detail-fork-count")).toHaveText("1");
-  await expect(page.getByTestId("witness-detail-declared-kind-note")).toHaveText(
-    DECLARED_KIND_NOTE,
-  );
+  // Proposal 005 removed the declared-kind advisory sentence outright. The row
+  // above still says which kind was declared, and nothing repeats a disclaimer
+  // beside it.
+  await expect(page.getByTestId("witness-detail-declared-kind-note")).toHaveCount(0);
   await expect(page.getByTestId("witness-detail-holdings-note")).toHaveText(HOLDINGS_NOTE);
   // The two endpoints alice's chain names, by value: witness one and witness
   // two, in whichever order the rendered list holds them.
@@ -180,8 +180,10 @@ test("step 8: one ledger's summary and its chain, on the identity page", async (
   // event, each opening into the event it records.
   await expect(page.getByTestId("ledger-event-count")).toHaveText("4");
   await expect(page.getByTestId("ledger-head-seq")).toHaveText("3");
+  // Proposal 005 draws the ledger as compact rows rather than a table, so a
+  // line is an `li` under `ledger-events`.
   await expect(
-    page.getByTestId("ledger-events").locator('tr[data-testid^="ledger-event-"]'),
+    page.getByTestId("ledger-events").locator('li[data-testid^="ledger-event-"]'),
   ).toHaveCount(4);
   for (const [seq, kind] of [
     [0, "inception"],

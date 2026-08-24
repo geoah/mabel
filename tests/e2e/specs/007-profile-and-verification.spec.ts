@@ -53,8 +53,6 @@ const RESOLVER_IMAGE = "mabel-resolver:dev";
 /** 25 hours: past the 24-hour freshness window of a verified result. */
 const STALE_AFTER_MS = 25 * 60 * 60 * 1000;
 
-const VERIFICATION_NOTE =
-  "A matching website shows only that whoever set up its DNS named this identity. It grants nothing.";
 const GRAPH_CONSENT_FIRST =
   "Every witness your wallet asks learns which people you are interested in.";
 const GRAPH_CONSENT_SECOND =
@@ -333,7 +331,9 @@ test("steps 4 and 5: the profile is replaced, and the same replacement is refuse
   expect(replaced.identity_id).toBe(aliceId);
   expect(replaced.display_name).toBe("Alice Example");
   expect(replaced.hostname).toBe("alice.example");
-  expect(replaced.previous).toEqual({ display_name: null, hostname: null });
+  // Proposal 005 added email to the profile, and replacement stays whole: all
+  // three fields are reported, set or not.
+  expect(replaced.previous).toEqual({ display_name: null, hostname: null, email: null });
   expect(replaced.profile_seq).toBe(3);
   expect(replaced.head_seq).toBe(3);
   expect(replaced.head_event).toBe(replaced.profile_event);
@@ -352,6 +352,7 @@ test("steps 4 and 5: the profile is replaced, and the same replacement is refuse
   expect(page.body.events[0].payload).toEqual({
     display_name: "Alice Example",
     hostname: "alice.example",
+    email: null,
   });
 
   const again = json(
@@ -403,12 +404,12 @@ test("step 6: a forced check answers verified, and the UI marks the hostname row
   const row = await openHostnameRow(alicePage, ALICE_URL, aliceId);
   await expect(row).toHaveAttribute("data-verification", "verified");
   await expect(row).toContainText("alice.example");
-  await expect(alicePage.getByTestId("identity-detail-verification-note")).toHaveText(
-    VERIFICATION_NOTE,
-  );
+  // Proposal 005 removed the DNS advisory sentence from every surface: the
+  // verdict glyph and the hostname it is about are the whole statement.
+  await expect(alicePage.getByTestId("identity-detail-verification-note")).toHaveCount(0);
   // The name is plain text and the id travels beside it, never instead of it.
   await expect(alicePage.getByTestId("identity-detail-resolved-name")).toHaveText("Alice Example");
-  expect(await identifier(alicePage, "identity-detail-identity-id")).toBe(aliceId);
+  expect(await identifier(alicePage, "identity-detail-resolved")).toBe(aliceId);
 });
 
 test("step 7: bob.example mismatches, nobody.example is unverified, carol is unclaimed", async () => {
@@ -478,13 +479,13 @@ test("step 7: bob.example mismatches, nobody.example is unverified, carol is unc
   await openIdentity(bobPage, BOB_URL, carolId);
   await expect(bobPage.getByTestId("identity-detail-hostname")).toHaveText("none");
   await expect(bobPage.getByTestId("identity-detail-hostname-verification")).toHaveCount(0);
-  // The check action says the same thing, and the note under it is the standing
-  // caveat every surface repeats.
+  // The check action says the same thing, and says only that: proposal 005
+  // removed the advisory sentence that used to sit under it.
   await openAction(bobPage, "action-verification");
   await expect(bobPage.getByTestId("verification-status")).toHaveText(
     "this identity claims no website",
   );
-  await expect(bobPage.getByTestId("verification-note")).toHaveText(VERIFICATION_NOTE);
+  await expect(bobPage.getByTestId("verification-note")).toHaveCount(0);
 
   const refused = await apiPost(BOB_URL, `/api/identities/${carolId}/verification`, {});
   expect(refused.status).toBe(409);
@@ -641,6 +642,7 @@ test("a replacement that omits the hostname clears it", async () => {
   expect(page.body.events[0].payload).toEqual({
     display_name: "Bob Example",
     hostname: null,
+    email: null,
   });
 
   const document = await verification(BOB_URL, bobId);
@@ -833,15 +835,19 @@ test("step 10: the graph is synchronized from the UI, and carol is two hops away
   // search box on the wallet home. The crawl's answer renders on it.
   await searchIdentity(alicePage, ALICE_URL, carolId, carolId);
   await expect(alicePage.getByTestId("identity-detail")).toBeVisible();
-  expect(await identifier(alicePage, "identity-detail-identity-id")).toBe(carolId);
+  expect(await identifier(alicePage, "identity-detail-resolved")).toBe(carolId);
   await expect(alicePage.getByTestId("identity-detail-ledger-summary")).toHaveText(
     "your wallet holds no copy of it",
   );
   await expect(alicePage.getByTestId("identity-detail-provenance")).toHaveText(
     "nothing your wallet knows, so the id is the only label",
   );
-  // Nothing about a foreign page pretends this wallet can act for it.
-  await expect(alicePage.getByTestId("identity-own-badge")).toHaveCount(0);
+  // Nothing about a foreign page pretends this wallet can act for it. The pill
+  // proposal 005 draws here is the amber distance from the stored crawl, never
+  // "your identity".
+  const carolPill = alicePage.getByTestId("identity-detail-resolved-pill");
+  await expect(carolPill).toHaveAttribute("data-pill", "degree");
+  await expect(carolPill).toHaveText("trusted (2d)");
   await expect(alicePage.getByTestId("identity-actions")).toHaveCount(0);
 
   await expect(alicePage.getByTestId("lookup-result")).toBeVisible();
@@ -905,8 +911,8 @@ test("step 12: the search box takes a hostname and opens the identity it names",
 
   await searchIdentity(alicePage, ALICE_URL, "alice.example", aliceId);
   await expect(alicePage.getByTestId("identity-detail")).toBeVisible();
-  expect(await identifier(alicePage, "identity-detail-identity-id")).toBe(aliceId);
-  await expect(alicePage.getByTestId("identity-own-badge")).toHaveText("your identity");
+  expect(await identifier(alicePage, "identity-detail-resolved")).toBe(aliceId);
+  await expect(alicePage.getByTestId("identity-detail-resolved-pill")).toHaveText("your identity");
   await expect(alicePage.getByTestId("identity-detail-hostname-verification")).toHaveAttribute(
     "data-verification",
     "verified",
@@ -1001,7 +1007,7 @@ test("bob taking alice's name changes what is shown, never which id is shown", a
 
   // The overview of alice's own identity carries the same name and her id.
   await expect(alicePage.getByTestId("identity-detail-resolved-name")).toHaveText("Alice Example");
-  expect(await identifier(alicePage, "identity-detail-identity-id")).toBe(aliceId);
+  expect(await identifier(alicePage, "identity-detail-resolved")).toBe(aliceId);
 });
 
 test("step 13: the witnesses screen, what one holds, and one deliberate fetch", async () => {
@@ -1061,8 +1067,12 @@ test("step 13: the witnesses screen, what one holds, and one deliberate fetch", 
   await expect(alicePage.getByTestId("ledger-panel")).toBeVisible();
   await expect(alicePage.getByTestId("identity-fetch")).toHaveCount(0);
   await expect(alicePage.getByTestId("identity-detail-head-seq")).toHaveText("1");
-  // Storing a ledger is not controlling it.
-  await expect(alicePage.getByTestId("identity-own-badge")).toHaveCount(0);
+  // Storing a ledger is not controlling it: the pill stays the crawl's
+  // distance, and no action appears.
+  await expect(alicePage.getByTestId("identity-detail-resolved-pill")).toHaveAttribute(
+    "data-pill",
+    "degree",
+  );
   await expect(alicePage.getByTestId("identity-actions")).toHaveCount(0);
 
   const stored = await apiGet(ALICE_URL, `/api/identities/${carolId}`);

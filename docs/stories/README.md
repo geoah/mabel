@@ -37,10 +37,24 @@ strings come from [../../contracts/](../../contracts/README.md) and the
 Reading an identifier in a spec: the `data-value` attribute holding the whole
 52-character value sits on the `Identifier` span *inside* the element carrying
 the testid, so a spec reads
-`page.getByTestId('identity-detail-identity-id').locator('[data-value]')` and
+`page.getByTestId('identity-detail-resolved').locator('[data-value]')` and
 its `data-value` attribute. `textContent` on the testid element is also the
 whole value, because the hidden middle characters stay in the DOM in an
 `sr-only` span; what a reader sees truncated is drawn by CSS.
+
+Every identity on every screen is drawn by one of two components (proposal
+005), which is what makes the testids above predictable. The inline identity is
+one line, `<testid>` with `<testid>-name`, `<testid>-verification`,
+`<testid>-pill` and the id inside it; the identity page's heading is
+`identity-detail-resolved`, and a card in a list is
+`identity-card-name-<id>`. The pill is `your identity`, green `trusted` or
+amber `trusted (Nd)`, and its `data-pill` attribute is `own`, `trusted` or
+`degree`; a screen with nothing to say draws no pill. Proposal 005 also removed
+four elements outright, so nothing in these stories reads them: the back link,
+the declared-kind advisory sentence, the DNS advisory sentence and the
+key-facts sentence. A trust row now reads `trusted` or `taken back` with no
+position, and the ledger is compact `li` rows under `ledger-events` with a
+`ledger-footer` whose `ledger-range` says `Showing positions X to Y of Z.`
 
 - [001-two-people-meet.md](001-two-people-meet.md): two identities created in
   two wallet UIs, descriptors exchanged, one witness, mutual attestations, and

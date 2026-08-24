@@ -55,8 +55,10 @@ test("step 9: the Principals card holds one row per principal", async () => {
   await expect(alicePage.getByTestId(`principal-role-${bobId}`)).toHaveText("controller");
   await expect(alicePage.getByTestId(`principal-root-${aliceId}`)).toBeVisible();
   await expect(alicePage.getByTestId(`principal-root-${bobId}`)).toHaveCount(0);
+  // Proposal 005: the row says what the invitation is for, not just that one
+  // is waiting.
   await expect(alicePage.getByTestId("principals-open-invitations")).toHaveText(
-    "No invitation is waiting to be accepted.",
+    "No invitation to help control this identity is waiting for an answer.",
   );
 });
 
@@ -191,9 +193,7 @@ test("replaying step 7 exits 50: the acceptance was already admitted", async () 
 test("step 11: the shared ledger attests bob, signed by alice's key", async () => {
   await openIdentity(alicePage, ALICE_URL, orgId);
   orgAttestation = await addTrust(alicePage, bobId);
-  await expect(alicePage.getByTestId(`trust-state-${orgAttestation}`)).toHaveText(
-    "trusted since position 3",
-  );
+  await expect(alicePage.getByTestId(`trust-state-${orgAttestation}`)).toHaveText("trusted");
   await expect(alicePage.getByTestId("identity-detail-head-seq")).toHaveText("3");
 });
 

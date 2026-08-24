@@ -186,11 +186,11 @@ export async function story002Steps1to8(
   await test.step("002 step 3: an identity root holds no key of its own", async () => {
     await openIdentity(alicePage, ALICE_URL, state.orgId);
     await expect(alicePage.getByTestId("identity-detail-declared-kind")).toHaveText("organization");
-    // Decision 017: the overview says which of the two roots this is as a
-    // sentence, and the two 52-character values left the screen. The values
-    // themselves are pinned on the routes that carry them.
-    await expect(alicePage.getByTestId("identity-detail-keys")).toHaveText(
-      "this identity holds no key of its own; its controllers sign for it",
+    // Proposal 005 moved the one key fact into the card's principals row: the
+    // sentence sits beside whoever signs, and the two 52-character values are
+    // pinned on the routes that carry them, not on the screen.
+    await expect(alicePage.getByTestId("identity-detail-founded")).toHaveText(
+      "Its controllers sign for it.",
     );
     // Both keys are absent from the document, not null, on an identity that
     // holds none (contracts/README.md, "Shared documents").
