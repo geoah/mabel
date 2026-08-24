@@ -36,10 +36,14 @@ pub struct ServedWitness {
 }
 
 /// `mabel witness run [--http <addr>] [--iroh-port <n>] [--peer <ticket>]
-/// [--ui-dir <dir>]`.
+/// [--ui-dir <dir>] [--allow-host <host[:port]>]`.
 ///
 /// `--ui-dir` serves the UI from a directory instead of the bundle compiled
 /// into the binary, which is what a person editing the UI wants.
+///
+/// `--allow-host` widens the `Host` and `Origin` sets the loopback middleware
+/// accepts, adding to whatever `node.json`'s `allowed_hosts` records. Without
+/// it the API answers loopback alone (decision 018).
 ///
 /// # Errors
 ///
@@ -51,8 +55,10 @@ pub fn run(
     iroh_port: Option<u16>,
     tickets: &[String],
     ui_dir: Option<PathBuf>,
+    allowed_hosts: &[String],
 ) -> Result<Outcome> {
     let peers = parse_peers(tickets)?;
+    let allowed_hosts = allowed_hosts.to_vec();
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
@@ -66,6 +72,7 @@ pub fn run(
                 iroh_port,
                 peers,
                 ui: UiSource::from_option(ui_dir),
+                allowed_hosts,
                 ..WitnessOptions::default()
             },
         )
@@ -80,7 +87,7 @@ pub fn run(
             ledger_count: totals.ledger_count,
             fork_count: totals.fork_count,
         };
-        announce(&served, witness.warning());
+        announce(&served, witness.warning(), witness.allowed_hosts());
         witness.serve().await.map_err(failed)?;
         Outcome::new(&served, String::new())
     })
@@ -104,7 +111,7 @@ fn parse_peers(tickets: &[String]) -> Result<Vec<EndpointAddr>> {
 }
 
 /// The lines a person watching the process reads.
-fn announce(served: &ServedWitness, warning: Option<&str>) {
+fn announce(served: &ServedWitness, warning: Option<&str>, allowed_hosts: &[String]) {
     eprintln!("witness {}", served.endpoint_id);
     eprintln!("http    {}", served.http_bind);
     for address in &served.iroh_bind {
@@ -114,6 +121,9 @@ fn announce(served: &ServedWitness, warning: Option<&str>) {
         "holding {} ledgers and {} fork records",
         served.ledger_count, served.fork_count
     );
+    for host in allowed_hosts {
+        eprintln!("host    {host} is accepted beyond loopback");
+    }
     if let Some(warning) = warning {
         eprintln!("warning: {warning}");
     }

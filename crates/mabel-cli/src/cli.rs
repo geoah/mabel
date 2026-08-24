@@ -109,6 +109,11 @@ pub enum Command {
         #[command(subcommand)]
         command: NodeCommand,
     },
+    /// Fill a home with data to develop and test against.
+    Dev {
+        #[command(subcommand)]
+        command: DevCommand,
+    },
 }
 
 /// The append discipline of proposal 001 section 5, on every command that
@@ -418,6 +423,10 @@ pub enum WitnessCommand {
         /// Serve the UI from this directory instead of the embedded bundle.
         #[arg(long, value_name = "DIR")]
         ui_dir: Option<PathBuf>,
+        /// Also accept requests whose Host is this value, added to node.json's
+        /// allowed_hosts. Repeatable.
+        #[arg(long, value_name = "HOST")]
+        allow_host: Vec<String>,
     },
 }
 
@@ -501,6 +510,14 @@ pub enum WalletCommand {
         /// Serve the UI from this directory instead of the embedded bundle.
         #[arg(long, value_name = "DIR")]
         ui_dir: Option<PathBuf>,
+        /// Also accept requests whose Host is this value, added to node.json's
+        /// allowed_hosts. Repeatable.
+        ///
+        /// The wallet has no authentication, so allowing a host beyond
+        /// loopback hands its keys to whoever can reach that name: the
+        /// operator owns the network boundary (decision 018).
+        #[arg(long, value_name = "HOST")]
+        allow_host: Vec<String>,
     },
 }
 
@@ -522,6 +539,29 @@ pub enum NodeCommand {
         /// the port the Iroh endpoint binds.
         #[arg(long, value_name = "PORT")]
         port: Option<u16>,
+    },
+}
+
+/// `mabel dev ...`.
+///
+/// One subcommand, and everything it writes it writes through the commands
+/// above: there is no second code path that mints a ledger, so a seeded home
+/// holds the same bytes a person typing the commands would have produced.
+#[derive(Debug, Subcommand)]
+pub enum DevCommand {
+    /// Fill an empty home with four identities, one organization, four
+    /// attestations and one private note.
+    ///
+    /// Refuses a home that already holds an identity: this writes real signed
+    /// ledgers, and there is no way to take an event back.
+    Seed {
+        /// Endpoint ticket of a witness to register on every seeded ledger and
+        /// push to. Repeatable.
+        ///
+        /// Given none, the seed stays local: the ledgers name no witness,
+        /// nothing is pushed and no crawl runs.
+        #[arg(long, value_name = "TICKET")]
+        peer: Vec<String>,
     },
 }
 

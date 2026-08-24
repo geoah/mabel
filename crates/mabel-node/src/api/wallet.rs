@@ -13,7 +13,7 @@ use axum::extract::{Path, Query as AxumQuery, State};
 use axum::response::Response;
 use axum::routing::{get, post};
 
-use super::documents::{IdentityList, IdentityView};
+use super::documents::{IdentityList, IdentityView, KnownIdentityList};
 use super::error::ServiceError;
 use super::parse::{self, IdKind};
 use super::service::WalletService;
@@ -26,6 +26,9 @@ pub(super) fn router(service: Service) -> Router {
     Router::new()
         .route("/node", get(node))
         .route("/identities", get(identities).post(create_identity))
+        // A static segment matches before `{identity_id}`, and no identity id
+        // can spell `known`: an id is 52 base32 characters.
+        .route("/identities/known", get(known_identities))
         .route("/identities/{identity_id}", get(identity))
         .route("/identities/{identity_id}/ledger", get(identity_ledger))
         .route("/identities/{identity_id}/keys", get(identity_keys))
@@ -84,6 +87,11 @@ async fn create_identity(
 ) -> Result<Response, ServiceError> {
     let request = parse::create_identity(&body)?;
     Ok(success(service.create_identity(request).await?))
+}
+
+async fn known_identities(State(service): State<Service>) -> Result<Response, ServiceError> {
+    let identities = service.known_identities().await?;
+    Ok(success(KnownIdentityList { identities }))
 }
 
 async fn identity(

@@ -1049,6 +1049,232 @@ fn wallet_serve_ui_dir_serves_the_files_in_that_directory() {
     assert_eq!(daemon.interrupt(), 0, "the wallet stops cleanly");
 }
 
+/// `--allow-host` is the one way a node answers a name that is not loopback,
+/// and it changes nothing else: every other host is refused exactly as before
+/// (decision 018).
+#[test]
+fn wallet_serve_allow_host_accepts_that_host_and_no_other() {
+    let home = Home::new("wallet");
+    home.create("alice");
+    let daemon = Daemon::start(
+        &home,
+        "wallet",
+        &[
+            "wallet",
+            "serve",
+            "--http",
+            "127.0.0.1:0",
+            "--allow-host",
+            "wallet.tailnet.example",
+        ],
+    );
+    let address: SocketAddr = daemon
+        .wait_for("http ")
+        .parse()
+        .expect("the http line carries an address");
+    assert!(
+        daemon
+            .log()
+            .contains("wallet.tailnet.example is accepted beyond loopback"),
+        "the process says what it accepts: {}",
+        daemon.log()
+    );
+
+    // The allowed host reads, and its https origin passes on a mutating route.
+    let (status, body) = request_as(
+        address,
+        "GET /api/node HTTP/1.1",
+        "wallet.tailnet.example",
+        None,
+    );
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(parse(&body)["role"], Value::from("wallet"));
+    let (status, body) = request_as(
+        address,
+        "POST /api/identities HTTP/1.1",
+        "wallet.tailnet.example",
+        Some(r#"{"alias": "bob"}"#),
+    );
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(parse(&body)["identity"]["alias"], Value::from("bob"));
+
+    // Loopback still works, and every other host is still refused.
+    assert_eq!(get(address, "/api/node")["role"], Value::from("wallet"));
+    let (status, body) = request_as(address, "GET /api/node HTTP/1.1", "evil.example", None);
+    assert_eq!(status, 403, "{body}");
+    let refused = parse(&body);
+    assert_eq!(
+        refused["details"]["reason"],
+        Value::from("host_not_loopback")
+    );
+    assert_eq!(
+        refused["message"],
+        Value::from(
+            "request rejected: Host header must be 127.0.0.1:9080, localhost:9080 \
+             or wallet.tailnet.example"
+                .replace("9080", &address.port().to_string())
+        )
+    );
+
+    assert_eq!(daemon.interrupt(), 0, "the wallet stops cleanly");
+}
+
+/// Without the flag the default is unchanged: loopback alone.
+#[test]
+fn wallet_serve_without_allow_host_refuses_every_name() {
+    let home = Home::new("wallet");
+    let daemon = Daemon::start(
+        &home,
+        "wallet",
+        &["wallet", "serve", "--http", "127.0.0.1:0"],
+    );
+    let address: SocketAddr = daemon
+        .wait_for("http ")
+        .parse()
+        .expect("the http line carries an address");
+    assert!(
+        !daemon.log().contains("beyond loopback"),
+        "nothing is accepted beyond loopback: {}",
+        daemon.log()
+    );
+
+    let (status, body) = request_as(
+        address,
+        "GET /api/node HTTP/1.1",
+        "wallet.tailnet.example",
+        None,
+    );
+    assert_eq!(status, 403, "{body}");
+    assert_eq!(
+        parse(&body)["message"],
+        Value::from(format!(
+            "request rejected: Host header must be 127.0.0.1:{port} or localhost:{port}",
+            port = address.port()
+        ))
+    );
+
+    assert_eq!(daemon.interrupt(), 0, "the wallet stops cleanly");
+}
+
+/// `node.json`'s `allowed_hosts` and `--allow-host` merge, so a one-off flag
+/// never drops the set the file records (decision 018).
+#[test]
+fn allowed_hosts_in_node_json_and_the_flag_are_both_accepted() {
+    let home = Home::new("wallet");
+    let path = home.path().join("node.json");
+    let mut config: Value =
+        serde_json::from_slice(&std::fs::read(&path).expect("node.json reads")).expect("json");
+    config["allowed_hosts"] = Value::from(vec!["from-the-file.example"]);
+    std::fs::write(&path, serde_json::to_vec_pretty(&config).expect("json")).expect("written");
+
+    let daemon = Daemon::start(
+        &home,
+        "wallet",
+        &[
+            "wallet",
+            "serve",
+            "--http",
+            "127.0.0.1:0",
+            "--allow-host",
+            "from-the-flag.example",
+        ],
+    );
+    let address: SocketAddr = daemon
+        .wait_for("http ")
+        .parse()
+        .expect("the http line carries an address");
+
+    for host in ["from-the-file.example", "from-the-flag.example"] {
+        let (status, body) = request_as(address, "GET /api/node HTTP/1.1", host, None);
+        assert_eq!(status, 200, "{host}: {body}");
+    }
+    let (status, _) = request_as(address, "GET /api/node HTTP/1.1", "other.example", None);
+    assert_eq!(status, 403);
+
+    assert_eq!(daemon.interrupt(), 0, "the wallet stops cleanly");
+}
+
+/// The `--peer` half of `mabel dev seed`: every seeded ledger names the
+/// witness, is pushed to it, and one crawl runs so `mabel lookup` answers with
+/// degrees rather than "no path in this crawl".
+#[test]
+fn dev_seed_with_a_witness_pushes_every_ledger_and_runs_one_crawl() {
+    let witness = Witness::start();
+    let home = Home::new("wallet");
+
+    let document = home.json(&["dev", "seed", "--peer", &witness.ticket]);
+    assert_shape(
+        &document,
+        &fixture("dev-seed", "seeded-with-a-witness"),
+        "dev-seed/with-a-witness",
+    );
+    assert_eq!(
+        document["witnesses"],
+        Value::Array(vec![Value::from(witness.endpoint.as_str())])
+    );
+
+    // One push per seeded ledger, every one accepted by the one witness.
+    let pushed = document["pushed"].as_array().expect("an array");
+    assert_eq!(pushed.len(), 4, "{document}");
+    for result in pushed {
+        let rows = result["results"].as_array().expect("an array");
+        assert_eq!(rows.len(), 1, "{result}");
+        assert_eq!(rows[0]["endpoint"], Value::from(witness.endpoint.as_str()));
+        assert_eq!(rows[0]["status"], Value::from("accepted"), "{result}");
+    }
+
+    // Every seeded ledger names the witness, so the config event landed on all
+    // four before the push.
+    for identity in document["identities"].as_array().expect("an array") {
+        assert_eq!(
+            identity["witnesses"],
+            Value::Array(vec![Value::from(witness.endpoint.as_str())]),
+            "{identity}"
+        );
+    }
+    // `node.json.witnesses`, which `iroh_base` spells as hex rather than as the
+    // base32 every document uses.
+    let config: Value =
+        serde_json::from_slice(&std::fs::read(home.path().join("node.json")).expect("node.json"))
+            .expect("node.json is JSON");
+    let defaults: Vec<String> = config["witnesses"]
+        .as_array()
+        .expect("witnesses is an array")
+        .iter()
+        .map(|value| {
+            let bytes = data_encoding::HEXLOWER
+                .decode(text(value).as_bytes())
+                .expect("a hex endpoint id");
+            data_encoding::BASE32_NOPAD.encode(&bytes).to_lowercase()
+        })
+        .collect();
+    assert_eq!(
+        defaults,
+        vec![witness.endpoint.clone()],
+        "node.json names the witness as a default too"
+    );
+
+    // The crawl ran, and the graph it stored is the one `graph status` reports.
+    let graph = &document["graph"];
+    assert_eq!(graph["depth"], Value::from(2));
+    assert!(
+        graph["node_count"].as_u64().is_some_and(|count| count >= 4),
+        "the crawl reached the four seeded identities: {graph}"
+    );
+    assert_eq!(
+        home.json(&["graph", "status"])["graph"]["sync_id"],
+        graph["sync_id"]
+    );
+
+    // A lookup answers with degrees, which is what the crawl is for: alice
+    // attests bob, so bob is one hop from alice.
+    let bob = text(&document["identities"][1]["identity_id"]);
+    let lookup = home.json(&["lookup", &bob, "--from", "alice"]);
+    assert_eq!(lookup["degrees"], Value::from(1), "{lookup}");
+
+    witness.stop();
+}
+
 /// One `GET` against the loopback API, parsed.
 fn get(address: SocketAddr, path: &str) -> Value {
     let (status, body) = request(address, &format!("GET {path} HTTP/1.1"), None);
@@ -1063,15 +1289,30 @@ fn get(address: SocketAddr, path: &str) -> Value {
 /// 001 section 10), so the request is written by hand rather than through a
 /// client that would add none of them.
 fn request(address: SocketAddr, line: &str, body: Option<&str>) -> (u16, String) {
+    let host = format!("127.0.0.1:{}", address.port());
+    raw(address, line, &host, "http", body)
+}
+
+/// One raw HTTP request naming `host`, for the `--allow-host` rules.
+///
+/// The `Origin` matches the `Host` over `https`, which is what a request
+/// arriving through a TLS-terminating proxy carries (decision 018).
+fn request_as(address: SocketAddr, line: &str, host: &str, body: Option<&str>) -> (u16, String) {
+    raw(address, line, host, "https", body)
+}
+
+fn raw(
+    address: SocketAddr,
+    line: &str,
+    host: &str,
+    scheme: &str,
+    body: Option<&str>,
+) -> (u16, String) {
     let mut stream = TcpStream::connect(address).expect("the api is listening");
-    let mut request = format!(
-        "{line}\r\nHost: 127.0.0.1:{}\r\nConnection: close\r\n",
-        address.port()
-    );
+    let mut request = format!("{line}\r\nHost: {host}\r\nConnection: close\r\n");
     if let Some(body) = body {
         request.push_str(&format!(
-            "Origin: http://127.0.0.1:{}\r\ncontent-type: application/json\r\nContent-Length: {}\r\n",
-            address.port(),
+            "Origin: {scheme}://{host}\r\ncontent-type: application/json\r\nContent-Length: {}\r\n",
             body.len()
         ));
     }

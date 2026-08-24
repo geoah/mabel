@@ -39,6 +39,9 @@ pub struct WalletOptions {
     pub peers: Vec<EndpointAddr>,
     /// Where the UI bundle comes from.
     pub ui: UiSource,
+    /// `--allow-host <host[:port]>`, adding to `node.json`'s `allowed_hosts`
+    /// rather than replacing it (decision 018).
+    pub allowed_hosts: Vec<String>,
 }
 
 /// A wallet that has bound both listeners and not yet begun serving.
@@ -48,6 +51,7 @@ pub struct WalletRuntime {
     http_address: SocketAddr,
     iroh_addresses: Vec<SocketAddr>,
     warning: Option<String>,
+    allowed_hosts: Vec<String>,
     listener: TcpListener,
     app: axum::Router,
     iroh: IrohRouter,
@@ -91,7 +95,14 @@ impl WalletRuntime {
             bound.address,
             config.relay,
         ));
-        let app = wallet_router(service, &ApiOptions::new(bound.address).with_ui(options.ui));
+        // `node.json` and `--allow-host` both contribute; the rules drop the
+        // repeats and the loopback spellings (decision 018).
+        let api = ApiOptions::new(bound.address)
+            .with_ui(options.ui)
+            .with_allowed_hosts(config.allowed_hosts)
+            .with_allowed_hosts(options.allowed_hosts);
+        let allowed_hosts = api.loopback_rules().allowed_hosts().to_vec();
+        let app = wallet_router(service, &api);
 
         info!(%endpoint_id, http = %bound.address, "the wallet is listening");
         Ok(Self {
@@ -99,6 +110,7 @@ impl WalletRuntime {
             http_address: bound.address,
             iroh_addresses,
             warning: bound.warning,
+            allowed_hosts,
             listener: bound.listener,
             app,
             iroh,
@@ -129,6 +141,13 @@ impl WalletRuntime {
     #[must_use]
     pub fn warning(&self) -> Option<&str> {
         self.warning.as_deref()
+    }
+
+    /// The hosts this wallet accepts beyond loopback, `node.json` and
+    /// `--allow-host` merged (decision 018).
+    #[must_use]
+    pub fn allowed_hosts(&self) -> &[String] {
+        &self.allowed_hosts
     }
 
     /// The home this wallet serves.

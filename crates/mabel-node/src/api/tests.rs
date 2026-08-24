@@ -27,6 +27,7 @@ use super::{ApiOptions, UiSource, documents::Id, wallet_router, witness_router};
 
 const ALICE: &str = "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq";
 const BOB: &str = "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq";
+const CAROL: &str = "jqtnsb2me7mj5xsze4gavqklohqhdmkshfiz65khjmxtxjruqh2q";
 const ACME: &str = "2okqwhextnpkpmydrgrkk563vbehcklffwfzidxlh5dslawjmn6a";
 const ATTESTATION: &str = "65cssg5tnr3gyxe2rwhsgqc3nct3pwg2bqxr2oxpelejuoorlsnq";
 const WITNESS_ONE: &str = "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq";
@@ -241,6 +242,77 @@ async fn wallet_get_identities_matches_the_fixture_and_lists_organizations() {
         .find(|identity| identity["identity_id"] == json!(ALICE))
         .expect("the fixture lists alice");
     assert_eq!(person["active_key"].as_str().map(str::len), Some(52));
+}
+
+#[tokio::test]
+async fn wallet_get_known_identities_matches_the_fixture() {
+    let name = "wallet-get-known-identities.json";
+    let stub = Arc::new(StubWalletService::new());
+    let (status, body) = run_wallet(name, &stub).await;
+    expect_response(name, status, &body);
+    assert_eq!(stub.call(), WalletCall::KnownIdentities);
+
+    // The rows are ascending by `identity_id`, and neither of them is an
+    // identity `GET /api/identities` lists.
+    let identities = body["identities"].as_array().expect("an array");
+    let ids: Vec<&str> = identities
+        .iter()
+        .map(|row| row["identity_id"].as_str().expect("an id"))
+        .collect();
+    assert_eq!(ids, vec![CAROL, BOB]);
+    let mut sorted = ids.clone();
+    sorted.sort_unstable();
+    assert_eq!(ids, sorted);
+    assert!(!ids.contains(&ALICE) && !ids.contains(&ACME));
+
+    // A stored row carries the two fields only a stored copy answers; an
+    // unstored one nulls both and still reports its distance.
+    let bob = &identities[1];
+    assert_eq!(bob["stored"], json!(true));
+    assert_eq!(bob["trusted"], json!(true));
+    assert_eq!(bob["declared_kind"], json!("person"));
+    assert_eq!(bob["head_seq"], json!(2));
+    assert_eq!(bob["degrees"], json!(1));
+    let carol = &identities[0];
+    assert_eq!(carol["stored"], json!(false));
+    assert_eq!(carol["declared_kind"], Value::Null);
+    assert_eq!(carol["head_seq"], Value::Null);
+    assert_eq!(carol["degrees"], json!(2));
+    // The name a note gave is an alias, never a display name.
+    assert_eq!(carol["display_name"], Value::Null);
+    assert_eq!(carol["alias"], json!("carol at the co-op"));
+
+    // Every row carries every key, `null` where nothing applies.
+    for row in identities {
+        let row = row.as_object().expect("a known identity row");
+        assert_eq!(row.len(), 11, "{row:?}");
+        for key in [
+            "identity_id",
+            "display_name",
+            "alias",
+            "email",
+            "hostname",
+            "verification_status",
+            "declared_kind",
+            "stored",
+            "trusted",
+            "degrees",
+            "head_seq",
+        ] {
+            assert!(row.contains_key(key), "{key} is absent from {row:?}");
+        }
+    }
+}
+
+/// `known` is a static segment, so it is matched before `{identity_id}` and no
+/// request for the list is read as a malformed id.
+#[tokio::test]
+async fn the_known_route_is_matched_before_the_identity_route() {
+    let stub = Arc::new(StubWalletService::new());
+    let request = request("GET", "/api/identities/known", &Value::Null);
+    let (status, body) = send(wallet(&stub), request).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(stub.call(), WalletCall::KnownIdentities);
 }
 
 #[tokio::test]
@@ -1133,6 +1205,56 @@ async fn a_host_that_is_not_loopback_answers_the_fixture_rejection() {
         assert_eq!(body, expected, "{host}");
         assert!(stub.calls().is_empty(), "the service must not be reached");
     }
+}
+
+/// An operator who allowed a host reaches every route under that name, and the
+/// hosts they did not allow are refused exactly as before (decision 018).
+#[tokio::test]
+async fn an_allowed_host_reaches_the_wallet_routes_and_no_other_host_does() {
+    let allowing = || options().with_allowed_hosts(["wallet.tailnet.example"]);
+    let stub = Arc::new(StubWalletService::new());
+    let router = || {
+        wallet_router(
+            Arc::clone(&stub) as Arc<dyn super::WalletService>,
+            &allowing(),
+        )
+    };
+
+    let read = Request::builder()
+        .uri("/api/node")
+        .header(header::HOST, "wallet.tailnet.example")
+        .body(Body::empty())
+        .expect("a request");
+    let (status, _) = send(router(), read).await;
+    assert_eq!(status, StatusCode::OK);
+
+    // The https origin a reverse proxy sends is accepted on a mutating route.
+    let write = Request::builder()
+        .method("POST")
+        .uri("/api/identities")
+        .header(header::HOST, "wallet.tailnet.example")
+        .header(header::ORIGIN, "https://wallet.tailnet.example")
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(json!({"alias": "alice"}).to_string()))
+        .expect("a request");
+    let (status, _) = send(router(), write).await;
+    assert_ne!(status, StatusCode::FORBIDDEN);
+
+    let refused = Request::builder()
+        .uri("/api/node")
+        .header(header::HOST, "evil.example")
+        .body(Body::empty())
+        .expect("a request");
+    let (status, body) = send(router(), refused).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(body["details"]["reason"], json!("host_not_loopback"));
+    assert_eq!(
+        body["message"],
+        json!(
+            "request rejected: Host header must be 127.0.0.1:9080, localhost:9080 \
+             or wallet.tailnet.example"
+        )
+    );
 }
 
 #[tokio::test]

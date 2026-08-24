@@ -98,14 +98,17 @@ use error::ServiceError as Error;
 use parse::Query;
 
 /// What the routers need besides a service: where the API is bound, which
-/// fixes the `Host` and `Origin` the loopback rules demand, and where the UI
-/// bundle comes from.
+/// fixes the `Host` and `Origin` the loopback rules demand, which further hosts
+/// the operator allowed, and where the UI bundle comes from.
 #[derive(Debug, Clone)]
 pub struct ApiOptions {
     /// The address the HTTP API listens on.
     pub http_bind: std::net::SocketAddr,
     /// The UI bundle, embedded unless `--ui-dir` overrides it.
     pub ui: UiSource,
+    /// `Host` values accepted beyond loopback (decision 018). Empty by
+    /// default.
+    pub allowed_hosts: Vec<String>,
 }
 
 impl Default for ApiOptions {
@@ -113,17 +116,20 @@ impl Default for ApiOptions {
         Self {
             http_bind: DEFAULT_HTTP_BIND,
             ui: UiSource::default(),
+            allowed_hosts: Vec::new(),
         }
     }
 }
 
 impl ApiOptions {
-    /// Options for an API bound to `http_bind`, serving the embedded UI.
+    /// Options for an API bound to `http_bind`, serving the embedded UI to
+    /// loopback alone.
     #[must_use]
     pub fn new(http_bind: std::net::SocketAddr) -> Self {
         Self {
             http_bind,
             ui: UiSource::default(),
+            allowed_hosts: Vec::new(),
         }
     }
 
@@ -134,10 +140,25 @@ impl ApiOptions {
         self
     }
 
+    /// Adds `Host` values the API accepts beyond loopback.
+    ///
+    /// Adds rather than replaces: `node.json`'s `allowed_hosts` and the
+    /// `--allow-host` flags both call this, and a one-off flag must not drop
+    /// the set the file records (decision 018).
+    #[must_use]
+    pub fn with_allowed_hosts<I, S>(mut self, hosts: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.allowed_hosts.extend(hosts.into_iter().map(Into::into));
+        self
+    }
+
     /// The rules a request must satisfy to reach a handler.
     #[must_use]
     pub fn loopback_rules(&self) -> LoopbackRules {
-        LoopbackRules::new(self.http_bind.port())
+        LoopbackRules::new(self.http_bind.port()).with_allowed_hosts(&self.allowed_hosts)
     }
 }
 

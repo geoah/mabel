@@ -55,7 +55,7 @@ pub use error::{
     peer_message, stale_head, storage_error, unreachable,
 };
 pub use ledger::LoadedLedger;
-pub use lookup::{Names, default_root, graph_status, lookup_document};
+pub use lookup::{Names, default_root, graph_status, known_identities, lookup_document};
 pub use runtime::{WalletOptions, WalletRuntime};
 pub use service::WalletApiService;
 pub use store::WalletReadStore;

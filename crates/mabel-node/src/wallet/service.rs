@@ -19,7 +19,7 @@ use mabel_core::{IdentityId, LedgerId};
 
 use crate::api::documents::{
     Accepted, Admitted, Appended, ContactView, CreatedIdentity, DeclaredKind, FetchedLedger,
-    GraphSynced, GraphView, Id, Identity, IdentityKeys, Invited, LedgerPage, Lookup,
+    GraphSynced, GraphView, Id, Identity, IdentityKeys, Invited, KnownIdentity, LedgerPage, Lookup,
     MembershipView, ProfileReplaced, Pushed, Relay, Removed, ResolveStatus, Resolved, Revoked,
     Role, VerificationChecked, WalletNode, WitnessEntry, WitnessLedgerEntry, WitnessLedgers,
     WitnessList,
@@ -41,7 +41,7 @@ use crate::verification::{
 use crate::wallet::core::{AppendLock, WalletCore, verification_document};
 use crate::wallet::error::{no_source_available, storage_error};
 use crate::wallet::ids;
-use crate::wallet::lookup::{Names, default_root, graph_status, lookup_document};
+use crate::wallet::lookup::{Names, default_root, graph_status, known_identities, lookup_document};
 use crate::wallet::sync::WalletSync;
 
 /// The version `GET /api/node` reports.
@@ -165,6 +165,17 @@ impl WalletService for WalletApiService {
 
     fn identities(&self) -> ServiceFuture<'_, Vec<Identity>> {
         self.blocking(WalletCore::identities)
+    }
+
+    /// Answers from the home and the stored crawl generation, cache-only: a
+    /// list route never fans out into one DNS query or one fetch per row.
+    fn known_identities(&self) -> ServiceFuture<'_, Vec<KnownIdentity>> {
+        self.blocking(move |core| {
+            let generation = GraphStore::in_home(core.home())
+                .current_generation()
+                .map_err(storage_error)?;
+            known_identities(core, generation.as_ref())
+        })
     }
 
     fn create_identity(&self, request: CreateIdentity) -> ServiceFuture<'_, CreatedIdentity> {

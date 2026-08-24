@@ -532,3 +532,23 @@ pub struct Membership {
     /// cancelled ones included.
     pub invitations: Vec<InvitationEntry>,
 }
+
+/// `mabel dev seed --json`.
+///
+/// `identities` is the array `mabel identity list --json` reports, in the same
+/// document type, because a seeded home is an ordinary home: the answer to
+/// "what did the seed create" is "these identities".
+#[derive(Debug, Serialize)]
+pub struct SeededHome {
+    /// Every identity the seed created, by ascending identity id.
+    pub identities: Vec<mabel_node::api::documents::Identity>,
+    /// The witness endpoints every seeded ledger now names, from `--peer`.
+    /// Empty when the seed was given no ticket.
+    pub witnesses: Vec<Id>,
+    /// One entry per ledger pushed, in creation order. Empty when the seed was
+    /// given no ticket.
+    pub pushed: Vec<Pushed>,
+    /// The crawl that ran after the push, `null` when the seed was given no
+    /// ticket.
+    pub graph: Option<mabel_node::api::documents::GraphStatus>,
+}

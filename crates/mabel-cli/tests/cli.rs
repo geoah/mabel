@@ -392,6 +392,201 @@ fn identity_list_matches_the_fixture_for_a_person_and_an_organization() {
     );
 }
 
+// -------------------------------------------------------------- dev seed ----
+
+/// `mabel dev seed` writes real signed ledgers, so the assertions below are the
+/// ones an operator would make on a home they filled by hand: the four
+/// identities, what each publishes, who attests whom, the admission and the
+/// private note.
+#[test]
+fn dev_seed_matches_the_fixture_and_fills_an_empty_home() {
+    let home = Home::new();
+    let document = home.json(&["dev", "seed"]);
+    assert_shape(&document, &fixture("dev-seed", "seeded"), "dev-seed");
+
+    let seeded = document["identities"].as_array().expect("an array");
+    let aliases: Vec<&str> = seeded
+        .iter()
+        .map(|entry| entry["alias"].as_str().expect("an alias"))
+        .collect();
+    assert_eq!(aliases, ["alice", "bob", "carol", "acme"], "{document}");
+    assert_eq!(document["witnesses"], Value::Array(Vec::new()));
+    assert_eq!(document["pushed"], Value::Array(Vec::new()));
+    assert_eq!(document["graph"], Value::Null);
+
+    // `identity list` is the surface a person checks a seeded home with.
+    let listed = home.json(&["identity", "list"]);
+    let listed = listed["identities"].as_array().expect("an array");
+    assert_eq!(listed.len(), 4, "the four seeded identities are listed");
+
+    let find = |alias: &str| {
+        seeded
+            .iter()
+            .find(|entry| entry["alias"] == *alias)
+            .unwrap_or_else(|| panic!("{alias} was seeded"))
+            .clone()
+    };
+    let alice = find("alice");
+    let bob = find("bob");
+    let carol = find("carol");
+    let acme = find("acme");
+
+    assert_eq!(bob["declared_kind"], Value::from("person"));
+    assert_eq!(bob["profile"]["display_name"], Value::from("Bob Baxter"));
+    assert_eq!(bob["profile"]["hostname"], Value::from("bob.example"));
+    assert_eq!(bob["profile"]["email"], Value::from("bob@bob.example"));
+    // The handle is a second `ProfileUpdate`, so the inception, the create's
+    // profile and the handle are seq 0, 1 and 2.
+    assert_eq!(bob["profile"]["seq"], Value::from(2));
+    assert_eq!(bob["event_count"], Value::from(5));
+
+    // Carol publishes nothing, which is what a one-event ledger looks like.
+    assert_eq!(carol["profile"], Value::Null);
+    assert_eq!(carol["event_count"], Value::from(1));
+    assert_eq!(carol["identity_id"], carol["head_event"]);
+
+    assert_eq!(acme["declared_kind"], Value::from("organization"));
+    assert_eq!(
+        acme["profile"]["display_name"],
+        Value::from("Acme Corporation")
+    );
+    assert!(
+        acme.get("active_key").is_none(),
+        "an identity-rooted ledger holds no key of its own: {acme}"
+    );
+
+    // The membership flow ran: alice is the root controller and bob was
+    // admitted, which takes two signatures and leaves no open invitation. The
+    // set is by ascending identity id, so neither is at a fixed position.
+    let principals = acme["principals"].as_array().expect("an array");
+    assert_eq!(principals.len(), 2, "{acme}");
+    let principal = |identity: &Value| {
+        principals
+            .iter()
+            .find(|entry| entry["identity"] == *identity)
+            .unwrap_or_else(|| panic!("{identity} is a principal of acme: {acme}"))
+    };
+    assert_eq!(
+        principal(&alice["identity_id"])["is_root"],
+        Value::Bool(true)
+    );
+    assert_eq!(
+        principal(&bob["identity_id"])["role"],
+        Value::from("controller")
+    );
+    assert_eq!(
+        principal(&bob["identity_id"])["is_root"],
+        Value::Bool(false)
+    );
+    assert_eq!(acme["open_invitation_count"], Value::from(0));
+
+    // Trust is one-way and lives in the issuer's ledger, so the four
+    // attestations are four events in three different chains.
+    let subjects = |entry: &Value| -> Vec<String> {
+        entry["trust"]
+            .as_array()
+            .expect("an array")
+            .iter()
+            .map(|held| text(&held["subject"]))
+            .collect()
+    };
+    assert_eq!(subjects(&alice), [text(&bob["identity_id"])]);
+    assert_eq!(
+        subjects(&bob),
+        [text(&carol["identity_id"]), text(&alice["identity_id"])]
+    );
+    assert_eq!(subjects(&carol), Vec::<String>::new());
+    assert_eq!(subjects(&acme), [text(&bob["identity_id"])]);
+
+    // One contact note, on bob, and it is the whole home's note rather than
+    // one identity's: `contact show` answers the same thing.
+    assert_eq!(bob["contact"]["nickname"], Value::from("bob from the pub"));
+    assert_eq!(bob["contact"]["note"], Value::from("met at the meetup"));
+    assert_eq!(alice["contact"], Value::Null);
+    let shown = home.json(&["contact", "show", "alice"]);
+    assert_eq!(shown["contact"], Value::Null, "{shown}");
+
+    // Every seeded ledger verifies from its own inception.
+    for alias in ["alice", "bob", "carol", "acme"] {
+        let report = home.json(&["verify", "ledger", alias]);
+        assert_eq!(report["valid"], Value::Bool(true), "{alias}: {report}");
+    }
+}
+
+#[test]
+fn dev_seed_refuses_a_home_that_already_holds_an_identity() {
+    let home = Home::new();
+    home.create("alice");
+    let (code, document) = home.failure(&["dev", "seed"]);
+    assert_eq!(code, 2);
+    assert_shape(
+        &document,
+        &fixture("dev-seed", "home-not-empty"),
+        "dev-seed/home-not-empty",
+    );
+    assert_eq!(document["details"]["reason"], Value::from("home_not_empty"));
+    assert_eq!(document["details"]["identity_count"], Value::from(1));
+    assert_eq!(
+        home.json(&["identity", "list"])["identities"]
+            .as_array()
+            .expect("an array")
+            .len(),
+        1,
+        "the refused seed left the home alone"
+    );
+}
+
+/// The wallet core reads a seeded home without a byte of help from the seed:
+/// `WalletCore::identities` is what `GET /api/identities` answers from, and
+/// `known_identities` is what `GET /api/identities/known` answers from.
+///
+/// A seeded home holds every one of the four identities itself, so the known
+/// list is empty by construction: `known_identities` reports the identities a
+/// home has a record of and does **not** control.
+#[test]
+fn dev_seed_leaves_a_home_the_wallet_core_reads() {
+    use mabel_node::wallet::{WalletCore, known_identities};
+    use mabel_node::{HomeOptions, NodeHome};
+
+    let home = Home::new();
+    home.json(&["dev", "seed"]);
+
+    let opened = NodeHome::open(home.path(), HomeOptions::default()).expect("a seeded home opens");
+    let core = WalletCore::new(opened);
+    let identities = core.identities().expect("the identities read");
+    assert_eq!(identities.len(), 4);
+
+    let bob = identities
+        .iter()
+        .find(|identity| identity.alias == "bob")
+        .expect("bob is held");
+    let profile = bob.profile.as_ref().expect("bob publishes a profile");
+    assert_eq!(profile.display_name.as_deref(), Some("Bob Baxter"));
+    assert_eq!(profile.hostname.as_deref(), Some("bob.example"));
+    assert_eq!(profile.email.as_deref(), Some("bob@bob.example"));
+    assert_eq!(
+        bob.contact
+            .as_ref()
+            .and_then(|contact| contact.nickname.as_deref()),
+        Some("bob from the pub")
+    );
+    assert_eq!(bob.trust.len(), 2, "bob attests carol and alice");
+
+    let carol = identities
+        .iter()
+        .find(|identity| identity.alias == "carol")
+        .expect("carol is held");
+    assert!(carol.profile.is_none(), "carol publishes no profile");
+    assert_eq!(carol.head_seq, 0);
+    assert!(carol.contact.is_none());
+
+    let known = known_identities(&core, None).expect("the known list reads");
+    assert!(
+        known.is_empty(),
+        "every seeded identity is local, so none is a known stranger: {known:?}"
+    );
+}
+
 #[test]
 fn identity_show_returns_the_identity_document() {
     let home = Home::new();

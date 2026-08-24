@@ -108,6 +108,7 @@ fn create(root: &Path, storage_capacity: u64) -> NodeHome {
         witnesses: Vec::new(),
         storage_capacity,
         relay: RelayMode::Disabled,
+        ..NodeConfig::default()
     };
     NodeHome::create(root, &config, HomeOptions::default()).expect("the home is created")
 }

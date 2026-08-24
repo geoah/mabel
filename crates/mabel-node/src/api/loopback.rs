@@ -8,6 +8,11 @@
 //!
 //! All three reject with code 2 and no layer prefix: 403 for a bad `Host` or
 //! `Origin`, 415 for the content type (`contracts/README.md`).
+//!
+//! [`LoopbackRules::with_allowed_hosts`] widens the `Host` and `Origin` sets to
+//! names an operator asked for, which is how a node reached over a tailnet or a
+//! reverse proxy answers at all (decision 018). The default is unchanged:
+//! loopback only, and the operator owns the network boundary.
 
 use axum::extract::{Request, State};
 use axum::http::{HeaderMap, HeaderName, Method, StatusCode, header};
@@ -16,23 +21,61 @@ use axum::response::{IntoResponse, Response};
 
 use super::error::ServiceError;
 
-/// The rules, parameterized by the port the API is bound to.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// The rules, parameterized by the port the API is bound to and by the hosts
+/// an operator allowed beyond loopback.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LoopbackRules {
     port: u16,
+    allowed_hosts: Vec<String>,
 }
 
 impl LoopbackRules {
-    /// Rules for an API listening on `port`.
+    /// Rules for an API listening on `port`, accepting loopback alone.
     #[must_use]
     pub const fn new(port: u16) -> Self {
-        Self { port }
+        Self {
+            port,
+            allowed_hosts: Vec::new(),
+        }
+    }
+
+    /// Also accepts these `Host` values, and the `http` and `https` origins
+    /// that match them (decision 018).
+    ///
+    /// Each value is trimmed and lowercased, the normalization the `Host` rule
+    /// already applies, and is then matched as a whole string: `wallet.example`
+    /// accepts a request whose `Host` is `wallet.example` and refuses one whose
+    /// `Host` is `wallet.example:8443`. An empty value, a repeat and a spelling
+    /// this port already accepts are dropped.
+    ///
+    /// Calling this twice adds to the set rather than replacing it, which is
+    /// what lets `node.json` and `--allow-host` both contribute.
+    #[must_use]
+    pub fn with_allowed_hosts<I, S>(mut self, hosts: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        for host in hosts {
+            let host = normalized(host.as_ref());
+            if host.is_empty() || self.hosts().contains(&host) {
+                continue;
+            }
+            self.allowed_hosts.push(host);
+        }
+        self
     }
 
     /// The port a request's `Host` and `Origin` must name.
     #[must_use]
-    pub const fn port(self) -> u16 {
+    pub const fn port(&self) -> u16 {
         self.port
+    }
+
+    /// The hosts this API accepts beyond loopback, normalized.
+    #[must_use]
+    pub fn allowed_hosts(&self) -> &[String] {
+        &self.allowed_hosts
     }
 
     /// Whether the method may change state, which is what the `Origin` and
@@ -42,20 +85,31 @@ impl LoopbackRules {
         !matches!(*method, Method::GET | Method::HEAD | Method::OPTIONS)
     }
 
-    fn hosts(self) -> [String; 2] {
-        [
-            format!("127.0.0.1:{}", self.port),
-            format!("localhost:{}", self.port),
-        ]
+    /// Every accepted `Host`, the two loopback spellings first.
+    fn hosts(&self) -> Vec<String> {
+        let mut hosts = Vec::with_capacity(2 + self.allowed_hosts.len());
+        hosts.push(format!("127.0.0.1:{}", self.port));
+        hosts.push(format!("localhost:{}", self.port));
+        hosts.extend(self.allowed_hosts.iter().cloned());
+        hosts
     }
 
-    fn origins(self) -> [String; 2] {
-        let [loopback, localhost] = self.hosts();
-        [format!("http://{loopback}"), format!("http://{localhost}")]
+    /// Every accepted `Origin`. An allowed host contributes both schemes,
+    /// because the reverse proxy that terminates TLS is what makes the name
+    /// reachable in the first place.
+    fn origins(&self) -> Vec<String> {
+        let mut origins = Vec::with_capacity(2 + self.allowed_hosts.len() * 2);
+        origins.push(format!("http://127.0.0.1:{}", self.port));
+        origins.push(format!("http://localhost:{}", self.port));
+        for host in &self.allowed_hosts {
+            origins.push(format!("http://{host}"));
+            origins.push(format!("https://{host}"));
+        }
+        origins
     }
 
-    fn accepts_host(self, host: &str) -> bool {
-        let host = host.trim().to_ascii_lowercase();
+    fn accepts_host(&self, host: &str) -> bool {
+        let host = normalized(host);
         if self.hosts().contains(&host) {
             return true;
         }
@@ -66,13 +120,12 @@ impl LoopbackRules {
     ///
     /// # Errors
     ///
-    /// Returns the rejection to render: 403 for a `Host` that is not loopback
-    /// or an `Origin` that does not match it, 415 for a mutating request whose
-    /// content type is not `application/json`.
-    pub fn check(self, method: &Method, headers: &HeaderMap) -> Result<(), ServiceError> {
-        let [loopback, localhost] = self.hosts();
-        let host_message =
-            format!("request rejected: Host header must be {loopback} or {localhost}");
+    /// Returns the rejection to render: 403 for a `Host` the rules do not
+    /// accept or an `Origin` that does not match one, 415 for a mutating
+    /// request whose content type is not `application/json`.
+    pub fn check(&self, method: &Method, headers: &HeaderMap) -> Result<(), ServiceError> {
+        let hosts = self.hosts();
+        let host_message = format!("request rejected: Host header must be {}", listed(&hosts));
         match text(headers, &header::HOST) {
             None => {
                 return Err(rejected(
@@ -94,9 +147,10 @@ impl LoopbackRules {
             return Ok(());
         }
 
-        let [http_loopback, http_localhost] = self.origins();
+        let origins = self.origins();
         let origin_message = format!(
-            "request rejected: Origin must be {http_loopback} or {http_localhost} on a mutating route"
+            "request rejected: Origin must be {} on a mutating route",
+            listed(&origins)
         );
         match text(headers, &header::ORIGIN) {
             None => {
@@ -106,7 +160,7 @@ impl LoopbackRules {
                     StatusCode::FORBIDDEN,
                 ));
             }
-            Some(origin) if !self.origins().contains(&origin.to_ascii_lowercase()) => {
+            Some(origin) if !origins.contains(&origin.to_ascii_lowercase()) => {
                 return Err(
                     rejected("origin_mismatch", &origin_message, StatusCode::FORBIDDEN)
                         .with_detail("origin", origin),
@@ -136,6 +190,20 @@ impl LoopbackRules {
 
 fn rejected(reason: &str, message: &str, status: StatusCode) -> ServiceError {
     ServiceError::usage(reason, message).with_status(status)
+}
+
+/// A `Host` value as the rules compare it: trimmed and lowercased.
+fn normalized(host: &str) -> String {
+    host.trim().to_ascii_lowercase()
+}
+
+/// The accepted values as a sentence names them: `a`, `a or b`, `a, b or c`.
+fn listed(values: &[String]) -> String {
+    match values {
+        [] => String::new(),
+        [only] => only.clone(),
+        [rest @ .., last] => format!("{} or {last}", rest.join(", ")),
+    }
 }
 
 /// A header as text, treating bytes that are not valid UTF-8 as the lossy
@@ -306,6 +374,122 @@ mod tests {
             error.message().contains("127.0.0.1:4000"),
             "{}",
             error.message()
+        );
+    }
+
+    /// The default set is the two loopback spellings and nothing else, and the
+    /// rejection names them in the words `contracts/http/wallet-get-node.json`
+    /// freezes.
+    #[test]
+    fn allowing_no_host_leaves_the_default_rules_exactly_as_they_were() {
+        let rules = rules();
+        assert!(rules.allowed_hosts().is_empty());
+        assert_eq!(
+            rules,
+            LoopbackRules::new(PORT).with_allowed_hosts::<_, &str>([])
+        );
+
+        let error = rules
+            .check(&Method::GET, &headers(&[(header::HOST, "wallet.example")]))
+            .expect_err("no host is allowed beyond loopback");
+        assert_eq!(
+            error.message(),
+            "request rejected: Host header must be 127.0.0.1:9080 or localhost:9080"
+        );
+
+        let error = rules
+            .check(
+                &Method::POST,
+                &headers(&[
+                    (header::HOST, "127.0.0.1:9080"),
+                    (header::ORIGIN, "https://127.0.0.1:9080"),
+                    (header::CONTENT_TYPE, "application/json"),
+                ]),
+            )
+            .expect_err("https is not a loopback origin");
+        assert_eq!(
+            error.message(),
+            "request rejected: Origin must be http://127.0.0.1:9080 or \
+             http://localhost:9080 on a mutating route"
+        );
+    }
+
+    #[test]
+    fn an_allowed_host_is_accepted_and_every_other_host_is_still_refused() {
+        let rules = rules().with_allowed_hosts(["Wallet.Tailnet.Example ", "", "localhost:9080"]);
+        assert_eq!(rules.allowed_hosts(), ["wallet.tailnet.example"]);
+
+        for host in [
+            "wallet.tailnet.example",
+            "WALLET.TAILNET.EXAMPLE",
+            "127.0.0.1:9080",
+            "localhost:9080",
+        ] {
+            let headers = headers(&[(header::HOST, host)]);
+            assert!(rules.check(&Method::GET, &headers).is_ok(), "{host}");
+        }
+
+        for host in [
+            "wallet.tailnet.example:8443",
+            "other.tailnet.example",
+            "evil.example",
+        ] {
+            let headers = headers(&[(header::HOST, host)]);
+            let error = rules.check(&Method::GET, &headers).expect_err(host);
+            assert_eq!(error.reason(), "host_not_loopback", "{host}");
+            assert_eq!(error.status(), StatusCode::FORBIDDEN, "{host}");
+            assert!(
+                error.message().contains("wallet.tailnet.example"),
+                "the rejection still names what is accepted: {}",
+                error.message()
+            );
+        }
+    }
+
+    #[test]
+    fn an_allowed_host_contributes_its_http_and_https_origins() {
+        let rules = rules().with_allowed_hosts(["wallet.tailnet.example"]);
+        let with = |origin: &str| {
+            headers(&[
+                (header::HOST, "wallet.tailnet.example"),
+                (header::ORIGIN, origin),
+                (header::CONTENT_TYPE, "application/json"),
+            ])
+        };
+        for origin in [
+            "https://wallet.tailnet.example",
+            "http://wallet.tailnet.example",
+            "http://127.0.0.1:9080",
+        ] {
+            assert!(
+                rules.check(&Method::POST, &with(origin)).is_ok(),
+                "{origin}"
+            );
+        }
+        let error = rules
+            .check(&Method::POST, &with("https://other.tailnet.example"))
+            .expect_err("another host's origin");
+        assert_eq!(error.reason(), "origin_mismatch");
+        assert!(
+            error
+                .message()
+                .contains("https://wallet.tailnet.example on a mutating route"),
+            "{}",
+            error.message()
+        );
+    }
+
+    /// Two allowed hosts read as a list, not as a repeated "or".
+    #[test]
+    fn the_rejection_lists_every_accepted_host() {
+        let rules = rules().with_allowed_hosts(["one.example", "two.example"]);
+        let error = rules
+            .check(&Method::GET, &headers(&[(header::HOST, "three.example")]))
+            .expect_err("a third host");
+        assert_eq!(
+            error.message(),
+            "request rejected: Host header must be 127.0.0.1:9080, localhost:9080, \
+             one.example or two.example"
         );
     }
 }

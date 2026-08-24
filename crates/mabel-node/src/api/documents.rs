@@ -614,6 +614,55 @@ pub struct IdentityList {
     pub identities: Vec<Identity>,
 }
 
+/// One identity this home has a local record of and does not control
+/// (`contracts/README.md`, "Known identities").
+///
+/// The first six fields are the [`ResolvedIdentity`] fields minus
+/// `provenance`, filled in by the same resolver the lookup route uses. The
+/// last five say what this home holds about the identity, and every one of
+/// them can be absent: `declared_kind` and `head_seq` need a stored copy, and
+/// `degrees` needs a crawl that reached it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct KnownIdentity {
+    /// The identity this row is about.
+    pub identity_id: Id,
+    /// The name its profile publishes, `null` when this home holds none.
+    pub display_name: Option<String>,
+    /// The local alias or contact nickname, `null` when this home records
+    /// neither.
+    pub alias: Option<String>,
+    /// The email its profile publishes, `null` when this home holds none.
+    pub email: Option<String>,
+    /// The hostname its profile claims, `null` when it claims none.
+    pub hostname: Option<String>,
+    /// The advisory verdict on that hostname, read from the cache.
+    pub verification_status: VerificationStatus,
+    /// What the stored copy's inception declares, `null` when this home stores
+    /// no copy.
+    pub declared_kind: Option<DeclaredKind>,
+    /// Whether `ledgers/<identity_id>/` holds a copy of the ledger.
+    pub stored: bool,
+    /// Whether any identity in this home holds an unrevoked attestation naming
+    /// this one.
+    pub trusted: bool,
+    /// Edges from the nearest root of the stored crawl generation, `null` when
+    /// no crawl reached this identity. `null` is "not in my crawl", never "no
+    /// relationship".
+    pub degrees: Option<u64>,
+    /// The last position of the stored copy, `null` when this home stores
+    /// none.
+    pub head_seq: Option<u64>,
+}
+
+/// `GET /api/identities/known`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct KnownIdentityList {
+    /// Sorted by ascending `identity_id`.
+    pub identities: Vec<KnownIdentity>,
+}
+
 /// `GET /api/identities/:identity_id`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

@@ -29,6 +29,7 @@ profile.
 | `http/wallet-get-node.json` | `GET /api/node` (wallet) |
 | `http/wallet-get-identities.json` | `GET /api/identities` |
 | `http/wallet-post-identities.json` | `POST /api/identities` |
+| `http/wallet-get-known-identities.json` | `GET /api/identities/known` |
 | `http/wallet-get-identity.json` | `GET /api/identities/:identity_id` |
 | `http/wallet-get-identity-ledger.json` | `GET /api/identities/:identity_id/ledger?since=` |
 | `http/wallet-get-identity-keys.json` | `GET /api/identities/:identity_id/keys` |
@@ -83,11 +84,19 @@ profile.
 | `cli/wallet-serve.json` | `mabel wallet serve --json` |
 | `cli/verify-trust.json` | `mabel verify trust --json` |
 | `cli/verify-ledger.json` | `mabel verify ledger --json` |
+| `cli/dev-seed.json` | `mabel dev seed --json` |
 | `cli/errors.json` | the error envelope, one case per exit code and layer prefix |
 
 `mabel identity rotate` has no fixture: it exits 70 with the error envelope
 `cli/errors.json` already pins. `wallet serve` and `witness run` print their
 document when the process stops, so their one case is the shutdown document.
+
+`cli/dev-seed.json` carries the identity document of `cli/identity-list.json`
+inside its `identities` array, and the `Pushed` and `GraphStatus` documents of
+`cli/sync-push.json` and `cli/graph-sync.json` inside `pushed` and `graph`. A
+seeded home is an ordinary home, so the answer to "what did the seed create" is
+the same document every other surface reports. Its `identities` are in creation
+order, alice then bob then carol then acme, not by ascending id.
 
 Each `http/*.json` holds `route`, `method`, `request` (an example body, or
 `null` for GET), `response` (an example 200 body) and `errors` (examples of
@@ -316,6 +325,29 @@ identity, never who trusts them in the world. An identity absent from the
 graph is a 200 with `degrees: null` and an empty `paths` list, not a 404,
 because "not in my crawl" is an answer.
 
+**Known identities.** `GET /api/identities/known` returns `{identities}`: every
+identity this home has a local record of and does not control, one row each.
+The row is `identity_id`, `display_name`, `alias`, `email`, `hostname`,
+`verification_status`, `declared_kind`, `stored`, `trusted`, `degrees` and
+`head_seq`. The first six are the `ResolvedIdentity` fields, resolved by the
+same code the lookup route uses, so a name here means what it means there.
+`declared_kind` and `head_seq` come from the stored copy and are `null` when
+this home stores no copy. `stored` says whether `ledgers/<identity_id>/` holds
+one. `trusted` is true when any identity in this home holds an unrevoked
+`TrustAttestation` naming this identity. `degrees` is the edge count from the
+nearest crawl root in the stored generation, `null` when no crawl reached the
+identity, so `null` means "not in my crawl", never "no relationship". The route
+reads the home and the stored generation only: it opens no socket and queries
+no DNS.
+
+Three local sources merge into the row set, by identity id: ledgers under
+`ledgers/` this home did not root, nodes of the stored crawl generation, and
+ids that have nothing but a note under `contacts/`. Rows sort by ascending
+`identity_id` as it is rendered, so a client can reproduce the order from the
+document. An identity this wallet lists under `identities/`, which is every
+identity it can sign for, is excluded: those are the rows `GET /api/identities`
+serves.
+
 **Graph.** `GET /api/graph` returns `{graph}`, `null` when no crawl has run in
 this home, and `POST /api/graph/sync` runs one crawl and returns the same
 object, never `null`. The object is `sync_id`, `last_sync_ms`, `depth`,
@@ -487,7 +519,12 @@ reviewer can overrule them cheaply, before consumers are written.
   failures per endpoint in `results`; a push where every witness failed
   exits 30.
 - The three loopback rules reject with code 2 and no layer prefix, at 403
-  for a bad `Host` or `Origin` and 415 for a missing content type.
+  for a bad `Host` or `Origin` and 415 for a missing content type. The
+  `host_not_loopback` and `origin_mismatch` messages the `http/*.json` fixtures
+  pin are the default set, loopback alone. An operator who passes
+  `--allow-host` widens both sets, and the message then lists what it accepts:
+  `Host header must be 127.0.0.1:9080, localhost:9080 or wallet.example`
+  (decision 018).
 - Codes 60 and 70 carry no layer prefix, since the six prefixes proposal 001
   lists map onto 10, 20, 30 and 50.
 - `details.reason` is a stable snake_case class name, matching how
@@ -570,6 +607,26 @@ reviewer can overrule them cheaply, before consumers are written.
 - The public email is `email` on every surface, never `contact_email` or
   `public_email`. The profile has one email, the private note in `contact`
   has none, and decision 012 forbids a qualifier that carries no information.
+- `GET /api/identities/known` sorts by ascending `identity_id` alone, not by
+  whether a row carries a `display_name`. The list is a set of ids, an id is
+  the only stable key, and a client that wants named rows first sorts them
+  itself; a server-side name sort would reorder the list every time a crawl
+  reads a new profile. Ascending means ascending in the rendered base32, which
+  puts digits before letters, and not ascending in the 32 bytes behind it: the
+  two orders differ, and only the first is one a client can check.
+- The known-identity row flattens the six `ResolvedIdentity` fields and drops
+  `provenance`. The row already carries `display_name` and `alias`, which is
+  what `provenance` is computed from, and it carries five more fields of its
+  own; nesting the shared object would put half a row one level down.
+- `known` is a static segment under `/api/identities`, so no identity id can
+  collide with it: an id is 52 base32 characters. `GET
+  /api/identities/known` is matched before `GET
+  /api/identities/:identity_id`.
+- `wallet-get-known-identities.json` pins two rows, Bob stored and trusted at
+  one degree and Carol crawl-only at two. It pins no row with `degrees: null`,
+  the contact note for an identity no crawl reached, because the fixture
+  vocabulary holds no fourth foreign identity to name one with; the case is
+  covered in `crates/mabel-node/tests/profile_graph.rs`.
 - A wallet route asked for an identity this home does not hold answers 404
   with reason `unknown_ledger`, detail key `ledger_id` and the message `this
   home holds no ledger <id>`. One spelling covers every wallet route, the

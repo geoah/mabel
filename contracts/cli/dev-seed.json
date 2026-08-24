@@ -1,0 +1,579 @@
+{
+  "command": "mabel dev seed --json",
+  "cases": [
+    {
+      "case": "seeded",
+      "command": "mabel dev seed --json",
+      "exit_code": 0,
+      "document": {
+        "ok": true,
+        "identities": [
+          {
+            "identity_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+            "declared_kind": "person",
+            "alias": "alice",
+            "created_at_ms": 1700000000000,
+            "head_seq": 3,
+            "head_event": "ktlxt5b2thxkcrwgdijtfkiigwswyqd3cpci2irwsjvswccwcohg",
+            "event_count": 4,
+            "witnesses": [],
+            "trust": [
+              {
+                "attestation_event": "ktlxt5b2thxkcrwgdijtfkiigwswyqd3cpci2irwsjvswccwcohg",
+                "attestation_seq": 3,
+                "subject": "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq",
+                "revoked": false,
+                "revocation_event": null,
+                "revocation_seq": null
+              }
+            ],
+            "principals": [
+              {
+                "identity": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+                "active_key": "2bflemtufo2kwoqtnc6umfpe43icesvxdiawxl4fecrtfslxq43q",
+                "role": "controller",
+                "is_root": true
+              }
+            ],
+            "open_invitation_count": 0,
+            "profile": {
+              "display_name": "Alice Ashworth",
+              "hostname": "alice.example",
+              "email": "alice@alice.example",
+              "signing_principal": {
+                "identity": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+                "key": "2bflemtufo2kwoqtnc6umfpe43icesvxdiawxl4fecrtfslxq43q"
+              },
+              "event": "7fq6tlzfsenee3ob5u7adn4ubzig7zwr3psve6tjz5epdmjxeeqb",
+              "seq": 2
+            },
+            "verification": {
+              "hostname": "alice.example",
+              "status": "unverified",
+              "checked_at_ms": null,
+              "last_verified_at_ms": null,
+              "stale": true,
+              "detail": "alice.example has not been checked on this node",
+              "unreachable": null
+            },
+            "contact": null,
+            "active_key": "2bflemtufo2kwoqtnc6umfpe43icesvxdiawxl4fecrtfslxq43q",
+            "reserve_commit": "4hvnmdhctangrg6jmqkyzf6ropi5do6lqdcw37eqoryzhoqg2maq"
+          },
+          {
+            "identity_id": "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq",
+            "declared_kind": "person",
+            "alias": "bob",
+            "created_at_ms": 1700000060000,
+            "head_seq": 4,
+            "head_event": "4zd7ieh7syef2weczchbfm2imeihf7fjqg3at2ponndly5pvidzh",
+            "event_count": 5,
+            "witnesses": [],
+            "trust": [
+              {
+                "attestation_event": "ljmhbp5ymdoadjxd3aiblaaqcxw6nomsr6bnxhsnrcqxq6tloywp",
+                "attestation_seq": 3,
+                "subject": "jqtnsb2me7mj5xsze4gavqklohqhdmkshfiz65khjmxtxjruqh2q",
+                "revoked": false,
+                "revocation_event": null,
+                "revocation_seq": null
+              },
+              {
+                "attestation_event": "4zd7ieh7syef2weczchbfm2imeihf7fjqg3at2ponndly5pvidzh",
+                "attestation_seq": 4,
+                "subject": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+                "revoked": false,
+                "revocation_event": null,
+                "revocation_seq": null
+              }
+            ],
+            "principals": [
+              {
+                "identity": "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq",
+                "active_key": "mpvsw45ffkwexrnkxubkqqwgdg5mwopl5qoeaimfyw27cm42ttiq",
+                "role": "controller",
+                "is_root": true
+              }
+            ],
+            "open_invitation_count": 0,
+            "profile": {
+              "display_name": "Bob Baxter",
+              "hostname": "bob.example",
+              "email": "bob@bob.example",
+              "signing_principal": {
+                "identity": "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq",
+                "key": "mpvsw45ffkwexrnkxubkqqwgdg5mwopl5qoeaimfyw27cm42ttiq"
+              },
+              "event": "yd7nakbgo4ytxfigy7f56iz2mcqwmf24xryvskgptjnstqp5vxny",
+              "seq": 2
+            },
+            "verification": {
+              "hostname": "bob.example",
+              "status": "unverified",
+              "checked_at_ms": null,
+              "last_verified_at_ms": null,
+              "stale": true,
+              "detail": "bob.example has not been checked on this node",
+              "unreachable": null
+            },
+            "contact": {
+              "nickname": "bob from the pub",
+              "note": "met at the meetup",
+              "updated_at_ms": 1700000300000
+            },
+            "active_key": "mpvsw45ffkwexrnkxubkqqwgdg5mwopl5qoeaimfyw27cm42ttiq",
+            "reserve_commit": "h6qkxsi7dtwmvbnlyzc4rp2eugw3o5fkjq7dabmt2yhnxsw4ei5a"
+          },
+          {
+            "identity_id": "jqtnsb2me7mj5xsze4gavqklohqhdmkshfiz65khjmxtxjruqh2q",
+            "declared_kind": "person",
+            "alias": "carol",
+            "created_at_ms": 1700000120000,
+            "head_seq": 0,
+            "head_event": "jqtnsb2me7mj5xsze4gavqklohqhdmkshfiz65khjmxtxjruqh2q",
+            "event_count": 1,
+            "witnesses": [],
+            "trust": [],
+            "principals": [
+              {
+                "identity": "jqtnsb2me7mj5xsze4gavqklohqhdmkshfiz65khjmxtxjruqh2q",
+                "active_key": "wc4jrpu3zdgqe6a7lxvks2tmn5ybhoif7dqar3jgy6ptu4le2vwq",
+                "role": "controller",
+                "is_root": true
+              }
+            ],
+            "open_invitation_count": 0,
+            "profile": null,
+            "verification": {
+              "hostname": null,
+              "status": "unclaimed",
+              "checked_at_ms": null,
+              "last_verified_at_ms": null,
+              "stale": false,
+              "detail": null,
+              "unreachable": null
+            },
+            "contact": null,
+            "active_key": "wc4jrpu3zdgqe6a7lxvks2tmn5ybhoif7dqar3jgy6ptu4le2vwq",
+            "reserve_commit": "e2nqbtxzu7fkmdswrl6ci4yhpgav35jo7dbqk2wsxnu4frt6zhaq"
+          },
+          {
+            "identity_id": "2okqwhextnpkpmydrgrkk563vbehcklffwfzidxlh5dslawjmn6a",
+            "declared_kind": "organization",
+            "alias": "acme",
+            "created_at_ms": 1700000180000,
+            "head_seq": 4,
+            "head_event": "6sfatp5p3oujktumkxkmkzd364u7d63onkqg2lumkc4oswfmxhzk",
+            "event_count": 5,
+            "witnesses": [],
+            "trust": [
+              {
+                "attestation_event": "6sfatp5p3oujktumkxkmkzd364u7d63onkqg2lumkc4oswfmxhzk",
+                "attestation_seq": 4,
+                "subject": "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq",
+                "revoked": false,
+                "revocation_event": null,
+                "revocation_seq": null
+              }
+            ],
+            "principals": [
+              {
+                "identity": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+                "active_key": "2bflemtufo2kwoqtnc6umfpe43icesvxdiawxl4fecrtfslxq43q",
+                "role": "controller",
+                "is_root": true
+              },
+              {
+                "identity": "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq",
+                "active_key": "mpvsw45ffkwexrnkxubkqqwgdg5mwopl5qoeaimfyw27cm42ttiq",
+                "role": "controller",
+                "is_root": false
+              }
+            ],
+            "open_invitation_count": 0,
+            "profile": {
+              "display_name": "Acme Corporation",
+              "hostname": null,
+              "email": null,
+              "signing_principal": {
+                "identity": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+                "key": "2bflemtufo2kwoqtnc6umfpe43icesvxdiawxl4fecrtfslxq43q"
+              },
+              "event": "cmqsxtpnkfg6etmavq2qf2uzuccr64b2rjciq6n3umlxc7c4gnko",
+              "seq": 1
+            },
+            "verification": {
+              "hostname": null,
+              "status": "unclaimed",
+              "checked_at_ms": null,
+              "last_verified_at_ms": null,
+              "stale": false,
+              "detail": null,
+              "unreachable": null
+            },
+            "contact": null
+          }
+        ],
+        "witnesses": [],
+        "pushed": [],
+        "graph": null
+      }
+    },
+    {
+      "case": "seeded-with-a-witness",
+      "command": "mabel dev seed --peer <ticket> --json",
+      "exit_code": 0,
+      "document": {
+        "ok": true,
+        "identities": [
+          {
+            "identity_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+            "declared_kind": "person",
+            "alias": "alice",
+            "created_at_ms": 1700000000000,
+            "head_seq": 4,
+            "head_event": "vt3armbpytxvdlfsq7mw3qe64ihhsztv44ixiv4oikj444wubtoz",
+            "event_count": 5,
+            "witnesses": [
+              "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq"
+            ],
+            "trust": [
+              {
+                "attestation_event": "ktlxt5b2thxkcrwgdijtfkiigwswyqd3cpci2irwsjvswccwcohg",
+                "attestation_seq": 3,
+                "subject": "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq",
+                "revoked": false,
+                "revocation_event": null,
+                "revocation_seq": null
+              }
+            ],
+            "principals": [
+              {
+                "identity": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+                "active_key": "2bflemtufo2kwoqtnc6umfpe43icesvxdiawxl4fecrtfslxq43q",
+                "role": "controller",
+                "is_root": true
+              }
+            ],
+            "open_invitation_count": 0,
+            "profile": {
+              "display_name": "Alice Ashworth",
+              "hostname": "alice.example",
+              "email": "alice@alice.example",
+              "signing_principal": {
+                "identity": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+                "key": "2bflemtufo2kwoqtnc6umfpe43icesvxdiawxl4fecrtfslxq43q"
+              },
+              "event": "7fq6tlzfsenee3ob5u7adn4ubzig7zwr3psve6tjz5epdmjxeeqb",
+              "seq": 2
+            },
+            "verification": {
+              "hostname": "alice.example",
+              "status": "unverified",
+              "checked_at_ms": null,
+              "last_verified_at_ms": null,
+              "stale": true,
+              "detail": "alice.example has not been checked on this node",
+              "unreachable": null
+            },
+            "contact": null,
+            "active_key": "2bflemtufo2kwoqtnc6umfpe43icesvxdiawxl4fecrtfslxq43q",
+            "reserve_commit": "4hvnmdhctangrg6jmqkyzf6ropi5do6lqdcw37eqoryzhoqg2maq"
+          },
+          {
+            "identity_id": "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq",
+            "declared_kind": "person",
+            "alias": "bob",
+            "created_at_ms": 1700000060000,
+            "head_seq": 5,
+            "head_event": "x5qnmxl7deauocabfyvh6mqc7gqrbtnhqxbgc7xvyrfrd4dxmttg",
+            "event_count": 6,
+            "witnesses": [
+              "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq"
+            ],
+            "trust": [
+              {
+                "attestation_event": "ljmhbp5ymdoadjxd3aiblaaqcxw6nomsr6bnxhsnrcqxq6tloywp",
+                "attestation_seq": 3,
+                "subject": "jqtnsb2me7mj5xsze4gavqklohqhdmkshfiz65khjmxtxjruqh2q",
+                "revoked": false,
+                "revocation_event": null,
+                "revocation_seq": null
+              },
+              {
+                "attestation_event": "4zd7ieh7syef2weczchbfm2imeihf7fjqg3at2ponndly5pvidzh",
+                "attestation_seq": 4,
+                "subject": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+                "revoked": false,
+                "revocation_event": null,
+                "revocation_seq": null
+              }
+            ],
+            "principals": [
+              {
+                "identity": "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq",
+                "active_key": "mpvsw45ffkwexrnkxubkqqwgdg5mwopl5qoeaimfyw27cm42ttiq",
+                "role": "controller",
+                "is_root": true
+              }
+            ],
+            "open_invitation_count": 0,
+            "profile": {
+              "display_name": "Bob Baxter",
+              "hostname": "bob.example",
+              "email": "bob@bob.example",
+              "signing_principal": {
+                "identity": "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq",
+                "key": "mpvsw45ffkwexrnkxubkqqwgdg5mwopl5qoeaimfyw27cm42ttiq"
+              },
+              "event": "yd7nakbgo4ytxfigy7f56iz2mcqwmf24xryvskgptjnstqp5vxny",
+              "seq": 2
+            },
+            "verification": {
+              "hostname": "bob.example",
+              "status": "unverified",
+              "checked_at_ms": null,
+              "last_verified_at_ms": null,
+              "stale": true,
+              "detail": "bob.example has not been checked on this node",
+              "unreachable": null
+            },
+            "contact": {
+              "nickname": "bob from the pub",
+              "note": "met at the meetup",
+              "updated_at_ms": 1700000300000
+            },
+            "active_key": "mpvsw45ffkwexrnkxubkqqwgdg5mwopl5qoeaimfyw27cm42ttiq",
+            "reserve_commit": "h6qkxsi7dtwmvbnlyzc4rp2eugw3o5fkjq7dabmt2yhnxsw4ei5a"
+          },
+          {
+            "identity_id": "jqtnsb2me7mj5xsze4gavqklohqhdmkshfiz65khjmxtxjruqh2q",
+            "declared_kind": "person",
+            "alias": "carol",
+            "created_at_ms": 1700000120000,
+            "head_seq": 1,
+            "head_event": "mbbbku273mpldii4ikzx2lkw2mas2nad6v2yrigyerytyinygnhu",
+            "event_count": 2,
+            "witnesses": [
+              "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq"
+            ],
+            "trust": [],
+            "principals": [
+              {
+                "identity": "jqtnsb2me7mj5xsze4gavqklohqhdmkshfiz65khjmxtxjruqh2q",
+                "active_key": "wc4jrpu3zdgqe6a7lxvks2tmn5ybhoif7dqar3jgy6ptu4le2vwq",
+                "role": "controller",
+                "is_root": true
+              }
+            ],
+            "open_invitation_count": 0,
+            "profile": null,
+            "verification": {
+              "hostname": null,
+              "status": "unclaimed",
+              "checked_at_ms": null,
+              "last_verified_at_ms": null,
+              "stale": false,
+              "detail": null,
+              "unreachable": null
+            },
+            "contact": null,
+            "active_key": "wc4jrpu3zdgqe6a7lxvks2tmn5ybhoif7dqar3jgy6ptu4le2vwq",
+            "reserve_commit": "e2nqbtxzu7fkmdswrl6ci4yhpgav35jo7dbqk2wsxnu4frt6zhaq"
+          },
+          {
+            "identity_id": "2okqwhextnpkpmydrgrkk563vbehcklffwfzidxlh5dslawjmn6a",
+            "declared_kind": "organization",
+            "alias": "acme",
+            "created_at_ms": 1700000180000,
+            "head_seq": 5,
+            "head_event": "eucgljk4topb7m2cy6ctb35qsm5ti5tsbizc53injr3e6fru2g2c",
+            "event_count": 6,
+            "witnesses": [
+              "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq"
+            ],
+            "trust": [
+              {
+                "attestation_event": "6sfatp5p3oujktumkxkmkzd364u7d63onkqg2lumkc4oswfmxhzk",
+                "attestation_seq": 4,
+                "subject": "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq",
+                "revoked": false,
+                "revocation_event": null,
+                "revocation_seq": null
+              }
+            ],
+            "principals": [
+              {
+                "identity": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+                "active_key": "2bflemtufo2kwoqtnc6umfpe43icesvxdiawxl4fecrtfslxq43q",
+                "role": "controller",
+                "is_root": true
+              },
+              {
+                "identity": "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq",
+                "active_key": "mpvsw45ffkwexrnkxubkqqwgdg5mwopl5qoeaimfyw27cm42ttiq",
+                "role": "controller",
+                "is_root": false
+              }
+            ],
+            "open_invitation_count": 0,
+            "profile": {
+              "display_name": "Acme Corporation",
+              "hostname": null,
+              "email": null,
+              "signing_principal": {
+                "identity": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+                "key": "2bflemtufo2kwoqtnc6umfpe43icesvxdiawxl4fecrtfslxq43q"
+              },
+              "event": "cmqsxtpnkfg6etmavq2qf2uzuccr64b2rjciq6n3umlxc7c4gnko",
+              "seq": 1
+            },
+            "verification": {
+              "hostname": null,
+              "status": "unclaimed",
+              "checked_at_ms": null,
+              "last_verified_at_ms": null,
+              "stale": false,
+              "detail": null,
+              "unreachable": null
+            },
+            "contact": null
+          }
+        ],
+        "witnesses": [
+          "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq"
+        ],
+        "pushed": [
+          {
+            "ledger_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+            "head_seq": 4,
+            "head_event": "vt3armbpytxvdlfsq7mw3qe64ihhsztv44ixiv4oikj444wubtoz",
+            "results": [
+              {
+                "endpoint": "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq",
+                "status": "accepted",
+                "head_seq": 4,
+                "stored": 5,
+                "reject_code": null,
+                "at_seq": null,
+                "message": null
+              }
+            ]
+          },
+          {
+            "ledger_id": "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq",
+            "head_seq": 5,
+            "head_event": "x5qnmxl7deauocabfyvh6mqc7gqrbtnhqxbgc7xvyrfrd4dxmttg",
+            "results": [
+              {
+                "endpoint": "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq",
+                "status": "accepted",
+                "head_seq": 5,
+                "stored": 6,
+                "reject_code": null,
+                "at_seq": null,
+                "message": null
+              }
+            ]
+          },
+          {
+            "ledger_id": "jqtnsb2me7mj5xsze4gavqklohqhdmkshfiz65khjmxtxjruqh2q",
+            "head_seq": 1,
+            "head_event": "mbbbku273mpldii4ikzx2lkw2mas2nad6v2yrigyerytyinygnhu",
+            "results": [
+              {
+                "endpoint": "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq",
+                "status": "accepted",
+                "head_seq": 1,
+                "stored": 2,
+                "reject_code": null,
+                "at_seq": null,
+                "message": null
+              }
+            ]
+          },
+          {
+            "ledger_id": "2okqwhextnpkpmydrgrkk563vbehcklffwfzidxlh5dslawjmn6a",
+            "head_seq": 5,
+            "head_event": "eucgljk4topb7m2cy6ctb35qsm5ti5tsbizc53injr3e6fru2g2c",
+            "results": [
+              {
+                "endpoint": "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq",
+                "status": "accepted",
+                "head_seq": 5,
+                "stored": 6,
+                "reject_code": null,
+                "at_seq": null,
+                "message": null
+              }
+            ]
+          }
+        ],
+        "graph": {
+          "sync_id": "1700000900000-k4t2q",
+          "last_sync_ms": 1700000900000,
+          "depth": 2,
+          "roots": [
+            {
+              "identity_id": "2okqwhextnpkpmydrgrkk563vbehcklffwfzidxlh5dslawjmn6a",
+              "display_name": "Acme Corporation",
+              "email": null,
+              "alias": "acme",
+              "hostname": null,
+              "verification_status": "unclaimed",
+              "provenance": "profile"
+            },
+            {
+              "identity_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+              "display_name": "Alice Ashworth",
+              "email": "alice@alice.example",
+              "alias": "alice",
+              "hostname": "alice.example",
+              "verification_status": "unverified",
+              "provenance": "profile"
+            },
+            {
+              "identity_id": "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq",
+              "display_name": "Bob Baxter",
+              "email": "bob@bob.example",
+              "alias": "bob",
+              "hostname": "bob.example",
+              "verification_status": "unverified",
+              "provenance": "profile"
+            },
+            {
+              "identity_id": "jqtnsb2me7mj5xsze4gavqklohqhdmkshfiz65khjmxtxjruqh2q",
+              "display_name": null,
+              "email": null,
+              "alias": "carol",
+              "hostname": null,
+              "verification_status": "unclaimed",
+              "provenance": "profile"
+            }
+          ],
+          "node_count": 4,
+          "edge_count": 4,
+          "fetch_count": 4,
+          "truncated": false,
+          "truncated_by": null,
+          "equivocations": [],
+          "stale": false
+        }
+      }
+    },
+    {
+      "case": "home-not-empty",
+      "command": "mabel dev seed --json",
+      "exit_code": 2,
+      "document": {
+        "ok": false,
+        "code": 2,
+        "message": "this home already holds 1 identity; mabel dev seed only fills an empty home",
+        "details": {
+          "reason": "home_not_empty",
+          "identity_count": 1
+        }
+      }
+    }
+  ]
+}

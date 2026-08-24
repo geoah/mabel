@@ -10,12 +10,18 @@
 //! so `degrees: null` means no path was found within the caps, never "no
 //! relationship". And the reverse list is who this crawl happened to read,
 //! which is why it is labelled `best_effort` every time.
+//!
+//! [`known_identities`] answers the other direction, "who does this home know",
+//! from the same resolver and the same generation, so one name means one thing
+//! on both routes.
+
+use std::collections::BTreeSet;
 
 use mabel_core::IdentityId;
 
 use crate::api::documents::{
-    GraphStatus, Id, Lookup, LookupHop, LookupPath, LookupReverse, LookupReverseEdge, LookupTrust,
-    Provenance, ResolvedIdentity, VerificationStatus,
+    GraphStatus, Id, KnownIdentity, Lookup, LookupHop, LookupPath, LookupReverse,
+    LookupReverseEdge, LookupTrust, Provenance, ResolvedIdentity, VerificationStatus,
 };
 use crate::api::error::ServiceError;
 use crate::graph::{Generation, GraphNode, GraphSummary, MAX_PATHS};
@@ -247,6 +253,108 @@ pub fn lookup_document(
         graph_truncated: generation.is_some_and(|generation| generation.summary.truncated),
         truncated_by: generation.and_then(|generation| generation.summary.truncated_by),
     })
+}
+
+/// The answer to `GET /api/identities/known`: every identity this home has a
+/// local record of and does not control, by ascending id.
+///
+/// Three local sources merge into one row set, and a row may come from any
+/// one of them alone: a ledger under `ledgers/` this home did not root, a node
+/// of the stored crawl generation, and an id with nothing but a note under
+/// `contacts/`. Nothing here opens a socket or queries DNS, so a row says what
+/// this home already knew.
+///
+/// Every identity under `identities/` is left out. That is every identity this
+/// wallet can sign for, and those are the rows `GET /api/identities` serves.
+///
+/// # Errors
+///
+/// Returns the storage errors of listing the home and folding the ledgers it
+/// stores.
+pub fn known_identities(
+    core: &WalletCore,
+    generation: Option<&Generation>,
+) -> Result<Vec<KnownIdentity>, ServiceError> {
+    let home = core.home();
+    let local: BTreeSet<IdentityId> = home
+        .identities()
+        .map_err(storage_error)?
+        .into_iter()
+        .collect();
+    let trusted = trusted_subjects(core, &local)?;
+
+    // A `BTreeSet` merges the three sources: one row per identity, whichever
+    // sources named it.
+    let mut known: BTreeSet<IdentityId> = BTreeSet::new();
+    known.extend(home.ledgers().map_err(storage_error)?);
+    if let Some(generation) = generation {
+        known.extend(
+            generation
+                .nodes
+                .keys()
+                .filter_map(|identity| ids::parse_identity(identity).ok()),
+        );
+    }
+    known.extend(core.contact_store().identities().map_err(storage_error)?);
+
+    let names = Names::new(core, generation);
+    let mut rows = Vec::new();
+    for identity in known {
+        if local.contains(&identity) {
+            continue;
+        }
+        let identity_id = ids::identity(identity);
+        let resolved = names.resolve(identity);
+        let stored = core.holds(identity)?;
+        let loaded = stored.then(|| core.load(identity)).transpose()?;
+        rows.push(KnownIdentity {
+            identity_id: resolved.identity_id,
+            display_name: resolved.display_name,
+            alias: resolved.alias,
+            email: resolved.email,
+            hostname: resolved.hostname,
+            verification_status: resolved.verification_status,
+            declared_kind: loaded.as_ref().map(|loaded| loaded.declared_kind()),
+            stored,
+            trusted: trusted.contains(&identity),
+            // The depth the crawl recorded is the edge count from the root
+            // nearest this node, which is what "how far is this from me" means
+            // over one generation.
+            degrees: generation
+                .and_then(|generation| generation.node(&identity_id))
+                .map(|node| u64::from(node.depth)),
+            head_seq: loaded.map(|loaded| loaded.head_seq),
+        });
+    }
+    // By the rendered id, not by the 32 bytes behind it: the base32 alphabet
+    // puts its digits before its letters, so the two orders differ, and the
+    // one a client can reproduce from the document is this one.
+    rows.sort_by(|left, right| left.identity_id.cmp(&right.identity_id));
+    Ok(rows)
+}
+
+/// Every identity a ledger in this home currently attests to.
+///
+/// A revoked attestation is not trust (proposal 001 section 3.4), so the fold's
+/// own `revoked_by` is what decides each entry.
+fn trusted_subjects(
+    core: &WalletCore,
+    local: &BTreeSet<IdentityId>,
+) -> Result<BTreeSet<IdentityId>, ServiceError> {
+    let mut subjects = BTreeSet::new();
+    for identity in local {
+        // An identity whose ledger never landed attests to nothing, and must
+        // not fail the whole listing.
+        if !core.holds(*identity)? {
+            continue;
+        }
+        for attestation in core.load(*identity)?.state.trust().values() {
+            if !attestation.is_revoked() {
+                subjects.insert(attestation.subject);
+            }
+        }
+    }
+    Ok(subjects)
 }
 
 /// The local identity a lookup defaults to when the caller names none: the

@@ -209,6 +209,41 @@ impl ContactStore {
         }
     }
 
+    /// Every identity this store holds a note on, sorted.
+    ///
+    /// A file name that is not an identity id is skipped rather than failing
+    /// the listing: the caller wants the notes, not an audit of the directory.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError::Io`] when the directory exists and cannot be
+    /// listed. A directory that is not there yet holds no notes.
+    ///
+    /// [`StorageError::Io`]: crate::StorageError::Io
+    pub fn identities(&self) -> Result<Vec<IdentityId>> {
+        let entries = match fs::read_dir(&self.dir) {
+            Ok(entries) => entries,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(error) => return Err(io_at(&self.dir)(error)),
+        };
+        let mut identities = Vec::new();
+        for entry in entries {
+            let name = entry.map_err(io_at(&self.dir))?.file_name();
+            let Some(stem) = name
+                .to_string_lossy()
+                .strip_suffix(".json")
+                .map(str::to_owned)
+            else {
+                continue;
+            };
+            if let Ok(identity) = stem.parse::<IdentityId>() {
+                identities.push(identity);
+            }
+        }
+        identities.sort_unstable();
+        Ok(identities)
+    }
+
     /// Writes the note for one identity, or removes the file when both fields
     /// are unset.
     ///

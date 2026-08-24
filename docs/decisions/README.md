@@ -38,3 +38,6 @@ Number 013 was used briefly and retired.
 - [017-plain-language-ui.md](017-plain-language-ui.md): UI copy is plain
   language, no middle dots or dashes as separators, no developer mode, and
   identity creation offers the secret keys for saving. Accepted.
+- [018-explicit-exposure.md](018-explicit-exposure.md): a node answers
+  loopback unless an operator names a host with `--allow-host`; the wallet has
+  no authentication, so the operator owns the network boundary. Accepted.

@@ -1,6 +1,7 @@
 //! One module per command group, and the dispatch that reaches them.
 
 pub mod contact;
+pub mod dev;
 pub mod graph;
 pub mod identity;
 pub mod membership;
@@ -14,8 +15,9 @@ pub mod witness;
 pub mod witness_run;
 
 use crate::cli::{
-    Cli, Command, ContactCommand, GraphCommand, IdentityCommand, MembershipCommand, NodeCommand,
-    ProfileCommand, SyncCommand, TrustCommand, VerifyCommand, WalletCommand, WitnessCommand,
+    Cli, Command, ContactCommand, DevCommand, GraphCommand, IdentityCommand, MembershipCommand,
+    NodeCommand, ProfileCommand, SyncCommand, TrustCommand, VerifyCommand, WalletCommand,
+    WitnessCommand,
 };
 use crate::context::Context;
 use crate::error::Result;
@@ -142,7 +144,8 @@ fn dispatch(ctx: &Context, cli: &Cli) -> Result<Outcome> {
                 iroh_port,
                 peer,
                 ui_dir,
-            } => witness_run::run(ctx, *http, *iroh_port, peer, ui_dir.clone()),
+                allow_host,
+            } => witness_run::run(ctx, *http, *iroh_port, peer, ui_dir.clone(), allow_host),
         },
         Command::Sync { command } => match command {
             SyncCommand::Push { identity, to, peer } => {
@@ -173,11 +176,15 @@ fn dispatch(ctx: &Context, cli: &Cli) -> Result<Outcome> {
                 iroh_port,
                 peer,
                 ui_dir,
-            } => wallet_serve::serve(ctx, *http, *iroh_port, peer, ui_dir.clone()),
+                allow_host,
+            } => wallet_serve::serve(ctx, *http, *iroh_port, peer, ui_dir.clone(), allow_host),
         },
         Command::Node { command } => match command {
             NodeCommand::Id => node::id(ctx),
             NodeCommand::Ticket { addr, port } => node::ticket(ctx, addr, *port),
+        },
+        Command::Dev { command } => match command {
+            DevCommand::Seed { peer } => dev::seed(ctx, peer),
         },
     }
 }

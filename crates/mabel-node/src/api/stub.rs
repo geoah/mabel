@@ -18,8 +18,9 @@ use serde_json::Value;
 use super::documents::{
     Accepted, Admitted, Appended, ContactView, CreatedIdentity, FetchedLedger, ForkList,
     GraphSynced, GraphView, Id, Identity, IdentityKeys, IdentityList, IdentityView, Invited,
-    LedgerList, LedgerPage, LedgerView, Lookup, MembershipView, ProfileReplaced, Pushed, Removed,
-    Resolved, Revoked, VerificationChecked, WalletNode, WitnessLedgers, WitnessList, WitnessNode,
+    KnownIdentity, KnownIdentityList, LedgerList, LedgerPage, LedgerView, Lookup, MembershipView,
+    ProfileReplaced, Pushed, Removed, Resolved, Revoked, VerificationChecked, WalletNode,
+    WitnessLedgers, WitnessList, WitnessNode,
 };
 use super::error::ServiceError;
 use super::service::{
@@ -47,10 +48,11 @@ macro_rules! fixture {
 }
 
 /// Every frozen HTTP fixture, in the order `contracts/README.md` indexes them.
-pub const FIXTURES: [Fixture; 31] = [
+pub const FIXTURES: [Fixture; 32] = [
     fixture!("wallet-get-node"),
     fixture!("wallet-get-identities"),
     fixture!("wallet-post-identities"),
+    fixture!("wallet-get-known-identities"),
     fixture!("wallet-get-identity"),
     fixture!("wallet-get-identity-ledger"),
     fixture!("wallet-get-identity-keys"),
@@ -214,6 +216,8 @@ pub enum WalletCall {
     Identities,
     /// `POST /api/identities`.
     CreateIdentity(CreateIdentity),
+    /// `GET /api/identities/known`.
+    KnownIdentities,
     /// `GET /api/identities/{identity_id}`.
     Identity(Id),
     /// `GET /api/identities/{identity_id}/ledger`.
@@ -274,6 +278,8 @@ pub struct StubWalletService {
     pub identities: Vec<Identity>,
     /// `POST /api/identities`.
     pub created_identity: CreatedIdentity,
+    /// `GET /api/identities/known`.
+    pub known_identities: Vec<KnownIdentity>,
     /// `GET /api/identities/{identity_id}`.
     pub identity: Identity,
     /// `GET /api/identities/{identity_id}/ledger`.
@@ -342,10 +348,13 @@ impl StubWalletService {
         let identities: IdentityList =
             Fixture::named("wallet-get-identities.json").parse_response();
         let identity: IdentityView = Fixture::named("wallet-get-identity.json").parse_response();
+        let known: KnownIdentityList =
+            Fixture::named("wallet-get-known-identities.json").parse_response();
         Self {
             node: Fixture::named("wallet-get-node.json").parse_response(),
             identities: identities.identities,
             created_identity: Fixture::named("wallet-post-identities.json").parse_response(),
+            known_identities: known.identities,
             identity: identity.identity,
             identity_ledger: Fixture::named("wallet-get-identity-ledger.json").parse_response(),
             identity_keys: Fixture::named("wallet-get-identity-keys.json").parse_response(),
@@ -423,6 +432,10 @@ impl WalletService for StubWalletService {
             WalletCall::CreateIdentity(request),
             self.created_identity.clone(),
         )
+    }
+
+    fn known_identities(&self) -> ServiceFuture<'_, Vec<KnownIdentity>> {
+        self.answer(WalletCall::KnownIdentities, self.known_identities.clone())
     }
 
     fn identity(&self, identity_id: Id) -> ServiceFuture<'_, Identity> {

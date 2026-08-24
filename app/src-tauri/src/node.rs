@@ -168,6 +168,7 @@ pub async fn start(options: NodeOptions) -> anyhow::Result<RunningNode> {
             iroh_port: None,
             peers: Vec::new(),
             ui,
+            ..WalletOptions::default()
         },
     )
     .await?;

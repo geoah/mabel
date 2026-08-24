@@ -9,10 +9,14 @@
 
 use std::sync::Arc;
 
+use iroh_base::SecretKey;
 use mabel_core::IdentityId;
-use mabel_node::api::documents::{DeclaredKind, Id, Provenance, VerificationStatus};
+use mabel_core::proto::DeclaredKind as ProtoDeclaredKind;
+use mabel_core::sign::{Position, Root, build_inception, build_profile_update};
+use mabel_node::api::documents::{DeclaredKind, Id, KnownIdentity, Provenance, VerificationStatus};
 use mabel_node::api::service::{
-    CreateIdentity, EventPageRequest, LookupRequest, ReplaceProfile, SetContact, WalletService,
+    AddTrust, CreateIdentity, EventPageRequest, LookupRequest, ReplaceProfile, SetContact,
+    WalletService,
 };
 use mabel_node::graph::{StubFetcher, stub_identity};
 use mabel_node::verification::{StubResolver, VerificationStore};
@@ -98,6 +102,9 @@ async fn service(
     .with_resolver(resolver)
     .with_fetcher(Arc::new(fetcher))
 }
+
+/// The timestamp the first event of a fabricated foreign chain carries.
+const T0: u64 = 1_700_000_000_000;
 
 fn id(identity: IdentityId) -> Id {
     Id::parse(&identity.to_string()).expect("a rendered id")
@@ -725,4 +732,209 @@ async fn a_home_with_no_identity_cannot_be_crawled() {
 
     let graph = wallet.service.graph().await.expect("an answer");
     assert_eq!(graph.graph, None);
+}
+
+// ------------------------------------------------------ known identities ----
+
+/// Stores a foreign ledger the way a fetch stores one: two verified events,
+/// an inception and a `ProfileUpdate`, written under `ledgers/<id>/`.
+///
+/// A real fetch dials a witness for the same bytes. This writes them directly
+/// so the test stays offline, which is what the crawler's stub fetcher does
+/// for the graph half.
+async fn store_foreign_ledger(wallet: &Wallet, seed: u8, display_name: &str) -> IdentityId {
+    let signer = SecretKey::from_bytes(&[seed; 32]);
+    let reserve = SecretKey::from_bytes(&[seed.wrapping_add(128); 32]).public();
+    let inception = build_inception(
+        &signer,
+        ProtoDeclaredKind::Person,
+        Root::Raw {
+            reserve_key: &reserve,
+        },
+        [seed; 16],
+        T0,
+    )
+    .expect("the inception builds");
+    let ledger: IdentityId = inception.event_id.into();
+    let profile = build_profile_update(
+        &signer,
+        &Position {
+            ledger,
+            seq: 1,
+            prev: inception.event_id,
+            prev_timestamp_ms: T0,
+        },
+        Some(display_name),
+        None,
+        None,
+        T0 + 60_000,
+    )
+    .expect("the profile update builds");
+
+    let lock = wallet.core.append_lock(ledger).await;
+    wallet
+        .core
+        .store_events(
+            &lock,
+            ledger,
+            &[inception.signed_event, profile.signed_event],
+            None,
+        )
+        .expect("the copy lands");
+    ledger
+}
+
+/// The row for one identity, by id.
+fn row(rows: &[KnownIdentity], identity: IdentityId) -> KnownIdentity {
+    rows.iter()
+        .find(|row| row.identity_id == id(identity))
+        .unwrap_or_else(|| panic!("no row for {identity}"))
+        .clone()
+}
+
+/// The three local sources merge into one list: a stored ledger, a crawl node
+/// nothing was stored for, and an id with nothing but a contact note.
+#[tokio::test]
+async fn the_known_list_merges_the_stored_ledgers_the_crawl_and_the_contact_notes() {
+    let mut wallet = Wallet::plain().await;
+    let alice = wallet.identity("alice");
+    let bob = store_foreign_ledger(&wallet, 2, "Bob Baxter").await;
+    let carol = stub_identity(3);
+    let dave = stub_identity(9);
+
+    // Alice attests to Bob and to nobody else, so one row is trusted.
+    wallet
+        .service
+        .add_trust(AddTrust {
+            issuer: id(alice),
+            subject: id(bob),
+        })
+        .await
+        .expect("the attestation lands");
+    // Dave is a note and nothing else: no ledger, no crawl.
+    wallet
+        .service
+        .set_contact(SetContact {
+            identity_id: id(dave),
+            nickname: Some("dave down the road".to_owned()),
+            note: None,
+        })
+        .await
+        .expect("the note is written");
+
+    // Alice trusts Bob, Bob trusts Carol: one degree and two over the crawl.
+    wallet
+        .rewire(
+            StubResolver::new(),
+            StubFetcher::new()
+                .trusting(alice, &[bob])
+                .trusting(bob, &[carol])
+                .trusting(carol, &[]),
+        )
+        .await;
+    wallet.service.sync_graph().await.expect("the crawl runs");
+
+    let rows = wallet
+        .service
+        .known_identities()
+        .await
+        .expect("the list answers");
+    let ids: Vec<Id> = rows.iter().map(|row| row.identity_id.clone()).collect();
+    assert_eq!(ids.len(), 3, "{ids:?}");
+    assert!(
+        !ids.contains(&id(alice)),
+        "an identity this wallet signs for is not a known identity: {ids:?}"
+    );
+    let mut ascending = ids.clone();
+    ascending.sort_by(|left, right| left.as_str().cmp(right.as_str()));
+    assert_eq!(ids, ascending, "rows sort by ascending identity_id");
+
+    // The stored copy is the authority on the name and the kind, over
+    // anything the crawl read.
+    let stored = row(&rows, bob);
+    assert!(stored.stored);
+    assert!(stored.trusted);
+    assert_eq!(stored.display_name.as_deref(), Some("Bob Baxter"));
+    assert_eq!(stored.declared_kind, Some(DeclaredKind::Person));
+    assert_eq!(stored.head_seq, Some(1));
+    assert_eq!(stored.degrees, Some(1));
+    assert_eq!(stored.verification_status, VerificationStatus::Unclaimed);
+    assert_eq!(stored.alias, None);
+
+    // A crawl node this home stored nothing for reports its distance and
+    // nulls what only a copy answers.
+    let crawled = row(&rows, carol);
+    assert!(!crawled.stored);
+    assert!(!crawled.trusted);
+    assert_eq!(crawled.declared_kind, None);
+    assert_eq!(crawled.head_seq, None);
+    assert_eq!(crawled.degrees, Some(2));
+    assert_eq!(crawled.display_name, None);
+
+    // A note alone puts an identity on the list, with `degrees: null`:
+    // "not in my crawl" is an answer, not "no relationship".
+    let noted = row(&rows, dave);
+    assert!(!noted.stored);
+    assert!(!noted.trusted);
+    assert_eq!(noted.degrees, None);
+    assert_eq!(noted.head_seq, None);
+    assert_eq!(noted.alias.as_deref(), Some("dave down the road"));
+    assert_eq!(noted.display_name, None);
+
+    // The route reads the home: it queries no DNS and dials nothing.
+    assert!(wallet.resolver.queries().is_empty());
+}
+
+/// Revoking the attestation drops `trusted` and leaves the row in place: a
+/// revoked attestation is not trust, and a ledger this home stores stays
+/// known.
+#[tokio::test]
+async fn a_revoked_attestation_leaves_the_row_untrusted() {
+    let wallet = Wallet::plain().await;
+    let alice = wallet.identity("alice");
+    let bob = store_foreign_ledger(&wallet, 4, "Bob Baxter").await;
+
+    let appended = wallet
+        .service
+        .add_trust(AddTrust {
+            issuer: id(alice),
+            subject: id(bob),
+        })
+        .await
+        .expect("the attestation lands");
+    let rows = wallet
+        .service
+        .known_identities()
+        .await
+        .expect("the list answers");
+    assert!(row(&rows, bob).trusted);
+
+    wallet
+        .service
+        .revoke_trust(appended.event.event_id.clone(), id(alice))
+        .await
+        .expect("the revocation lands");
+    let rows = wallet
+        .service
+        .known_identities()
+        .await
+        .expect("the list answers");
+    let stored = row(&rows, bob);
+    assert!(!stored.trusted);
+    assert!(stored.stored, "the copy is still here");
+    // No crawl has run, so nothing knows how far away Bob is.
+    assert_eq!(stored.degrees, None);
+}
+
+/// A home holding one identity and nothing else knows nobody.
+#[tokio::test]
+async fn a_home_with_only_its_own_identity_knows_nobody() {
+    let wallet = Wallet::plain().await;
+    wallet.identity("alice");
+    let rows = wallet
+        .service
+        .known_identities()
+        .await
+        .expect("the list answers");
+    assert!(rows.is_empty(), "{rows:?}");
 }

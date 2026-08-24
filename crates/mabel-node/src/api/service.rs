@@ -16,9 +16,10 @@ use std::pin::Pin;
 
 use super::documents::{
     Accepted, Admitted, Appended, ContactView, CreatedIdentity, DeclaredKind, FetchedLedger,
-    ForkList, GraphSynced, GraphView, Id, Identity, IdentityKeys, Invited, LedgerList, LedgerPage,
-    LedgerView, Lookup, MembershipView, ProfileReplaced, Pushed, Removed, Resolved, Revoked,
-    RoleName, VerificationChecked, WalletNode, WitnessLedgers, WitnessList, WitnessNode,
+    ForkList, GraphSynced, GraphView, Id, Identity, IdentityKeys, Invited, KnownIdentity,
+    LedgerList, LedgerPage, LedgerView, Lookup, MembershipView, ProfileReplaced, Pushed, Removed,
+    Resolved, Revoked, RoleName, VerificationChecked, WalletNode, WitnessLedgers, WitnessList,
+    WitnessNode,
 };
 use super::error::ServiceError;
 
@@ -196,6 +197,10 @@ pub trait WalletService: Send + Sync + 'static {
 
     /// `POST /api/identities`.
     fn create_identity(&self, request: CreateIdentity) -> ServiceFuture<'_, CreatedIdentity>;
+
+    /// `GET /api/identities/known`, sorted by ascending id: every identity this
+    /// home has a local record of and does not control.
+    fn known_identities(&self) -> ServiceFuture<'_, Vec<KnownIdentity>>;
 
     /// `GET /api/identities/{identity_id}`.
     fn identity(&self, identity_id: Id) -> ServiceFuture<'_, Identity>;

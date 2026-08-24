@@ -57,6 +57,14 @@ pub struct NodeConfig {
     /// Address the HTTP API and UI bind to.
     #[serde(default = "default_http_bind")]
     pub http_bind: SocketAddr,
+    /// `Host` values the HTTP API accepts besides the two loopback spellings,
+    /// each a `host` or a `host:port` (decision 018).
+    ///
+    /// Empty by default, which is loopback only. The `--allow-host` flags of
+    /// `mabel wallet serve` and `mabel witness run` add to this set rather than
+    /// replacing it.
+    #[serde(default)]
+    pub allowed_hosts: Vec<String>,
     /// Witness endpoints this node pushes to by default.
     #[serde(default)]
     pub witnesses: Vec<EndpointId>,
@@ -83,6 +91,7 @@ impl Default for NodeConfig {
         Self {
             role: NodeRole::default(),
             http_bind: DEFAULT_HTTP_BIND,
+            allowed_hosts: Vec::new(),
             witnesses: Vec::new(),
             storage_capacity: DEFAULT_STORAGE_CAPACITY,
             relay: RelayMode::default(),
@@ -136,6 +145,24 @@ mod tests {
         assert_eq!(config.storage_capacity, DEFAULT_STORAGE_CAPACITY);
         assert_eq!(config.relay, RelayMode::N0);
         assert!(config.witnesses.is_empty());
+        assert!(config.allowed_hosts.is_empty());
+    }
+
+    /// A home written before decision 018 loads with an empty
+    /// `allowed_hosts`, which is loopback only.
+    #[test]
+    fn a_node_json_without_allowed_hosts_accepts_loopback_alone() {
+        let config = NodeConfig::from_json(br#"{"role": "wallet"}"#).expect("the field defaults");
+        assert!(config.allowed_hosts.is_empty());
+    }
+
+    #[test]
+    fn allowed_hosts_round_trips_as_written() {
+        let config = NodeConfig::from_json(br#"{"allowed_hosts": ["wallet.tailnet.example"]}"#)
+            .expect("a host list loads");
+        assert_eq!(config.allowed_hosts, ["wallet.tailnet.example"]);
+        let text = String::from_utf8(config.to_json().unwrap()).unwrap();
+        assert!(text.contains("\"wallet.tailnet.example\""), "{text}");
     }
 
     #[test]
@@ -144,6 +171,7 @@ mod tests {
         let config = NodeConfig {
             role: NodeRole::Witness,
             http_bind: "127.0.0.1:1234".parse().unwrap(),
+            allowed_hosts: vec!["witness.tailnet.example".to_owned()],
             witnesses: vec![key],
             storage_capacity: 42,
             relay: RelayMode::Disabled,
