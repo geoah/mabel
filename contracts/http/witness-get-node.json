@@ -9,6 +9,13 @@
     "http_bind": "127.0.0.1:9080",
     "relay": "disabled",
     "witnesses": [],
+    "witness_for": [
+      {
+        "identity": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+        "advertised": true,
+        "reason": null
+      }
+    ],
     "storage_capacity": 2147483648,
     "storage_used": 27648,
     "ledger_count": 2,

@@ -23,7 +23,8 @@ use mabel_core::sign::{
 use mabel_core::{EventId, IdentityId, LedgerId};
 use mabel_net::store::Provenance;
 use mabel_net::{ALPN, Client, EndpointConfig, LedgerProtocol, RelayChoice, bind_endpoint};
-use mabel_node::witness::{WitnessCaps, WitnessStorage, WitnessStore};
+use mabel_node::NewEvent;
+use mabel_node::witness::{AdmissionPolicy, WitnessCaps, WitnessStorage, WitnessStore};
 use mabel_node::{HomeOptions, NodeConfig, NodeHome, NodeRole, RelayMode};
 use tempfile::TempDir;
 
@@ -59,14 +60,36 @@ pub fn subject(seed: u8) -> IdentityId {
     IdentityId::from_bytes([seed; 32])
 }
 
+/// The key the witness identity's own chain is signed with.
+const WITNESS_SEED: u8 = 0x77;
+
 /// The witness identity every home here witnesses for, and the one a chain
 /// names in its `WitnessSet` to be admitted (proposal 006 sections 1 and 4).
 ///
-/// It is an id and nothing else: `witness_for` needs no local key and no local
-/// copy of the witness's own ledger.
+/// It is the ledger a chain keyed by [`WITNESS_SEED`] roots, so it is a real
+/// identity id whose chain can carry an advertisement: proposal 006 section 4.1
+/// admits a ledger this home does not store only while the local copy of this
+/// identity advertises this home's endpoint. The id itself is deterministic,
+/// since the inception fixes it and the advertisement that follows does not.
 #[must_use]
 pub fn witness_identity() -> IdentityId {
-    subject(0x77)
+    Chain::new(WITNESS_SEED).ledger
+}
+
+/// The witness identity's own chain: its inception, a `WitnessSet` naming
+/// itself, and one `EndpointAdvertisement` naming `endpoints`.
+///
+/// A witness identity names itself, which proposal 006 section 1 allows and
+/// section 4 needs: a machine that holds this identity's id and nothing else is
+/// admitted this chain under clause 3, and every later copy of it under clause
+/// 2.
+#[must_use]
+pub fn witness_chain(endpoints: &[EndpointId]) -> Chain {
+    let mut chain = Chain::new(WITNESS_SEED);
+    chain.add_witness();
+    let built = chain.advertisement(endpoints);
+    chain.add(built);
+    chain
 }
 
 /// A public key as every document spells it: lowercase base32, not the hex
@@ -87,20 +110,71 @@ pub struct Home {
 }
 
 impl Home {
-    /// A witness home with relays disabled, `storage_capacity` bytes and
-    /// [`witness_identity`] in `witness_for`.
+    /// A witness home with relays disabled, `storage_capacity` bytes,
+    /// [`witness_identity`] in `witness_for` and that identity's chain on disk
+    /// advertising this home, which is what proposal 006 section 4.1 asks for
+    /// before the home takes a ledger it does not store.
     #[must_use]
     pub fn new(storage_capacity: u64) -> Self {
-        Self::witnessing_for(storage_capacity, vec![witness_identity()])
+        let home = Self::witnessing_for(storage_capacity, vec![witness_identity()]);
+        home.advertise(&[home.endpoint_id()]);
+        home
     }
 
-    /// A witness home whose `witness_for` is exactly `witness_for`, which is
-    /// how a test asks for a home that witnesses for nobody.
+    /// A witness home whose `witness_for` is exactly `witness_for` and which
+    /// holds no copy of any witness identity: how a test asks for a home that
+    /// witnesses for nobody, or for one whose advertisement has not landed.
     #[must_use]
     pub fn witnessing_for(storage_capacity: u64, witness_for: Vec<IdentityId>) -> Self {
         let dir = tempfile::tempdir().expect("a temp directory");
         let home = create(dir.path(), storage_capacity, witness_for);
         Self { dir, home }
+    }
+
+    /// Writes the witness identity's own chain into this home, advertising
+    /// `endpoints`.
+    ///
+    /// This is what a fleet machine holds: a copy of the witness identity's
+    /// ledger, no key of it. The events are written straight to `ledgers/`,
+    /// since a home that has not stored the advertisement yet cannot be pushed
+    /// the chain that carries it.
+    pub fn advertise(&self, endpoints: &[EndpointId]) {
+        let chain = witness_chain(endpoints);
+        let store = self.home.ledger(chain.ledger);
+        let events: Vec<NewEvent<'_>> = chain
+            .events
+            .iter()
+            .enumerate()
+            .map(|(seq, bytes)| NewEvent {
+                seq: seq as u64,
+                event_id: mabel_net::wire::signed_event_id(bytes).expect("an event has an id"),
+                bytes,
+            })
+            .collect();
+        store.append(&events).expect("the witness chain is written");
+    }
+
+    /// Bytes the witness identity's own chain takes in this home, which is
+    /// what every ledger count and byte total here starts from.
+    #[must_use]
+    pub fn stored_bytes(&self) -> u64 {
+        self.home
+            .ledger(witness_identity())
+            .read_all()
+            .expect("the events read")
+            .iter()
+            .map(|event| event.bytes.len() as u64)
+            .sum()
+    }
+
+    /// Rewrites `node.json`'s `storage_capacity`, which a cap test sets from
+    /// what the home already holds.
+    pub fn set_storage_capacity(&self, bytes: u64) {
+        let mut config = self.home.config().expect("node.json reads");
+        config.storage_capacity = bytes;
+        self.home
+            .write_config(&config)
+            .expect("node.json is written");
     }
 
     /// This home's Iroh endpoint id, which is what admission checks for.
@@ -119,14 +193,16 @@ impl Home {
     /// names.
     #[must_use]
     pub fn storage(&self, caps: WitnessCaps) -> Arc<WitnessStorage> {
+        self.storage_with(caps, AdmissionPolicy::witnessing_for(self.witness_for()))
+    }
+
+    /// Storage over this home with `caps` and an explicit admission policy,
+    /// which is how a test turns the retired tag-11 clause on.
+    #[must_use]
+    pub fn storage_with(&self, caps: WitnessCaps, policy: AdmissionPolicy) -> Arc<WitnessStorage> {
         Arc::new(
-            WitnessStorage::open(
-                self.home.clone(),
-                self.endpoint_id(),
-                caps,
-                self.witness_for(),
-            )
-            .expect("the index builds"),
+            WitnessStorage::open(self.home.clone(), self.endpoint_id(), caps, policy)
+                .expect("the index builds"),
         )
     }
 }
@@ -236,6 +312,18 @@ impl Chain {
             .expect("the advertisement builds")
     }
 
+    /// A retired tag-11 `WitnessConfig` for the next position, not added to the
+    /// chain.
+    ///
+    /// The one caller of the retired signing path outside the vector tests: it
+    /// is how a test builds a chain from before witnesses were identities, which
+    /// is what the legacy clause of proposal 006 section 4 admits.
+    #[must_use]
+    pub fn witness_config(&self, endpoints: &[EndpointId]) -> BuiltEvent {
+        mabel_core::sign::build_witness_config(&self.signer, &self.at(), endpoints, self.now())
+            .expect("the witness config builds")
+    }
+
     /// An attestation for the next position, not added to the chain.
     #[must_use]
     pub fn attestation(&self, seed: u8) -> BuiltEvent {
@@ -277,6 +365,12 @@ impl Chain {
     /// which is what admits a push to a home built by [`home`].
     pub fn add_witness(&mut self) -> EventId {
         self.add_witness_set(&[witness_identity()])
+    }
+
+    /// Adds a tag-11 `WitnessConfig` naming `endpoints`.
+    pub fn add_witness_config(&mut self, endpoints: &[EndpointId]) -> EventId {
+        let built = self.witness_config(endpoints);
+        self.add(built)
     }
 
     /// Adds an attestation naming `subject(seed)`.

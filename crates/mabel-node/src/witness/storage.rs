@@ -37,6 +37,97 @@ use crate::home::NodeHome;
 use crate::ledger::{LedgerStore, NewEvent};
 use crate::now_ms;
 
+/// What `node.json` says about which pushes this home takes (proposal 006
+/// section 4).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct AdmissionPolicy {
+    /// The witness identities this home witnesses for. Empty means nobody.
+    pub witness_for: Vec<IdentityId>,
+    /// Whether the retired tag-11 clause may admit a push.
+    pub accept_legacy_witness_config: bool,
+}
+
+impl AdmissionPolicy {
+    /// The policy `node.json` records.
+    #[must_use]
+    pub fn from_config(config: &NodeConfig) -> Self {
+        Self {
+            witness_for: config.witness_for.clone(),
+            accept_legacy_witness_config: config.accept_legacy_witness_config,
+        }
+    }
+
+    /// A policy that witnesses for `witness_for` and refuses the tag-11
+    /// clause, which is every home written after proposal 006.
+    #[must_use]
+    pub fn witnessing_for(witness_for: Vec<IdentityId>) -> Self {
+        Self {
+            witness_for,
+            accept_legacy_witness_config: false,
+        }
+    }
+}
+
+/// Why a `witness_for` entry does not admit a ledger this home does not store
+/// (proposal 006 section 4.1).
+///
+/// One of the three reasons the startup log and `GET /api/node` name.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AdvertisementGap {
+    /// This home holds no copy of that identity's ledger.
+    NoLocalCopy,
+    /// The copy it holds advertises no endpoint at all.
+    AdvertisesNothing,
+    /// The copy it holds advertises other endpoints and not this one.
+    AdvertisesOtherEndpoints,
+}
+
+impl AdvertisementGap {
+    /// The sentence the log line and the node document carry.
+    #[must_use]
+    pub const fn reason(self) -> &'static str {
+        match self {
+            Self::NoLocalCopy => "this home holds no copy of that identity's ledger",
+            Self::AdvertisesNothing => "that identity's ledger advertises no endpoint",
+            Self::AdvertisesOtherEndpoints => {
+                "that identity's ledger advertises other endpoints and not this one"
+            }
+        }
+    }
+}
+
+impl std::fmt::Display for AdvertisementGap {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.reason())
+    }
+}
+
+/// One `witness_for` entry and whether it admits a new ledger.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WitnessForEntry {
+    /// The witness identity `node.json` names.
+    pub identity: IdentityId,
+    /// `None` when the latest local copy of that identity advertises this
+    /// home's endpoint, which is what proposal 006 section 4.1 requires.
+    pub gap: Option<AdvertisementGap>,
+}
+
+impl WitnessForEntry {
+    /// Whether this entry admits a ledger this home does not already store.
+    #[must_use]
+    pub const fn advertised(&self) -> bool {
+        self.gap.is_none()
+    }
+}
+
+/// The endpoint this home answers on and what each `witness_for` entry says
+/// about it.
+#[derive(Debug)]
+struct Advertised {
+    endpoint: EndpointId,
+    entries: Vec<WitnessForEntry>,
+}
+
 /// Events one ledger may hold (proposal 001 section 5).
 pub const MAX_EVENTS_PER_LEDGER: u64 = 4096;
 
@@ -211,14 +302,19 @@ struct Index {
 #[derive(Debug)]
 pub struct WitnessStorage {
     home: NodeHome,
-    endpoint: EndpointId,
     caps: WitnessCaps,
-    witness_for: Vec<IdentityId>,
+    policy: AdmissionPolicy,
     index: Mutex<Index>,
+    advertised: Mutex<Advertised>,
 }
 
 impl WitnessStorage {
-    /// Opens a home and builds the index from the event files.
+    /// Opens a home, builds the index from the event files and checks the
+    /// advertisement invariant of proposal 006 section 4.1 once, naming each
+    /// failing `witness_for` entry in the log.
+    ///
+    /// A failing entry never stops the open: a witness whose advertisement has
+    /// not landed yet serves what it has.
     ///
     /// # Errors
     ///
@@ -227,20 +323,33 @@ impl WitnessStorage {
         home: NodeHome,
         endpoint: EndpointId,
         caps: WitnessCaps,
-        witness_for: Vec<IdentityId>,
+        policy: AdmissionPolicy,
     ) -> Result<Self> {
         let storage = Self {
             home,
-            endpoint,
             caps,
-            witness_for,
+            policy,
             index: Mutex::new(Index::default()),
+            advertised: Mutex::new(Advertised {
+                endpoint,
+                entries: Vec::new(),
+            }),
         };
         storage.reload()?;
+        for entry in storage.witness_for_entries() {
+            if let Some(gap) = entry.gap {
+                warn!(
+                    witness = %entry.identity,
+                    reason = gap.reason(),
+                    "this home witnesses for an identity that does not advertise it, so it takes \
+                     no new ledger under that identity; the ledgers it already stores keep growing"
+                );
+            }
+        }
         Ok(storage)
     }
 
-    /// Opens a home with the caps `node.json` names.
+    /// Opens a home with the caps and the admission policy `node.json` names.
     ///
     /// # Errors
     ///
@@ -248,7 +357,8 @@ impl WitnessStorage {
     pub fn open_from_config(home: NodeHome, endpoint: EndpointId) -> Result<Self> {
         let config = home.config()?;
         let caps = WitnessCaps::from_config(&config);
-        Self::open(home, endpoint, caps, config.witness_for)
+        let policy = AdmissionPolicy::from_config(&config);
+        Self::open(home, endpoint, caps, policy)
     }
 
     /// The home this witness stores into.
@@ -260,7 +370,7 @@ impl WitnessStorage {
     /// This witness's own endpoint id, which is what admission checks for.
     #[must_use]
     pub fn endpoint(&self) -> EndpointId {
-        self.endpoint
+        self.advertisement().endpoint
     }
 
     /// The caps this witness enforces.
@@ -276,10 +386,41 @@ impl WitnessStorage {
     /// it holds no signing key for is refused.
     #[must_use]
     pub fn witness_for(&self) -> &[IdentityId] {
-        &self.witness_for
+        &self.policy.witness_for
     }
 
-    /// Rebuilds the folded-state cache from the event files.
+    /// Whether `node.json` turns the retired tag-11 clause on.
+    #[must_use]
+    pub fn accepts_legacy_witness_config(&self) -> bool {
+        self.policy.accept_legacy_witness_config
+    }
+
+    /// Each `witness_for` entry with the reason it admits no new ledger, or
+    /// `None` per entry when it does (proposal 006 section 4.1).
+    ///
+    /// This is what `GET /api/node` reports beside the id.
+    #[must_use]
+    pub fn witness_for_entries(&self) -> Vec<WitnessForEntry> {
+        self.advertisement().entries.clone()
+    }
+
+    /// Records a new endpoint id for this home and rechecks the advertisement
+    /// invariant against it, which is what a regenerated `node.key` needs
+    /// (proposal 006 section 4.1).
+    pub fn note_endpoint(&self, endpoint: EndpointId) {
+        {
+            let mut advertised = self.advertisement();
+            if advertised.endpoint == endpoint {
+                return;
+            }
+            advertised.endpoint = endpoint;
+        }
+        let index = self.lock();
+        self.recheck(&index);
+    }
+
+    /// Rebuilds the folded-state cache from the event files, and the
+    /// advertisement verdicts with it.
     ///
     /// # Errors
     ///
@@ -294,7 +435,9 @@ impl WitnessStorage {
             rebuilt.storage_used += entry.bytes;
             rebuilt.ledgers.insert(ledger, entry);
         }
-        *self.lock() = rebuilt;
+        let mut index = self.lock();
+        *index = rebuilt;
+        self.recheck(&index);
         Ok(())
     }
 
@@ -458,7 +601,12 @@ impl WitnessStorage {
                     head_seq: entry.head_seq,
                     stored: 0,
                 }),
-                None => Err(not_admitted(ledger, &self.witness_for)),
+                // Nothing to fold, so no state names a witness: an empty push
+                // for a ledger this home does not store is refused, in the
+                // words of the rule that refused it.
+                None => {
+                    Err(self.refusal(ledger, &LedgerState::default(), &self.witness_for_entries()))
+                }
             };
         }
 
@@ -516,11 +664,9 @@ impl WitnessStorage {
         }
         // Admission on the first push, where the stored state is empty: the
         // pushed state's witness set must name an identity this home witnesses
-        // for, or this home must hold a signing key for the ledger (proposal
-        // 006 section 4).
-        if !self.admits(ledger, None, &state) {
-            return Err(not_admitted(ledger, &self.witness_for));
-        }
+        // for and that identity must advertise this home, or this home must
+        // hold a signing key for the ledger (proposal 006 sections 4 and 4.1).
+        self.admit(ledger, None, &state)?;
         let stored = self.store_run(index, ledger, state, &events[..valid], provenance)?;
         match violation {
             Some(reason) => Err(StoreError::invalid(valid as u64, reason.to_string())),
@@ -586,9 +732,7 @@ impl WitnessStorage {
         // what admits the removal event itself: a controller who appends a
         // witness set dropping this home needs that event to reach it
         // (proposal 006 section 4).
-        if !self.admits(ledger, Some(&stored_state), &state) {
-            return Err(not_admitted(ledger, &self.witness_for));
-        }
+        self.admit(ledger, Some(&stored_state), &state)?;
         let stored = self.store_run(index, ledger, state, &suffix[..valid], provenance)?;
         match violation {
             Some(reason) => Err(StoreError::invalid(
@@ -602,22 +746,131 @@ impl WitnessStorage {
     /// Whether this home takes a push for `ledger`, given the state it already
     /// stores and the state the push folds to (proposal 006 section 4).
     ///
-    /// Three clauses, in order: this home holds a signing key for the ledger,
-    /// so it controls it; the stored state's witness set names an identity this
-    /// home witnesses for; the pushed state's does. The third is what admits a
-    /// first push, the second is what admits the event that drops this home from
-    /// the set. The gated tag-11 legacy clause is ticket 034.
-    fn admits(&self, ledger: LedgerId, pre: Option<&LedgerState>, post: &LedgerState) -> bool {
+    /// Four clauses, in order:
+    ///
+    /// 1. this home holds a signing key for `ledger`, so it controls it;
+    /// 2. the stored state's witness set names an identity this home witnesses
+    ///    for, which is what admits the very event that drops this home from
+    ///    the set;
+    /// 3. the pushed state's witness set names an identity this home witnesses
+    ///    for **and** advertises this home, which is what admits a first push;
+    /// 4. the retired tag-11 clause, gated on a non-empty `witness_for`, on
+    ///    `accept_legacy_witness_config` and on either state's tag-11 list
+    ///    naming this home's own endpoint id.
+    ///
+    /// Clause 3 alone answers to the advertisement invariant of section 4.1: an
+    /// entry whose identity does not advertise this home stops taking ledgers
+    /// this home does not store, and the ones it stores keep growing under
+    /// clause 2.
+    fn admit(
+        &self,
+        ledger: LedgerId,
+        pre: Option<&LedgerState>,
+        post: &LedgerState,
+    ) -> std::result::Result<(), StoreError> {
+        // Clause 1.
         if self.home.can_sign_for(ledger) {
-            return true;
+            return Ok(());
         }
-        let named = |state: &LedgerState| {
+        let names = |state: &LedgerState, witnesses: &[IdentityId]| {
             state
                 .witness_identities()
                 .iter()
-                .any(|witness| self.witness_for.contains(witness))
+                .any(|witness| witnesses.contains(witness))
         };
-        pre.is_some_and(named) || named(post)
+        // Clause 2, over every entry: a ledger already stored under an identity
+        // this home witnesses for keeps taking extensions.
+        if pre.is_some_and(|pre| names(pre, &self.policy.witness_for)) {
+            return Ok(());
+        }
+        // Clause 3, over the entries whose identity advertises this home.
+        let entries = self.witness_for_entries();
+        let advertising: Vec<IdentityId> = entries
+            .iter()
+            .filter(|entry| entry.advertised())
+            .map(|entry| entry.identity)
+            .collect();
+        if names(post, &advertising) {
+            return Ok(());
+        }
+        // Clause 4, twice gated and off by default.
+        if self.legacy_admits(pre, post) {
+            return Ok(());
+        }
+        Err(self.refusal(ledger, post, &entries))
+    }
+
+    /// The retired tag-11 clause of proposal 006 section 4.
+    ///
+    /// It holds only when `witness_for` is non-empty, `node.json` turns the
+    /// switch on, and one of the two states carries a tag-11 `WitnessConfig`
+    /// naming this home's own endpoint id. Gating on `witness_for` is what
+    /// keeps the promise that a home witnessing for nobody takes no stranger's
+    /// push, whatever the switch says.
+    fn legacy_admits(&self, pre: Option<&LedgerState>, post: &LedgerState) -> bool {
+        if self.policy.witness_for.is_empty() || !self.policy.accept_legacy_witness_config {
+            return false;
+        }
+        let endpoint = self.endpoint();
+        let listed = |state: &LedgerState| state.witness_endpoints().contains(&endpoint);
+        pre.is_some_and(listed) || listed(post)
+    }
+
+    /// Why a push was not admitted, in the words of the rule that refused it.
+    fn refusal(
+        &self,
+        ledger: LedgerId,
+        post: &LedgerState,
+        entries: &[WitnessForEntry],
+    ) -> StoreError {
+        if entries.is_empty() {
+            return StoreError::not_admitted(format!(
+                "this home witnesses for nobody, so it does not take pushes for {ledger}"
+            ));
+        }
+        // A witness set that names an entry which is failing section 4.1 is the
+        // one refusal an operator can act on, so it is named first.
+        let blocked = entries.iter().find(|entry| {
+            entry.gap.is_some() && post.witness_identities().contains(&entry.identity)
+        });
+        if let Some(entry) = blocked {
+            let gap = entry.gap.expect("the entry was filtered on its gap");
+            return StoreError::not_admitted(format!(
+                "{ledger} names {} as a witness and this home witnesses for it, but {}, so this \
+                 home takes no ledger it does not already store under it",
+                entry.identity,
+                gap.reason()
+            ));
+        }
+        StoreError::not_admitted(format!(
+            "the witness set of {ledger} names none of the {} identities this home witnesses for",
+            entries.len()
+        ))
+    }
+
+    /// Rechecks the advertisement invariant against `index` and records the
+    /// verdicts (proposal 006 section 4.1).
+    ///
+    /// The caller holds the index, so the lock order is index then
+    /// advertisement, everywhere.
+    fn recheck(&self, index: &Index) {
+        let mut advertised = self.advertisement();
+        let endpoint = advertised.endpoint;
+        advertised.entries = self
+            .policy
+            .witness_for
+            .iter()
+            .map(|identity| WitnessForEntry {
+                identity: *identity,
+                gap: gap_for(index, *identity, endpoint),
+            })
+            .collect();
+    }
+
+    fn advertisement(&self) -> MutexGuard<'_, Advertised> {
+        self.advertised
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     /// Writes a verified run of events and updates the index.
@@ -686,6 +939,29 @@ impl WitnessStorage {
         entry.head_event = written.event_id;
         entry.bytes += bytes;
         entry.updated_ms = written.updated_ms;
+        // A longer copy of an identity this home witnesses for may have landed
+        // the advertisement the invariant waits for, or dropped it (proposal
+        // 006 section 4.1).
+        if self.policy.witness_for.contains(&ledger) {
+            let before = self.witness_for_entries();
+            self.recheck(index);
+            for (was, now) in before.iter().zip(self.witness_for_entries()) {
+                if was.identity != now.identity || was.gap == now.gap {
+                    continue;
+                }
+                match now.gap {
+                    Some(gap) => warn!(
+                        witness = %now.identity,
+                        reason = gap.reason(),
+                        "a longer copy of this identity stops it admitting new ledgers here"
+                    ),
+                    None => tracing::info!(
+                        witness = %now.identity,
+                        "this identity now advertises this home, which admits new ledgers under it"
+                    ),
+                }
+            }
+        }
         Ok(PushOutcome {
             head_seq: written.seq,
             stored: events.len() as u32,
@@ -943,16 +1219,23 @@ fn too_large(msg: impl Into<String>) -> StoreError {
     StoreError::Rejected(Rejection::new(RejectCode::TooLarge, msg))
 }
 
-fn not_admitted(ledger: LedgerId, witness_for: &[IdentityId]) -> StoreError {
-    if witness_for.is_empty() {
-        return StoreError::not_admitted(format!(
-            "this home witnesses for nobody, so it does not take pushes for {ledger}"
-        ));
+/// Whether the local copy of `witness` advertises `endpoint`, and why not when
+/// it does not (proposal 006 section 4.1).
+///
+/// The copy is the one this home stores: the kept chain, which a fork record
+/// does not replace (proposal 001 section 5).
+fn gap_for(index: &Index, witness: IdentityId, endpoint: EndpointId) -> Option<AdvertisementGap> {
+    let Some(entry) = index.ledgers.get(&witness) else {
+        return Some(AdvertisementGap::NoLocalCopy);
+    };
+    let endpoints = entry.state.endpoints();
+    if endpoints.is_empty() {
+        return Some(AdvertisementGap::AdvertisesNothing);
     }
-    StoreError::not_admitted(format!(
-        "the witness set of {ledger} names none of the {} identities this home witnesses for",
-        witness_for.len()
-    ))
+    if !endpoints.contains(&endpoint) {
+        return Some(AdvertisementGap::AdvertisesOtherEndpoints);
+    }
+    None
 }
 
 fn unavailable(error: StorageError) -> StoreError {

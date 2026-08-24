@@ -26,7 +26,7 @@ use super::error::ServiceError;
 use super::service::{
     AcceptInvitation, AddTrust, AdmitAcceptance, CreateIdentity, EventPageRequest, FetchIdentity,
     ForkQuery, Invite, LookupRequest, PageRequest, PushRequest, RemoveMembership, ReplaceProfile,
-    ServiceFuture, SetContact, WalletService, WitnessService,
+    ResolveInput, ServiceFuture, SetContact, WalletService, WitnessService,
 };
 
 /// One file under `contracts/http/`.
@@ -240,8 +240,8 @@ pub enum WalletCall {
     FetchIdentity(FetchIdentity),
     /// `GET /api/lookup/{identity_id}`.
     Lookup(LookupRequest),
-    /// `GET /api/resolve/{hostname}`.
-    Resolve(String),
+    /// `GET /api/resolve?input=`.
+    Resolve(ResolveInput),
     /// `GET /api/witnesses`.
     Witnesses,
     /// `GET /api/witnesses/{endpoint_id}/ledgers`.
@@ -302,7 +302,7 @@ pub struct StubWalletService {
     pub fetched: FetchedLedger,
     /// `GET /api/lookup/{identity_id}`.
     pub lookup: Lookup,
-    /// `GET /api/resolve/{hostname}`.
+    /// `GET /api/resolve?input=`.
     pub resolved: Resolved,
     /// `GET /api/witnesses`.
     pub witnesses: WitnessList,
@@ -509,8 +509,8 @@ impl WalletService for StubWalletService {
         self.answer(WalletCall::Lookup(request), self.lookup.clone())
     }
 
-    fn resolve(&self, hostname: String) -> ServiceFuture<'_, Resolved> {
-        self.answer(WalletCall::Resolve(hostname), self.resolved.clone())
+    fn resolve(&self, input: ResolveInput) -> ServiceFuture<'_, Resolved> {
+        self.answer(WalletCall::Resolve(input), self.resolved.clone())
     }
 
     fn witnesses(&self) -> ServiceFuture<'_, WitnessList> {

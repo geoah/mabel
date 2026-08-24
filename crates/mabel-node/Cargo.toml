@@ -19,6 +19,10 @@ getrandom.workspace = true
 hickory-resolver = "0.26.1"
 iroh.workspace = true
 iroh-base.workspace = true
+# `GET /api/resolve?input=` decodes its one parameter exactly once (proposal
+# 006 section 7). Already in the tree behind axum; named here because this
+# crate calls it directly rather than through an extractor.
+percent-encoding = "2.3.2"
 rust-embed.workspace = true
 serde.workspace = true
 serde_json.workspace = true

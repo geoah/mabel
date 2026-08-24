@@ -82,10 +82,12 @@ impl Fixed {
         }
     }
 
-    /// The ledgers this witness holds, by ascending id, as the documents
-    /// spell them.
+    /// The three ledgers this witness holds, by ascending id, as the documents
+    /// spell them: the two pushed chains and the witness identity's own, which
+    /// the home stores so it may take a ledger at all (proposal 006 section
+    /// 4.1).
     fn sorted(&self) -> Vec<LedgerId> {
-        let mut ledgers = vec![self.alice.ledger, self.bob.ledger];
+        let mut ledgers = vec![self.alice.ledger, self.bob.ledger, witness_identity()];
         ledgers.sort_unstable();
         ledgers
     }
@@ -93,6 +95,34 @@ impl Fixed {
     fn id(&self, ledger: LedgerId) -> Id {
         Id::parse(&ledger.to_string()).expect("a ledger id renders as an id")
     }
+}
+
+/// Proposal 006 section 4.1: a home whose `witness_for` entry does not
+/// advertise it still starts and still serves, and `GET /api/node` names the
+/// entry with the reason it admits no new ledger.
+#[tokio::test]
+async fn the_node_document_names_a_witness_for_entry_that_does_not_advertise_this_home() {
+    let home = Home::witnessing_for(DEFAULT_STORAGE_CAPACITY, vec![witness_identity()]);
+    let service = Arc::new(WitnessReadService::new(
+        home.storage(WitnessCaps::default()),
+        DEFAULT_HTTP_BIND,
+        RelayMode::Disabled,
+    ));
+    let actual = document(&service.node().await.expect("the node answers"));
+
+    assert_eq!(
+        actual["witness_for"],
+        json!([{
+            "identity": witness_identity().to_string(),
+            "advertised": false,
+            "reason": "this home holds no copy of that identity's ledger"
+        }])
+    );
+    assert_eq!(
+        actual["ledger_count"],
+        json!(0),
+        "and it serves what it has"
+    );
 }
 
 /// A ledger this witness does not hold.
@@ -165,7 +195,8 @@ async fn the_node_document_matches_the_fixture() {
         actual["endpoint_id"],
         json!(rendered(&fixed.home.endpoint_id()))
     );
-    assert_eq!(actual["ledger_count"], json!(2));
+    // The two pushed chains and the witness identity's own.
+    assert_eq!(actual["ledger_count"], json!(3));
     assert_eq!(actual["fork_count"], json!(1));
     assert_eq!(actual["storage_capacity"], json!(DEFAULT_STORAGE_CAPACITY));
     let stored: u64 = fixed
@@ -175,8 +206,22 @@ async fn the_node_document_matches_the_fixture() {
         .chain(fixed.bob.all().iter())
         .map(|event| event.len() as u64)
         .sum();
-    assert_eq!(actual["storage_used"], json!(stored));
+    assert_eq!(
+        actual["storage_used"],
+        json!(stored + fixed.home.stored_bytes())
+    );
     assert_eq!(actual["http_bind"], json!(HOST));
+
+    // The `witness_for` entry this home takes pushes under, with the
+    // advertisement invariant beside it (proposal 006 section 4.1).
+    assert_eq!(
+        actual["witness_for"],
+        json!([{
+            "identity": witness_identity().to_string(),
+            "advertised": true,
+            "reason": null
+        }])
+    );
 }
 
 #[tokio::test]
@@ -223,7 +268,7 @@ async fn the_ledger_list_matches_the_fixture_and_pages_by_ascending_id() {
             .expect("the list answers");
         assert_eq!(page.entries.len(), 1);
         assert_eq!(page.entries[0].ledger_id, fixed.id(*ledger));
-        assert_eq!(page.more, offset == 0);
+        assert_eq!(page.more, offset < sorted.len() - 1, "offset {offset}");
     }
 }
 
@@ -437,7 +482,7 @@ async fn the_witness_router_answers_from_this_service() {
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["ok"], json!(true));
     assert_eq!(body["role"], json!("witness"));
-    assert_eq!(body["ledger_count"], json!(2));
+    assert_eq!(body["ledger_count"], json!(3));
 
     let (status, body) = send(
         router.clone(),

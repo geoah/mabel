@@ -21,7 +21,7 @@ use crate::config::NodeRole;
 use crate::endpoint::bind_endpoint;
 use crate::home::NodeHome;
 use crate::witness::service::WitnessReadService;
-use crate::witness::storage::{WitnessCaps, WitnessStorage};
+use crate::witness::storage::{AdmissionPolicy, WitnessCaps, WitnessStorage};
 use crate::witness::store::WitnessStore;
 
 /// What `mabel witness run` was told on the command line.
@@ -82,13 +82,14 @@ impl WitnessRuntime {
             .caps
             .unwrap_or_else(|| WitnessCaps::from_config(&config));
         let opened = home.clone();
-        // Which identities this home witnesses for is read once, at startup:
-        // an operator who edits `witness_for` restarts the node, exactly as
-        // they do for every other `node.json` value (proposal 006 section 4).
-        let witness_for = config.witness_for.clone();
+        // Which identities this home witnesses for, and whether the retired
+        // tag-11 clause may admit a push, are read once at startup: an operator
+        // who edits either restarts the node, exactly as they do for every
+        // other `node.json` value (proposal 006 section 4).
+        let policy = AdmissionPolicy::from_config(&config);
         let storage = Arc::new(
             tokio::task::spawn_blocking(move || {
-                WitnessStorage::open(opened, endpoint_id, caps, witness_for)
+                WitnessStorage::open(opened, endpoint_id, caps, policy)
             })
             .await??,
         );

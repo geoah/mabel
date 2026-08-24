@@ -11,14 +11,17 @@ mod common;
 
 use common::{
     Chain, Home, Served, from_endpoint, home, home_witnessing_for_nobody, secret, subject,
-    witness_identity,
+    witness_chain, witness_identity,
 };
 use mabel_core::proto::RejectCode;
 use mabel_net::error::Rejection;
 use mabel_net::store::StoreError;
 use mabel_net::{Client, EndpointConfig, RelayChoice, bind_endpoint};
 use mabel_node::api::UiSource;
-use mabel_node::witness::{MAX_FORK_RECORDS, Totals, WitnessCaps, WitnessOptions, WitnessRuntime};
+use mabel_node::witness::{
+    AdmissionPolicy, AdvertisementGap, MAX_FORK_RECORDS, Totals, WitnessCaps, WitnessForEntry,
+    WitnessOptions, WitnessRuntime,
+};
 
 /// The rejection a storage call answered.
 fn rejected(error: StoreError) -> Rejection {
@@ -200,6 +203,249 @@ async fn a_push_naming_a_witness_this_home_witnesses_for_is_admitted_and_keeps_g
         assert_eq!(outcome.stored, 1);
         served.stop().await;
     });
+}
+
+/// Clause 2 of proposal 006 section 4 admits the very event that drops this
+/// witness, and nothing after it: the prefix stays, and reads stay open.
+#[test]
+fn the_event_that_drops_this_witness_lands_and_the_next_extension_does_not() {
+    let home = home();
+    let storage = home.storage(WitnessCaps::default());
+    let mut chain = Chain::new(51);
+    chain.add_witness();
+    storage
+        .push(chain.ledger, &chain.all(), from_endpoint(1))
+        .expect("the witness set names an identity this home witnesses for");
+
+    // The removal itself: a witness set naming nobody. The stored state still
+    // names this home's witness, which is what admits it.
+    chain.add_witness_set(&[]);
+    let outcome = storage
+        .push(chain.ledger, &chain.from(2), from_endpoint(1))
+        .expect("clause 2 admits the event that drops this witness");
+    assert_eq!(outcome.head_seq, 2);
+
+    // Neither state names an identity this home witnesses for now.
+    chain.add_attestation(9);
+    let rejection = rejected(
+        storage
+            .push(chain.ledger, &chain.from(3), from_endpoint(1))
+            .expect_err("the witness set names nobody"),
+    );
+    assert_eq!(rejection.code, RejectCode::NotAdmitted);
+
+    // The prefix is kept and still served: reads stay open to all.
+    let page = storage
+        .page(chain.ledger, 0, 16)
+        .expect("the read succeeds")
+        .expect("the prefix is stored");
+    assert_eq!(page.events, chain.slice(0..3));
+    assert_eq!(page.report.summary.head_seq, 2);
+}
+
+/// Clause 3 admits the first push and nothing else does: a chain whose first
+/// witness set names nobody is refused outright, and the reason names the rule.
+#[test]
+fn a_first_push_naming_nobody_is_refused_and_the_reason_names_the_rule() {
+    let home = home();
+    let storage = home.storage(WitnessCaps::default());
+    let mut chain = Chain::new(52);
+    chain.add_witness_set(&[]);
+
+    let rejection = rejected(
+        storage
+            .push(chain.ledger, &chain.all(), from_endpoint(1))
+            .expect_err("no state names an identity this home witnesses for"),
+    );
+    assert_eq!(rejection.code, RejectCode::NotAdmitted);
+    assert!(
+        rejection.msg.contains("names none of the 1 identities"),
+        "{}",
+        rejection.msg
+    );
+    assert!(storage.head(chain.ledger).is_none());
+}
+
+/// Proposal 006 section 4.1: a `witness_for` entry admits a ledger this home
+/// does not store only while the latest local copy of that identity advertises
+/// this home. A failing entry stops that and nothing else.
+#[test]
+fn an_entry_whose_identity_stops_advertising_this_home_takes_no_new_ledger() {
+    let home = home();
+    let storage = home.storage(WitnessCaps::default());
+    assert_eq!(
+        storage.witness_for_entries(),
+        [WitnessForEntry {
+            identity: witness_identity(),
+            gap: None
+        }]
+    );
+
+    let mut stored = Chain::new(53);
+    stored.add_witness();
+    storage
+        .push(stored.ledger, &stored.all(), from_endpoint(1))
+        .expect("the advertisement holds, so a new ledger is admitted");
+
+    // A longer copy of the witness identity's own ledger moves the
+    // advertisement to another machine. Clause 2 admits it: the copy this home
+    // stores names the witness identity itself.
+    let mut witness = witness_chain(&[home.endpoint_id()]);
+    let moved = witness.advertisement(&[secret(60).public()]);
+    witness.add(moved);
+    storage
+        .push(witness.ledger, &witness.from(3), from_endpoint(1))
+        .expect("clause 2 admits an extension of a stored ledger");
+    assert_eq!(
+        storage.witness_for_entries(),
+        [WitnessForEntry {
+            identity: witness_identity(),
+            gap: Some(AdvertisementGap::AdvertisesOtherEndpoints)
+        }],
+        "storing a longer copy rechecks the invariant"
+    );
+
+    // The ledger this home already stores keeps growing.
+    stored.add_attestation(9);
+    let outcome = storage
+        .push(stored.ledger, &stored.from(2), from_endpoint(1))
+        .expect("clause 2 keeps firing for a stored ledger");
+    assert_eq!(outcome.stored, 1);
+
+    // A ledger it does not store is refused, and the refusal names the reason.
+    let mut fresh = Chain::new(54);
+    fresh.add_witness();
+    let rejection = rejected(
+        storage
+            .push(fresh.ledger, &fresh.all(), from_endpoint(1))
+            .expect_err("the entry advertises another machine"),
+    );
+    assert_eq!(rejection.code, RejectCode::NotAdmitted);
+    assert!(
+        rejection
+            .msg
+            .contains("advertises other endpoints and not this one"),
+        "{}",
+        rejection.msg
+    );
+    // Reads of what it holds are untouched.
+    assert!(storage.report(stored.ledger).is_some());
+}
+
+/// The three reasons of section 4.1, and the recheck when this home's own
+/// endpoint id changes. Startup never fails on any of them.
+#[test]
+fn the_three_advertisement_reasons_are_reported_and_rechecked() {
+    let no_copy = Home::witnessing_for(
+        mabel_node::DEFAULT_STORAGE_CAPACITY,
+        vec![witness_identity()],
+    );
+    let storage = no_copy.storage(WitnessCaps::default());
+    assert_eq!(
+        storage.witness_for_entries()[0].gap,
+        Some(AdvertisementGap::NoLocalCopy)
+    );
+    let mut chain = Chain::new(55);
+    chain.add_witness();
+    let rejection = rejected(
+        storage
+            .push(chain.ledger, &chain.all(), from_endpoint(1))
+            .expect_err("no copy of the witness identity is stored here"),
+    );
+    assert!(rejection.msg.contains("holds no copy"), "{}", rejection.msg);
+
+    // An advertisement that names nobody is the second reason.
+    let cleared = Home::witnessing_for(
+        mabel_node::DEFAULT_STORAGE_CAPACITY,
+        vec![witness_identity()],
+    );
+    cleared.advertise(&[]);
+    assert_eq!(
+        cleared
+            .storage(WitnessCaps::default())
+            .witness_for_entries()[0]
+            .gap,
+        Some(AdvertisementGap::AdvertisesNothing)
+    );
+
+    // A regenerated `node.key` is a new endpoint id, and the invariant is
+    // checked against it.
+    let advertised = home();
+    let storage = advertised.storage(WitnessCaps::default());
+    assert!(storage.witness_for_entries()[0].advertised());
+    storage.note_endpoint(secret(61).public());
+    assert_eq!(
+        storage.witness_for_entries()[0].gap,
+        Some(AdvertisementGap::AdvertisesOtherEndpoints)
+    );
+    storage.note_endpoint(advertised.endpoint_id());
+    assert!(
+        storage.witness_for_entries()[0].advertised(),
+        "the old key advertises this home again"
+    );
+}
+
+/// Clause 4 of proposal 006 section 4: the retired tag-11 list admits a push
+/// only with the switch on, a non-empty `witness_for`, and this home's own
+/// endpoint id in the list. Each leg alone refuses.
+#[test]
+fn the_legacy_tag_eleven_clause_needs_all_three_of_its_gates() {
+    let legacy = |seed: u8, endpoint| {
+        let mut chain = Chain::new(seed);
+        chain.add_witness_config(&[endpoint]);
+        chain
+    };
+    let migrating = |witness_for: Vec<mabel_core::IdentityId>| AdmissionPolicy {
+        witness_for,
+        accept_legacy_witness_config: true,
+    };
+
+    // Leg one: the switch is off, which is the default.
+    let strict = home();
+    let chain = legacy(56, strict.endpoint_id());
+    let storage = strict.storage(WitnessCaps::default());
+    assert!(!storage.accepts_legacy_witness_config());
+    let rejection = rejected(
+        storage
+            .push(chain.ledger, &chain.all(), from_endpoint(1))
+            .expect_err("the switch is off"),
+    );
+    assert_eq!(rejection.code, RejectCode::NotAdmitted);
+
+    // Every gate open: the same chain lands.
+    let storage = strict.storage_with(WitnessCaps::default(), migrating(vec![witness_identity()]));
+    let outcome = storage
+        .push(chain.ledger, &chain.all(), from_endpoint(1))
+        .expect("the legacy clause admits it");
+    assert_eq!(outcome.stored, 2);
+
+    // Leg two: the switch is on and `witness_for` is empty, so the home
+    // witnesses for nobody and the clause cannot fire.
+    let nobody = home_witnessing_for_nobody();
+    let chain = legacy(57, nobody.endpoint_id());
+    let storage = nobody.storage_with(WitnessCaps::default(), migrating(Vec::new()));
+    let rejection = rejected(
+        storage
+            .push(chain.ledger, &chain.all(), from_endpoint(1))
+            .expect_err("this home witnesses for nobody"),
+    );
+    assert!(
+        rejection.msg.contains("witnesses for nobody"),
+        "{}",
+        rejection.msg
+    );
+
+    // Leg three: the switch is on but the list names another machine.
+    let elsewhere = home();
+    let chain = legacy(58, secret(62).public());
+    let storage =
+        elsewhere.storage_with(WitnessCaps::default(), migrating(vec![witness_identity()]));
+    let rejection = rejected(
+        storage
+            .push(chain.ledger, &chain.all(), from_endpoint(1))
+            .expect_err("the tag-11 list names another endpoint"),
+    );
+    assert_eq!(rejection.code, RejectCode::NotAdmitted);
 }
 
 // ------------------------------------------------------- push semantics ----
@@ -551,7 +797,10 @@ fn the_ninth_fork_on_one_ledger_is_not_recorded_and_forks_truncated_is_set() {
                 .expect_err("seq 2 is taken"),
         );
         assert_eq!(rejection.code, RejectCode::Fork, "candidate {offset}");
-        let summary = &storage.list(0, 10).items[0];
+        let summary = &storage
+            .report(chain.ledger)
+            .expect("the ledger is stored")
+            .summary;
         let recorded = u32::try_from(offset + 1).unwrap().min(MAX_FORK_RECORDS);
         assert_eq!(summary.fork_count, recorded, "candidate {offset}");
         assert_eq!(
@@ -561,7 +810,10 @@ fn the_ninth_fork_on_one_ledger_is_not_recorded_and_forks_truncated_is_set() {
         );
     }
 
-    let summary = &storage.list(0, 10).items[0];
+    let summary = &storage
+        .report(chain.ledger)
+        .expect("the ledger is stored")
+        .summary;
     assert_eq!(summary.fork_count, MAX_FORK_RECORDS);
     assert!(summary.forks_truncated);
     assert_eq!(
@@ -662,8 +914,10 @@ fn a_push_over_the_per_ledger_byte_cap_is_rejected() {
 #[test]
 fn a_push_over_the_ledger_count_cap_is_rejected() {
     let home = home();
+    // Two ledgers: the witness identity's own chain, which the home holds so it
+    // may take a new one at all, and the first pushed chain.
     let storage = home.storage(WitnessCaps {
-        ledgers: 1,
+        ledgers: 2,
         ..WitnessCaps::default()
     });
     let mut first = Chain::new(14);
@@ -681,17 +935,20 @@ fn a_push_over_the_ledger_count_cap_is_rejected() {
     );
     assert_eq!(rejection.code, RejectCode::TooLarge);
     assert!(rejection.msg.contains("ledgers"), "{}", rejection.msg);
-    assert_eq!(storage.totals().ledger_count, 1);
+    assert_eq!(storage.totals().ledger_count, 2);
 }
 
 #[test]
 fn a_push_over_the_storage_capacity_from_node_json_is_rejected() {
     // `node.json` is where the capacity comes from (proposal 001 section 8).
-    let home = Home::new(300);
+    // The capacity leaves 300 bytes above the witness identity's own chain.
+    let home = home();
+    let held = home.stored_bytes();
+    home.set_storage_capacity(held + 300);
     let storage = home.storage(WitnessCaps::from_config(
         &home.home.config().expect("node.json reads"),
     ));
-    assert_eq!(storage.caps().storage_capacity, 300);
+    assert_eq!(storage.caps().storage_capacity, held + 300);
     let mut chain = Chain::new(16);
     chain.add_witness();
     chain.add_attestation(9);
@@ -703,7 +960,11 @@ fn a_push_over_the_storage_capacity_from_node_json_is_rejected() {
     );
     assert_eq!(rejection.code, RejectCode::TooLarge);
     assert!(rejection.msg.contains("capacity"), "{}", rejection.msg);
-    assert_eq!(storage.totals().storage_used, 0);
+    assert_eq!(
+        storage.totals().storage_used,
+        held,
+        "the refused push stored nothing"
+    );
 }
 
 // ------------------------------------------------------- reads and state ---
@@ -712,7 +973,9 @@ fn a_push_over_the_storage_capacity_from_node_json_is_rejected() {
 fn list_paging_is_stable_in_ascending_ledger_id_order() {
     let home = home();
     let storage = home.storage(WitnessCaps::default());
-    let mut stored = Vec::new();
+    // The witness identity's own chain is on disk before anything is pushed, so
+    // it is one of the rows the paging walks.
+    let mut stored = vec![witness_identity()];
     for seed in [21u8, 22, 23, 24] {
         let mut chain = Chain::new(seed);
         chain.add_witness();
@@ -724,10 +987,10 @@ fn list_paging_is_stable_in_ascending_ledger_id_order() {
     stored.sort_unstable();
 
     let mut paged = Vec::new();
-    for offset in 0..4 {
+    for offset in 0..stored.len() {
         let page = storage.list(offset, 1);
         assert_eq!(page.items.len(), 1);
-        assert_eq!(page.more, offset < 3, "offset {offset}");
+        assert_eq!(page.more, offset < stored.len() - 1, "offset {offset}");
         paged.push(page.items[0].ledger);
     }
     assert_eq!(paged, stored, "paging follows ascending ledger id");
@@ -738,7 +1001,7 @@ fn list_paging_is_stable_in_ascending_ledger_id_order() {
         stored
     );
     assert!(!whole.more);
-    assert!(storage.list(4, 10).items.is_empty());
+    assert!(storage.list(stored.len(), 10).items.is_empty());
 }
 
 #[test]
@@ -748,18 +1011,25 @@ fn a_restart_rebuilds_the_folded_state_from_disk() {
     chain.add_witness();
     let attestation = chain.add_attestation(9);
 
+    let held = home.stored_bytes();
     let before = {
         let storage = home.storage(WitnessCaps::default());
         storage
             .push(chain.ledger, &chain.all(), from_endpoint(3))
             .expect("the chain names this witness");
-        storage.list(0, 10).items[0].clone()
+        storage
+            .report(chain.ledger)
+            .expect("the ledger is stored")
+            .summary
     };
 
     // A second storage over the same home rebuilds everything from the event
     // files.
     let storage = home.storage(WitnessCaps::default());
-    let after = storage.list(0, 10).items[0].clone();
+    let after = storage
+        .report(chain.ledger)
+        .expect("the ledger is stored")
+        .summary;
     assert_eq!(after.ledger, before.ledger);
     assert_eq!(after.head_seq, before.head_seq);
     assert_eq!(after.head_event, before.head_event);
@@ -768,9 +1038,15 @@ fn a_restart_rebuilds_the_folded_state_from_disk() {
     assert_eq!(
         storage.totals(),
         Totals {
-            ledger_count: 1,
+            // The pushed chain beside the witness identity's own.
+            ledger_count: 2,
             fork_count: 0,
-            storage_used: chain.all().iter().map(|event| event.len() as u64).sum(),
+            storage_used: held
+                + chain
+                    .all()
+                    .iter()
+                    .map(|event| event.len() as u64)
+                    .sum::<u64>(),
         }
     );
 
@@ -867,7 +1143,8 @@ async fn the_runtime_serves_both_surfaces_and_shuts_down() {
             .await
             .expect("the request finishes");
         assert!(body.contains("\"role\":\"witness\""), "{body}");
-        assert!(body.contains("\"ledger_count\":1"), "{body}");
+        // The pushed chain beside the witness identity's own.
+        assert!(body.contains("\"ledger_count\":2"), "{body}");
 
         stop.send(()).expect("the serve loop is listening");
         serving

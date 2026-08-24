@@ -19,6 +19,7 @@
 
 pub mod api;
 mod atomic;
+pub mod bindings;
 mod config;
 pub mod contacts;
 mod endpoint;
@@ -34,6 +35,7 @@ pub mod wallet;
 pub mod witness;
 
 pub use atomic::{DATA_MODE, DIR_MODE, KEY_MODE};
+pub use bindings::{BINDINGS_DIR, Binding, Bindings, BoundEndpoint, Observation};
 pub use config::{
     DEFAULT_HTTP_BIND, DEFAULT_HTTP_PORT, DEFAULT_STORAGE_CAPACITY, NodeConfig, NodeRole, RelayMode,
 };

@@ -20,15 +20,15 @@ use mabel_core::{IdentityId, LedgerId};
 use crate::api::documents::{
     Accepted, Admitted, Appended, ContactView, CreatedIdentity, DeclaredKind, FetchedLedger,
     GraphSynced, GraphView, Id, Identity, IdentityKeys, Invited, KnownIdentity, LedgerPage, Lookup,
-    MembershipView, ProfileReplaced, Pushed, Relay, Removed, ResolveStatus, Resolved, Revoked,
-    Role, VerificationChecked, WalletNode, WitnessEntry, WitnessLedgerEntry, WitnessLedgers,
-    WitnessList,
+    MembershipView, ProfileReplaced, Pushed, Relay, Removed, ResolveInputKind, ResolveStatus,
+    Resolved, Revoked, Role, VerificationChecked, WalletNode, WitnessEntry, WitnessLedgerEntry,
+    WitnessLedgers, WitnessList,
 };
 use crate::api::error::ServiceError;
 use crate::api::service::{
     AcceptInvitation, AddTrust, AdmitAcceptance, CreateIdentity, EventPageRequest, FetchIdentity,
     Invite, LookupRequest, PageRequest, PushRequest, RemoveMembership, ReplaceProfile,
-    ServiceFuture, SetContact, WalletService,
+    ResolveInput, ServiceFuture, SetContact, WalletService,
 };
 use crate::config::RelayMode;
 use crate::graph::{
@@ -36,7 +36,8 @@ use crate::graph::{
 };
 use crate::now_ms;
 use crate::verification::{
-    HickoryResolver, ResolveFuture, Resolver, TxtRecord, mabel_claim, query_name, verify_hostname,
+    HickoryResolver, ResolveFuture, Resolver, TxtRecord, endpoints_at_label, mabel_claim,
+    query_name, verify_hostname,
 };
 use crate::wallet::core::{AppendLock, WalletCore, verification_document};
 use crate::wallet::error::{no_source_available, storage_error};
@@ -570,20 +571,53 @@ impl WalletService for WalletApiService {
         })
     }
 
-    /// One TXT lookup of `_mabel.<hostname>.`, for navigation only.
+    /// One identity id, one hostname or one link, for navigation only.
     ///
     /// Nothing is written and nothing is read from the verification cache of
     /// proposal 003 section 2: a hostname typed into a search box is not a
     /// claim any ledger made, so it gets no cached verdict and leaves none.
     /// Only the label itself is queried, with no CNAME chain.
-    fn resolve(&self, hostname: String) -> ServiceFuture<'_, Resolved> {
+    ///
+    /// An identity id and a link query nothing at all: both already name the
+    /// ledger, so `status` is `null` and the endpoints are whatever the link
+    /// carried. A hostname is row 1 of the applicability matrix (proposal 006
+    /// section 6): the endpoints at the label belong to the identity this same
+    /// response resolved to, and a response that resolved to none reports none.
+    fn resolve(&self, input: ResolveInput) -> ServiceFuture<'_, Resolved> {
         Box::pin(async move {
+            let hostname = match input {
+                ResolveInput::Identity(identity_id) => {
+                    return Ok(Resolved {
+                        input_kind: ResolveInputKind::Identity,
+                        identity_id: Some(identity_id),
+                        hostname: None,
+                        endpoints: Vec::new(),
+                        status: None,
+                    });
+                }
+                ResolveInput::Link {
+                    identity_id,
+                    endpoints,
+                } => {
+                    return Ok(Resolved {
+                        input_kind: ResolveInputKind::Link,
+                        identity_id: Some(identity_id),
+                        hostname: None,
+                        endpoints,
+                        status: None,
+                    });
+                }
+                ResolveInput::Hostname(hostname) => hostname,
+            };
+
             let name = query_name(&hostname);
             let Ok(records) = self.resolver.lookup_txt(&name).await else {
                 return Ok(Resolved {
-                    hostname,
+                    input_kind: ResolveInputKind::Hostname,
                     identity_id: None,
-                    status: ResolveStatus::Unreachable,
+                    hostname: Some(hostname),
+                    endpoints: Vec::new(),
+                    status: Some(ResolveStatus::Unreachable),
                 });
             };
             let mut claims = 0usize;
@@ -607,10 +641,19 @@ impl WalletService for WalletApiService {
             } else {
                 ResolveStatus::MismatchedRecords
             };
+            // A label that resolved to no identity has no identity to offer
+            // endpoints for, so its endpoints records are not read out.
+            let endpoints = if identity_id.is_some() {
+                endpoints_at_label(&records).iter().map(ids::key).collect()
+            } else {
+                Vec::new()
+            };
             Ok(Resolved {
-                hostname,
+                input_kind: ResolveInputKind::Hostname,
                 identity_id,
-                status,
+                hostname: Some(hostname),
+                endpoints,
+                status: Some(status),
             })
         })
     }

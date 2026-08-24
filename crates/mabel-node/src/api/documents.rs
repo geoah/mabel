@@ -18,6 +18,7 @@ use serde::de::{Error as _, Unexpected};
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 
+pub use crate::bindings::Binding;
 pub use crate::graph::{Equivocation, TruncatedBy};
 pub use crate::verification::VerificationStatus;
 
@@ -162,6 +163,24 @@ pub enum Relay {
     Disabled,
 }
 
+/// One `node.json.witness_for` entry as `GET /api/node` reports it (proposal
+/// 006 sections 4 and 4.1).
+///
+/// `advertised` is the advertisement invariant: false means the latest local
+/// copy of that identity does not name this home's endpoint, so the entry
+/// admits no ledger this home does not already store, and `reason` says which
+/// of the three ways it failed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WitnessForRow {
+    /// The witness identity `node.json` names.
+    pub identity: Id,
+    /// Whether that identity's ledger advertises this home.
+    pub advertised: bool,
+    /// Why it does not, `null` when it does.
+    pub reason: Option<String>,
+}
+
 /// `GET /api/node` on a wallet.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -200,6 +219,9 @@ pub struct WitnessNode {
     pub relay: Relay,
     /// Empty on a witness, which pushes to nobody.
     pub witnesses: Vec<Id>,
+    /// The witness identities this home witnesses for, each with whether it
+    /// admits a ledger this home does not store (proposal 006 section 4.1).
+    pub witness_for: Vec<WitnessForRow>,
     /// Bytes of ledger data this node accepts before refusing more.
     pub storage_capacity: u64,
     /// Bytes currently stored.
@@ -930,6 +952,10 @@ pub struct PushResult {
     pub endpoint: Id,
     /// What it did.
     pub status: PushStatus,
+    /// Whether a witness identity's own ledger names this endpoint, on
+    /// evidence that did not come from the endpoint itself (proposal 006
+    /// section 4.2). `hinted` is never a refusal: the push happened anyway.
+    pub binding: Binding,
     /// The head it reports, `null` when it did not answer.
     pub head_seq: Option<u64>,
     /// Events it stored from this push.
@@ -1456,16 +1482,52 @@ pub enum ResolveStatus {
     Unreachable,
 }
 
-/// `GET /api/resolve/{hostname}`.
+/// Which of the three input kinds `?input=` carried (proposal 006 section 7).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ResolveInputKind {
+    /// A bare identity id, which needs no lookup.
+    Identity,
+    /// A hostname, which is looked up once.
+    Hostname,
+    /// A `mabel://` link, whose endpoints come back as hints.
+    Link,
+}
+
+impl ResolveInputKind {
+    /// The wire spelling, the one `contracts/` freezes.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Identity => "identity",
+            Self::Hostname => "hostname",
+            Self::Link => "link",
+        }
+    }
+}
+
+/// `GET /api/resolve?input=`.
+///
+/// One route for the three things a search box takes: an identity id, a
+/// hostname or a link (proposal 006 section 7). `status` reports what DNS said
+/// and is `null` on the two kinds that query nothing, since a lookup that never
+/// ran has no verdict; the four `ResolveStatus` values stay four.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Resolved {
-    /// The hostname that was queried, as it was given.
-    pub hostname: String,
-    /// The identity the record names, `null` unless `status` is `resolved`.
+    /// What the input was read as.
+    pub input_kind: ResolveInputKind,
+    /// The identity the input named or the record resolved to, `null` when a
+    /// hostname resolved to none.
     pub identity_id: Option<Id>,
-    /// What the lookup found.
-    pub status: ResolveStatus,
+    /// The hostname that was queried, `null` on the other two kinds.
+    pub hostname: Option<String>,
+    /// The machines to ask for that identity: the link's hints, or the
+    /// `mabel-endpoints=` records at the same label (proposal 006 section 6).
+    /// Empty when the input carried none.
+    pub endpoints: Vec<Id>,
+    /// What the lookup found, `null` when nothing was queried.
+    pub status: Option<ResolveStatus>,
 }
 
 /// `POST /api/identities/{identity_id}/fetch`.

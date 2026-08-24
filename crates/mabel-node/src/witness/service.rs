@@ -15,7 +15,7 @@ use mabel_net::store::ForkRecord as StoredFork;
 
 use crate::api::documents::{
     ForkList, ForkRecord, Id, LedgerEntry, LedgerList, LedgerPage, LedgerView, Relay, Role,
-    WitnessNode,
+    WitnessForRow, WitnessNode,
 };
 use crate::api::error::ServiceError;
 use crate::api::service::{
@@ -98,6 +98,19 @@ impl WitnessService for WitnessReadService {
                 relay,
                 // A witness pushes to nobody.
                 witnesses: Vec::new(),
+                // Each entry with the advertisement invariant beside it, so an
+                // operator whose advertisement has not landed reads why this
+                // home takes no new ledger under that identity (proposal 006
+                // section 4.1).
+                witness_for: storage
+                    .witness_for_entries()
+                    .iter()
+                    .map(|entry| WitnessForRow {
+                        identity: id_of(entry.identity.as_bytes()),
+                        advertised: entry.advertised(),
+                        reason: entry.gap.map(|gap| gap.reason().to_owned()),
+                    })
+                    .collect(),
                 storage_capacity: storage.caps().storage_capacity,
                 storage_used: totals.storage_used,
                 ledger_count: totals.ledger_count,

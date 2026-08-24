@@ -2,9 +2,9 @@
 //! section 5, ticket 010).
 //!
 //! A witness is a passive replica. It holds no identity keys and signs nothing
-//! (section 2), it accepts a `Push` only for a ledger it already holds or whose
-//! folded `WitnessConfig` names its own `EndpointId`, and it stores only what
-//! the fold accepted.
+//! (section 2), it accepts a `Push` only while a live witness set names an
+//! identity `node.json.witness_for` names (proposal 006 section 4), and it
+//! stores only what the fold accepted.
 //!
 //! Three pieces sit over one home:
 //!
@@ -35,7 +35,8 @@ mod store;
 pub use runtime::{WitnessOptions, WitnessRuntime};
 pub use service::{WitnessReadService, fork_statement};
 pub use storage::{
-    LedgerReport, MAX_BYTES_PER_LEDGER, MAX_EVENTS_PER_LEDGER, MAX_FORK_RECORDS, MAX_LEDGERS,
-    PushResult, StoredPage, Totals, WitnessCaps, WitnessStorage,
+    AdmissionPolicy, AdvertisementGap, LedgerReport, MAX_BYTES_PER_LEDGER, MAX_EVENTS_PER_LEDGER,
+    MAX_FORK_RECORDS, MAX_LEDGERS, PushResult, StoredPage, Totals, WitnessCaps, WitnessForEntry,
+    WitnessStorage,
 };
 pub use store::WitnessStore;

@@ -19,6 +19,7 @@ use tracing::warn;
 
 use crate::api::documents::{PushResult, PushStatus, Pushed};
 use crate::api::error::ServiceError;
+use crate::bindings::{self, Binding, Observation};
 use crate::wallet::core::{AppendLock, WalletCore};
 use crate::wallet::error::{peer_message, stale_head, unreachable};
 use crate::wallet::ids;
@@ -30,6 +31,13 @@ use crate::wallet::ledger::LoadedLedger;
 /// The wording of `contracts/cli/sync-push.json` names this number, so the
 /// message is built from it rather than from a literal.
 pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// How many sources a push asks for a witness identity's own ledger before it
+/// leaves the endpoints hinted (proposal 006 section 4.2).
+///
+/// A binding is a convenience, so it is bounded: one push never turns into a
+/// crawl of every machine this home has ever heard of.
+pub const BINDING_SOURCES: usize = 3;
 
 /// What one ledger fetch produced.
 #[derive(Debug, Clone)]
@@ -143,12 +151,131 @@ impl WalletSync {
             results.push(self.push_one(*witness, ledger, &loaded.events).await);
         }
         record_hints(core, ledger, witnesses, &results);
+        // What the pusher can check for itself: whether the machines it dialled
+        // are machines a witness identity's own ledger names (proposal 006
+        // section 4.2). It never refuses a push and never fails one.
+        self.label_bindings(core, &loaded, witnesses, &mut results)
+            .await;
         Ok(Pushed {
             ledger_id: ids::identity(ledger),
             head_seq: loaded.head_seq,
             head_event: ids::event(loaded.head_event),
             results,
         })
+    }
+
+    /// After a push that stored events, one `Get` per witness identity for that
+    /// identity's own ledger, and the `binding` each endpoint gets from it
+    /// (proposal 006 section 4.2).
+    ///
+    /// The `Get` goes to an endpoint other than the one just pushed to whenever
+    /// this home knows one, since a chain served by the endpoint it vouches for
+    /// proves nothing (condition 4). When it knows no other, the fetch still
+    /// runs and the binding stays `hinted`.
+    ///
+    /// Nothing here can fail a push: an unreachable source, a chain that does
+    /// not verify and an unwritable cache all leave the endpoint `hinted`.
+    async fn label_bindings(
+        &self,
+        core: &WalletCore,
+        loaded: &LoadedLedger,
+        witnesses: &[EndpointId],
+        results: &mut [PushResult],
+    ) {
+        let stored_anything = results
+            .iter()
+            .any(|result| result.status == PushStatus::Accepted && result.stored > 0);
+        let named = loaded.state.witness_identities().to_vec();
+        if named.is_empty() {
+            return;
+        }
+        let accepted: Vec<EndpointId> = witnesses
+            .iter()
+            .zip(results.iter())
+            .filter(|(_, result)| result.status == PushStatus::Accepted)
+            .map(|(endpoint, _)| *endpoint)
+            .collect();
+
+        for witness in &named {
+            if stored_anything {
+                self.observe_witness_ledger(core, *witness, &accepted).await;
+            }
+            let bindings = match bindings::read(core.home(), *witness) {
+                Ok(bindings) => bindings,
+                Err(error) => {
+                    warn!("the bindings of {witness} could not be read: {error}");
+                    None
+                }
+            };
+            let Some(bindings) = bindings else {
+                continue;
+            };
+            for (endpoint, result) in witnesses.iter().zip(results.iter_mut()) {
+                if bindings.binding(*endpoint) == Binding::Verified {
+                    result.binding = Binding::Verified;
+                }
+            }
+        }
+    }
+
+    /// Fetches one witness identity's own ledger and records what it advertises.
+    ///
+    /// The sources tried are the endpoints that accepted the push and the
+    /// `peers.json` hints for that identity, in that order, minus nothing: an
+    /// endpoint that serves its own advertisement is a legitimate source whose
+    /// evidence verifies every *other* endpoint the chain names. Condition 4 is
+    /// applied when the observation is recorded, not when the source is picked,
+    /// which is what lets one machine of a fleet verify the others.
+    async fn observe_witness_ledger(
+        &self,
+        core: &WalletCore,
+        witness: mabel_core::IdentityId,
+        accepted: &[EndpointId],
+    ) {
+        let hints = match core.home().peers() {
+            Ok(peers) => peers.hints(witness).to_vec(),
+            Err(error) => {
+                warn!("peers.json could not be read while binding {witness}: {error}");
+                Vec::new()
+            }
+        };
+        // Sources this home did not just push to come first: their evidence is
+        // the evidence that can verify the endpoint it did push to.
+        let mut sources: Vec<EndpointId> = Vec::new();
+        for endpoint in hints.iter().chain(accepted.iter()) {
+            if !sources.contains(endpoint) {
+                sources.push(*endpoint);
+            }
+        }
+        sources.sort_by_key(|source| accepted.contains(source));
+
+        for source in sources.iter().take(BINDING_SOURCES) {
+            let candidate = match self.candidate(*source, witness).await {
+                Ok(Some(candidate)) => candidate,
+                // A source that does not hold it, cannot be reached, or serves
+                // a chain that does not verify tells this home nothing.
+                Ok(None) => continue,
+                Err(error) => {
+                    warn!(
+                        "{} served no usable ledger for {witness}: {error}",
+                        ids::key(source)
+                    );
+                    continue;
+                }
+            };
+            let observation = Observation {
+                identity: witness,
+                head_seq: candidate.head_seq,
+                head_event: candidate.head_event,
+                endpoints: candidate.state.endpoints().to_vec(),
+                source: *source,
+                observed_ms: crate::now_ms(),
+            };
+            if let Err(error) = bindings::record(core.home(), &observation) {
+                warn!("the bindings of {witness} could not be written: {error}");
+            }
+            return;
+        }
     }
 
     /// One endpoint's outcome, never an error: an unreachable witness is a
@@ -166,6 +293,7 @@ impl WalletSync {
                 return PushResult {
                     endpoint,
                     status: PushStatus::Unreachable,
+                    binding: Binding::Hinted,
                     head_seq: None,
                     stored: 0,
                     reject_code: None,
@@ -180,6 +308,7 @@ impl WalletSync {
             Ok(outcome) => PushResult {
                 endpoint,
                 status: PushStatus::Accepted,
+                binding: Binding::Hinted,
                 head_seq: Some(outcome.head_seq),
                 stored: u64::from(outcome.stored),
                 reject_code: None,
@@ -190,6 +319,7 @@ impl WalletSync {
                 Some(rejection) => PushResult {
                     endpoint,
                     status: PushStatus::Rejected,
+                    binding: Binding::Hinted,
                     head_seq: None,
                     stored: 0,
                     reject_code: Some(rejection.code.as_str_name().to_owned()),
@@ -199,6 +329,7 @@ impl WalletSync {
                 None => PushResult {
                     endpoint,
                     status: PushStatus::Unreachable,
+                    binding: Binding::Hinted,
                     head_seq: None,
                     stored: 0,
                     reject_code: None,

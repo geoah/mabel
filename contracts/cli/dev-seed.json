@@ -452,6 +452,7 @@
               {
                 "endpoint": "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq",
                 "status": "accepted",
+                "binding": "verified",
                 "head_seq": 4,
                 "stored": 5,
                 "reject_code": null,
@@ -468,6 +469,7 @@
               {
                 "endpoint": "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq",
                 "status": "accepted",
+                "binding": "verified",
                 "head_seq": 5,
                 "stored": 6,
                 "reject_code": null,
@@ -484,6 +486,7 @@
               {
                 "endpoint": "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq",
                 "status": "accepted",
+                "binding": "verified",
                 "head_seq": 1,
                 "stored": 2,
                 "reject_code": null,
@@ -500,6 +503,7 @@
               {
                 "endpoint": "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq",
                 "status": "accepted",
+                "binding": "verified",
                 "head_seq": 5,
                 "stored": 6,
                 "reject_code": null,

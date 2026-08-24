@@ -11,6 +11,7 @@
 //! ledgers/<id>/meta.json                 provenance: source endpoint, first seen
 //! forks/<id>/<seq>-<event_id>.fork       encoded ForkRecord, both events
 //! peers.json                             ledger id to EndpointId hints
+//! bindings/<id>.json                     cache: which machines an identity's ledger vouches for
 //! contacts/<id>.json                     private nickname and note, any identity
 //! verification/<id>.json                 cache: hostname verdict and when it was taken
 //! graph/                                 cache: one directory per crawl, plus a pointer
@@ -58,6 +59,9 @@ pub const IDENTITY_META_FILE: &str = "meta.json";
 
 /// Directory of the private contact store (proposal 003 section 1).
 pub const CONTACTS_DIR: &str = crate::contacts::CONTACTS_DIR;
+
+/// Directory of the endpoint binding cache (proposal 006 section 4.2).
+pub const BINDINGS_DIR: &str = crate::bindings::BINDINGS_DIR;
 
 /// Directory of the DNS verification cache (proposal 003 section 2).
 pub const VERIFICATION_DIR: &str = crate::verification::VERIFICATION_DIR;
@@ -292,6 +296,19 @@ impl NodeHome {
     #[must_use]
     pub fn verification_dir(&self) -> PathBuf {
         self.root.join(VERIFICATION_DIR)
+    }
+
+    /// `bindings/`, the endpoint bindings of proposal 006 section 4.2. A
+    /// derived cache: deleting it costs one round of hinted labels.
+    #[must_use]
+    pub fn bindings_dir(&self) -> PathBuf {
+        self.root.join(BINDINGS_DIR)
+    }
+
+    /// `bindings/<identity_id>.json`.
+    #[must_use]
+    pub fn bindings_path(&self, identity: IdentityId) -> PathBuf {
+        self.bindings_dir().join(format!("{identity}.json"))
     }
 
     /// `forks/`.

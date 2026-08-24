@@ -132,6 +132,28 @@ pub struct LookupRequest {
     pub from: Option<Id>,
 }
 
+/// `GET /api/resolve?input=`, after one decode and the grammar check
+/// (proposal 006 section 7).
+///
+/// The HTTP layer decodes `input` exactly once and reads it as one of these
+/// three; nothing below HTTP ever decodes anything.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ResolveInput {
+    /// A bare identity id. Nothing is queried: the caller already named the
+    /// ledger, and how to reach it is a separate question.
+    Identity(Id),
+    /// A hostname the caller supplied, looked up once at `_mabel.<hostname>.`.
+    Hostname(String),
+    /// A `mabel://` link: the identity it names and the endpoints it hints at,
+    /// which apply to fetching that identity and to nothing else.
+    Link {
+        /// The identity the link names.
+        identity_id: Id,
+        /// 0 to 4 machines to ask, in the order the link named them.
+        endpoints: Vec<Id>,
+    },
+}
+
 /// One page of events, from `?since=` and `?limit=`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EventPageRequest {
@@ -243,9 +265,9 @@ pub trait WalletService: Send + Sync + 'static {
     /// `GET /api/lookup/{identity_id}?from=`.
     fn lookup(&self, request: LookupRequest) -> ServiceFuture<'_, Lookup>;
 
-    /// `GET /api/resolve/{hostname}`, one TXT lookup that never touches the
-    /// verification cache (proposal 004).
-    fn resolve(&self, hostname: String) -> ServiceFuture<'_, Resolved>;
+    /// `GET /api/resolve?input=`, which writes nothing and never touches the
+    /// verification cache (proposal 004, proposal 006 section 7).
+    fn resolve(&self, input: ResolveInput) -> ServiceFuture<'_, Resolved>;
 
     /// `GET /api/witnesses`, sorted by ascending `endpoint_id`.
     fn witnesses(&self) -> ServiceFuture<'_, WitnessList>;

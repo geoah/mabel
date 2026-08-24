@@ -10,6 +10,7 @@ use axum::Router;
 use axum::body::Bytes;
 use axum::extract::rejection::QueryRejection;
 use axum::extract::{Path, Query as AxumQuery, State};
+use axum::http::Uri;
 use axum::response::Response;
 use axum::routing::{get, post};
 
@@ -45,7 +46,9 @@ pub(super) fn router(service: Service) -> Router {
         .route("/identities/{identity_id}/endpoints", post(set_endpoints))
         .route("/identities/{identity_id}/fetch", post(fetch_identity))
         .route("/lookup/{identity_id}", get(lookup))
-        .route("/resolve/{hostname}", get(resolve))
+        // A query parameter, not a path segment: a link carries `://` and `?`
+        // (proposal 006 section 7).
+        .route("/resolve", get(resolve))
         .route("/witnesses", get(witnesses))
         .route("/witnesses/{endpoint_id}/ledgers", get(witness_ledgers))
         .route("/graph", get(graph))
@@ -178,12 +181,15 @@ async fn lookup(
     Ok(success(service.lookup(request).await?))
 }
 
-async fn resolve(
-    State(service): State<Service>,
-    Path(hostname): Path<String>,
-) -> Result<Response, ServiceError> {
-    let hostname = parse::hostname(&hostname)?;
-    Ok(success(service.resolve(hostname).await?))
+/// `GET /api/resolve?input=`, taking an identity id, a hostname or a link.
+///
+/// The raw URI, not the `Query` extractor: the parameter is decoded exactly
+/// once by the parser below, and a repeated `input` has to be visible to be
+/// refused (proposal 006 section 7). The route writes nothing and touches no
+/// verification cache: navigation is not verification.
+async fn resolve(State(service): State<Service>, uri: Uri) -> Result<Response, ServiceError> {
+    let input = parse::resolve(uri.query())?;
+    Ok(success(service.resolve(input).await?))
 }
 
 async fn witnesses(State(service): State<Service>) -> Result<Response, ServiceError> {

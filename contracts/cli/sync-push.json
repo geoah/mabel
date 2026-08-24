@@ -15,6 +15,7 @@
           {
             "endpoint": "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq",
             "status": "accepted",
+            "binding": "verified",
             "head_seq": 3,
             "stored": 4,
             "reject_code": null,
@@ -24,6 +25,7 @@
           {
             "endpoint": "5yy7qpeiu4jbtjx47g7obwu3yitcaweplik2mfcvknie36letzoa",
             "status": "accepted",
+            "binding": "verified",
             "head_seq": 3,
             "stored": 0,
             "reject_code": null,
@@ -47,6 +49,7 @@
           {
             "endpoint": "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq",
             "status": "accepted",
+            "binding": "verified",
             "head_seq": 3,
             "stored": 4,
             "reject_code": null,
@@ -56,6 +59,7 @@
           {
             "endpoint": "5yy7qpeiu4jbtjx47g7obwu3yitcaweplik2mfcvknie36letzoa",
             "status": "unreachable",
+            "binding": "hinted",
             "head_seq": null,
             "stored": 0,
             "reject_code": null,

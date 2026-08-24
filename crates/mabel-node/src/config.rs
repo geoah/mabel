@@ -86,6 +86,17 @@ pub struct NodeConfig {
     /// identity's keys.
     #[serde(default, deserialize_with = "witness_for")]
     pub witness_for: Vec<IdentityId>,
+    /// Whether a pre-proposal tag-11 `WitnessConfig` naming this node's own
+    /// endpoint id still admits a push (proposal 006 section 4, clause 4).
+    ///
+    /// False by default, and a migration switch: it exists so a ledger written
+    /// before witnesses were identities can still be pushed to the home that
+    /// kept it, and it goes with the last such ledger. The clause it opens is
+    /// gated twice more, on a non-empty `witness_for` and on this node's own
+    /// endpoint id being in the tag-11 list, so turning it on cannot make a
+    /// home that witnesses for nobody take a stranger's push.
+    #[serde(default)]
+    pub accept_legacy_witness_config: bool,
     /// Bytes of stored ledger data this node accepts before refusing more.
     /// Named in full, like the `storage_capacity` the HTTP API reports
     /// (decision 012, contracts/README.md).
@@ -137,6 +148,7 @@ impl Default for NodeConfig {
             allowed_hosts: Vec::new(),
             witnesses: Vec::new(),
             witness_for: Vec::new(),
+            accept_legacy_witness_config: false,
             storage_capacity: DEFAULT_STORAGE_CAPACITY,
             relay: RelayMode::default(),
         }
@@ -193,7 +205,26 @@ mod tests {
         assert_eq!(config.relay, RelayMode::N0);
         assert!(config.witnesses.is_empty());
         assert!(config.witness_for.is_empty());
+        assert!(
+            !config.accept_legacy_witness_config,
+            "the tag-11 migration switch is off unless a file turns it on"
+        );
         assert!(config.allowed_hosts.is_empty());
+    }
+
+    /// The switch is a plain boolean, and a `node.json` written before it
+    /// existed loads with it off (proposal 006 section 4).
+    #[test]
+    fn accept_legacy_witness_config_defaults_off_and_round_trips() {
+        let config = NodeConfig::from_json(br#"{"accept_legacy_witness_config": true}"#)
+            .expect("the switch loads");
+        assert!(config.accept_legacy_witness_config);
+        let text = String::from_utf8(config.to_json().unwrap()).unwrap();
+        assert!(
+            text.contains("\"accept_legacy_witness_config\": true"),
+            "{text}"
+        );
+        assert!(NodeConfig::from_json(br#"{"accept_legacy_witness_config": "yes"}"#).is_err());
     }
 
     /// A home written before decision 018 loads with an empty
@@ -222,6 +253,7 @@ mod tests {
             allowed_hosts: vec!["witness.tailnet.example".to_owned()],
             witnesses: vec![key],
             witness_for: vec![mabel_core::IdentityId::from_bytes([5u8; 32])],
+            accept_legacy_witness_config: true,
             storage_capacity: 42,
             relay: RelayMode::Disabled,
         };
