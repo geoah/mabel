@@ -23,7 +23,7 @@ import {
   writeFileBase64,
   type RunResult,
 } from "./docker";
-import { addWitness, createIdentity, identifier, openIdentity, push } from "./ui";
+import { addWitness, createIdentity, identifier, idSpan, openIdentity, push } from "./ui";
 
 export const BASE32_ID = /^[a-z2-7]{52}$/;
 
@@ -101,13 +101,21 @@ export async function story001Steps1to7(
       await expect(page.getByTestId("nav-witnesses")).toBeVisible();
       await expect(page.getByTestId("nav-node")).toBeVisible();
       await expect(page.locator('header [data-testid^="nav-"]')).toHaveCount(3);
+      // Round 6 of proposal 005 made this page three flat sections under three
+      // headings: the box that opens an identity, the identities this wallet
+      // signs for, and the ones it knows of and does not control. The box takes
+      // a handle as well as a Mabel ID, and its label says so.
       await expect(page.getByTestId("wallet-search")).toBeVisible();
-      // The search box takes a handle as well as an id, and says so.
-      await expect(page.getByTestId("wallet-search")).toContainText(
-        "type a handle to look up in DNS",
-      );
+      await expect(page.getByTestId("wallet-search")).toContainText("Mabel ID or handle");
       await expect(page.getByTestId("identity-list-empty")).toHaveText(
         "You have no identities yet. Create one below.",
+      );
+      // A wallet that has never fetched, crawled or noted anybody knows of no
+      // other identity, and the trusted-only switch starts off.
+      await expect(page.getByTestId("known-identities")).toBeVisible();
+      await expect(page.getByTestId("known-trusted-only")).toHaveAttribute("aria-checked", "false");
+      await expect(page.getByTestId("known-identities-empty")).toHaveText(
+        "Your wallet knows of no other identity yet.",
       );
       const node = await apiGet(url, "/api/node");
       expect(node.body.role).toBe("wallet");
@@ -152,10 +160,28 @@ export async function story001Steps1to7(
 }
 
 /**
- * The `/node` page, which round 4 of proposal 005 added: what this node is for,
- * the id other nodes dial it by, how it is reachable, where its API listens,
- * what it holds and which build is running. Everything on it is
- * `GET /api/node`, so the document is what each row is read against.
+ * The head position of one ledger, on the route that reports it.
+ *
+ * Round 5 of proposal 005 took the position off the identity page and off the
+ * cards: a reader is told how many entries a record holds, and which position
+ * the newest one sits at is a fact of `GET /api/identities/<id>`. Every story
+ * that used to read `identity-detail-head-seq` reads this instead.
+ */
+export async function expectHeadSeq(
+  base: string,
+  identityId: string,
+  headSeq: number,
+): Promise<void> {
+  const identity = await apiGet(base, `/api/identities/${identityId}`);
+  expect(identity.body.identity.head_seq, `head of ${identityId}`).toBe(headSeq);
+}
+
+/**
+ * The `/node` page, which round 4 of proposal 005 added and round 5 cut to six
+ * short rows: what this node is, the Iroh ID other nodes dial it by, how it is
+ * reachable, what it holds, the space it uses and which build is running. Where
+ * the API listens left the page with them. Everything here is `GET /api/node`,
+ * so the document is what each row is read against.
  *
  * Stories 001 and 005 both read it, one per role: a wallet counts the
  * identities it holds, a witness counts the records it keeps for others.
@@ -174,50 +200,59 @@ export async function readNodePage(
   expect(node.body.endpoint_id).toBe(expected.endpointId);
   expect(node.body.relay).toBe("disabled");
 
-  await expect(page.getByTestId("node-role")).toHaveText(
-    expected.role === "wallet"
-      ? "holds your identities and signs for them"
-      : "keeps copies of other people's records",
-  );
+  // The role is the one word the document carries, under the label `role`.
+  await expect(page.getByTestId("node-role")).toHaveText(expected.role);
+  await expect(page.getByTestId("node-role-row").locator("dt")).toHaveText("role");
+  // Where the API listens is not a fact about the node's place in the network,
+  // so round 5 dropped the row; the document still carries it.
+  await expect(page.getByTestId("node-http-bind")).toHaveCount(0);
+  expect(typeof node.body.http_bind).toBe("string");
   // The endpoint id is written out whole, because it is the only name a node
-  // has and it is what another node is given to dial this one.
+  // has and it is what another node is given to dial this one. The row calls it
+  // the Iroh ID, which is what it is.
   expect(await identifier(page, "node-endpoint-id")).toBe(expected.endpointId);
-  await expect(page.getByTestId("node-endpoint-id").locator("[data-value]")).toHaveAttribute(
-    "data-truncated",
-    "false",
-  );
-  await expect(page.getByTestId("node-relay")).toHaveText(
-    "direct connections only, with no relay",
-  );
-  await expect(page.getByTestId("node-http-bind")).toHaveText(node.body.http_bind);
+  await expect(idSpan(page, "node-endpoint-id")).toHaveAttribute("data-truncated", "false");
+  await expect(page.getByTestId("node-endpoint-id-row").locator("dt")).toHaveText("Iroh ID");
+  await expect(page.getByTestId("node-relay")).toHaveText("direct connections only");
   await expect(page.getByTestId("node-version")).toHaveText(node.body.version);
   // The capacity the topology sets, said in the units a reader reads.
   await expect(page.getByTestId("node-storage")).toHaveText(
     /^[\d.]+ (bytes|kB|MB|GB) of 2\.1 GB$/,
   );
 
+  // A count is a bare number: the row's own label is the noun.
   if (expected.role === "wallet") {
-    const count = node.body.identity_count;
     await expect(page.getByTestId("node-identity-count")).toHaveText(
-      `${count} ${count === 1 ? "identity" : "identities"}`,
+      String(node.body.identity_count),
+    );
+    await expect(page.getByTestId("node-identity-count-row").locator("dt")).toHaveText(
+      "identities",
     );
     await expect(page.getByTestId("node-ledger-count")).toHaveCount(0);
     await expect(page.getByTestId("node-fork-count")).toHaveCount(0);
   } else {
-    const count = node.body.ledger_count;
-    await expect(page.getByTestId("node-ledger-count")).toHaveText(
-      `${count} ${count === 1 ? "record" : "records"}`,
-    );
+    await expect(page.getByTestId("node-ledger-count")).toHaveText(String(node.body.ledger_count));
+    await expect(page.getByTestId("node-ledger-count-row").locator("dt")).toHaveText("records");
     await expect(page.getByTestId("node-fork-count")).toHaveText(String(node.body.fork_count));
+    await expect(page.getByTestId("node-fork-count-row").locator("dt")).toHaveText("conflicts");
     await expect(page.getByTestId("node-identity-count")).toHaveCount(0);
   }
 
+  // The witnesses this node uses by default are a card list of their own, and a
+  // node that uses none says so rather than drawing an empty list.
   const witnesses: string[] = node.body.witnesses;
+  await expect(page.getByTestId("node-witnesses")).toBeVisible();
+  await expect(page.getByTestId("node-witnesses")).toContainText("Witnesses it uses by default");
   if (witnesses.length === 0) {
-    await expect(page.getByTestId("node-witnesses")).toHaveText("none");
+    await expect(page.getByTestId("node-witnesses-empty")).toHaveText("none");
+    await expect(page.getByTestId("node-witness-cards")).toHaveCount(0);
   } else {
+    await expect(page.getByTestId("node-witnesses-empty")).toHaveCount(0);
     for (const endpointId of witnesses) {
       await expect(page.getByTestId(`node-witness-link-${endpointId}`)).toBeVisible();
+      await expect(
+        page.getByTestId(`node-witness-${endpointId}`).locator("[data-value]"),
+      ).toHaveAttribute("data-truncated", "false");
     }
   }
 }
@@ -262,10 +297,22 @@ export async function story002Steps1to8(
 
   await test.step("002 step 3: an identity root holds no key of its own", async () => {
     await openIdentity(alicePage, ALICE_URL, state.orgId);
-    await expect(alicePage.getByTestId("identity-detail-declared-kind")).toHaveText("organization");
+    // The kind an identity declares is a badge, in the quiet tone: it labels
+    // what the identity says it is, and says nothing about your own trust.
+    const kind = alicePage.getByTestId("identity-detail-declared-kind");
+    await expect(kind).toHaveText("organization");
+    await expect(kind).toHaveAttribute("data-declared-kind", "organization");
     // Proposal 005 moved the one key fact into the card's principals row: the
     // sentence sits beside whoever signs, and the two 52-character values are
-    // pinned on the routes that carry them, not on the screen.
+    // pinned on the routes that carry them, not on the screen. Round 6 draws
+    // that row only when the answer differs from the identity itself, which is
+    // what an identity-rooted ledger is, and names each principal.
+    await expect(alicePage.getByTestId("identity-detail-principals-row").locator("dt")).toHaveText(
+      "who can act for it",
+    );
+    await expect(
+      alicePage.getByTestId(`identity-detail-principal-${state.aliceId}-name`),
+    ).toHaveText("alice");
     await expect(alicePage.getByTestId("identity-detail-founded")).toHaveText(
       "Its controllers sign for it.",
     );

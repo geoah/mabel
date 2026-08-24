@@ -23,12 +23,14 @@ import {
   compareIds,
   createIdentityCli,
   expectExit,
+  expectHeadSeq,
   story001Steps1to7,
 } from "../lib/stories";
 import {
   addTrust,
   cardIds,
   identifier,
+  idSpan,
   openAction,
   openIdentity,
   push,
@@ -58,6 +60,9 @@ const GRAPH_CONSENT_FIRST =
   "Every witness your wallet asks learns which people you are interested in.";
 const GRAPH_CONSENT_SECOND =
   "Your wallet reads their records to answer how you know someone, and keeps no copy.";
+/** The heading of the reverse list, which round 5 made the plain sentence. */
+const REVERSE_HEADING = "Who your wallet has seen trusting them";
+/** The caveat that used to be the heading, now the sentence its info tip holds. */
 const REVERSE_LABEL =
   "Best effort: who your wallet has seen trusting them, not everyone who does";
 
@@ -854,9 +859,11 @@ test("step 10: the graph is synchronized from the UI, and carol is two hops away
   await expect(alicePage.getByTestId("identity-detail-ledger-summary")).toHaveText(
     "your wallet holds no copy of it",
   );
-  await expect(alicePage.getByTestId("identity-detail-provenance")).toHaveText(
-    "nothing your wallet knows, so the id is the only label",
-  );
+  // Round 5 removed the provenance row: which of the three sources a label came
+  // from is a fact about the label, not about the identity, and the card already
+  // shows what it has. A card with no copy of the record says that in a pill.
+  await expect(alicePage.getByTestId("identity-detail-provenance")).toHaveCount(0);
+  await expect(alicePage.getByTestId("identity-detail-unheld")).toHaveText("not stored here");
   // Nothing about a foreign page pretends this wallet can act for it. The pill
   // proposal 005 draws here is the amber distance from the stored crawl, never
   // "your identity".
@@ -864,34 +871,121 @@ test("step 10: the graph is synchronized from the UI, and carol is two hops away
   await expect(carolPill).toHaveAttribute("data-pill", "degree");
   await expect(carolPill).toHaveText("trusted (2d)");
   await expect(alicePage.getByTestId("identity-actions")).toHaveCount(0);
+  // The one action a foreign page offers besides fetching is the local info,
+  // and round 5 gave it the name of the task and one button that writes both
+  // fields.
+  await openAction(alicePage, "lookup-contact");
+  await expect(alicePage.getByTestId("lookup-contact-summary")).toContainText("Update local info");
+  await expect(alicePage.getByTestId("contact-save")).toHaveText("Save");
+  await expect(
+    alicePage.getByTestId("contact-panel").locator('button[type="submit"]'),
+  ).toHaveCount(1);
 
   await expect(alicePage.getByTestId("lookup-result")).toBeVisible();
   await expect(alicePage.getByTestId("lookup-from")).toHaveAttribute(
     "data-identity-id",
     aliceId,
   );
-  await expect(alicePage.getByTestId("lookup-degrees")).toHaveText("2 steps");
-  // The number is only an answer next to the question the row asks.
-  await expect(alicePage.getByTestId("lookup-degrees-row").locator("dt")).toHaveText(
-    "how far away",
-  );
+  // Round 5 made the verdict a sentence rather than a number in a row.
+  await expect(alicePage.getByTestId("lookup-degrees")).toHaveText("Connected through 2 steps");
+  await expect(alicePage.getByTestId("lookup-degrees-row")).toHaveCount(0);
+  await expect(alicePage.getByTestId("lookup-verdict-pill")).toHaveAttribute("data-pill", "degree");
+  // The path is a vertical chain of the same identity cards every other screen
+  // draws: the root you asked from, then one card per step.
+  await expect(alicePage.getByTestId("lookup-path-0")).toBeVisible();
+  await expect(alicePage.getByTestId("lookup-hop-0-0-from-name")).toHaveText("Alice Example");
   await expect(alicePage.getByTestId("lookup-hop-0-0-to-name")).toHaveText("Bob Example");
+  await expect(alicePage.getByTestId("lookup-hop-0-0")).toBeVisible();
+  await expect(alicePage.getByTestId("lookup-hop-0-1")).toBeVisible();
   await expect(alicePage.getByTestId("lookup-hop-0-1-fetched")).toContainText("seen ");
-  await expect(alicePage.getByTestId("lookup-reverse-label")).toHaveText(REVERSE_LABEL);
+
+  // The two lists are collapsed cards. Their headings are plain sentences, and
+  // the caveat the reverse heading used to carry is the sentence its info tip
+  // holds, which is the tip's accessible name.
+  await expect(alicePage.getByTestId("lookup-trust-label")).toHaveText("Who they trust");
+  await expect(alicePage.getByTestId("lookup-reverse-label")).toHaveText(REVERSE_HEADING);
+  await expect(alicePage.getByTestId("lookup-reverse-note")).toHaveAttribute(
+    "aria-label",
+    REVERSE_LABEL,
+  );
+  // A closed block holds none of its content, so each list is opened to read it.
+  await expect(alicePage.getByTestId("lookup-trust-empty")).toHaveCount(0);
+  await alicePage.getByTestId("lookup-trust-toggle").click();
   await expect(alicePage.getByTestId("lookup-trust-empty")).toHaveText(
     "Your wallet has not seen them trust anyone.",
   );
+  await alicePage.getByTestId("lookup-reverse-toggle").click();
+  // Round 5 draws each entry as the same identity card, keyed by the identity,
+  // so the per-entry expand controls are gone.
   await expect(
-    alicePage.getByTestId(`lookup-reverse-row-${bobId}`),
+    alicePage.getByTestId("lookup-reverse").getByTestId(`identity-card-${bobId}`),
   ).toBeVisible();
-  // One expand affordance covers every expanding block in the app, and here it
-  // is named after what opening it answers.
-  await expect(alicePage.getByTestId(`lookup-reverse-expand-${bobId}`)).toHaveText(
-    "How you know them",
-  );
+  await expect(alicePage.getByTestId(`lookup-reverse-row-${bobId}`)).toHaveCount(0);
+  await expect(alicePage.getByTestId(`lookup-reverse-expand-${bobId}`)).toHaveCount(0);
   // This crawl is fresh and reached everything, so neither disclosure is drawn.
   await expect(alicePage.getByTestId("lookup-graph-stale")).toHaveCount(0);
   await expect(alicePage.getByTestId("lookup-graph-truncated")).toHaveCount(0);
+});
+
+test("step 10: the wallet home lists who it knows of, and the switch narrows it", async () => {
+  // Round 6 of proposal 005 added the third section and the route behind it:
+  // every identity this home has a record of and does not control. Bob and
+  // carol are both crawl nodes here, neither is stored, and alice noted bob in
+  // step 9, so his row also comes from `contacts/`.
+  const known = await apiGet(ALICE_URL, "/api/identities/known");
+  expect(known.status).toBe(200);
+  const rows: Record<string, any> = Object.fromEntries(
+    known.body.identities.map((row: any) => [row.identity_id, row]),
+  );
+  expect(Object.keys(rows).sort()).toEqual([bobId, carolId].sort());
+  // Alice attested bob herself, so he is trusted at one step; carol is only
+  // reachable through him, and nothing in this home signs for either.
+  expect(rows[bobId].trusted).toBe(true);
+  expect(rows[bobId].degrees).toBe(1);
+  expect(rows[bobId].stored).toBe(false);
+  expect(rows[bobId].head_seq).toBeNull();
+  expect(rows[bobId].alias).toBe("Bob at the print shop");
+  expect(rows[carolId].trusted).toBe(false);
+  expect(rows[carolId].degrees).toBe(2);
+  expect(rows[carolId].stored).toBe(false);
+  // The document is sorted by the rendered id, which is what a client can
+  // reproduce from it.
+  expect(known.body.identities.map((row: any) => row.identity_id)).toEqual(
+    [...known.body.identities.map((row: any) => row.identity_id)].sort(),
+  );
+
+  await alicePage.goto(`${ALICE_URL}/wallet`);
+  await expect(alicePage.getByTestId("known-identities")).toContainText("Known identities");
+  const cards = alicePage.getByTestId("known-identity-cards");
+  await expect(cards.getByTestId(`identity-card-${bobId}`)).toBeVisible();
+  await expect(cards.getByTestId(`identity-card-${carolId}`)).toBeVisible();
+  // Every row here is a name this wallet does not sign for, and each says what
+  // it says: bob's own pill is green, carol's is the amber distance.
+  await expect(alicePage.getByTestId(`identity-card-name-${bobId}-pill`)).toHaveAttribute(
+    "data-pill",
+    "trusted",
+  );
+  await expect(alicePage.getByTestId(`identity-card-name-${carolId}-pill`)).toHaveAttribute(
+    "data-pill",
+    "degree",
+  );
+  // Neither record is in this home, so both cards say so in the corner pill.
+  await expect(alicePage.getByTestId(`identity-card-unheld-${bobId}`)).toHaveText(
+    "not stored here",
+  );
+  await expect(alicePage.getByTestId(`identity-card-unheld-${carolId}`)).toHaveText(
+    "not stored here",
+  );
+
+  // The switch narrows the list to the ones this wallet has a reason to trust.
+  // Carol is reachable through bob, so she survives it; the empty case is what
+  // story 001 reads on a wallet that has crawled nothing.
+  const trustedOnly = alicePage.getByTestId("known-trusted-only");
+  await expect(trustedOnly).toHaveAttribute("aria-checked", "false");
+  await trustedOnly.click();
+  await expect(trustedOnly).toHaveAttribute("aria-checked", "true");
+  await expect(cards.getByTestId(`identity-card-${bobId}`)).toBeVisible();
+  await expect(cards.getByTestId(`identity-card-${carolId}`)).toBeVisible();
 });
 
 test("step 11: an identity nobody in this crawl trusts answers with no path", async () => {
@@ -917,8 +1011,12 @@ test("step 11: an identity nobody in this crawl trusts answers with no path", as
   await expect(alicePage.getByTestId("lookup-result")).toBeVisible();
   await expect(alicePage.getByTestId("lookup-degrees")).toHaveText("No connection found");
   await expect(alicePage.getByTestId("lookup-degrees-none")).toHaveText(
-    "No connection found yet. Sync and try again.",
+    "No connection found yet.",
   );
+  // No distance means nothing to say in a pill either: a pill reading trusted
+  // beside "no connection found" would be two answers to one question.
+  await expect(alicePage.getByTestId("lookup-verdict-pill")).toHaveCount(0);
+  await expect(alicePage.getByTestId("lookup-paths")).toHaveCount(0);
 });
 
 test("step 12: the search box takes a hostname and opens the identity it names", async () => {
@@ -1026,7 +1124,17 @@ test("bob taking alice's name changes what is shown, never which id is shown", a
   await expect(alicePage.getByTestId(`identity-card-name-${bobId}-name`)).toHaveText(
     "Alice Example",
   );
+  // Round 6 draws the nickname this device keeps after the name they publish,
+  // so a stolen public name and the name alice gave him are both readable and
+  // tellable apart: Alice Example (Bob at the print shop).
+  await expect(alicePage.getByTestId(`identity-card-name-${bobId}-nickname`)).toHaveText(
+    "(Bob at the print shop)",
+  );
   expect(await identifier(alicePage, `identity-card-name-${bobId}`)).toBe(bobId);
+  await expect(idSpan(alicePage, `identity-card-name-${bobId}`)).toHaveAttribute(
+    "data-truncated",
+    "false",
+  );
   // The entry that said it is still on the record, which is where it is read.
   const trust = await apiGet(ALICE_URL, `/api/identities/${aliceId}`);
   expect(trust.body.identity.trust[0].attestation_event).toBe(aliceAttestation);
@@ -1072,9 +1180,9 @@ test("step 13: the witnesses screen, what one holds, and one deliberate fetch", 
   await expect(alicePage.getByTestId(`identity-card-declared-kind-${carolId}`)).toHaveText(
     "person",
   );
-  await expect(alicePage.getByTestId(`identity-card-head-seq-${carolId}`)).toHaveText(
-    "at position 1",
-  );
+  // How much of a record this witness holds is what this listing is about, so
+  // the card counts the entries rather than naming the position they end at.
+  await expect(alicePage.getByTestId(`identity-card-entries-${carolId}`)).toHaveText("2 entries");
 
   const proxied = await apiGet(ALICE_URL, `/api/witnesses/${witnessId}/ledgers?offset=0&limit=256`);
   expect(proxied.body.endpoint_id).toBe(witnessId);
@@ -1093,7 +1201,10 @@ test("step 13: the witnesses screen, what one holds, and one deliberate fetch", 
   await alicePage.getByTestId("identity-fetch-button").click();
   await expect(alicePage.getByTestId("ledger-panel")).toBeVisible();
   await expect(alicePage.getByTestId("identity-fetch")).toHaveCount(0);
-  await expect(alicePage.getByTestId("identity-detail-head-seq")).toHaveText("1");
+  // Two entries held, and the position the newest sits at is read on the route.
+  await expect(alicePage.getByTestId("identity-detail-event-count")).toHaveText("2");
+  await expect(alicePage.getByTestId("identity-detail-unheld")).toHaveCount(0);
+  await expectHeadSeq(ALICE_URL, carolId, 1);
   // Storing a ledger is not controlling it: the pill stays the crawl's
   // distance, and no action appears.
   await expect(alicePage.getByTestId("identity-detail-resolved-pill")).toHaveAttribute(

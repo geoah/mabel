@@ -51,7 +51,9 @@ for the reason story 004 states), and step 11 tears them down.
    `curl -fsS http://127.0.0.1:9080/api/node`. Then open
    `http://127.0.0.1:9080/witness` and click `nav-node`. A witness serves no
    wallet, so its nav is two entries and no third, `nav-witness` for the records
-   it keeps and `nav-node` for the program keeping them.
+   it keeps and `nav-node` for the program keeping them. Round 5 of proposal 005
+   cut the page to six short rows and a card list of the witnesses this node uses
+   by default, so a count on it is a bare number under the row's own label.
 4. Open `http://127.0.0.1:9080/witness`. It is one card list, `identity-cards`,
    holding all five ledgers with no paging control anywhere: the route asks for
    every ledger it holds at once. Read the two standing notes above the list.
@@ -105,13 +107,15 @@ for the reason story 004 states), and step 11 tears them down.
 - Step 3: the node document answers `role: "witness"`, `relay: "disabled"`,
   `endpoint_id == witness_id`, `ledger_count: 5`, `fork_count: 1` and
   `storage_capacity: 2147483648`.
-- Step 3's page says the same in words: `node-role` reads `keeps copies of
-  other people's records`, `node-relay` reads `direct connections only, with no
-  relay`, `node-endpoint-id` carries `witness_id` and is not truncated,
-  `node-ledger-count` reads `5 records`, `node-fork-count` reads `1`,
-  `node-storage` ends `of 2.1 GB`, `node-witnesses` reads `none`, and
-  `node-http-bind` and `node-version` repeat the document's own values. A
-  witness draws no `node-identity-count`: it holds no identity of its own.
+- Step 3's page says the same in six short rows: `node-role` reads `witness`,
+  the word the document carries, `node-relay` reads `direct connections only`,
+  `node-endpoint-id` carries `witness_id` under the label `Iroh ID` and is not
+  truncated, `node-ledger-count` reads `5` under the label `records`,
+  `node-fork-count` reads `1` under the label `conflicts`, `node-storage` ends
+  `of 2.1 GB` and `node-version` repeats the document's own value.
+  `node-witnesses-empty` reads `none`. A witness draws no
+  `node-identity-count`: it holds no identity of its own. Round 5 of proposal
+  005 dropped `node-http-bind` from the page, so no node draws it.
 - Step 4: `witness-read-only-note` reads `This page only reads. Nothing here
   changes anything.` and `witness-holdings-note` reads `This is what this one
   witness holds. A record missing here may still be on another witness.` There

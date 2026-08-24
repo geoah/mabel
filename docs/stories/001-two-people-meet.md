@@ -31,10 +31,15 @@ repository root.
    `witness_id="$(dc exec -T witness cat /shared/witness.id)"`, a 52-character
    lowercase base32 string.
 2. Open `http://127.0.0.1:9081/wallet`. The nav holds three entries and no
-   fourth, `nav-wallet`, `nav-witnesses` and `nav-node`, the search box
-   `wallet-search` is there and says `type a handle to look up in DNS`, and
-   `identity-list-empty` reads `You have no identities yet. Create one below.`
-   The role itself is a fact of `GET /api/node`, which answers `role: "wallet"`.
+   fourth, `nav-wallet`, `nav-witnesses` and `nav-node`. The page is three flat
+   sections under three headings (round 6 of proposal 005): the search box
+   `wallet-search`, whose field is labelled `Mabel ID or handle`, then
+   `identity-list` with `identity-list-empty` reading `You have no identities
+   yet. Create one below.`, then `known-identities` with its
+   `known-trusted-only` switch off and `known-identities-empty` reading `Your
+   wallet knows of no other identity yet.`, because this wallet has fetched,
+   crawled and noted nobody. The role itself is a fact of `GET /api/node`, which
+   answers `role: "wallet"`.
 3. Click `identity-create-summary` to unfold the create form, which the wallet
    home keeps closed. Type `alice` into `identity-create-alias`, labelled
    `Private nickname (only this device sees it)` because it never leaves this
@@ -74,9 +79,12 @@ repository root.
 8. In alice's UI click `action-trust-summary`, paste `bob_id` into
    `trust-add-subject` and click `trust-add-submit`. `trust-appended-event`
    shows the new event id, a card `identity-card-<bob_id>` appears in
-   `trust-list`, and `identity-detail-head-seq` reads `2`. Record the event id
-   as `alice_attestation`. The list is keyed by the identity trusted, not by the
-   entry that said it: the entry is read on the record.
+   `trust-list`, and `identity-detail-event-count` reads `3`. Record the event id
+   as `alice_attestation`. Round 5 of proposal 005 counts a record's entries and
+   never names the position its newest one sits at, so the head is read on `GET
+   /api/identities/<alice_id>`, which answers `head_seq: 2`. The list is keyed by
+   the identity trusted, not by the entry that said it: the entry is read on the
+   record.
 9. In bob's UI do the same with `alice_id` as the subject. Trust is one-way
    (decision 003), so this is a second event in a second ledger, not a
    handshake.
@@ -101,8 +109,9 @@ repository root.
     dc exec -T alice mabel identity create --alias carol --kind person
     ```
     Record `carol_id`. In alice's UI open `action-trust`, paste `carol_id` into
-    `trust-add-subject`, click `trust-add-submit` (`identity-detail-head-seq`
-    reads `3`), then open `action-push` and click `sync-push-submit`.
+    `trust-add-subject`, click `trust-add-submit` (`identity-detail-event-count`
+    reads `4` and the route answers `head_seq: 3`), then open `action-push` and
+    click `sync-push-submit`.
 14. Verify that attestation from an empty home. Carol's ledger is in nobody's
     reach: alice pushed her own ledger, not carol's.
     ```sh
@@ -126,13 +135,17 @@ repository root.
     Example` into `identity-create-display-name`, `dana@dana.example` into
     `identity-create-email`, leave the kind at `person` and click
     `identity-create-submit`. Record `dana_id`. Dana is never witnessed and
-    never pushed, so nothing earlier in this story moves.
-17. Read the node page. Click `nav-node`, the third nav entry. It draws what
-    `GET /api/node` answers about the program doing the work: what it does, the
-    id other nodes dial it by, how it is reachable, where it serves this page,
-    how many identities it holds, the space it uses and the build running.
-    `node-endpoint-id` is what `dc exec -T alice mabel node id` prints, written
-    out whole because it is the only name a node has.
+    never pushed, so nothing earlier in this story moves. Back on the wallet
+    home her card reads `Dana Example (dana)`, and her public email is in the
+    opened card, one click into `identity-card-expand-<dana_id>`.
+17. Read the node page. Click `nav-node`, the third nav entry. It draws six
+    short rows of what `GET /api/node` answers about the program doing the work:
+    what it is, the Iroh ID other nodes dial it by, how it is reachable, how many
+    identities it holds, the space it uses and the build running. Where the API
+    listens left the page with round 5 of proposal 005, so there is no
+    `node-http-bind` row. `node-endpoint-id` is what `dc exec -T alice mabel node
+    id` prints, written out whole because it is the only name a node has. Under
+    the rows, `node-witnesses` lists the witnesses this node uses by default.
 
 ## Verified outcomes
 
@@ -182,14 +195,27 @@ repository root.
   ascending identity id order `GET /api/identities` answers in:
   `identity-cards` holds `identity-card-<alice_id>` and
   `identity-card-<carol_id>`. Alice's card reads
-  `identity-card-name-<alice_id>-name` `alice`,
-  `identity-card-declared-kind-<alice_id>` `person` and
-  `identity-card-head-seq-<alice_id>` `at position 3`; carol's reads `at
-  position 0`, because she was created and never appended to.
+  `identity-card-name-<alice_id>-name` `alice` and
+  `identity-card-declared-kind-<alice_id>` `person`. She publishes no name, so
+  the nickname is the name and `identity-card-name-<alice_id>-nickname` is absent.
+  Her Mabel ID is on the card whole, `data-truncated="false"`.
   `identity-card-link-<alice_id>` points at `/identities/<alice_id>`: the card
-  is the page, and there is no selection state anywhere. Each card carries the
-  one expand affordance this app draws,
-  `identity-card-expand-<alice_id>` reading `Show the record`.
+  is the page, and there is no selection state anywhere. No card names a position
+  at all, so no `identity-card-head-seq-*` element exists and the heads are read
+  on `GET /api/identities/<id>`: alice at `head_seq: 3`, carol at `head_seq: 0`,
+  because she was created and never appended to.
+- Each card carries the one expand affordance this app draws,
+  `identity-card-expand-<alice_id>`, a small icon button whose `aria-label` is
+  `Show the record` closed and `Hide the record` open, holding a chevron that
+  turns over rather than sideways. Opening it draws
+  `identity-card-details-<alice_id>`: the row labels are lowercase (`nickname`
+  reading `alice`), `identity-card-event-count-<alice_id>` reads `4`, and there is
+  no `identity-card-principals-<alice_id>` row, because alice holds her own key
+  and nothing else can act for her.
+- Alice and carol are both identities this wallet signs for, so
+  `known-identities-empty` still reads `Your wallet knows of no other identity
+  yet.`: a known row is an identity this home has a record of and does not
+  control.
 - Step 15: `GET /api/identities/<alice_id>/keys` answers 200 with `identity_id
   == alice_id`, an `active_secret_key` and a `reserve_secret_key` matching what
   the two boxes hold, and an `active_key` equal to `identity.active_key` of the
@@ -208,18 +234,23 @@ repository root.
   carrying `{display_name: "Dana Example", hostname: null, email:
   "dana@dana.example"}`.
 - Step 16 on the wallet home: a card is named by the name the identity
-  publishes, not by the nickname only this device sees, so
+  publishes, with the nickname only this device sees in parentheses after it, so
   `identity-card-name-<dana_id>-name` reads `Dana Example` and
-  `identity-card-email-<dana_id>` reads `dana@dana.example`.
-- Step 17: `node-role` reads `holds your identities and signs for them`,
-  `node-relay` reads `direct connections only, with no relay` (the topology sets
-  `MABEL_RELAY=disabled`), `node-endpoint-id` carries what `mabel node id`
-  prints and is not truncated, `node-http-bind` and `node-version` repeat the
-  document's own values, `node-identity-count` counts the identities this home
-  holds, `node-storage` ends `of 2.1 GB` (the topology's
-  `MABEL_STORAGE_CAPACITY`), and `node-witnesses` reads `none`, because the base
-  topology sets no node-wide witness. A wallet draws no `node-ledger-count` and
-  no `node-fork-count`.
+  `identity-card-name-<dana_id>-nickname` reads `(dana)`. Round 6 of proposal 005
+  put the public email in the opened card alone, so
+  `identity-card-email-<dana_id>` is absent until
+  `identity-card-expand-<dana_id>` is pressed, and then reads
+  `dana@dana.example` under the lowercase label `email`.
+- Step 17: `node-role` reads `wallet`, the word the document carries, under the
+  label `role`. `node-relay` reads `direct connections only` (the topology sets
+  `MABEL_RELAY=disabled`), `node-endpoint-id` carries what `mabel node id` prints
+  and is not truncated, under the label `Iroh ID`. `node-version` repeats the
+  document's own value, `node-identity-count` is the bare count of the identities
+  this home holds under the label `identities`, and `node-storage` ends `of 2.1
+  GB` (the topology's `MABEL_STORAGE_CAPACITY`). `node-witnesses-empty` reads
+  `none`, because the base topology sets no node-wide witness. A wallet draws no
+  `node-ledger-count` and no `node-fork-count`, and no node draws
+  `node-http-bind`, though the document still carries `http_bind`.
 
 ## Deviations
 
@@ -254,3 +285,14 @@ story text above.
 - Step 17 runs last in the spec, after step 16, so `node-identity-count` is
   read against `GET /api/node` rather than against a number this story would
   have to keep in step with every identity it creates.
+- Every position this story used to read on the screen is read on `GET
+  /api/identities/<id>` instead, through the shared `expectHeadSeq` helper. Round
+  5 of proposal 005 removed `identity-detail-head-seq` and
+  `identity-card-head-seq-<id>` outright; where the UI still has something to
+  say, the spec reads `identity-detail-event-count`, which counts the entries a
+  record holds.
+- The spec asserts the chevron's `data-state` inside
+  `identity-card-expand-<alice_id>`, which the story does not name. It is how
+  "the chevron turns over rather than sideways" is checked from outside the
+  stylesheet; the rotation itself is pinned by
+  `ui/src/test/identity-card.test.tsx`.

@@ -15,6 +15,7 @@ import {
   compareIds,
   createIdentityCli,
   expectExit,
+  expectHeadSeq,
   readNodePage,
   story001Steps1to7,
 } from "../lib/stories";
@@ -22,7 +23,9 @@ import {
   addTrust,
   cardIds,
   createIdentity,
+  expandCard,
   identifier,
+  idSpan,
   openAction,
   openIdentity,
   push,
@@ -86,7 +89,10 @@ test("step 8: alice attests bob", async () => {
   // identity cards keyed by the subject, and the entry that said it is read on
   // the record rather than drawn as a row of its own.
   await expect(trustCard(alicePage, bobId)).toBeVisible();
-  await expect(alicePage.getByTestId("identity-detail-head-seq")).toHaveText("2");
+  // Three entries on the record now, and which position the newest sits at is
+  // read on the route: round 5 took the position off the screen.
+  await expect(alicePage.getByTestId("identity-detail-event-count")).toHaveText("3");
+  await expectHeadSeq(ALICE_URL, aliceId, 2);
 
   const identity = await apiGet(ALICE_URL, `/api/identities/${aliceId}`);
   expect(identity.body.identity.trust[0].subject).toBe(bobId);
@@ -98,7 +104,7 @@ test("step 9: bob attests alice, in a second ledger", async () => {
   await openIdentity(bobPage, BOB_URL, bobId);
   const bobAttestation = await addTrust(bobPage, aliceId);
   await expect(trustCard(bobPage, aliceId)).toBeVisible();
-  await expect(bobPage.getByTestId("identity-detail-head-seq")).toHaveText("2");
+  await expectHeadSeq(BOB_URL, bobId, 2);
   expect(bobAttestation).not.toBe(aliceAttestation);
 });
 
@@ -190,7 +196,8 @@ test("steps 13 and 14: the subject nobody can read", async () => {
 
   await openIdentity(alicePage, ALICE_URL, aliceId);
   await addTrust(alicePage, carolId);
-  await expect(alicePage.getByTestId("identity-detail-head-seq")).toHaveText("3");
+  await expect(alicePage.getByTestId("identity-detail-event-count")).toHaveText("4");
+  await expectHeadSeq(ALICE_URL, aliceId, 3);
   await push(alicePage, witnessId, { stored: 1 });
 
   const document = json(
@@ -245,25 +252,60 @@ test("the wallet home draws one card per identity, and the card is the page", as
   // list renders what it answered.
   expect(await cardIds(alicePage)).toEqual([aliceId, carolId].sort(compareIds));
 
+  // Alice publishes no name, so the card falls back to the nickname only this
+  // device sees, and draws it as the name rather than in parentheses after one.
   await expect(alicePage.getByTestId(`identity-card-name-${aliceId}-name`)).toHaveText("alice");
+  await expect(alicePage.getByTestId(`identity-card-name-${aliceId}-nickname`)).toHaveCount(0);
   await expect(alicePage.getByTestId(`identity-card-declared-kind-${aliceId}`)).toHaveText(
     "person",
   );
-  await expect(alicePage.getByTestId(`identity-card-head-seq-${aliceId}`)).toHaveText(
-    "at position 3",
-  );
-  // Carol was created and never appended to, so her card reads position 0.
-  await expect(alicePage.getByTestId(`identity-card-head-seq-${carolId}`)).toHaveText(
-    "at position 0",
-  );
+  // Round 5 took the position off the cards: how far a record has got is not
+  // what a reader of an address book came for, and the route still reports it.
+  await expect(alicePage.locator('[data-testid^="identity-card-head-seq-"]')).toHaveCount(0);
+  await expectHeadSeq(ALICE_URL, aliceId, 3);
+  await expectHeadSeq(ALICE_URL, carolId, 0);
   await expect(alicePage.getByTestId(`identity-card-link-${aliceId}`)).toHaveAttribute(
     "href",
     `/identities/${aliceId}`,
   );
-  // The one expand affordance every card in this app draws, in the words it
-  // draws it with: the card opens the record in place.
-  await expect(alicePage.getByTestId(`identity-card-expand-${aliceId}`)).toHaveText(
-    "Show the record",
+  // A card has the width for a whole Mabel ID and a Mabel ID is the only thing
+  // that tells two identities apart, so no card truncates one (round 6).
+  expect(await identifier(alicePage, `identity-card-name-${aliceId}`)).toBe(aliceId);
+  await expect(idSpan(alicePage, `identity-card-name-${aliceId}`)).toHaveAttribute(
+    "data-truncated",
+    "false",
+  );
+
+  // The one expand affordance every card in this app draws. Round 5 made it a
+  // small icon button in the corner, so the words are its accessible name, and
+  // the chevron inside it turns over rather than sideways.
+  const expand = alicePage.getByTestId(`identity-card-expand-${aliceId}`);
+  await expect(expand).toHaveAttribute("aria-label", "Show the record");
+  await expect(expand.locator('[data-slot="collapsible-chevron"]')).toHaveAttribute(
+    "data-state",
+    "closed",
+  );
+  await expandCard(alicePage, aliceId);
+  await expect(expand.locator('[data-slot="collapsible-chevron"]')).toHaveAttribute(
+    "data-state",
+    "open",
+  );
+  // The opened card is the record: the row labels are lowercase, and the four
+  // entries alice's record holds are counted rather than positioned.
+  const details = alicePage.getByTestId(`identity-card-details-${aliceId}`);
+  await expect(
+    details.getByTestId(`identity-card-alias-${aliceId}-row`).locator("dt"),
+  ).toContainText("nickname");
+  await expect(details.getByTestId(`identity-card-alias-${aliceId}`)).toHaveText("alice");
+  await expect(details.getByTestId(`identity-card-event-count-${aliceId}`)).toHaveText("4");
+  // Alice holds her own key, so nothing else can act for her: round 6 draws no
+  // "who can act for it" row at all when the answer is the identity itself.
+  await expect(alicePage.getByTestId(`identity-card-principals-${aliceId}`)).toHaveCount(0);
+
+  // Alice and carol are both identities this wallet signs for, so the wallet
+  // knows of nobody else: every known row is an identity it does not control.
+  await expect(alicePage.getByTestId("known-identities-empty")).toHaveText(
+    "Your wallet knows of no other identity yet.",
   );
 });
 
@@ -317,15 +359,24 @@ test("step 16: a new identity that publishes a name and an email from birth", as
     email: "dana@dana.example",
   });
 
-  // The card list names her by the name she publishes, not by the nickname
-  // only this device sees, and carries the public email beside it.
+  // The card list names her by the name she publishes, with the nickname only
+  // this device sees in parentheses after it: Dana Example (dana). Round 6 put
+  // the public email in the opened card alone, so the card is opened to read it.
   await alicePage.goto(`${ALICE_URL}/wallet`);
   await expect(alicePage.getByTestId(`identity-card-name-${dana.identityId}-name`)).toHaveText(
     "Dana Example",
   );
+  await expect(alicePage.getByTestId(`identity-card-name-${dana.identityId}-nickname`)).toHaveText(
+    "(dana)",
+  );
+  await expect(alicePage.getByTestId(`identity-card-email-${dana.identityId}`)).toHaveCount(0);
+  await expandCard(alicePage, dana.identityId);
   await expect(alicePage.getByTestId(`identity-card-email-${dana.identityId}`)).toHaveText(
     "dana@dana.example",
   );
+  await expect(
+    alicePage.getByTestId(`identity-card-email-${dana.identityId}-row`).locator("dt"),
+  ).toHaveText("email");
 });
 
 test("step 17: the node page names this node and what it holds", async () => {

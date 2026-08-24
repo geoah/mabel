@@ -93,10 +93,11 @@ docker/compose.dns.yaml`, run from the repository root.
    which has no record.
 8. Open alice's identity page at `http://127.0.0.1:9081/identities/<alice_id>`,
    which is where every identity is shown, local or foreign (proposal 004). The
-   overview is one compact
-   key-value table (`identity-detail`): name, copyable id, declared kind,
-   alias, created, the handle with its verification mark, contact, and the
-   counts. The row is labelled `handle`, because round 4 of proposal 005 calls
+   overview is the same card a list draws, opened and without its toggle
+   (`identity-detail`): the declared kind as a badge, the name with the copyable
+   id under it, then rows labelled in lowercase for the email, the nickname, the
+   note, when it was created, the handle with its verification mark, the record
+   and the counts. The row is labelled `handle`, because round 4 of proposal 005 calls
    it that everywhere a reader sees it; the testid keeps the document's own word
    for the field, `identity-detail-hostname`. Read that row for each of the
    three cases above and for carol, who claims no handle. The mark sits inside
@@ -121,8 +122,11 @@ docker/compose.dns.yaml`, run from the repository root.
     `wallet-search-input` on the wallet home and click `wallet-search-submit`,
     which navigates to `/identities/<carol_id>`. Carol's ledger is not in
     alice's home, so the page renders what the crawl read: the "How you know
-    them" section (`lookup-result`) with the path, the degrees and the two
-    lists. The same answer from the CLI and the route:
+    them" section (`lookup-result`) with the verdict, the path as a vertical
+    chain of identity cards, and the two collapsed lists. Then go back to the
+    wallet home and read the third section, `known-identities`: bob and carol are
+    both there now, because the crawl reached them and this wallet controls
+    neither. The same answer from the CLI and the route:
     ```sh
     dc exec -T alice sh -c 'mabel graph sync --peer "$(cat /shared/witness.ticket)"'
     dc exec -T alice mabel lookup "$carol_id" --from alice
@@ -157,6 +161,7 @@ docker/compose.dns.yaml`, run from the repository root.
     ```sh
     curl -fsS http://127.0.0.1:9081/api/witnesses
     curl -fsS 'http://127.0.0.1:9081/api/witnesses/'"$witness_id"'/ledgers?offset=0&limit=256'
+    curl -fsS http://127.0.0.1:9081/api/identities/known
     dc exec -T alice ls /data/ledgers
     ```
 14. Set a handle in the UI, on bob's own identity in bob's wallet. Open
@@ -233,36 +238,71 @@ docker/compose.dns.yaml`, run from the repository root.
   `identity-detail-resolved`, the one inline identity the page's heading
   draws), and two entries resolving to one name both show their full ids. No
   screen sorts, matches or deduplicates on a name.
+- Round 6 of proposal 005 draws the nickname this device keeps after the name an
+  identity publishes, in parentheses, so a stolen public name and the name you
+  gave them are both readable and tellable apart. When bob publishes alice's
+  name, his card in alice's trust list reads
+  `identity-card-name-<bob_id>-name` `Alice Example` and
+  `identity-card-name-<bob_id>-nickname` `(Bob at the print shop)`, the nickname
+  step 9 set, and it carries his whole Mabel ID: a card has the width for one, so
+  `data-truncated` is `false`.
 - Step 9 writes `contacts/<bob_id>.json` in alice's home only. Bob's wallet and
   the witness show no trace of it, and nothing about it is signed or pushed.
-- Step 10 answers `degrees: 2`, drawn as `2 steps` under the label `how far
-  away`, with a path rendered as two steps (`lookup-hop-0-0`,
-  `lookup-hop-0-1`), alice trusts bob and bob trusts carol, each step naming
-  the identity, its resolved name and how fresh the reading is
-  (`lookup-hop-0-1-fetched` reads `seen ...`). The response also carries
-  `graph_stale`, `graph_truncated`, `truncated_by`, carol's outgoing trust list
-  (empty here, so `lookup-trust-empty` reads `Your wallet has not seen them
-  trust anyone.`) and a reverse list shaped `{best_effort: true, entries:
-  [...]}`, labelled `Best effort: who your wallet has seen trusting them, not
-  everyone who does` every time it is shown (`lookup-reverse-label`).
-  `lookup-from` carries `alice_id`, the root the answer came from.
-- Step 10's lists are openable in place: `lookup-reverse-expand-<bob_id>` reads
-  `How you know them`, the same expand affordance every other block in the app
-  draws.
+- Step 10 answers `degrees: 2`, stated as the sentence `lookup-degrees`
+  reading `Connected through 2 steps` beside `lookup-verdict-pill`, which carries
+  `data-pill` `degree` and says the same thing shorter. Round 5 of proposal 005
+  made the verdict a sentence rather than a number in a labelled row, so no
+  `lookup-degrees-row` exists.
+- Step 10's path is a vertical chain of the same identity cards every other
+  screen draws, `lookup-path-0`: the root you asked from
+  (`lookup-hop-0-0-from-name` reading `Alice Example`), then one card per step
+  (`lookup-hop-0-0` and `lookup-hop-0-1`), each under the word that links them.
+  `lookup-hop-0-0-to-name` reads `Bob Example` and
+  `lookup-hop-0-1-fetched` reads `seen ...`.
+- Step 10's response also carries `graph_stale`, `graph_truncated`,
+  `truncated_by`, carol's outgoing trust list and a reverse list shaped
+  `{best_effort: true, entries: [...]}`. Both are collapsed cards, and a closed
+  block holds none of its content, so each is opened to read it: opening
+  `lookup-trust-toggle` draws `lookup-trust-empty` reading `Your wallet has not
+  seen them trust anyone.`, and opening `lookup-reverse-toggle` draws bob's
+  identity card, `identity-card-<bob_id>`, inside `lookup-reverse`. Round 5
+  removed the per-entry rows and expanders, so no `lookup-reverse-row-<bob_id>`
+  and no `lookup-reverse-expand-<bob_id>` exist. `lookup-trust-label` reads `Who
+  they trust` and `lookup-reverse-label` reads `Who your wallet has seen trusting
+  them`, with the caveat moved into the sentence its info tip holds:
+  `lookup-reverse-note` has `aria-label` `Best effort: who your wallet has seen
+  trusting them, not everyone who does`. `lookup-from` carries `alice_id`, the
+  root the answer came from.
 - Step 10's page is a foreign identity's page, so it carries no
   `identity-actions` and its pill is the crawl's distance, never ownership:
   `identity-detail-resolved-pill` carries `data-pill` `degree` and reads
   `trusted (2d)`. Round 4 of proposal 005 draws that pill in the card's top
-  right corner rather than inside the name, so it is read by its own testid.
-  `identity-detail-ledger-summary` reads `your wallet holds no copy of it`, and
-  `identity-detail-provenance` reads `nothing your wallet knows, so the id is
-  the only label`: no profile and no local nickname name carol here. The crawl is
-  fresh and reached everything, so neither `lookup-graph-stale` nor
-  `lookup-graph-truncated` is drawn.
+  right corner rather than inside the name, so it is read by its own testid, and
+  `identity-detail-unheld` beside it reads `not stored here`.
+  `identity-detail-ledger-summary` reads `your wallet holds no copy of it`. Round
+  5 removed the name-provenance row outright, so `identity-detail-provenance` is
+  absent: which of the three sources a label came from is a fact about the label,
+  and the card already shows what it has. The crawl is fresh and reached
+  everything, so neither `lookup-graph-stale` nor `lookup-graph-truncated` is
+  drawn. The one action the page offers besides fetching is `lookup-contact`,
+  named `Update local info`, holding one `contact-save` reading `Save` that
+  writes the nickname and the note together.
+- Step 10 on the wallet home: `GET /api/identities/known` answers exactly
+  `bob_id` and `carol_id`, sorted by the rendered id. Bob reads `trusted: true`,
+  `degrees: 1`, `stored: false`, `head_seq: null` and `alias: "Bob at the print
+  shop"`, the nickname step 9 set; carol reads `trusted: false`, `degrees: 2` and
+  `stored: false`. `known-identity-cards` draws one card each,
+  `identity-card-name-<bob_id>-pill` carrying `data-pill` `trusted` and
+  `identity-card-name-<carol_id>-pill` carrying `degree`, and both cards carry
+  `not stored here` in `identity-card-unheld-<id>`. Pressing
+  `known-trusted-only` sets `aria-checked` to `true` and keeps both, because
+  carol is reachable through bob: the filter covers direct trust and crawl
+  distances alike.
 - Step 11 answers 200 with `degrees: null` and an empty path list, stated as
-  one sentence: `lookup-degrees-none` reads `No connection found yet. Sync and
-  try again.` and `lookup-degrees` inside it reads `No connection found`. It is
-  never stated as "no relationship".
+  one sentence: `lookup-degrees-none` reads `No connection found yet.` and
+  `lookup-degrees` inside it reads `No connection found`. It is never stated as
+  "no relationship". No distance means nothing to say in a pill either, so
+  `lookup-verdict-pill` and `lookup-paths` are both absent.
 - Step 12: `GET /api/resolve/alice.example` answers `status: "resolved"` with
   `identity_id == alice_id`, and the search box lands on
   `/identities/<alice_id>`, which carries `identity-detail-resolved-pill`
@@ -282,12 +322,16 @@ docker/compose.dns.yaml`, run from the repository root.
   three cards, `alice_id`, `bob_id` and `carol_id`, in the order `GET
   /api/witnesses/<witness_id>/ledgers` answers, which reports `more: false`.
   Carol's card reads `identity-card-declared-kind-<carol_id>` `person` and
-  `identity-card-head-seq-<carol_id>` `at position 1`.
+  `identity-card-entries-<carol_id>` `2 entries`: how much of a record this
+  witness holds is what the listing is about, and round 5 of proposal 005 took
+  the position off the cards.
 - Step 13's fetch is the only thing that writes. Before it, carol's card leads
   to a page carrying `identity-fetch` and `dc exec -T alice ls /data/ledgers`
   holds `alice_id` alone: browsing a witness stores nothing. After
   `identity-fetch-button`, the same page draws `ledger-panel`,
-  `identity-detail-head-seq` reads `1`, `identity-fetch` is gone, and
+  `identity-detail-event-count` reads `2`, `identity-detail-unheld` is gone
+  because the record is stored now, `GET /api/identities/<carol_id>` answers
+  `head_seq: 1`, `identity-fetch` is gone, and
   `/data/ledgers` holds `alice_id` and `carol_id`. Storing a ledger is not
   controlling it: no key in this home signs for carol, so the fetch wrote no
   `identities/<carol_id>` link, `GET /api/identities` still lists `alice_id`
@@ -360,6 +404,16 @@ docker/compose.dns.yaml`, run from the repository root.
   card is `identity-card-name-<bob_id>` and the entry that said it is pinned on
   `GET /api/identities/<alice_id>` instead. The full-id rendering of duplicates
   within one list is covered by `ui/src/test/identity-inline.test.tsx`.
+- Step 10's known-identities half is a separate test in the spec, run straight
+  after the lookup one. It reads `GET /api/identities/known` and the third section
+  of the wallet home, both of which round 6 of proposal 005 added, on the state
+  the crawl of step 10 left behind.
+- The positions this story used to read on the screen are read on `GET
+  /api/identities/<id>` through the shared `expectHeadSeq` helper. Round 5 of
+  proposal 005 removed `identity-detail-head-seq` and
+  `identity-card-head-seq-<id>`; where the screen still has something to say, the
+  spec reads `identity-detail-event-count` on a page and
+  `identity-card-entries-<id>` on a witness listing.
 - The pill on an identity page is asserted by its `data-pill` attribute rather
   than by absence. Proposal 005 replaced `identity-own-badge` with the one pill
   both identity components draw, and a foreign page draws that pill too, so

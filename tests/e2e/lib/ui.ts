@@ -16,6 +16,15 @@ export async function identifier(scope: Page | Locator, testId: string): Promise
 }
 
 /**
+ * The `Identifier` span inside one element, which is where `data-value` and
+ * `data-truncated` sit. Round 6 of proposal 005 draws every Mabel ID on a card
+ * in full, so `data-truncated` is what a spec reads to pin that.
+ */
+export function idSpan(scope: Page | Locator, testId: string): Locator {
+  return scope.getByTestId(testId).locator("[data-value]").first();
+}
+
+/**
  * Opens the create form, which the wallet home folds away behind
  * `identity-create-summary` (proposal 004). Clicking a summary toggles it, so
  * the click is skipped when the form is already on the screen. A closed block
@@ -27,6 +36,21 @@ export async function openCreateForm(page: Page): Promise<void> {
     await page.getByTestId("identity-create-summary").click();
   }
   await expect(form).toBeVisible();
+}
+
+/**
+ * Opens one identity card's record, which is the second half of the card the
+ * collapsed one folds away. Round 5 of proposal 005 draws the control as a
+ * small icon button in the card's corner, so its label is its accessible name
+ * rather than text on the screen, and a card with nothing more to show draws no
+ * button at all.
+ */
+export async function expandCard(scope: Page | Locator, identityId: string): Promise<void> {
+  const expand = scope.getByTestId(`identity-card-expand-${identityId}`);
+  await expect(expand).toHaveAttribute("aria-label", "Show the record");
+  await expand.click();
+  await expect(scope.getByTestId(`identity-card-details-${identityId}`)).toBeVisible();
+  await expect(expand).toHaveAttribute("aria-label", "Hide the record");
 }
 
 /**

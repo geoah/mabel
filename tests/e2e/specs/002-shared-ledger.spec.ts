@@ -11,8 +11,8 @@ import {
   stdoutLines,
   verifier,
 } from "../lib/docker";
-import { expectExit, story002Steps1to8 } from "../lib/stories";
-import { addTrust, addWitness, openIdentity, push, trustCard } from "../lib/ui";
+import { expectExit, expectHeadSeq, story002Steps1to8 } from "../lib/stories";
+import { addTrust, addWitness, identifier, openIdentity, push, trustCard } from "../lib/ui";
 
 /** docs/stories/002-shared-ledger.md */
 test.describe.configure({ mode: "serial" });
@@ -60,6 +60,18 @@ test("step 9: the Principals card holds one row per principal", async () => {
   await expect(alicePage.getByTestId("principals-open-invitations")).toHaveText(
     "No invitation to help control this identity is waiting for an answer.",
   );
+
+  // Round 6 of proposal 005 also names both of them in the card's own "who can
+  // act for it" row, resolved rather than printed as 52-character ids. Alice's
+  // row carries her nickname; bob is a stranger to this home, so his card falls
+  // back to his id, which is the whole point of the row.
+  await expect(alicePage.getByTestId(`identity-detail-principal-${aliceId}-name`)).toHaveText(
+    "alice",
+  );
+  const bobPrincipal = alicePage.getByTestId(`identity-detail-principal-${bobId}`);
+  await expect(bobPrincipal).toBeVisible();
+  await expect(bobPrincipal.getByTestId(`identity-detail-principal-${bobId}-name`)).toHaveCount(0);
+  expect(await identifier(alicePage, `identity-detail-principal-${bobId}`)).toBe(bobId);
 });
 
 test("step 10: a controller role on a raw root warns before it signs", async () => {
@@ -196,7 +208,8 @@ test("step 11: the shared ledger attests bob, signed by alice's key", async () =
   // Round 4 of proposal 005 keys the trust list by the subject, so the entry
   // this append wrote is pinned on the identity document instead.
   await expect(trustCard(alicePage, bobId)).toBeVisible();
-  await expect(alicePage.getByTestId("identity-detail-head-seq")).toHaveText("3");
+  await expect(alicePage.getByTestId("identity-detail-event-count")).toHaveText("4");
+  await expectHeadSeq(ALICE_URL, orgId, 3);
 
   const identity = await apiGet(ALICE_URL, `/api/identities/${orgId}`);
   expect(identity.body.identity.trust[0].subject).toBe(bobId);

@@ -37,10 +37,13 @@ those forms render.
    `identity-create-declared-kind`, paste `alice_id` into
    `identity-create-founder`, and click `identity-create-submit`. Record
    `identity-create-result-identity-id` as `org_id`.
-3. Open `identity-card-link-<org_id>`. `identity-detail-declared-kind` reads
-   `organization` and `identity-detail-founded` reads `Its controllers sign for
-   it.`: an identity-rooted ledger holds no key of its own and its controllers
-   sign for it (decision 002 as amended). Decision 017 replaced the two
+3. Open `identity-card-link-<org_id>`. `identity-detail-declared-kind` is the
+   badge reading `organization`, the row `identity-detail-principals` is labelled
+   `who can act for it` and names alice, and `identity-detail-founded` reads `Its
+   controllers sign for it.`: an identity-rooted ledger holds no key of its own
+   and its controllers sign for it (decision 002 as amended). Round 6 of proposal
+   005 draws that row only when the answer differs from the identity itself,
+   which is exactly what an identity root is. Decision 017 replaced the two
    52-character key values with that sentence and proposal 005 moved it beside
    the principals it is about, so the values themselves are read from the
    routes:
@@ -103,8 +106,9 @@ those forms render.
     `bob_id` into `trust-add-subject` and click `trust-add-submit`. The shared
     ledger holds no key, so alice's key signs for it (decision 004: any single
     current controller). A card `identity-card-<bob_id>` appears in
-    `trust-list` and `identity-detail-head-seq` reads `3`. Record the event id
-    from `trust-appended-event` as `org_attestation`.
+    `trust-list` and `identity-detail-event-count` reads `4`; the head itself is
+    read on `GET /api/identities/<org_id>`, which answers `head_seq: 3`. Record
+    the event id from `trust-appended-event` as `org_attestation`.
 12. Push before the ledger names a witness, which the witness refuses:
     ```sh
     dc exec -T alice sh -c 'mabel sync push --identity mabel-demo-co --to '"$witness_id"' \
@@ -143,6 +147,11 @@ those forms render.
   read `controller`, `principal-root-<alice_id>` is present and
   `principal-root-<bob_id>` is absent, and `principals-open-invitations` reads
   `No invitation to help control this identity is waiting for an answer.`
+- Step 9's card names both of them in its own `who can act for it` row, resolved
+  rather than printed as 52-character ids:
+  `identity-detail-principal-<alice_id>-name` reads `alice`, the nickname this
+  device keeps for her. Bob is a stranger to this home, so his row has no name
+  element at all and falls back to his Mabel ID, which is what the row is for.
 - Step 10's accept document, the `controller-on-a-raw-root` case of
   `contracts/cli/membership-accept.json`, answers `ledger_id == alice_id`,
   `declared_kind: "person"`, `root: "raw"`, `controller_on_raw_root: true` and
@@ -215,8 +224,13 @@ story text above.
   nothing was written.
 - Step 3's key sentence is read from `identity-detail-founded`, which proposal
   005 moved into the card's "who can act for it" row so the sentence sits beside
-  whoever signs. The shared `story002Steps1to8` helper asserts it, because
-  story 006 opens with that step too.
+  whoever signs. The shared `story002Steps1to8` helper asserts it, along with the
+  row's label and alice's resolved name, because story 006 opens with that step
+  too.
+- Step 11's head position is read on `GET /api/identities/<org_id>` through the
+  shared `expectHeadSeq` helper: round 5 of proposal 005 removed
+  `identity-detail-head-seq`, and `identity-detail-event-count` is what the
+  screen says instead.
 - Step 14 lost its UI half with the verify tab (proposal 004). What the report
   screen asserted, the statement, the signing principal and the two standing
   sentences, is now asserted on the CLI text form line by line and on the

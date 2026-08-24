@@ -59,8 +59,8 @@ machines; two admitted controllers acting from their own homes is ticket 031.
    `identity-card-link-<org_id>`, click `action-trust-summary` to open the
    action, which starts closed, paste `bob_id` into `trust-add-subject` and
    click `trust-add-submit`. It succeeds: the witness is at seq 3, alice is at
-   seq 3, nobody has moved. `identity-detail-head-seq` reads `4`. Alice does
-   not push.
+   seq 3, nobody has moved. `identity-detail-event-count` reads `5`, and `GET
+   /api/identities/<org_id>` answers `head_seq: 4`. Alice does not push.
 5. The second machine attests someone else on the same ledger and pushes:
    ```sh
    docker exec mabel-alice-two sh -c 'mabel trust add --issuer mabel-demo-co \
@@ -73,8 +73,11 @@ machines; two admitted controllers acting from their own homes is ticket 031.
    `trust-add-subject` again and click `trust-add-submit`. This is the losing
    append: before anything is signed, the wallet asks the ledger's witnesses
    where it ends and finds an event it does not hold at seq 4.
-7. Read what alice's home now holds: in the Ledger card set `ledger-since` to
-   `0`, `ledger-limit` to `8`, and click `ledger-load`. Five rows appear,
+7. Read what alice's home now holds. Round 5 of proposal 005 removed the since
+   box, the limit box and the Load button: the page size is fixed at eight and
+   nobody tunes it from the screen. A refused append does not refresh the page
+   either, so open `/identities/<org_id>` in a second tab, which leaves the trust
+   form on the first one holding what step 6 typed. Five rows appear,
    `ledger-event-0` to `ledger-event-4`. Alice's seq 4 is the second machine's
    event, not the one she signed in step 4.
 8. Click `trust-add-submit` once more, with `bob_id` still in
@@ -126,13 +129,14 @@ machines; two admitted controllers acting from their own homes is ticket 031.
   []` and `GET http://127.0.0.1:9080/api/ledgers/<org_id>` answers
   `entry.fork_count: 0`. The losing event was discarded before it was ever
   pushed, which is the difference between this story and story 004.
-- Step 7's ledger footer is the pagination bar: five entries at eight a page is
-  one page, so `ledger-page-1` reads `1`, both `ledger-previous` and
-  `ledger-next` are disabled, and `ledger-range` reads `Showing positions 0 to 4
-  of 5.`
+- Step 7's ledger has no footer at all: five entries at eight a page is one
+  page, and round 5 of proposal 005 draws the pagination bar only over more than
+  one. `ledger-event-count` reads `5`, and `ledger-footer`, `ledger-page-1`,
+  `ledger-previous`, `ledger-next` and `ledger-range` are all absent.
 - Step 8 succeeds: `trust-appended-event` shows a new event id,
-  `identity-detail-head-seq` reads `5`, and `identity-card-<bob_id>` appears in
-  `trust-list`. `GET /api/identities/<org_id>` answers that bob's entry is
+  `identity-detail-event-count` reads `6`, `GET /api/identities/<org_id>` answers
+  `head_seq: 5`, and `identity-card-<bob_id>` appears in
+  `trust-list`. The same route answers that bob's entry is
   unrevoked and that its `attestation_event` is the id the form reported: the
   list is keyed by the identity trusted, so the entry is read on the record.
 - Step 9's push report reads `push-status-<witness_id>` `accepted` and
@@ -154,10 +158,20 @@ story text above.
   repairs the chain it lost on before returning 50, so one race produces one
   `stale_head`. The spec sets the race up a second time after step 10, with
   two subjects nothing has attested yet, and runs the CLI form there.
-- Step 7's "set `ledger-since` to 0, `ledger-limit` to 8, Load" is a no-op on a
-  panel that opens at those values and refetches only when one of them
-  changes. The spec moves the limit to 16, loads, moves it back to 8 and loads
-  again, which is the same read.
+- Step 7's second tab is a spec device, not something a person would reach for.
+  The panel refetches when the page it sits on refetches, and a refused append
+  refetches nothing, so a reader would reload. A reload would clear
+  `trust-add-subject`, and step 8 is exactly the claim that the box still holds
+  what step 6 typed, so the spec reads the repaired chain on a second page in the
+  same browser context and closes it again.
+- Every position this story reads is read on `GET /api/identities/<org_id>`
+  through the shared `expectHeadSeq` helper: round 5 of proposal 005 removed
+  `identity-detail-head-seq`, and `identity-detail-event-count` is what the
+  screen says instead.
+- No story builds a record longer than eight entries, so this is the only
+  ledger footer any of them reads and it reads the absent one. The bar itself,
+  paging forward and back over two pages, is pinned by
+  `ui/src/test/ledger-and-push.test.tsx`.
 - Step 7 counts the five rows as `li[data-testid^="ledger-event-"]` under
   `ledger-events`. Proposal 005 draws the ledger as compact rows rather than a
   table, so a line is a list item.

@@ -10,7 +10,7 @@ import {
   stdoutLines,
   verifier,
 } from "../lib/docker";
-import { expectExit, story001Steps1to7 } from "../lib/stories";
+import { expectExit, expectHeadSeq, story001Steps1to7 } from "../lib/stories";
 import { addTrust, openAction, openIdentity, push, revokeTrust, trustCard } from "../lib/ui";
 
 /** docs/stories/003-revocation.md */
@@ -51,7 +51,7 @@ test("step 1: story 001 steps 1 to 12, alice at seq 2 and verified", async () =>
   await test.step("001 steps 8 and 9: one attestation in each ledger", async () => {
     await openIdentity(alicePage, ALICE_URL, aliceId);
     aliceAttestation = await addTrust(alicePage, bobId);
-    await expect(alicePage.getByTestId("identity-detail-head-seq")).toHaveText("2");
+    await expectHeadSeq(ALICE_URL, aliceId, 2);
     await openIdentity(bobPage, BOB_URL, bobId);
     await addTrust(bobPage, aliceId);
   });
@@ -86,9 +86,11 @@ test("step 1: story 001 steps 1 to 12, alice at seq 2 and verified", async () =>
 test("step 2: bob's card is in the trust list, and the entry is unrevoked", async () => {
   await openIdentity(alicePage, ALICE_URL, aliceId);
   // Round 4 of proposal 005: who this identity trusts is a list of collapsed
-  // identity cards keyed by the subject, and it sits above the record.
+  // identity cards keyed by the subject, and it sits above the record. Round 5
+  // put the identity's own name in the heading, so the description says "it".
+  await expect(alicePage.getByTestId("trust-panel")).toContainText("Who alice trusts");
   await expect(alicePage.getByTestId("trust-panel")).toContainText(
-    "Everyone this identity has said it trusts and has not taken back.",
+    "Everyone it has said it trusts and has not taken back.",
   );
   await expect(trustCard(alicePage, bobId)).toBeVisible();
 
@@ -128,7 +130,7 @@ test("step 3: a second unrevoked attestation for one subject is refused", async 
     `Policy error: an unrevoked attestation for ${bobId} already exists at seq 2`,
   );
   await expect(alicePage.getByTestId("error-detail-at_seq")).toHaveText("2");
-  await expect(alicePage.getByTestId("identity-detail-head-seq")).toHaveText("2");
+  await expectHeadSeq(ALICE_URL, aliceId, 2);
 });
 
 test("step 4: taking trust back names the identity, and its card leaves the list", async () => {
@@ -142,7 +144,8 @@ test("step 4: taking trust back names the identity, and its card leaves the list
   await expect(alicePage.getByTestId("trust-list-empty")).toHaveText(
     "This identity has not said it trusts anyone yet.",
   );
-  await expect(alicePage.getByTestId("identity-detail-head-seq")).toHaveText("3");
+  await expect(alicePage.getByTestId("identity-detail-event-count")).toHaveText("4");
+  await expectHeadSeq(ALICE_URL, aliceId, 3);
 
   const identity = await apiGet(ALICE_URL, `/api/identities/${aliceId}`);
   expect(identity.body.identity.trust[0].revoked).toBe(true);
@@ -160,7 +163,7 @@ test("step 4: taking trust back names the identity, and its card leaves the list
   await expect(alicePage.getByTestId("trust-revoke-none")).toHaveText(
     "This identity does not trust that id right now, so there is nothing to take back.",
   );
-  await expect(alicePage.getByTestId("identity-detail-head-seq")).toHaveText("3");
+  await expectHeadSeq(ALICE_URL, aliceId, 3);
 });
 
 test("steps 5 to 7: a fresh verifier reads the revocation", async () => {
@@ -234,7 +237,8 @@ test("steps 8 and 9: attested again, and revocation stays history", async () => 
   secondAttestation = await addTrust(alicePage, bobId);
   // Bob's card is back in the list, and the entry behind it is the new one.
   await expect(trustCard(alicePage, bobId)).toBeVisible();
-  await expect(alicePage.getByTestId("identity-detail-head-seq")).toHaveText("4");
+  await expect(alicePage.getByTestId("identity-detail-event-count")).toHaveText("5");
+  await expectHeadSeq(ALICE_URL, aliceId, 4);
   expect(secondAttestation).not.toBe(aliceAttestation);
 
   await push(alicePage, witnessId, { stored: 1 });

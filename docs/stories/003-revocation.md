@@ -29,10 +29,11 @@ repository root.
    answered `trusted: true`. Keep `alice_id`, `bob_id`, `witness_id` and
    `alice_attestation`.
 2. In alice's UI open `identity-card-link-<alice_id>`. Who this identity trusts
-   sits above the record: `trust-panel` says `Everyone this identity has said it
-   trusts and has not taken back.` and `trust-list` holds one collapsed identity
-   card, `identity-card-<bob_id>`. The list is keyed by the identity trusted,
-   not by the entry that said it.
+   sits above the record: `trust-panel` is headed `Who alice trusts`, because
+   round 5 of proposal 005 put the identity's own name in the heading, and
+   described `Everyone it has said it trusts and has not taken back.`
+   `trust-list` holds one collapsed identity card, `identity-card-<bob_id>`. The
+   list is keyed by the identity trusted, not by the entry that said it.
 3. Attest bob a second time, before revoking anything. One unrevoked
    attestation per subject is the rule, so this is refused:
    ```sh
@@ -48,7 +49,8 @@ repository root.
    and takes that one back. `trust-appended-event` shows the revocation event
    id, `identity-card-<bob_id>` is gone from `trust-list`, `trust-list-empty`
    reads `This identity has not said it trusts anyone yet.` and
-   `identity-detail-head-seq` reads `3`. Both entries stay on the record: the
+   `identity-detail-event-count` reads `4`; the head is read on `GET
+   /api/identities/<alice_id>`, which answers `head_seq: 3`. Both entries stay on the record: the
    chain is the full history (decision 003), and the record is where a taken-back
    attestation is read. Paste `bob_id` again and click `trust-revoke-submit`
    again: `trust-revoke-none` reads `This identity does not trust that id right
@@ -77,7 +79,8 @@ repository root.
 8. Alice attests bob again: click `nav-wallet`, open
    `identity-card-link-<alice_id>`, click `action-trust-summary`, paste `bob_id`
    into `trust-add-subject`, click `trust-add-submit`. `identity-card-<bob_id>`
-   is back in `trust-list` and `identity-detail-head-seq` reads `4`. Record the
+   is back in `trust-list`, `identity-detail-event-count` reads `5` and the route
+   answers `head_seq: 4`. Record the
    event id as `second_attestation`. This is the same command step 3 refused:
    the policy refuses only a second *unrevoked* attestation for one subject.
 9. Open `action-push` and click `sync-push-submit` again, then repeat step 6 in
@@ -97,7 +100,8 @@ repository root.
   refused this.`, `error-reason` reading `duplicate_unrevoked_attestation` and
   `error-message` reading `Policy error: an unrevoked attestation for <bob_id>
   already exists at seq 2`. `error-detail-at_seq` reads `2`, the position of the attestation
-  still standing. `identity-detail-head-seq` still reads `2` on both paths.
+  still standing. Nothing was appended on either path: `GET
+  /api/identities/<alice_id>` still answers `head_seq: 2`.
 - Step 2: `GET http://127.0.0.1:9081/api/identities/<alice_id>` answers
   `identity.trust[0].subject == bob_id`, `identity.trust[0].revoked == false`
   and `identity.trust[0].attestation_event == alice_attestation`.
@@ -108,8 +112,8 @@ repository root.
   `event_id` is what `trust-appended-event` reported and whose `payload_kind` is
   `trust_revocation`: the id in the form was the subject, the entry revoked was
   the standing one.
-- Step 4's second attempt appends nothing: `identity-detail-head-seq` still
-  reads `3`.
+- Step 4's second attempt appends nothing: `GET /api/identities/<alice_id>` still
+  answers `head_seq: 3`.
 - Step 6 exits 0 (a revoked attestation is a successful verification, not a
   failure) and prints, in order:
   - `trusted: false`
@@ -168,3 +172,8 @@ story text above.
   step 7 became the same command run from alice's own home.
 - Step 7 compares its four lines against step 6's with the RFC 3339 time
   masked: two reads of one witness are two fetch times.
+- Every position this story reads is read on `GET /api/identities/<alice_id>`
+  through the shared `expectHeadSeq` helper. Round 5 of proposal 005 removed
+  `identity-detail-head-seq`, so where the screen still has something to say the
+  spec reads `identity-detail-event-count`, which counts the entries the record
+  holds rather than naming the position the newest sits at.

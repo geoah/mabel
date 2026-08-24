@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 
 import {
   ALICE_URL,
@@ -13,7 +13,7 @@ import {
   stdoutLines,
   WITNESS_URL,
 } from "../lib/docker";
-import { expectExit, startAliceTwo, story002Steps1to8 } from "../lib/stories";
+import { expectExit, expectHeadSeq, startAliceTwo, story002Steps1to8 } from "../lib/stories";
 import { addTrust, identifier, openAction, openIdentity, push, trustCard } from "../lib/ui";
 
 /** docs/stories/006-stale-append.md */
@@ -21,6 +21,7 @@ test.describe.configure({ mode: "serial" });
 
 const RFC3339_UTC = "\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z";
 
+let context: BrowserContext;
 let alicePage: Page;
 let bobPage: Page;
 
@@ -33,7 +34,7 @@ let secondMachineEvent = "";
 let losingEvent = "";
 
 test.beforeAll(async ({ browser }) => {
-  const context = await browser.newContext();
+  context = await browser.newContext();
   alicePage = await context.newPage();
   bobPage = await context.newPage();
 });
@@ -67,7 +68,8 @@ test("steps 4 and 5: alice appends, the second machine wins the race", async () 
   // The event alice signs here is the one the race discards, so step 7 can
   // check it is gone rather than take the head's word for it.
   losingEvent = await addTrust(alicePage, bobId);
-  await expect(alicePage.getByTestId("identity-detail-head-seq")).toHaveText("4");
+  await expect(alicePage.getByTestId("identity-detail-event-count")).toHaveText("5");
+  await expectHeadSeq(ALICE_URL, orgId, 4);
 
   expectExit(
     docker([
@@ -117,20 +119,19 @@ test("step 6: the losing append is refused with exit code 50", async () => {
 });
 
 test("step 7: alice's home holds the second machine's event at seq 4", async () => {
-  // The panel opens at since 0 and limit 8 and refetches only when one of
-  // them changes, and a refused append does not refresh the page. The story's
-  // "set since to 0, limit to 8, Load" is that no-op, so the limit is moved
-  // to 16 and back to read what the home holds now.
-  await alicePage.getByTestId("ledger-since").fill("0");
-  await alicePage.getByTestId("ledger-limit").fill("16");
-  await alicePage.getByTestId("ledger-load").click();
-  await alicePage.getByTestId("ledger-limit").fill("8");
-  await alicePage.getByTestId("ledger-load").click();
-  await expect(alicePage.getByTestId("ledger-event-4")).toBeVisible();
+  // Round 5 of proposal 005 took the since box, the limit box and the Load
+  // button off the panel: the page size is fixed at eight and nobody tunes it
+  // from the screen. A refused append does not refresh the page either, so the
+  // repaired chain is read on a second page opened on the same identity, which
+  // leaves the form on alice's page holding what step 6 typed.
+  const reader = await context.newPage();
+  await reader.goto(`${ALICE_URL}/identities/${orgId}`);
+  await expect(reader.getByTestId("ledger-panel")).toBeVisible();
+  await expect(reader.getByTestId("ledger-event-4")).toBeVisible();
   // Proposal 005 draws the ledger as compact rows rather than a table, so a
   // line is an `li` under `ledger-events`.
   await expect(
-    alicePage.getByTestId("ledger-events").locator('li[data-testid^="ledger-event-"]'),
+    reader.getByTestId("ledger-events").locator('li[data-testid^="ledger-event-"]'),
   ).toHaveCount(5);
   for (const [seq, kind] of [
     [0, "inception"],
@@ -139,24 +140,24 @@ test("step 7: alice's home holds the second machine's event at seq 4", async () 
     [3, "witness_config"],
     [4, "trust_attestation"],
   ] as const) {
-    await expect(alicePage.getByTestId(`event-payload-kind-${seq}`)).toHaveText(kind);
+    await expect(reader.getByTestId(`event-payload-kind-${seq}`)).toHaveText(kind);
   }
   // A ledger line carries its sequence and its type; the event id and the
   // payload are one click into the line (ticket 028).
-  await alicePage.getByTestId("event-expand-4").click();
-  await expect(alicePage.getByTestId("event-detail-4")).toBeVisible();
-  expect(await identifier(alicePage, "event-id-4")).toBe(secondMachineEvent);
-  await expect(alicePage.getByTestId("event-payload-4")).toHaveText(
-    `{"subject":"${aliceId}"}`,
-  );
-  // Round 4 of proposal 005 draws the ledger footer as the pagination bar. Five
-  // entries at eight a page is one page, so neither arrow goes anywhere.
-  await expect(alicePage.getByTestId("ledger-page-1")).toHaveText("1");
-  await expect(alicePage.getByTestId("ledger-previous")).toBeDisabled();
-  await expect(alicePage.getByTestId("ledger-next")).toBeDisabled();
-  await expect(alicePage.getByTestId("ledger-range")).toHaveText(
-    "Showing positions 0 to 4 of 5.",
-  );
+  await reader.getByTestId("event-expand-4").click();
+  await expect(reader.getByTestId("event-detail-4")).toBeVisible();
+  expect(await identifier(reader, "event-id-4")).toBe(secondMachineEvent);
+  await expect(reader.getByTestId("event-payload-4")).toHaveText(`{"subject":"${aliceId}"}`);
+  // The whole record is held and it is one page of eight, so the panel counts
+  // the entries and draws no pagination at all: a bar with one page on it is
+  // not a choice (round 5).
+  await expect(reader.getByTestId("ledger-event-count")).toHaveText("5");
+  await expect(reader.getByTestId("ledger-footer")).toHaveCount(0);
+  await expect(reader.getByTestId("ledger-page-1")).toHaveCount(0);
+  await expect(reader.getByTestId("ledger-previous")).toHaveCount(0);
+  await expect(reader.getByTestId("ledger-next")).toHaveCount(0);
+  await expect(reader.getByTestId("ledger-range")).toHaveCount(0);
+  await reader.close();
 
   // The event alice signed in step 4 appears nowhere in the ledger her home
   // now holds: the losing branch was truncated, not kept beside the winner.
@@ -184,7 +185,8 @@ test("steps 8 and 9: the retry is the same action, run again", async () => {
   await alicePage.getByTestId("trust-add-submit").click();
   await expect(alicePage.getByTestId("trust-appended-event")).toBeVisible();
   const attestation = await identifier(alicePage, "trust-appended-event");
-  await expect(alicePage.getByTestId("identity-detail-head-seq")).toHaveText("5");
+  await expect(alicePage.getByTestId("identity-detail-event-count")).toHaveText("6");
+  await expectHeadSeq(ALICE_URL, orgId, 5);
   // Round 4 of proposal 005 keys the trust list by the subject, so the entry
   // this retry wrote is pinned on the identity document instead.
   await expect(trustCard(alicePage, bobId)).toBeVisible();
