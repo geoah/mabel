@@ -43,15 +43,15 @@ does not share the CLI's default `~/.mabel`.
 
 | Platform | Path |
 |---|---|
-| macOS | `~/Library/Application Support/io.github.geoah.mabel/node` |
-| iOS | `Library/Application Support/io.github.geoah.mabel/node` inside the app's sandbox container |
-| Linux (dev only) | `~/.local/share/io.github.geoah.mabel/node` |
+| macOS | `~/Library/Application Support/dev.reamde.mabel/node` |
+| iOS | `Library/Application Support/dev.reamde.mabel/node` inside the app's sandbox container |
+| Linux (dev only) | `~/.local/share/dev.reamde.mabel/node` |
 
 The layout is the node home layout of proposal 001 section 8, so the CLI can read
 and write the same home while the app is closed:
 
 ```sh
-mabel --home ~/Library/Application\ Support/io.github.geoah.mabel/node identity list
+mabel --home ~/Library/Application\ Support/dev.reamde.mabel/node identity list
 ```
 
 The home is created on first run as a wallet with the n0 relays enabled. A
@@ -122,7 +122,7 @@ Signing is off until the secrets exist. The workflow reads them, decides in a
 check step whether it has all of them, and either signs or logs a notice naming
 what was missing. The artifact names never change.
 
-The bundle identifier to register with Apple is `io.github.geoah.mabel`. It comes
+The bundle identifier to register with Apple is `dev.reamde.mabel`. It comes
 from `identifier` in `tauri.conf.json` and must match the App ID on
 developer.apple.com and the app record in App Store Connect exactly.
 
@@ -248,7 +248,7 @@ run with secrets present is the first test of:
   the 45 minute `notarytool --wait` timeout
 - whether `stapler validate` passes on the `.app` and the `.dmg`, which is the
   only real proof the notarization happened
-- on the iOS side, whether the Admin key can register `io.github.geoah.mabel` and
+- on the iOS side, whether the Admin key can register `dev.reamde.mabel` and
   issue a distribution certificate, and whether `fastlane pilot` accepts the
   generated key file
 
