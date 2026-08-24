@@ -1,0 +1,10 @@
+{
+  "class": "field-table",
+  "code": "default_value_encoded",
+  "description": "An email encoded as an explicit empty string, which clearing must express by omitting the field.",
+  "entry": "signed_event",
+  "file": "95-profile-email-empty.json",
+  "input_hex": "0a7412208225a669a21ee244ba23bf4a1096ed5445a954ea01967150ccddee723635f1d1180122208225a669a21ee244ba23bf4a1096ed5445a954ea01967150ccddee723635f1d128e0a499ffbc313220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c97787378a01021a0012407d2531e624a59133aa7e179e1628b41366c6c5afb8949bc58f1314ab9f892f1fe354399df7ae07873ac4c066c6a1bcc3a55f2b3b993b6790b6531ac83342030f",
+  "reason": "ProfileUpdate.email holds its proto3 default, which the canonical encoding omits",
+  "rule": "005 empty means unset, expressed as absence"
+}

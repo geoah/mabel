@@ -69,6 +69,8 @@ impl Wallet {
                 alias: alias.to_owned(),
                 declared_kind: DeclaredKind::Person,
                 founder: None,
+                display_name: None,
+                email: None,
             })
             .await
             .expect("the identity is created")
@@ -338,6 +340,8 @@ async fn an_identity_rooted_ledger_takes_its_founder_as_the_root_principal() {
             alias: "acme".to_owned(),
             declared_kind: DeclaredKind::Organization,
             founder: Some(alice.clone()),
+            display_name: None,
+            email: None,
         })
         .await
         .expect("the organization is created");
@@ -416,6 +420,8 @@ async fn only_an_identity_that_keys_itself_hands_back_its_secrets() {
             alias: "acme".to_owned(),
             declared_kind: DeclaredKind::Organization,
             founder: Some(alice),
+            display_name: None,
+            email: None,
         })
         .await
         .expect("the organization is created")
@@ -440,6 +446,8 @@ async fn an_identity_rooted_ledger_cannot_be_invited_anywhere() {
             alias: "acme".to_owned(),
             declared_kind: DeclaredKind::Organization,
             founder: Some(alice.clone()),
+            display_name: None,
+            email: None,
         })
         .await
         .expect("the organization is created")
@@ -530,6 +538,8 @@ async fn an_admitted_controller_links_the_shared_ledger_to_its_own_key() {
             alias: "acme".to_owned(),
             declared_kind: DeclaredKind::Organization,
             founder: Some(alice.clone()),
+            display_name: None,
+            email: None,
         })
         .await
         .expect("the org is founded")

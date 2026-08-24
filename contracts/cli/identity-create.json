@@ -16,7 +16,50 @@
         "inception_event": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
         "head_seq": 0,
         "head_event": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+        "profile": null,
         "witnesses": []
+      }
+    },
+    {
+      "case": "created-with-a-profile",
+      "command": "mabel identity create --alias alice --name 'Alice Ashworth' --email alice@alice.example --json",
+      "exit_code": 0,
+      "document": {
+        "ok": true,
+        "identity_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+        "declared_kind": "person",
+        "alias": "alice",
+        "active_key": "2bflemtufo2kwoqtnc6umfpe43icesvxdiawxl4fecrtfslxq43q",
+        "reserve_commit": "4hvnmdhctangrg6jmqkyzf6ropi5do6lqdcw37eqoryzhoqg2maq",
+        "created_at_ms": 1700000000000,
+        "inception_event": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+        "head_seq": 1,
+        "head_event": "wq5f7hcvvkoqcxlnbzkwqhhqz2mfj6l3xd7abzxbjdmmuvjyjbxa",
+        "profile": {
+          "display_name": "Alice Ashworth",
+          "hostname": null,
+          "email": "alice@alice.example",
+          "signing_principal": {
+            "identity": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+            "key": "2bflemtufo2kwoqtnc6umfpe43icesvxdiawxl4fecrtfslxq43q"
+          },
+          "event": "wq5f7hcvvkoqcxlnbzkwqhhqz2mfj6l3xd7abzxbjdmmuvjyjbxa",
+          "seq": 1
+        },
+        "witnesses": []
+      }
+    },
+    {
+      "case": "invalid-email",
+      "command": "mabel identity create --alias alice --email alice.example --json",
+      "exit_code": 10,
+      "document": {
+        "ok": false,
+        "code": 10,
+        "message": "Schema error: ProfileUpdate.email is not a valid email: it holds no at sign",
+        "details": {
+          "reason": "invalid_email"
+        }
       }
     }
   ]

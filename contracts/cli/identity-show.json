@@ -48,6 +48,7 @@
         "profile": {
           "display_name": "Alice Ashworth",
           "hostname": "alice.example",
+          "email": "alice@alice.example",
           "signing_principal": {
             "identity": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
             "key": "2bflemtufo2kwoqtnc6umfpe43icesvxdiawxl4fecrtfslxq43q"
@@ -96,6 +97,7 @@
         "profile": {
           "display_name": "Acme Corporation",
           "hostname": null,
+          "email": null,
           "signing_principal": {
             "identity": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
             "key": "2bflemtufo2kwoqtnc6umfpe43icesvxdiawxl4fecrtfslxq43q"

@@ -158,6 +158,10 @@ pub struct GraphNode {
     /// The hostname its profile claims, unverified here (proposal 003
     /// section 2 does the DNS check).
     pub hostname: Option<String>,
+    /// The email its profile publishes, absent when it carries none. Defaulted
+    /// on read, so a generation written before proposal 005 still parses.
+    #[serde(default)]
+    pub email: Option<String>,
     /// The last position of the chain that was read.
     pub head_seq: Option<u64>,
     /// The event at that position.

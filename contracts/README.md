@@ -18,7 +18,9 @@ do not settle, the decision is listed under "Decisions taken here".
 Proposal 003 amends the payload-table freeze below: that table was frozen
 before payload tag 17 existed, and `profile_update` is now one of its rows.
 Proposal 003 sections 1 to 5 are the source for the profile, verification,
-contact, lookup and graph surfaces.
+contact, lookup and graph surfaces. Proposal 005 amends that row again with
+`email`, and is the source for the public email and for creation with a
+profile.
 
 ## Index
 
@@ -247,11 +249,13 @@ the show route, not a truncated one: both parse into one type, with no key
 present in one and absent in the other (proposal 003 section 5).
 
 `profile` is the fold of the latest `ProfileUpdate`, or `null` on a ledger
-that carries none: `display_name`, `hostname`, `signing_principal
-{identity, key}`, `event`, `seq`. Either name may be `null` on its own, since
-an update replaces the whole document and an omitted field clears it. The
-signing principal is who signed the update, which is not always the ledger's
-own identity: any current controller may rename the ledger.
+that carries none: `display_name`, `hostname`, `email`, `signing_principal
+{identity, key}`, `event`, `seq`. Any of the three fields may be `null` on its
+own, since an update replaces the whole document and an omitted field clears
+it. `email` is a claim and nothing more: no route checks that it is
+deliverable, exactly as no route checks that a `display_name` is a real name.
+The signing principal is who signed the update, which is not always the
+ledger's own identity: any current controller may rename the ledger.
 
 `verification` is the advisory DNS verdict of proposal 003 section 2, always
 present: `hostname`, `status`, `checked_at_ms`, `last_verified_at_ms`,
@@ -274,21 +278,27 @@ one background refresh when the entry is stale. `POST
 /api/identities/:identity_id/verification` forces a check and waits for it.
 
 **`ResolvedIdentity`**, returned everywhere a foreign identity renders:
-`identity_id`, `display_name`, `alias`, `hostname`, `verification_status`,
-`provenance`. `provenance` is `profile`, `alias` or `none` and names which
+`identity_id`, `display_name`, `email`, `alias`, `hostname`,
+`verification_status`, `provenance`. `display_name` and `email` come from one
+source, the profile the node holds or the profile the last crawl read, so an
+identity card shows a known public email without a second request.
+`provenance` is `profile`, `alias` or `none` and names which
 source the label came from, in the resolution order of proposal 003 section
 4: the profile display name, then the local alias or contact nickname, then
 the truncated id. It appears in `paths` hops, lookup headings, the target's
 trust list, the reverse list and the graph roots.
 
 **Profile replacement.** `POST /api/identities/:identity_id/profile` takes a
-body with both keys, `display_name` and `hostname`, either of which may be
-`null`. A body missing either key is refused with code 2 and reason
+body with all three keys, `display_name`, `hostname` and `email`, any of which
+may be `null`. A body missing any key is refused with code 2 and reason
 `missing_field`: no client half-specifies a replacement, because a partial
 update over a whole-document payload is how a hostname disappears unnoticed.
 A replacement whose effect equals the current folded profile is refused
 before signing with code 20, `Policy error:` and reason
-`no_op_profile_update`. `mabel profile replace` prints the before-and-after
+`no_op_profile_update`, and the effect covers all three fields. An `email` the
+canonical scanner refuses answers code 10, `Schema error:` and reason
+`invalid_email`, the spelling `test-vectors/rejections/` uses for the same
+rule. `mabel profile replace` prints the before-and-after
 diff and asks for confirmation unless `--yes` is given; with `--json` it
 requires `--yes` and otherwise exits 2 with reason `confirmation_required`.
 
@@ -341,11 +351,11 @@ The payload subtree is frozen. Eight `payload_kind` values exist, and each
 | `membership_invitation` | `invitee`, `invitee_key`, `role`, `invitee_inception` |
 | `membership_acceptance` | `acceptance`, `signature` |
 | `membership_removal` | `target` |
-| `profile_update` | `display_name`, `hostname` |
+| `profile_update` | `display_name`, `hostname`, `email` |
 
-`profile_update` replaces the whole profile: an omitted field is a name the
-update cleared, and both keys are present and `null` in the `payload` object
-when the event carries neither (proposal 003 section 1).
+`profile_update` replaces the whole profile: an omitted field is one the
+update cleared, and all three keys are present and `null` in the `payload`
+object when the event carries none (proposal 003 section 1, proposal 005).
 
 `root` is the inception's root `oneof` (proposal 002 section 2), one key of
 `raw_root` (`active_key`, `reserve_commit`) or `identity_root` (`founder`,
@@ -364,6 +374,8 @@ active key, the one conflicting fork event and the membership events are
 fabricated but consistent across files.
 
 Each fixture is one moment, not one snapshot of a single node.
+`wallet-post-identities.json` answers the moment Alice's ledger is two events
+long, the inception and the `ProfileUpdate` the create named;
 `wallet-post-trust.json` answers at seq 2 of Alice's ledger;
 `wallet-get-identity-ledger.json` reads it at head 3, the revocation of that
 attestation; `wallet-get-identity.json` reads it at head 8, with the profile
@@ -428,6 +440,17 @@ founding principal of an identity root and the new ledger holds no key of its
 own; absent or `null`, the ledger keys itself with a raw root (proposal 002
 section 2). The request keeps the frozen `declared_kind` spelling, which
 proposal 002 section 6 writes as `kind`: the fixture name wins.
+
+`POST /api/identities` also takes an optional `display_name` and an optional
+`email`. Either one given, the node appends one `ProfileUpdate` at seq 1 right
+after the inception, and the identity document it answers with reports
+`head_seq: 1`, `event_count: 2` and that profile. Neither given, both may be
+absent or `null` and the new ledger is one event long with `profile: null`.
+The create takes no `hostname`: a hostname is a DNS claim with a verification
+cycle behind it, and `POST /api/identities/:identity_id/profile` is where it
+is made. Unlike that route, the create keys are optional rather than
+required: it publishes a profile, it does not replace one, so there is nothing
+an absent key could silently clear.
 
 Replaying an acceptance the ledger already admitted answers 409 with `code:
 50`, `Replay error:` and `reason: acceptance_already_used`, the case
@@ -530,6 +553,23 @@ reviewer can overrule them cheaply, before consumers are written.
   it is the same operation over the same wallet core. A `from` naming an
   endpoint this wallet knows no witness at is refused with code 2 and reason
   `unknown_witness`, before anything is dialled.
+- Proposal 005 amends the payload-table freeze a second time: the
+  `profile_update` row gains `email`, and every fixture that renders a profile
+  object, a `ResolvedIdentity` or a `previous` profile carries the key with an
+  explicit `null` where nothing is claimed. Ticket 023 amended the same table
+  by adding the row; this adds a key to it. No frozen event id changes,
+  because an absent field encodes no bytes: the golden vectors 12 to 14 keep
+  their `body_hex` and only their rendered `body` gains `"email": null`.
+- `wallet-post-identities.json` now answers with a profile at seq 1, so its
+  frozen `head_seq`, `head_event` and `event_count` moved from 0, the identity
+  id and 1 to 1, a fabricated `ProfileUpdate` event id and 2. The plain create
+  that publishes nothing stays pinned, on the CLI side, as the `created` case
+  of `contracts/cli/identity-create.json`, beside the new
+  `created-with-a-profile` case. One HTTP fixture holds one example, and the
+  example worth freezing is the one with the new keys in the request.
+- The public email is `email` on every surface, never `contact_email` or
+  `public_email`. The profile has one email, the private note in `contact`
+  has none, and decision 012 forbids a qualifier that carries no information.
 - A wallet route asked for an identity this home does not hold answers 404
   with reason `unknown_ledger`, detail key `ledger_id` and the message `this
   home holds no ledger <id>`. One spelling covers every wallet route, the

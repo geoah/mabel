@@ -66,6 +66,8 @@ pub struct LedgerSummary {
     pub display_name: Option<String>,
     /// The hostname its profile claims, unverified here.
     pub hostname: Option<String>,
+    /// The email its profile publishes.
+    pub email: Option<String>,
     /// The last position of the chain that was read.
     pub head_seq: u64,
     /// The event at that position.
@@ -103,6 +105,7 @@ impl LedgerSummary {
             declared_kind: loaded.declared_kind(),
             display_name: profile.and_then(|profile| profile.display_name.clone()),
             hostname: profile.and_then(|profile| profile.hostname.clone()),
+            email: profile.and_then(|profile| profile.email.clone()),
             head_seq: loaded.head_seq,
             head_event: loaded.head_event,
             witnesses: loaded.state.witnesses().to_vec(),

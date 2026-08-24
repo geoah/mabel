@@ -25,10 +25,10 @@ use mabel_core::fold::{Reason, Violation};
 use mabel_core::validate::{self, WireError};
 use mabel_core::{
     BuiltEvent, ID_BYTES, IdentityId, LedgerId, MAX_ACCEPTANCE_BYTES, MAX_DISPLAY_NAME_BYTES,
-    MAX_EMBEDDED_INCEPTION_BYTES, MAX_EVENT_BYTES, MAX_HOSTNAME_BYTES, MAX_TIMESTAMP_MS,
-    MAX_WITNESSES, NONCE_BYTES, Position, Root, SIG_BYTES, build_acceptance, build_inception,
-    build_membership_acceptance, build_membership_invitation, build_membership_removal,
-    build_trust_attestation, build_witness_config, fold,
+    MAX_EMAIL_BYTES, MAX_EMBEDDED_INCEPTION_BYTES, MAX_EVENT_BYTES, MAX_HOSTNAME_BYTES,
+    MAX_TIMESTAMP_MS, MAX_WITNESSES, NONCE_BYTES, Position, Root, SIG_BYTES, build_acceptance,
+    build_inception, build_membership_acceptance, build_membership_invitation,
+    build_membership_removal, build_trust_attestation, build_witness_config, fold,
     proto::{DeclaredKind, Role},
     reserve_commit, sign_input,
 };
@@ -2015,8 +2015,9 @@ fn rejections() -> Vec<Rejection> {
         },
     );
 
-    // ProfileUpdate: the codepoint policy of proposal 003 section 1 and the
-    // hostname syntax of section 2, one vector per rule.
+    // ProfileUpdate: the codepoint policy of proposal 003 section 1, the
+    // hostname syntax of section 2 and the email rule of proposal 005, one
+    // vector per rule.
     let profile = |parts: &[Part]| {
         sign(
             &encode(&append_body(
@@ -2032,6 +2033,7 @@ fn rejections() -> Vec<Rejection> {
     };
     let named = |bytes: Vec<u8>| vec![Part::L(1, bytes)];
     let hosted = |text: String| vec![Part::L(2, text.into_bytes())];
+    let mailed = |bytes: Vec<u8>| vec![Part::L(3, bytes)];
     let bad_name = |reason: &'static str| WireError::InvalidDisplayName {
         message: "ProfileUpdate",
         field: "display_name",
@@ -2040,6 +2042,11 @@ fn rejections() -> Vec<Rejection> {
     let bad_host = |reason: &'static str| WireError::InvalidHostname {
         message: "ProfileUpdate",
         field: "hostname",
+        reason,
+    };
+    let bad_email = |reason: &'static str| WireError::InvalidEmail {
+        message: "ProfileUpdate",
+        field: "email",
         reason,
     };
 
@@ -2276,7 +2283,134 @@ fn rejections() -> Vec<Rejection> {
         ),
     );
 
+    push(
+        "profile-email-invalid-utf8",
+        "field-table",
+        "005 email is well-formed UTF-8",
+        "An email holding the byte 0xff, which starts no UTF-8 sequence.",
+        wire(
+            Entry::SignedEvent,
+            profile(&mailed(b"alice@alice.exampl\xff".to_vec())),
+            WireError::InvalidUtf8 {
+                message: "ProfileUpdate",
+                field: "email",
+            },
+        ),
+    );
+
+    push(
+        "profile-email-c0-control",
+        "field-table",
+        "005 email holds no control character",
+        "An email holding a tab.",
+        wire(
+            Entry::SignedEvent,
+            profile(&mailed("alice\t@alice.example".into())),
+            bad_email("it holds a C0 control character"),
+        ),
+    );
+
+    push(
+        "profile-email-bidi-control",
+        "field-table",
+        "005 email holds no bidi control character",
+        "An email holding U+202E, which reverses the rendered text.",
+        wire(
+            Entry::SignedEvent,
+            profile(&mailed("alice\u{202e}@alice.example".into())),
+            bad_email("it holds a bidi control character"),
+        ),
+    );
+
+    push(
+        "profile-email-no-at-sign",
+        "field-table",
+        "005 email holds exactly one at sign",
+        "An email written as a bare hostname.",
+        wire(
+            Entry::SignedEvent,
+            profile(&mailed("alice.example".into())),
+            bad_email("it holds no at sign"),
+        ),
+    );
+
+    push(
+        "profile-email-two-at-signs",
+        "field-table",
+        "005 email holds exactly one at sign",
+        "An email holding two at signs.",
+        wire(
+            Entry::SignedEvent,
+            profile(&mailed("alice@bob@alice.example".into())),
+            bad_email("it holds more than one at sign"),
+        ),
+    );
+
+    push(
+        "profile-email-nothing-before-the-at-sign",
+        "field-table",
+        "005 email holds at least one byte on each side of the at sign",
+        "An email starting with the at sign.",
+        wire(
+            Entry::SignedEvent,
+            profile(&mailed("@alice.example".into())),
+            bad_email("it holds nothing before the at sign"),
+        ),
+    );
+
+    push(
+        "profile-email-nothing-after-the-at-sign",
+        "field-table",
+        "005 email holds at least one byte on each side of the at sign",
+        "An email ending with the at sign.",
+        wire(
+            Entry::SignedEvent,
+            profile(&mailed("alice@".into())),
+            bad_email("it holds nothing after the at sign"),
+        ),
+    );
+
+    push(
+        "profile-email-over-the-cap",
+        "field-table",
+        "005 email is at most 254 bytes",
+        "An email of 255 bytes.",
+        wire(
+            Entry::SignedEvent,
+            profile(&mailed(long_email(MAX_EMAIL_BYTES + 1))),
+            WireError::FieldTooLong {
+                message: "ProfileUpdate",
+                field: "email",
+                len: MAX_EMAIL_BYTES + 1,
+                cap: MAX_EMAIL_BYTES,
+            },
+        ),
+    );
+
+    push(
+        "profile-email-empty",
+        "field-table",
+        "005 empty means unset, expressed as absence",
+        "An email encoded as an explicit empty string, which clearing must \
+         express by omitting the field.",
+        wire(
+            Entry::SignedEvent,
+            profile(&mailed(Vec::new())),
+            WireError::DefaultValueEncoded {
+                message: "ProfileUpdate",
+                field: "email",
+            },
+        ),
+    );
+
     cases
+}
+
+/// An email of exactly `len` bytes whose only fault is its length.
+fn long_email(len: usize) -> Vec<u8> {
+    let domain = "@alice.example";
+    let local = "a".repeat(len - domain.len());
+    format!("{local}{domain}").into_bytes()
 }
 
 /// A syntactically valid hostname of exactly `len` bytes, for the cap vector.
@@ -2405,8 +2539,8 @@ fn every_golden_vector_passes_the_validator() {
         seen += 1;
     }
     assert!(
-        seen >= 14,
-        "expected the fourteen golden vectors, saw {seen}"
+        seen >= 15,
+        "expected the fifteen golden vectors, saw {seen}"
     );
 }
 

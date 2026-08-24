@@ -363,9 +363,10 @@ pub struct InvitationEntry {
     pub status: StatusName,
 }
 
-/// The folded profile of a ledger (proposal 003 section 1).
+/// The folded profile of a ledger (proposal 003 section 1, `email` from
+/// proposal 005).
 ///
-/// Each `ProfileUpdate` replaces the whole document, so a `null` name is one
+/// Each `ProfileUpdate` replaces the whole document, so a `null` field is one
 /// the last update cleared rather than one it left alone.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -375,6 +376,10 @@ pub struct Profile {
     /// The hostname the ledger claims, `null` when the last update omitted
     /// it. Unverified here: the DNS check is [`Verification`].
     pub hostname: Option<String>,
+    /// The email the ledger publishes, `null` when the last update omitted it.
+    /// Nothing checks that it is deliverable: it is a claim like the rest of
+    /// the profile.
+    pub email: Option<String>,
     /// Who signed the update, which is not always the ledger's own identity.
     pub signing_principal: SigningPrincipal,
     /// The `ProfileUpdate` event.
@@ -487,6 +492,10 @@ pub struct ResolvedIdentity {
     pub identity_id: Id,
     /// The name its profile publishes, `null` when it carries none.
     pub display_name: Option<String>,
+    /// The email its profile publishes, `null` when it carries none. It comes
+    /// from the same source as `display_name`, so a card can show a public
+    /// email without a second round trip (proposal 005).
+    pub email: Option<String>,
     /// The local alias or contact nickname, `null` when this node records
     /// neither.
     pub alias: Option<String>,
@@ -505,6 +514,7 @@ impl ResolvedIdentity {
         Self {
             identity_id,
             display_name: None,
+            email: None,
             alias: None,
             hostname: None,
             verification_status: VerificationStatus::Unclaimed,
@@ -1115,7 +1125,7 @@ pub struct ForkRecord {
     pub statement: String,
 }
 
-/// The profile a replacement overwrote, both names as the fold reported them.
+/// The profile a replacement overwrote, every field as the fold reported it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PreviousProfile {
@@ -1123,6 +1133,8 @@ pub struct PreviousProfile {
     pub display_name: Option<String>,
     /// The hostname that was claimed before, `null` when there was none.
     pub hostname: Option<String>,
+    /// The email that was published before, `null` when there was none.
+    pub email: Option<String>,
 }
 
 /// `POST /api/identities/{identity_id}/profile`.

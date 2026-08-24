@@ -1,18 +1,20 @@
 {
-  "command": "mabel profile replace --identity alice --display-name 'Alice Ashworth' --hostname alice.example --yes --json",
+  "command": "mabel profile replace --identity alice --display-name 'Alice Ashworth' --hostname alice.example --email alice@alice.example --yes --json",
   "cases": [
     {
       "case": "replaced",
-      "command": "mabel profile replace --identity alice --display-name 'Alice Ashworth' --hostname alice.example --yes --json",
+      "command": "mabel profile replace --identity alice --display-name 'Alice Ashworth' --hostname alice.example --email alice@alice.example --yes --json",
       "exit_code": 0,
       "document": {
         "ok": true,
         "identity_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
         "display_name": "Alice Ashworth",
         "hostname": "alice.example",
+        "email": "alice@alice.example",
         "previous": {
           "display_name": null,
-          "hostname": null
+          "hostname": null,
+          "email": null
         },
         "profile_event": "3ax4d4wvitut6gyvrrxdazjgo5i3455pddcmnumm4mbvfdz5op4a",
         "profile_seq": 7,
@@ -30,9 +32,11 @@
         "identity_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
         "display_name": null,
         "hostname": null,
+        "email": null,
         "previous": {
           "display_name": "Alice Ashworth",
-          "hostname": "alice.example"
+          "hostname": "alice.example",
+          "email": "alice@alice.example"
         },
         "profile_event": "th2a3dvusqj6x5dwkpsg7sltxdu74ajyyvn4n3ypsll4yl2iq5la",
         "profile_seq": 8,
@@ -43,7 +47,7 @@
     },
     {
       "case": "no-op",
-      "command": "mabel profile replace --identity alice --display-name 'Alice Ashworth' --hostname alice.example --yes --json",
+      "command": "mabel profile replace --identity alice --display-name 'Alice Ashworth' --hostname alice.example --email alice@alice.example --yes --json",
       "exit_code": 20,
       "document": {
         "ok": false,
@@ -54,8 +58,24 @@
           "ledger_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
           "display_name": "Alice Ashworth",
           "hostname": "alice.example",
+          "email": "alice@alice.example",
           "profile_event": "3ax4d4wvitut6gyvrrxdazjgo5i3455pddcmnumm4mbvfdz5op4a",
           "profile_seq": 7
+        }
+      }
+    },
+    {
+      "case": "invalid-email",
+      "command": "mabel profile replace --identity alice --email alice.example --yes --json",
+      "exit_code": 10,
+      "document": {
+        "ok": false,
+        "code": 10,
+        "message": "Schema error: ProfileUpdate.email is not a valid email: it holds no at sign",
+        "details": {
+          "reason": "invalid_email",
+          "ledger_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+          "at_seq": 8
         }
       }
     },

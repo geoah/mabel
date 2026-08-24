@@ -54,15 +54,19 @@ impl<'a> Names<'a> {
             .unwrap_or(false)
             .then(|| self.core.load(identity).ok())
             .flatten();
-        let (display_name, hostname) = match local.as_ref() {
+        let (display_name, hostname, email) = match local.as_ref() {
             // A ledger this home holds is its own authority, profile or not.
             Some(loaded) => match loaded.profile() {
-                Some(profile) => (profile.display_name, profile.hostname),
-                None => (None, None),
+                Some(profile) => (profile.display_name, profile.hostname, profile.email),
+                None => (None, None, None),
             },
             None => match self.node(&identity_id) {
-                Some(node) => (node.display_name.clone(), node.hostname.clone()),
-                None => (None, None),
+                Some(node) => (
+                    node.display_name.clone(),
+                    node.hostname.clone(),
+                    node.email.clone(),
+                ),
+                None => (None, None, None),
             },
         };
         let alias = self
@@ -88,6 +92,7 @@ impl<'a> Names<'a> {
         ResolvedIdentity {
             identity_id,
             display_name,
+            email,
             alias,
             verification_status: self.status(identity, hostname.as_deref()),
             hostname,

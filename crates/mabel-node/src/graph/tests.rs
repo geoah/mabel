@@ -590,6 +590,7 @@ fn staleness_turns_over_at_twenty_four_hours() {
         declared_kind: Some(DeclaredKind::Person),
         display_name: None,
         hostname: None,
+        email: None,
         head_seq: Some(0),
         head_event: None,
         depth: 0,
@@ -625,7 +626,7 @@ fn wallet_home() -> (tempfile::TempDir, WalletCore) {
 fn the_four_sources_are_planned_in_the_order_the_proposal_gives() {
     let (_dir, core) = wallet_home();
     let held = core
-        .create_identity("ada", DeclaredKind::Person, None)
+        .create_identity("ada", DeclaredKind::Person, None, None, None)
         .expect("a local identity");
     let ledger = ids::parse_identity(&held.identity.identity_id).unwrap();
 
@@ -692,6 +693,7 @@ fn an_outcome_carries_its_summary_or_its_status() {
         declared_kind: DeclaredKind::Person,
         display_name: Some("Ada".to_owned()),
         hostname: Some("ada.example".to_owned()),
+        email: Some("ada@ada.example".to_owned()),
         head_seq: 3,
         head_event: crate::graph::stub::stub_head(node(1)),
         witnesses: Vec::new(),
@@ -725,6 +727,7 @@ async fn the_profile_a_ledger_publishes_lands_on_its_node() {
             declared_kind: DeclaredKind::Organization,
             display_name: Some("Acme".to_owned()),
             hostname: Some("acme.example".to_owned()),
+            email: Some("hello@acme.example".to_owned()),
             head_seq: 7,
             head_event: crate::graph::stub::stub_head(node(2)),
             witnesses: Vec::new(),

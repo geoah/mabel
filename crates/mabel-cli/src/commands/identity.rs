@@ -3,13 +3,14 @@
 use std::path::Path;
 
 use mabel_core::artifacts::IdentityDescriptor;
-use mabel_core::fold::{LedgerRoot, LedgerState};
-use mabel_core::sign::{Root, build_inception};
+use mabel_core::fold::{LedgerRoot, LedgerState, Reason};
+use mabel_core::sign::{Root, build_inception, build_profile_update, check_profile};
 use mabel_core::{IdentityId, NONCE_BYTES};
 use mabel_node::api::documents::Identity;
 use mabel_node::keys::generate_secret_key;
 use mabel_node::{IdentityMeta, LedgerMeta, now_ms};
 
+use crate::append::append;
 use crate::cli::Kind;
 use crate::context::Context;
 use crate::documents::{CreatedIdentity, ExportedIdentity, IdentityList, RootName};
@@ -18,15 +19,32 @@ use crate::ids;
 use crate::ledger::Loaded;
 use crate::render::Outcome;
 
-/// `mabel identity create --alias <a> [--kind <k>] [--founder <alias|id>]`.
+/// `mabel identity create --alias <a> [--kind <k>] [--founder <alias|id>]
+/// [--name <display name>] [--email <email>]`.
 ///
 /// Without `--founder` the identity keys itself: the inception carries a raw
 /// root, the active key signs it and the reserve key is committed to but never
 /// recorded. With `--founder` the inception carries an identity root, the
 /// founder's active key signs it, and the new ledger holds no key of its own
 /// (proposal 002 section 2).
-pub fn create(ctx: &Context, alias: &str, kind: Kind, founder: Option<&str>) -> Result<Outcome> {
+///
+/// `--name` or `--email` adds one `ProfileUpdate` at seq 1, so a new identity's
+/// first two events are who it is and what it shows the world (proposal 005).
+/// Neither given, the new ledger is one event long.
+pub fn create(
+    ctx: &Context,
+    alias: &str,
+    kind: Kind,
+    founder: Option<&str>,
+    name: Option<&str>,
+    email: Option<&str>,
+) -> Result<Outcome> {
     refuse_reused_alias(ctx, alias)?;
+    let name = trimmed(name);
+    let email = trimmed(email);
+    // Before the mint, not after: a name or an email the scanner refuses must
+    // leave no ledger and no taken alias behind.
+    check_profile(name, None, email).map_err(|error| CliError::from(&Reason::Wire(error)))?;
     let mut nonce = [0u8; NONCE_BYTES];
     getrandom::fill(&mut nonce)
         .map_err(|error| CliError::internal("no_randomness", error.to_string()))?;
@@ -98,6 +116,16 @@ pub fn create(ctx: &Context, alias: &str, kind: Kind, founder: Option<&str>) -> 
         },
     )?;
 
+    // The profile lands as its own event at seq 1: the inception stays minimal,
+    // and the profile keeps the whole-replacement semantics it has everywhere
+    // else (proposal 005).
+    if name.is_some() || email.is_some() {
+        let mut loaded = ctx.load(identity)?;
+        append(ctx, identity, &mut loaded, |signer, at, timestamp_ms| {
+            build_profile_update(signer, at, name, None, email, timestamp_ms)
+        })?;
+    }
+
     let loaded = ctx.load(identity)?;
     let document = CreatedIdentity {
         identity_id: ids::identity(identity),
@@ -109,6 +137,7 @@ pub fn create(ctx: &Context, alias: &str, kind: Kind, founder: Option<&str>) -> 
         inception_event: ids::event(built.event_id),
         head_seq: loaded.head_seq,
         head_event: ids::event(loaded.head_event),
+        profile: loaded.profile(),
         witnesses: loaded.witnesses(),
     };
     let mut text = format!(
@@ -122,7 +151,25 @@ pub fn create(ctx: &Context, alias: &str, kind: Kind, founder: Option<&str>) -> 
         )),
         None => text.push_str(", raw root"),
     }
+    if let Some(profile) = &document.profile {
+        text.push_str(&format!(
+            "\npublished at seq {}: display name {}, email {}",
+            profile.seq,
+            shown(profile.display_name.as_deref()),
+            shown(profile.email.as_deref())
+        ));
+    }
     Outcome::new(&document, text)
+}
+
+/// An empty flag value is no value: `--name ""` publishes nothing rather than
+/// an empty string, which the wire encoding cannot carry anyway.
+fn trimmed(value: Option<&str>) -> Option<&str> {
+    value.map(str::trim).filter(|value| !value.is_empty())
+}
+
+fn shown(value: Option<&str>) -> String {
+    value.map_or_else(|| "(unset)".to_owned(), ToOwned::to_owned)
 }
 
 /// `mabel identity list`.

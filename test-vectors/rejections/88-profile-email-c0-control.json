@@ -1,0 +1,10 @@
+{
+  "class": "field-table",
+  "code": "invalid_email",
+  "description": "An email holding a tab.",
+  "entry": "signed_event",
+  "file": "88-profile-email-c0-control.json",
+  "input_hex": "0a880112208225a669a21ee244ba23bf4a1096ed5445a954ea01967150ccddee723635f1d1180122208225a669a21ee244ba23bf4a1096ed5445a954ea01967150ccddee723635f1d128e0a499ffbc313220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c97787378a01161a14616c6963650940616c6963652e6578616d706c651240559bfcd2989e03d38946e9b03b95766039efbe94aa647339effbbbe25f8afe6d4cc1e771ff760033024c28afc4eab64b55f16d7ad89e4b86ad56fbb31125b900",
+  "reason": "ProfileUpdate.email is not a valid email: it holds a C0 control character",
+  "rule": "005 email holds no control character"
+}

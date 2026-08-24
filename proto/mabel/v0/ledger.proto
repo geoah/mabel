@@ -90,14 +90,16 @@ message MembershipRemoval {
   bytes target = 1;           // identity id of a principal or open invitee
 }
 
-// The ledger's public name and hostname, replaced whole by each event
-// (proposal 003 section 1). An absent field means unset: clearing a name is a
-// ProfileUpdate that omits it, and a ProfileUpdate omitting both is a legal
-// zero-length payload that clears both. The codepoint policy and the hostname
-// syntax are proposal 003 sections 1 and 2.
+// The ledger's public name, hostname and email, replaced whole by each event
+// (proposal 003 section 1, proposal 005). An absent field means unset:
+// clearing a field is a ProfileUpdate that omits it, and a ProfileUpdate
+// omitting all three is a legal zero-length payload that clears all three. The
+// codepoint policy and the hostname syntax are proposal 003 sections 1 and 2;
+// the email rule is proposal 005.
 message ProfileUpdate {
   string display_name = 1;    // <= 64 bytes UTF-8; absent means unset
   string hostname = 2;        // <= 246 bytes, lowercase LDH; absent means unset
+  string email = 3;           // <= 254 bytes UTF-8; absent means unset
 }
 
 message EventBody {

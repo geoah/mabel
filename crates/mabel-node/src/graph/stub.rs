@@ -173,6 +173,7 @@ fn summary(ledger: LedgerId, subjects: &[IdentityId]) -> LedgerSummary {
         declared_kind: DeclaredKind::Person,
         display_name: None,
         hostname: None,
+        email: None,
         head_seq: subjects.len() as u64,
         head_event: stub_head(ledger),
         witnesses: Vec::new(),

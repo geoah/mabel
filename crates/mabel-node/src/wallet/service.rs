@@ -174,7 +174,13 @@ impl WalletService for WalletApiService {
                 .as_ref()
                 .map(ids::parse_identity)
                 .transpose()?;
-            core.create_identity(&request.alias, request.declared_kind, founder)
+            core.create_identity(
+                &request.alias,
+                request.declared_kind,
+                founder,
+                request.display_name.as_deref(),
+                request.email.as_deref(),
+            )
         })
     }
 
@@ -209,6 +215,7 @@ impl WalletService for WalletApiService {
                     identity,
                     request.display_name.as_deref(),
                     request.hostname.as_deref(),
+                    request.email.as_deref(),
                 )
             })
             .await

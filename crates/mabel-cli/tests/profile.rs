@@ -193,6 +193,87 @@ fn profile_replace_matches_the_fixture_and_lands_on_the_identity_document() {
     assert_eq!(shown["contact"], Value::Null);
 }
 
+/// The email is one of the three fields one update replaces, and the scanner
+/// owns what a valid one looks like (proposal 005).
+#[test]
+fn profile_replace_publishes_an_email_and_the_identity_document_reports_it() {
+    let home = Home::new();
+    home.create("alice");
+
+    let document = home.json(&[
+        "profile",
+        "replace",
+        "--identity",
+        "alice",
+        "--display-name",
+        "Alice Ashworth",
+        "--hostname",
+        "alice.example",
+        "--email",
+        "alice@alice.example",
+        "--yes",
+    ]);
+    assert_shape(
+        &document,
+        &fixture("profile-replace", "replaced"),
+        "profile-replace",
+    );
+    assert_eq!(document["email"], Value::from("alice@alice.example"));
+    assert_eq!(document["previous"]["email"], Value::Null);
+    assert_eq!(
+        home.json(&["identity", "show", "alice"])["profile"]["email"],
+        Value::from("alice@alice.example")
+    );
+
+    // Omitting the flag clears it, like the other two fields.
+    let cleared = home.json(&[
+        "profile",
+        "replace",
+        "--identity",
+        "alice",
+        "--display-name",
+        "Alice Ashworth",
+        "--hostname",
+        "alice.example",
+        "--yes",
+    ]);
+    assert_eq!(cleared["email"], Value::Null);
+    assert_eq!(
+        cleared["previous"]["email"],
+        Value::from("alice@alice.example")
+    );
+}
+
+/// The scanner refuses the event before it is stored, and the reason it pins
+/// is what the person reads.
+#[test]
+fn an_email_the_scanner_refuses_matches_the_fixture_and_exits_10() {
+    let home = Home::new();
+    let alice = home.create("alice");
+    let expected = fixture("profile-replace", "invalid-email");
+
+    let (code, document) = home.failure(&[
+        "profile",
+        "replace",
+        "--identity",
+        "alice",
+        "--email",
+        "alice.example",
+        "--yes",
+    ]);
+    assert_eq!(code, 10);
+    assert_eq!(document["message"], expected["message"]);
+    assert_shape(&document, &expected, "profile-replace/invalid-email");
+    assert_eq!(document["details"]["reason"], Value::from("invalid_email"));
+    assert_eq!(document["details"]["ledger_id"], Value::from(alice));
+
+    // Nothing was signed: the refused event never reached the chain.
+    assert_eq!(
+        home.json(&["identity", "show", "alice"])["profile"],
+        Value::Null
+    );
+}
+
 #[test]
 fn profile_replace_clears_the_field_it_omits() {
     let home = Home::new();

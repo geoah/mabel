@@ -207,12 +207,18 @@ struct CreateIdentityBody {
     alias: Option<String>,
     declared_kind: Option<String>,
     founder: Option<String>,
+    display_name: Option<String>,
+    email: Option<String>,
 }
 
 /// `POST /api/identities`.
 ///
 /// An absent `declared_kind` means `person`. An absent `founder` means a raw
-/// root: the new ledger keys itself (proposal 002 section 2).
+/// root: the new ledger keys itself (proposal 002 section 2). `display_name`
+/// and `email` are optional, and either one makes the node append one
+/// `ProfileUpdate` at seq 1 (proposal 005): unlike the profile route, this one
+/// takes no whole document, so an absent key publishes nothing rather than
+/// clearing something.
 pub(super) fn create_identity(bytes: &[u8]) -> Result<CreateIdentity, ServiceError> {
     let parsed: CreateIdentityBody = body(bytes)?;
     let alias = required("alias", parsed.alias.as_ref())?.to_owned();
@@ -228,7 +234,16 @@ pub(super) fn create_identity(bytes: &[u8]) -> Result<CreateIdentity, ServiceErr
         alias,
         declared_kind,
         founder,
+        display_name: given(parsed.display_name),
+        email: given(parsed.email),
     })
+}
+
+/// An optional string field: absent, `null` and empty all mean "not given".
+fn given(value: Option<String>) -> Option<String> {
+    value
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty())
 }
 
 fn declared_kind(raw: &str) -> Result<DeclaredKind, ServiceError> {
@@ -292,12 +307,14 @@ pub(super) fn witnesses(bytes: &[u8]) -> Result<Vec<Id>, ServiceError> {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ProfileBody {
-    /// Present and `null` clears the name; absent is refused. The outer
+    /// Present and `null` clears the field; absent is refused. The outer
     /// `Option` is "was the key sent", the inner one is its value.
     #[serde(default, deserialize_with = "sent")]
     display_name: Option<Option<String>>,
     #[serde(default, deserialize_with = "sent")]
     hostname: Option<Option<String>>,
+    #[serde(default, deserialize_with = "sent")]
+    email: Option<Option<String>>,
 }
 
 /// Reads a key that may be `null`, keeping "sent as null" apart from "not
@@ -316,23 +333,22 @@ where
 
 /// `POST /api/identities/{identity_id}/profile`.
 ///
-/// Both keys are required and either may be `null`: the operation is
+/// All three keys are required and any may be `null`: the operation is
 /// replacement, and a body that names one field would silently clear the
-/// other (proposal 003 section 1).
+/// others (proposal 003 section 1, proposal 005).
 pub(super) fn replace_profile(
     identity_id: Id,
     bytes: &[u8],
 ) -> Result<ReplaceProfile, ServiceError> {
     let parsed: ProfileBody = body(bytes)?;
-    let name = |field: &str, value: Option<Option<String>>| match value {
+    let field = |field: &str, value: Option<Option<String>>| match value {
         None => Err(missing_field(field)),
-        Some(value) => Ok(value
-            .map(|value| value.trim().to_owned())
-            .filter(|value| !value.is_empty())),
+        Some(value) => Ok(given(value)),
     };
     Ok(ReplaceProfile {
-        display_name: name("display_name", parsed.display_name)?,
-        hostname: name("hostname", parsed.hostname)?,
+        display_name: field("display_name", parsed.display_name)?,
+        hostname: field("hostname", parsed.hostname)?,
+        email: field("email", parsed.email)?,
         identity_id,
     })
 }

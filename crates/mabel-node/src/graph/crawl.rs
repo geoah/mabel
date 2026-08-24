@@ -277,6 +277,7 @@ fn build_nodes(
                 declared_kind: summary.map(|summary| summary.declared_kind),
                 display_name: summary.and_then(|summary| summary.display_name.clone()),
                 hostname: summary.and_then(|summary| summary.hostname.clone()),
+                email: summary.and_then(|summary| summary.email.clone()),
                 head_seq: summary.map(|summary| summary.head_seq),
                 head_event: summary.map(|summary| ids::event(summary.head_event)),
                 depth: *depth,

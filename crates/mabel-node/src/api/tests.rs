@@ -253,6 +253,25 @@ async fn wallet_post_identities_matches_the_fixture() {
         WalletCall::CreateIdentity(request) => {
             assert_eq!(request.alias, "alice");
             assert_eq!(request.declared_kind, DeclaredKind::Person);
+            assert_eq!(request.display_name.as_deref(), Some("Alice Ashworth"));
+            assert_eq!(request.email.as_deref(), Some("alice@alice.example"));
+        }
+        call => panic!("{call:?}"),
+    }
+}
+
+/// The two optional profile keys are optional: a body without them creates an
+/// identity that publishes nothing (proposal 005).
+#[tokio::test]
+async fn a_create_body_may_omit_the_display_name_and_the_email() {
+    let stub = Arc::new(StubWalletService::new());
+    let request = request("POST", "/api/identities", &json!({"alias": "alice"}));
+    let (status, _) = send(wallet(&stub), request).await;
+    assert_eq!(status, StatusCode::OK);
+    match stub.call() {
+        WalletCall::CreateIdentity(request) => {
+            assert_eq!(request.display_name, None);
+            assert_eq!(request.email, None);
         }
         call => panic!("{call:?}"),
     }
@@ -357,11 +376,12 @@ async fn wallet_post_identity_profile_matches_the_fixture_and_requires_both_keys
             identity_id: id(ALICE),
             display_name: Some("Alice Ashworth".to_owned()),
             hostname: Some("alice.example".to_owned()),
+            email: Some("alice@alice.example".to_owned()),
         })
     );
 
     // The operation is replacement, so a body naming one key would clear the
-    // other by accident (proposal 003 section 1).
+    // others by accident (proposal 003 section 1, proposal 005).
     let (expected_status, expected) = fixture_error(name, "missing_field");
     let stub = Arc::new(StubWalletService::new());
     let request = request(
@@ -376,19 +396,32 @@ async fn wallet_post_identity_profile_matches_the_fixture_and_requires_both_keys
 }
 
 #[tokio::test]
-async fn a_profile_body_may_null_either_key() {
-    for (request_body, display_name, hostname) in [
+async fn a_profile_body_may_null_any_key() {
+    for (request_body, display_name, hostname, email) in [
         (
-            json!({"display_name": null, "hostname": "alice.example"}),
+            json!({"display_name": null, "hostname": "alice.example", "email": null}),
             None,
             Some("alice.example"),
-        ),
-        (
-            json!({"display_name": "Alice Ashworth", "hostname": null}),
-            Some("Alice Ashworth"),
             None,
         ),
-        (json!({"display_name": null, "hostname": null}), None, None),
+        (
+            json!({"display_name": "Alice Ashworth", "hostname": null, "email": null}),
+            Some("Alice Ashworth"),
+            None,
+            None,
+        ),
+        (
+            json!({"display_name": null, "hostname": null, "email": "alice@alice.example"}),
+            None,
+            None,
+            Some("alice@alice.example"),
+        ),
+        (
+            json!({"display_name": null, "hostname": null, "email": null}),
+            None,
+            None,
+            None,
+        ),
     ] {
         let stub = Arc::new(StubWalletService::new());
         let request = request(
@@ -404,6 +437,7 @@ async fn a_profile_body_may_null_either_key() {
                 identity_id: id(ALICE),
                 display_name: display_name.map(ToOwned::to_owned),
                 hostname: hostname.map(ToOwned::to_owned),
+                email: email.map(ToOwned::to_owned),
             }),
             "{request_body}"
         );

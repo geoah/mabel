@@ -5,6 +5,7 @@
     "payload": {
       "profile_update": {
         "display_name": null,
+        "email": null,
         "hostname": null
       }
     },
@@ -14,12 +15,13 @@
     "version": 0
   },
   "body_hex": "12208225a669a21ee244ba23bf4a1096ed5445a954ea01967150ccddee723635f1d1180822201ecd781be87d175c4b991c982cbc2185d01370d4891e87d0456811acfe81a2612880c9c1ffbc313220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c97787378a0100",
-  "description": "Alice clears both names: a zero-length payload body under a present oneof branch.",
+  "description": "Alice clears every profile field: a zero-length payload body under a present oneof branch.",
   "event_id": "e4sdgu5v75ttxz3n5ieprgcclqm3fkdoxpkrin7o2x2rsh66t2gq",
   "event_id_hex": "27243353b5ff673be76dea08f898425c19b2a86ebbd51437eed5f5191fde9e8d",
   "file": "14-profile-update-cleared.json",
   "inputs": {
     "display_name": null,
+    "email": null,
     "hostname": null,
     "ledger": "qis2m2ncd3rejordx5fbbfxnkrc2svhkaglhcugm3xxhenrv6hiq",
     "now_ms": 1700000720000,

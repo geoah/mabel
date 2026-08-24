@@ -1,0 +1,10 @@
+{
+  "class": "field-table",
+  "code": "invalid_email",
+  "description": "An email holding U+202E, which reverses the rendered text.",
+  "entry": "signed_event",
+  "file": "89-profile-email-bidi-control.json",
+  "input_hex": "0a8a0112208225a669a21ee244ba23bf4a1096ed5445a954ea01967150ccddee723635f1d1180122208225a669a21ee244ba23bf4a1096ed5445a954ea01967150ccddee723635f1d128e0a499ffbc313220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c97787378a01181a16616c696365e280ae40616c6963652e6578616d706c651240b4016ec6a33824b374faf5cbac64798ddfa5033ec526bd4a724f5ee7dfc1e1b46bc78c1367425e14e20c8dbc3a45397728007ebf965a7669383c5473081e1503",
+  "reason": "ProfileUpdate.email is not a valid email: it holds a bidi control character",
+  "rule": "005 email holds no bidi control character"
+}

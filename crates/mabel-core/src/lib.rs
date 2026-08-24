@@ -27,7 +27,7 @@ pub use sign::{
     BuildError, BuiltEvent, DetachedAcceptance, Position, Root, build_acceptance, build_inception,
     build_membership_acceptance, build_membership_invitation, build_membership_removal,
     build_profile_update, build_trust_attestation, build_trust_revocation, build_witness_config,
-    ledger_timestamp_ms,
+    check_profile, ledger_timestamp_ms,
 };
 pub use validate::{
     MessageDescriptor, StandaloneInception, StringRule, WireError, verify_inception_standalone,
@@ -77,6 +77,9 @@ pub const MAX_HOSTNAME_BYTES: usize = 246;
 
 /// Longest label a hostname may carry (proposal 003 section 2).
 pub const MAX_HOSTNAME_LABEL_BYTES: usize = 63;
+
+/// Maximum encoded length of `ProfileUpdate.email` (proposal 005).
+pub const MAX_EMAIL_BYTES: usize = 254;
 
 /// Length of an identity id, ledger id, event id and public key.
 pub const ID_BYTES: usize = 32;

@@ -4,7 +4,9 @@
   "request": {
     "alias": "alice",
     "declared_kind": "person",
-    "founder": null
+    "founder": null,
+    "display_name": "Alice Ashworth",
+    "email": "alice@alice.example"
   },
   "response": {
     "ok": true,
@@ -13,9 +15,9 @@
       "declared_kind": "person",
       "alias": "alice",
       "created_at_ms": 1700000000000,
-      "head_seq": 0,
-      "head_event": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
-      "event_count": 1,
+      "head_seq": 1,
+      "head_event": "wq5f7hcvvkoqcxlnbzkwqhhqz2mfj6l3xd7abzxbjdmmuvjyjbxa",
+      "event_count": 2,
       "witnesses": [],
       "trust": [],
       "principals": [
@@ -27,7 +29,17 @@
         }
       ],
       "open_invitation_count": 0,
-      "profile": null,
+      "profile": {
+        "display_name": "Alice Ashworth",
+        "hostname": null,
+        "email": "alice@alice.example",
+        "signing_principal": {
+          "identity": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+          "key": "2bflemtufo2kwoqtnc6umfpe43icesvxdiawxl4fecrtfslxq43q"
+        },
+        "event": "wq5f7hcvvkoqcxlnbzkwqhhqz2mfj6l3xd7abzxbjdmmuvjyjbxa",
+        "seq": 1
+      },
       "verification": {
         "hostname": null,
         "status": "unclaimed",
@@ -66,6 +78,17 @@
           "reason": "unknown_enum_value",
           "field": "declared_kind",
           "value": "human"
+        }
+      }
+    },
+    {
+      "status": 400,
+      "body": {
+        "ok": false,
+        "code": 10,
+        "message": "Schema error: ProfileUpdate.email is not a valid email: it holds no at sign",
+        "details": {
+          "reason": "invalid_email"
         }
       }
     },

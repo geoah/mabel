@@ -29,9 +29,10 @@ use serde_json::{Value, json};
 const T0: u64 = 1_700_000_000_000;
 const STEP_MS: u64 = 60_000;
 
-/// The profile Alice publishes in vectors 12 and 13.
+/// The profile Alice publishes in vectors 12, 13 and 15.
 const ALICE_DISPLAY_NAME: &str = "Alice Ashworth";
 const ALICE_HOSTNAME: &str = "alice.example";
+const ALICE_EMAIL: &str = "alice@alice.example";
 
 struct Vector {
     file: &'static str,
@@ -218,14 +219,16 @@ fn vectors() -> Vec<Vector> {
 
     let delegation_acceptance_id = delegation_acceptance.event_id;
 
-    // The profile, replaced whole by each event (proposal 003 section 1):
-    // both names, then a name alone, which clears the hostname, then a
-    // zero-length payload, which clears both.
+    // The profile, replaced whole by each event (proposal 003 section 1,
+    // proposal 005): name and hostname, then a name alone, which clears the
+    // hostname, then a zero-length payload, which clears everything, then all
+    // three fields at once.
     let profile = build_profile_update(
         &alice,
         &at(alice_id, 6, &delegation_acceptance, T0 + 9 * STEP_MS),
         Some(ALICE_DISPLAY_NAME),
         Some(ALICE_HOSTNAME),
+        None,
         T0 + 10 * STEP_MS,
     )
     .expect("builds");
@@ -234,6 +237,7 @@ fn vectors() -> Vec<Vector> {
         &alice,
         &at(alice_id, 7, &profile, T0 + 10 * STEP_MS),
         Some(ALICE_DISPLAY_NAME),
+        None,
         None,
         T0 + 11 * STEP_MS,
     )
@@ -244,7 +248,19 @@ fn vectors() -> Vec<Vector> {
         &at(alice_id, 8, &profile_name_only, T0 + 11 * STEP_MS),
         None,
         None,
+        None,
         T0 + 12 * STEP_MS,
+    )
+    .expect("builds");
+    let profile_cleared_id = profile_cleared.event_id;
+
+    let profile_with_email = build_profile_update(
+        &alice,
+        &at(alice_id, 9, &profile_cleared, T0 + 12 * STEP_MS),
+        Some(ALICE_DISPLAY_NAME),
+        Some(ALICE_HOSTNAME),
+        Some(ALICE_EMAIL),
+        T0 + 13 * STEP_MS,
     )
     .expect("builds");
 
@@ -432,6 +448,7 @@ fn vectors() -> Vec<Vector> {
                 "now_ms": T0 + 10 * STEP_MS,
                 "display_name": ALICE_DISPLAY_NAME,
                 "hostname": ALICE_HOSTNAME,
+                "email": Value::Null,
             }),
             built: profile.clone(),
         },
@@ -448,13 +465,14 @@ fn vectors() -> Vec<Vector> {
                 "now_ms": T0 + 11 * STEP_MS,
                 "display_name": ALICE_DISPLAY_NAME,
                 "hostname": Value::Null,
+                "email": Value::Null,
             }),
             built: profile_name_only.clone(),
         },
         Vector {
             file: "14-profile-update-cleared.json",
-            description: "Alice clears both names: a zero-length payload body under a present \
-                          oneof branch.",
+            description: "Alice clears every profile field: a zero-length payload body under a \
+                          present oneof branch.",
             inputs: json!({
                 "secret_key_hex": hex(&alice.to_bytes()),
                 "ledger": alice_id.to_string(),
@@ -464,8 +482,26 @@ fn vectors() -> Vec<Vector> {
                 "now_ms": T0 + 12 * STEP_MS,
                 "display_name": Value::Null,
                 "hostname": Value::Null,
+                "email": Value::Null,
             }),
             built: profile_cleared,
+        },
+        Vector {
+            file: "15-profile-update-with-email.json",
+            description: "Alice publishes a display name, a hostname and a public email: the \
+                          three fields one update replaces.",
+            inputs: json!({
+                "secret_key_hex": hex(&alice.to_bytes()),
+                "ledger": alice_id.to_string(),
+                "seq": 9,
+                "prev": profile_cleared_id.to_string(),
+                "prev_timestamp_ms": T0 + 12 * STEP_MS,
+                "now_ms": T0 + 13 * STEP_MS,
+                "display_name": ALICE_DISPLAY_NAME,
+                "hostname": ALICE_HOSTNAME,
+                "email": ALICE_EMAIL,
+            }),
+            built: profile_with_email,
         },
     ]
 }
@@ -514,11 +550,12 @@ fn render_payload(payload: Payload) -> Value {
         Payload::MembershipRemoval(p) => json!({"membership_removal": {
             "target_hex": hex(&p.target),
         }}),
-        // An unset name is absent from the bytes, so it renders as null
+        // An unset field is absent from the bytes, so it renders as null
         // rather than as an empty string (proposal 003 section 1).
         Payload::ProfileUpdate(p) => json!({"profile_update": {
             "display_name": set_name(&p.display_name),
             "hostname": set_name(&p.hostname),
+            "email": set_name(&p.email),
         }}),
     }
 }
@@ -751,6 +788,7 @@ fn the_vector_scenario_folds_into_two_valid_ledgers() {
         "12-profile-update.json",
         "13-profile-update-name-only.json",
         "14-profile-update-cleared.json",
+        "15-profile-update-with-email.json",
     ];
 
     let (alice, violation) = mabel_core::fold(files(&alice_events));
@@ -758,23 +796,32 @@ fn the_vector_scenario_folds_into_two_valid_ledgers() {
     assert_eq!(alice.principals().len(), 2, "Alice delegated to Bob");
     assert_eq!(alice.controller_keys().len(), 2);
 
-    // The last ProfileUpdate wins whole: vector 14 cleared both names.
+    // The last ProfileUpdate wins whole: vector 15 set all three fields.
     let profile = alice.profile().expect("the chain carries a profile");
-    assert_eq!(profile.display_name, None);
-    assert_eq!(profile.hostname, None);
-    assert_eq!(profile.seq, 8);
+    assert_eq!(profile.display_name.as_deref(), Some(ALICE_DISPLAY_NAME));
+    assert_eq!(profile.hostname.as_deref(), Some(ALICE_HOSTNAME));
+    assert_eq!(profile.email.as_deref(), Some(ALICE_EMAIL));
+    assert_eq!(profile.seq, 9);
 
-    // The prefix that stops at vector 12 reports both names, and the one that
-    // stops at 13 reports the name alone.
+    // The prefix that stops at vector 12 reports both names and no email, the
+    // one that stops at 13 reports the name alone, and the one that stops at
+    // 14 reports nothing.
     let (both, _) = mabel_core::fold(files(&alice_events[..7]));
     let profile = both.profile().expect("the prefix carries a profile");
     assert_eq!(profile.display_name.as_deref(), Some(ALICE_DISPLAY_NAME));
     assert_eq!(profile.hostname.as_deref(), Some(ALICE_HOSTNAME));
+    assert_eq!(profile.email, None);
 
     let (name_only, _) = mabel_core::fold(files(&alice_events[..8]));
     let profile = name_only.profile().expect("the prefix carries a profile");
     assert_eq!(profile.display_name.as_deref(), Some(ALICE_DISPLAY_NAME));
     assert_eq!(profile.hostname, None);
+
+    let (cleared, _) = mabel_core::fold(files(&alice_events[..9]));
+    let profile = cleared.profile().expect("the prefix carries a profile");
+    assert_eq!(profile.display_name, None);
+    assert_eq!(profile.hostname, None);
+    assert_eq!(profile.email, None);
 
     let (organization, violation) = mabel_core::fold(files(&[
         "05-identity-root-inception.json",

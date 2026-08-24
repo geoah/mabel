@@ -223,10 +223,11 @@ impl Attestation {
     }
 }
 
-/// The ledger's current display name and hostname (proposal 003 section 1).
+/// The ledger's current display name, hostname and email (proposal 003
+/// section 1, `email` from proposal 005).
 ///
-/// Each `ProfileUpdate` replaces this whole record, so an absent field is a
-/// name the last update cleared rather than one it left alone. The profile is
+/// Each `ProfileUpdate` replaces this whole record, so an absent field is one
+/// the last update cleared rather than one it left alone. The profile is
 /// legal on every ledger, and `signing_principal` records who set it, which is
 /// not always the ledger's own identity: any current `CONTROLLER` may rename
 /// the ledger (proposal 002 section 5).
@@ -238,6 +239,10 @@ pub struct Profile {
     /// The claim is unverified here: DNS is proposal 003 section 2 and never
     /// gates ledger validity.
     pub hostname: Option<String>,
+    /// The email the ledger publishes, unset when the last update omitted it.
+    /// Nothing checks that it is deliverable: it is a claim, like the rest of
+    /// the profile (proposal 005).
+    pub email: Option<String>,
     /// Who signed the `ProfileUpdate`.
     pub signing_principal: SigningPrincipal,
     /// The `event_id` of that `ProfileUpdate`.
@@ -605,6 +610,7 @@ impl LedgerState {
             Payload::ProfileUpdate(profile) => Ok(Effect::Profile {
                 display_name: set_name(&profile.display_name),
                 hostname: set_name(&profile.hostname),
+                email: set_name(&profile.email),
                 signing_principal: signer.expect("a profile update sits past seq 0"),
             }),
         }
@@ -873,11 +879,13 @@ impl LedgerState {
             Effect::Profile {
                 display_name,
                 hostname,
+                email,
                 signing_principal,
             } => {
                 self.profile = Some(Profile {
                     display_name,
                     hostname,
+                    email,
                     signing_principal,
                     event: id,
                     seq,
@@ -931,6 +939,7 @@ enum Effect {
     Profile {
         display_name: Option<String>,
         hostname: Option<String>,
+        email: Option<String>,
         signing_principal: SigningPrincipal,
     },
 }
@@ -1408,8 +1417,26 @@ mod tests {
         display_name: Option<&str>,
         hostname: Option<&str>,
     ) -> BuiltEvent {
-        build_profile_update(signer, &chain.at(), display_name, hostname, chain.now())
-            .expect("builds")
+        set_whole_profile(chain, signer, display_name, hostname, None)
+    }
+
+    /// Replaces every field of the chain's profile, the email included.
+    fn set_whole_profile(
+        chain: &Chain,
+        signer: &SecretKey,
+        display_name: Option<&str>,
+        hostname: Option<&str>,
+        email: Option<&str>,
+    ) -> BuiltEvent {
+        build_profile_update(
+            signer,
+            &chain.at(),
+            display_name,
+            hostname,
+            email,
+            chain.now(),
+        )
+        .expect("builds")
     }
 
     fn subject(seed: u8) -> IdentityId {
@@ -1972,8 +1999,8 @@ mod tests {
         assert!(state.trusts(subject(9)));
     }
 
-    /// Latest wins, whole document: each update replaces both names, and an
-    /// omitted field clears that name (proposal 003 section 1).
+    /// Latest wins, whole document: each update replaces all three fields, and
+    /// an omitted field clears it (proposal 003 section 1, proposal 005).
     #[test]
     fn a_profile_update_replaces_the_whole_profile() {
         let root = alice();
@@ -1981,17 +2008,19 @@ mod tests {
         let mut chain = Chain::start(&root);
         assert_eq!(chain.state().profile(), None, "no update, no profile");
 
-        let first = chain.push(set_profile(
+        let first = chain.push(set_whole_profile(
             &chain,
             &secret(1),
             Some("Alice Ashworth"),
             Some("alice.example"),
+            Some("alice@alice.example"),
         ));
         assert_eq!(
             chain.state().profile(),
             Some(&Profile {
                 display_name: Some("Alice Ashworth".to_owned()),
                 hostname: Some("alice.example".to_owned()),
+                email: Some("alice@alice.example".to_owned()),
                 signing_principal: SigningPrincipal {
                     identity: root_id,
                     key: secret(1).public(),
@@ -2001,8 +2030,8 @@ mod tests {
             })
         );
 
-        // A second update carrying only a hostname drops the display name: the
-        // payload is the whole document, not a patch.
+        // A second update carrying only a hostname drops the display name and
+        // the email: the payload is the whole document, not a patch.
         let second = chain.push(set_profile(
             &chain,
             &secret(1),
@@ -2012,17 +2041,39 @@ mod tests {
         let profile = chain.state().profile().expect("recorded").clone();
         assert_eq!(profile.display_name, None);
         assert_eq!(profile.hostname.as_deref(), Some("ashworth.example"));
+        assert_eq!(profile.email, None);
         assert_eq!(profile.event, second);
         assert_eq!(profile.seq, 2);
 
-        // A zero-length payload clears both and still records who cleared them.
+        // A zero-length payload clears all three and still records who cleared
+        // them.
         let third = chain.push(set_profile(&chain, &secret(1), None, None));
         let profile = chain.state().profile().expect("recorded").clone();
         assert_eq!(profile.display_name, None);
         assert_eq!(profile.hostname, None);
+        assert_eq!(profile.email, None);
         assert_eq!(profile.event, third);
         assert_eq!(profile.seq, 3);
         assert_eq!(profile.signing_principal.identity, root_id);
+    }
+
+    /// An email alone is a profile: the other two fields stay unset.
+    #[test]
+    fn a_profile_update_may_carry_an_email_alone() {
+        let root = alice();
+        let mut chain = Chain::start(&root);
+        let event = chain.push(set_whole_profile(
+            &chain,
+            &secret(1),
+            None,
+            None,
+            Some("alice@alice.example"),
+        ));
+        let profile = chain.state().profile().expect("recorded").clone();
+        assert_eq!(profile.display_name, None);
+        assert_eq!(profile.hostname, None);
+        assert_eq!(profile.email.as_deref(), Some("alice@alice.example"));
+        assert_eq!(profile.event, event);
     }
 
     /// A no-op update is a valid event: refusing one is a node-side guard, and

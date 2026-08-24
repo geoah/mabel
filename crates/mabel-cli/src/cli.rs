@@ -55,7 +55,7 @@ pub enum Command {
         #[command(subcommand)]
         command: MembershipCommand,
     },
-    /// Replace the profile a ledger publishes: its display name and hostname.
+    /// Replace the profile a ledger publishes: display name, hostname and email.
     Profile {
         #[command(subcommand)]
         command: ProfileCommand,
@@ -142,6 +142,13 @@ pub enum IdentityCommand {
         /// Found the identity under this identity's key instead of its own.
         #[arg(long, value_name = "ALIAS_OR_ID")]
         founder: Option<String>,
+        /// The display name the new identity publishes. With --email, it lands
+        /// as one ProfileUpdate at seq 1.
+        #[arg(long, value_name = "NAME")]
+        name: Option<String>,
+        /// The public email the new identity publishes, which becomes public.
+        #[arg(long, value_name = "EMAIL")]
+        email: Option<String>,
     },
     /// List every identity in this home.
     List,
@@ -283,6 +290,9 @@ pub enum ProfileCommand {
         /// The hostname to claim, which becomes public. Omitted clears it.
         #[arg(long, value_name = "HOSTNAME")]
         hostname: Option<String>,
+        /// The email to publish, which becomes public. Omitted clears it.
+        #[arg(long, value_name = "EMAIL")]
+        email: Option<String>,
         /// Replace without the interactive confirmation.
         #[arg(long)]
         yes: bool,

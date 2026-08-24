@@ -11,7 +11,9 @@ use std::sync::Arc;
 
 use mabel_core::IdentityId;
 use mabel_node::api::documents::{DeclaredKind, Id, Provenance, VerificationStatus};
-use mabel_node::api::service::{LookupRequest, ReplaceProfile, SetContact, WalletService};
+use mabel_node::api::service::{
+    CreateIdentity, EventPageRequest, LookupRequest, ReplaceProfile, SetContact, WalletService,
+};
 use mabel_node::graph::{StubFetcher, stub_identity};
 use mabel_node::verification::{StubResolver, VerificationStore};
 use mabel_node::wallet::{WalletApiService, WalletCore, WalletSync};
@@ -63,7 +65,7 @@ impl Wallet {
     fn identity(&self, alias: &str) -> IdentityId {
         let created = self
             .core
-            .create_identity(alias, DeclaredKind::Person, None)
+            .create_identity(alias, DeclaredKind::Person, None, None, None)
             .expect("the identity is created");
         created
             .identity
@@ -109,6 +111,126 @@ fn resolver_for(hostname: &str, identity: IdentityId) -> StubResolver {
 
 // ---------------------------------------------------------------- profile ----
 
+/// A create naming a display name or an email appends one `ProfileUpdate` at
+/// seq 1, so a new identity is presentable from birth (proposal 005).
+#[tokio::test]
+async fn a_create_naming_a_profile_lands_one_profile_update_at_seq_1() {
+    let wallet = Wallet::plain().await;
+    let created = wallet
+        .service
+        .create_identity(CreateIdentity {
+            alias: "alice".to_owned(),
+            declared_kind: DeclaredKind::Person,
+            founder: None,
+            display_name: Some("Alice Ashworth".to_owned()),
+            email: Some("alice@alice.example".to_owned()),
+        })
+        .await
+        .expect("the identity is created");
+
+    assert_eq!(created.identity.head_seq, 1);
+    assert_eq!(created.identity.event_count, 2);
+    assert_eq!(
+        created.inception_event, created.identity.identity_id,
+        "the inception is still the identity id"
+    );
+    let profile = created.identity.profile.clone().expect("a profile");
+    assert_eq!(profile.display_name.as_deref(), Some("Alice Ashworth"));
+    assert_eq!(profile.email.as_deref(), Some("alice@alice.example"));
+    assert_eq!(
+        profile.hostname, None,
+        "creation claims no hostname: that is a DNS claim, not a contact fact"
+    );
+    assert_eq!(profile.seq, 1);
+    assert_eq!(profile.event, created.identity.head_event);
+    assert_eq!(
+        profile.signing_principal.identity,
+        created.identity.identity_id
+    );
+
+    // The chain the create wrote is the chain the ledger route serves.
+    let events = wallet
+        .service
+        .identity_ledger(
+            created.identity.identity_id.clone(),
+            EventPageRequest {
+                since: 0,
+                limit: 512,
+            },
+        )
+        .await
+        .expect("the ledger reads");
+    let kinds: Vec<&str> = events
+        .events
+        .iter()
+        .map(|event| event.payload_kind.as_str())
+        .collect();
+    assert_eq!(kinds, vec!["inception", "profile_update"]);
+    assert_eq!(
+        events.events[1].payload["email"],
+        serde_json::json!("alice@alice.example")
+    );
+}
+
+/// The scanner's refusal lands before the mint, so a rejected email costs
+/// neither a ledger nor the alias (proposal 005).
+#[tokio::test]
+async fn a_create_naming_an_email_the_scanner_refuses_creates_nothing() {
+    let wallet = Wallet::plain().await;
+    let request = |email: &str| CreateIdentity {
+        alias: "alice".to_owned(),
+        declared_kind: DeclaredKind::Person,
+        founder: None,
+        display_name: None,
+        email: Some(email.to_owned()),
+    };
+
+    let error = wallet
+        .service
+        .create_identity(request("alice.example"))
+        .await
+        .expect_err("an email with no at sign is refused");
+    assert_eq!(error.code(), 10);
+    assert_eq!(error.reason(), "invalid_email");
+    assert!(error.message().starts_with("Schema error: "), "{error:?}");
+
+    assert!(
+        wallet
+            .service
+            .identities()
+            .await
+            .expect("the list reads")
+            .is_empty(),
+        "the refused create left no identity behind"
+    );
+    // The alias is still free, which it would not be if the mint had run.
+    wallet
+        .service
+        .create_identity(request("alice@alice.example"))
+        .await
+        .expect("the same alias is still free");
+}
+
+/// Neither field given, the new ledger holds its inception alone.
+#[tokio::test]
+async fn a_create_naming_no_profile_leaves_the_ledger_one_event_long() {
+    let wallet = Wallet::plain().await;
+    let created = wallet
+        .service
+        .create_identity(CreateIdentity {
+            alias: "alice".to_owned(),
+            declared_kind: DeclaredKind::Person,
+            founder: None,
+            display_name: None,
+            email: None,
+        })
+        .await
+        .expect("the identity is created");
+    assert_eq!(created.identity.head_seq, 0);
+    assert_eq!(created.identity.event_count, 1);
+    assert_eq!(created.identity.profile, None);
+}
+
 #[tokio::test]
 async fn a_replaced_profile_shows_up_in_the_identity_document() {
     let wallet = Wallet::plain().await;
@@ -129,6 +251,7 @@ async fn a_replaced_profile_shows_up_in_the_identity_document() {
             identity_id: id(alice),
             display_name: Some("Alice Ashworth".to_owned()),
             hostname: Some("alice.example".to_owned()),
+            email: Some("alice@alice.example".to_owned()),
         })
         .await
         .expect("the profile lands");
@@ -166,6 +289,7 @@ async fn a_replacement_clears_the_field_it_omits() {
         identity_id: id(alice),
         display_name: display_name.map(ToOwned::to_owned),
         hostname: hostname.map(ToOwned::to_owned),
+        email: None,
     };
 
     wallet
@@ -196,6 +320,7 @@ async fn a_replacement_that_changes_nothing_is_refused_before_signing() {
         identity_id: id(alice),
         display_name: Some("Alice Ashworth".to_owned()),
         hostname: None,
+        email: None,
     };
 
     let landed = wallet
@@ -237,6 +362,7 @@ async fn clearing_a_profile_that_was_never_set_is_refused_too() {
             identity_id: id(alice),
             display_name: None,
             hostname: None,
+            email: None,
         })
         .await
         .expect_err("clearing nothing changes nothing");
@@ -255,6 +381,7 @@ async fn a_forced_check_writes_the_cache_and_the_document_reads_it_back() {
             identity_id: id(alice),
             display_name: None,
             hostname: Some("alice.example".to_owned()),
+            email: None,
         })
         .await
         .expect("the hostname claim lands");
@@ -304,6 +431,7 @@ async fn a_matching_txt_record_verifies_and_a_renamed_claim_drops_the_verdict() 
             identity_id: id(alice),
             display_name: None,
             hostname: Some("alice.example".to_owned()),
+            email: None,
         })
         .await
         .expect("the claim lands");
@@ -323,6 +451,7 @@ async fn a_matching_txt_record_verifies_and_a_renamed_claim_drops_the_verdict() 
             identity_id: id(alice),
             display_name: None,
             hostname: Some("carol.example".to_owned()),
+            email: None,
         })
         .await
         .expect("the rename lands");
@@ -362,6 +491,7 @@ async fn listing_identities_never_queries_the_resolver() {
             identity_id: id(alice),
             display_name: None,
             hostname: Some("alice.example".to_owned()),
+            email: None,
         })
         .await
         .expect("the claim lands");

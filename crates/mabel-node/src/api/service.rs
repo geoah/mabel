@@ -38,6 +38,12 @@ pub struct CreateIdentity {
     /// The one founding principal of an identity root, or `None` for a raw
     /// root the new ledger keys itself with (proposal 002 section 2).
     pub founder: Option<Id>,
+    /// The name the new ledger publishes, or `None` to publish none. Given, it
+    /// lands as one `ProfileUpdate` at seq 1 (proposal 005).
+    pub display_name: Option<String>,
+    /// The email the new ledger publishes, or `None` to publish none. It rides
+    /// in the same `ProfileUpdate` as `display_name`.
+    pub email: Option<String>,
 }
 
 /// `POST /api/identities/{identity_id}/memberships/invitations`, after
@@ -90,9 +96,9 @@ pub struct RemoveMembership {
 
 /// `POST /api/identities/{identity_id}/profile`, after validation.
 ///
-/// Both names are here because the operation is replacement: `None` clears
-/// that field, and the body must carry both keys so no client can
-/// half-specify one (proposal 003 section 1).
+/// All three fields are here because the operation is replacement: `None`
+/// clears that field, and the body must carry all three keys so no client can
+/// half-specify one (proposal 003 section 1, proposal 005).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReplaceProfile {
     /// The ledger the update is appended to, from the path.
@@ -101,6 +107,8 @@ pub struct ReplaceProfile {
     pub display_name: Option<String>,
     /// The hostname to claim, or `None` to clear it.
     pub hostname: Option<String>,
+    /// The email to publish, or `None` to clear it.
+    pub email: Option<String>,
 }
 
 /// `PUT /api/identities/{identity_id}/contact`, after validation.

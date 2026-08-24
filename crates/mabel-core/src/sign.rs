@@ -277,26 +277,62 @@ pub fn build_membership_removal(
 /// Builds an event replacing the ledger's whole profile (proposal 003
 /// section 1).
 ///
-/// The operation is replacement, not patch: a `None` field clears that name,
-/// and both `None` encodes a zero-length payload that clears both. Any current
-/// `CONTROLLER` may append one.
+/// The operation is replacement, not patch: a `None` field clears that field,
+/// and all three `None` encodes a zero-length payload that clears all three.
+/// Any current `CONTROLLER` may append one.
 ///
-/// The codepoint policy, the hostname syntax and the byte caps belong to the
-/// field table, which the validator runs over the encoded bytes; refusing an
-/// update whose effect equals the folded profile is a node-side guard
-/// (`no_op_profile_update`), never a rule of this crate.
+/// The codepoint policy, the hostname syntax, the email rule and the byte caps
+/// belong to the field table, which the validator runs over the encoded bytes;
+/// refusing an update whose effect equals the folded profile is a node-side
+/// guard (`no_op_profile_update`), never a rule of this crate.
 pub fn build_profile_update(
     signer: &SecretKey,
     at: &Position,
     display_name: Option<&str>,
     hostname: Option<&str>,
+    email: Option<&str>,
     now_ms: u64,
 ) -> Result<BuiltEvent, BuildError> {
-    let payload = Payload::ProfileUpdate(ProfileUpdate {
+    build_append(
+        signer,
+        at,
+        now_ms,
+        Payload::ProfileUpdate(profile_update(display_name, hostname, email)),
+    )
+}
+
+/// Runs the field table over the profile a `ProfileUpdate` would carry,
+/// without building an event.
+///
+/// The scanner is the authority on what a published field may hold, and it
+/// reads encoded bytes, so this encodes the payload alone and hands it the same
+/// descriptor. A caller that mints a ledger and then appends the profile needs
+/// the refusal before the mint: `mabel identity create --email <not an email>`
+/// must leave no ledger and no taken alias behind.
+///
+/// # Errors
+///
+/// Returns the [`crate::validate::WireError`] the scanner produces for the
+/// offending field, which is the reason every other surface reports.
+pub fn check_profile(
+    display_name: Option<&str>,
+    hostname: Option<&str>,
+    email: Option<&str>,
+) -> Result<(), crate::validate::WireError> {
+    let bytes = encode(&profile_update(display_name, hostname, email));
+    crate::validate::message(&crate::validate::PROFILE_UPDATE, &bytes)
+}
+
+fn profile_update(
+    display_name: Option<&str>,
+    hostname: Option<&str>,
+    email: Option<&str>,
+) -> ProfileUpdate {
+    ProfileUpdate {
         display_name: display_name.unwrap_or_default().to_owned(),
         hostname: hostname.unwrap_or_default().to_owned(),
-    });
-    build_append(signer, at, now_ms, payload)
+        email: email.unwrap_or_default().to_owned(),
+    }
 }
 
 /// Builds and signs an invitee's detached acceptance of an invitation.

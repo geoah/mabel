@@ -5,6 +5,7 @@
     "payload": {
       "profile_update": {
         "display_name": "Alice Ashworth",
+        "email": null,
         "hostname": null
       }
     },
@@ -20,6 +21,7 @@
   "file": "13-profile-update-name-only.json",
   "inputs": {
     "display_name": "Alice Ashworth",
+    "email": null,
     "hostname": null,
     "ledger": "qis2m2ncd3rejordx5fbbfxnkrc2svhkaglhcugm3xxhenrv6hiq",
     "now_ms": 1700000660000,

@@ -15,6 +15,7 @@
             {
               "identity_id": "2okqwhextnpkpmydrgrkk563vbehcklffwfzidxlh5dslawjmn6a",
               "display_name": "Acme Corporation",
+              "email": null,
               "alias": "acme",
               "hostname": null,
               "verification_status": "unclaimed",
@@ -23,6 +24,7 @@
             {
               "identity_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
               "display_name": "Alice Ashworth",
+              "email": "alice@alice.example",
               "alias": "alice",
               "hostname": "alice.example",
               "verification_status": "verified",
@@ -55,6 +57,7 @@
             {
               "identity_id": "2okqwhextnpkpmydrgrkk563vbehcklffwfzidxlh5dslawjmn6a",
               "display_name": "Acme Corporation",
+              "email": null,
               "alias": "acme",
               "hostname": null,
               "verification_status": "unclaimed",
@@ -63,6 +66,7 @@
             {
               "identity_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
               "display_name": "Alice Ashworth",
+              "email": "alice@alice.example",
               "alias": "alice",
               "hostname": "alice.example",
               "verification_status": "verified",

@@ -11,7 +11,7 @@
 //! `invitation`, never `invite`.
 
 use mabel_core::fold::{InvitationStatus, LedgerRoot};
-use mabel_node::api::documents::{DeclaredKind, Id, Pushed, TrustEntry};
+use mabel_node::api::documents::{DeclaredKind, Id, Profile, Pushed, TrustEntry};
 use mabel_proto::v0::Role as ProtoRole;
 use serde::Serialize;
 
@@ -41,6 +41,9 @@ pub struct CreatedIdentity {
     pub head_seq: u64,
     /// Id of the head event.
     pub head_event: Id,
+    /// The profile the `ProfileUpdate` at seq 1 left, `null` when the create
+    /// named neither a display name nor an email (proposal 005).
+    pub profile: Option<Profile>,
     /// Witness endpoints, empty on a new ledger.
     pub witnesses: Vec<Id>,
 }
@@ -124,18 +127,20 @@ pub struct AddedWitness {
     pub head_event: Id,
 }
 
-/// The profile a replacement overwrote, both names as the fold reported them.
+/// The profile a replacement overwrote, every field as the fold reported it.
 #[derive(Debug, Serialize)]
 pub struct PreviousProfile {
     /// The name that was published before, `null` when there was none.
     pub display_name: Option<String>,
     /// The hostname that was claimed before, `null` when there was none.
     pub hostname: Option<String>,
+    /// The email that was published before, `null` when there was none.
+    pub email: Option<String>,
 }
 
 /// `mabel profile replace --json` (`contracts/cli/profile-replace.json`).
 ///
-/// Both names are here whether they were set or cleared, because the
+/// All three fields are here whether they were set or cleared, because the
 /// operation is replacement: `null` is a field the update cleared.
 #[derive(Debug, Serialize)]
 pub struct ReplacedProfile {
@@ -145,6 +150,8 @@ pub struct ReplacedProfile {
     pub display_name: Option<String>,
     /// The hostname it now claims, `null` when the update cleared it.
     pub hostname: Option<String>,
+    /// The email it now publishes, `null` when the update cleared it.
+    pub email: Option<String>,
     /// What the update replaced, which is what the diff printed.
     pub previous: PreviousProfile,
     /// The `ProfileUpdate` event.

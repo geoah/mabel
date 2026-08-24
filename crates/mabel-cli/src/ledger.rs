@@ -263,6 +263,7 @@ impl Loaded {
         Some(Profile {
             display_name: profile.display_name.clone(),
             hostname: profile.hostname.clone(),
+            email: profile.email.clone(),
             signing_principal: SigningPrincipal {
                 identity: ids::identity(profile.signing_principal.identity),
                 key: ids::key(&profile.signing_principal.key),

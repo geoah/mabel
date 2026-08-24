@@ -1,0 +1,35 @@
+{
+  "body": {
+    "author_key_hex": "d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c9778737",
+    "ledger_hex": "8225a669a21ee244ba23bf4a1096ed5445a954ea01967150ccddee723635f1d1",
+    "payload": {
+      "profile_update": {
+        "display_name": "Alice Ashworth",
+        "email": "alice@alice.example",
+        "hostname": "alice.example"
+      }
+    },
+    "prev_hex": "27243353b5ff673be76dea08f898425c19b2a86ebbd51437eed5f5191fde9e8d",
+    "seq": 9,
+    "timestamp_ms": 1700000780000,
+    "version": 0
+  },
+  "body_hex": "12208225a669a21ee244ba23bf4a1096ed5445a954ea01967150ccddee723635f1d11809222027243353b5ff673be76dea08f898425c19b2a86ebbd51437eed5f5191fde9e8d28e09dc5ffbc313220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c97787378a01340a0e416c69636520417368776f727468120d616c6963652e6578616d706c651a13616c69636540616c6963652e6578616d706c65",
+  "description": "Alice publishes a display name, a hostname and a public email: the three fields one update replaces.",
+  "event_id": "g4ilfn6ghgrn4exujwkrtccx2jghtxjbumxt6rsm2etfku7ljkvq",
+  "event_id_hex": "3710b2b7c639a2de12f44d95198857d24c79dd21a32f3f464cd1265553eb4aab",
+  "file": "15-profile-update-with-email.json",
+  "inputs": {
+    "display_name": "Alice Ashworth",
+    "email": "alice@alice.example",
+    "hostname": "alice.example",
+    "ledger": "qis2m2ncd3rejordx5fbbfxnkrc2svhkaglhcugm3xxhenrv6hiq",
+    "now_ms": 1700000780000,
+    "prev": "e4sdgu5v75ttxz3n5ieprgcclqm3fkdoxpkrin7o2x2rsh66t2gq",
+    "prev_timestamp_ms": 1700000720000,
+    "secret_key_hex": "1111111111111111111111111111111111111111111111111111111111111111",
+    "seq": 9
+  },
+  "signature_hex": "15cdc47c884e6445a8cffa53f8de1ed4740d94eb82503c39375b40e77d89ac6274b466ad331ecb852e97d2904cfd43db35b70f99f8f100f1ae61be8898e66600",
+  "signed_event_hex": "0aa60112208225a669a21ee244ba23bf4a1096ed5445a954ea01967150ccddee723635f1d11809222027243353b5ff673be76dea08f898425c19b2a86ebbd51437eed5f5191fde9e8d28e09dc5ffbc313220d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c97787378a01340a0e416c69636520417368776f727468120d616c6963652e6578616d706c651a13616c69636540616c6963652e6578616d706c65124015cdc47c884e6445a8cffa53f8de1ed4740d94eb82503c39375b40e77d89ac6274b466ad331ecb852e97d2904cfd43db35b70f99f8f100f1ae61be8898e66600"
+}

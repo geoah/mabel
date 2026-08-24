@@ -31,9 +31,9 @@ use iroh_base::{PublicKey, Signature};
 use crate::digest::{accept_input, event_id, sign_input};
 use crate::id::{EventId, IdentityId};
 use crate::{
-    ID_BYTES, MAX_ACCEPTANCE_BYTES, MAX_DISPLAY_NAME_BYTES, MAX_EMBEDDED_INCEPTION_BYTES,
-    MAX_EVENT_BYTES, MAX_HOSTNAME_BYTES, MAX_HOSTNAME_LABEL_BYTES, MAX_TIMESTAMP_MS, MAX_WITNESSES,
-    NONCE_BYTES, SIG_BYTES,
+    ID_BYTES, MAX_ACCEPTANCE_BYTES, MAX_DISPLAY_NAME_BYTES, MAX_EMAIL_BYTES,
+    MAX_EMBEDDED_INCEPTION_BYTES, MAX_EVENT_BYTES, MAX_HOSTNAME_BYTES, MAX_HOSTNAME_LABEL_BYTES,
+    MAX_TIMESTAMP_MS, MAX_WITNESSES, NONCE_BYTES, SIG_BYTES,
 };
 
 /// How deep messages may nest before the scanner gives up.
@@ -250,6 +250,16 @@ pub enum WireError {
         /// Which rule the value broke.
         reason: &'static str,
     },
+    /// An email broke the rule of proposal 005.
+    #[error("{message}.{field} is not a valid email: {reason}")]
+    InvalidEmail {
+        /// The message type.
+        message: &'static str,
+        /// The field name.
+        field: &'static str,
+        /// Which rule the value broke.
+        reason: &'static str,
+    },
     /// A numeric field fell outside the range the field table states.
     #[error("{message}.{field} holds {value}, outside {min}..={max}")]
     ValueOutOfRange {
@@ -385,6 +395,7 @@ impl WireError {
             Self::InvalidUtf8 { .. } => "invalid_utf8",
             Self::InvalidDisplayName { .. } => "invalid_display_name",
             Self::InvalidHostname { .. } => "invalid_hostname",
+            Self::InvalidEmail { .. } => "invalid_email",
             Self::ValueOutOfRange { .. } => "value_out_of_range",
             Self::RepeatedCount { .. } => "repeated_count",
             Self::RepeatedDuplicate { .. } => "repeated_duplicate",
@@ -471,6 +482,12 @@ pub enum StringRule {
     /// A DNS name under the syntax of proposal 003 section 2. Rejections are
     /// [`WireError::InvalidHostname`].
     Hostname,
+    /// An email address: the shared codepoint policy, plus exactly one `@` with
+    /// at least one byte on each side (proposal 005). No deliverability check
+    /// is possible here or anywhere else: the address is a claim, like
+    /// everything else on a ledger. Rejections are
+    /// [`WireError::InvalidEmail`].
+    Email,
 }
 
 /// What a field holds and what the field table says about it.
@@ -840,10 +857,10 @@ pub static MEMBERSHIP_REMOVAL: MessageDescriptor = MessageDescriptor {
     check: None,
 };
 
-/// `ProfileUpdate` (proposal 003 section 1).
+/// `ProfileUpdate` (proposal 003 section 1, `email` from proposal 005).
 ///
-/// Both fields are optional and a zero-length payload is legal: it clears
-/// both. An empty string never reaches these rows, because the canonical
+/// All three fields are optional and a zero-length payload is legal: it clears
+/// all three. An empty string never reaches these rows, because the canonical
 /// encoding omits a proto3 default and an explicitly encoded one is
 /// [`WireError::DefaultValueEncoded`].
 pub static PROFILE_UPDATE: MessageDescriptor = MessageDescriptor {
@@ -864,6 +881,14 @@ pub static PROFILE_UPDATE: MessageDescriptor = MessageDescriptor {
             FieldKind::String {
                 max: MAX_HOSTNAME_BYTES,
                 rule: StringRule::Hostname,
+            },
+        ),
+        optional(
+            3,
+            "email",
+            FieldKind::String {
+                max: MAX_EMAIL_BYTES,
+                rule: StringRule::Email,
             },
         ),
     ],
@@ -1436,6 +1461,11 @@ fn check_bytes(
                         reason,
                     })
                 }
+                StringRule::Email => check_email(text).map_err(|reason| WireError::InvalidEmail {
+                    message,
+                    field: field.name,
+                    reason,
+                }),
             }
         }
         FieldKind::Nested { descriptor, max } => {
@@ -1465,9 +1495,10 @@ fn check_bytes(
     }
 }
 
-/// The codepoint policy of proposal 003 section 1, plus the rule that a
-/// display name may not parse as an identity id.
-fn check_display_name(text: &str) -> Result<(), &'static str> {
+/// The codepoint policy of proposal 003 section 1, which every published
+/// string starts from: no control character, no bidi control and no
+/// zero-width or invisible format character.
+fn check_codepoints(text: &str) -> Result<(), &'static str> {
     for character in text.chars() {
         match character {
             '\u{0}'..='\u{1f}' | '\u{7f}' => return Err("it holds a C0 control character"),
@@ -1483,6 +1514,13 @@ fn check_display_name(text: &str) -> Result<(), &'static str> {
             _ => {}
         }
     }
+    Ok(())
+}
+
+/// The codepoint policy of proposal 003 section 1, plus the rule that a
+/// display name may not parse as an identity id.
+fn check_display_name(text: &str) -> Result<(), &'static str> {
+    check_codepoints(text)?;
     if text.trim() != text {
         return Err("it has leading or trailing whitespace");
     }
@@ -1527,6 +1565,31 @@ fn check_hostname(text: &str) -> Result<(), &'static str> {
         {
             return Err("a label holds a character outside [a-z0-9-]");
         }
+    }
+    Ok(())
+}
+
+/// The email rule of proposal 005: the shared codepoint policy, then exactly
+/// one `@` with at least one byte on each side. The 254-byte cap is the
+/// field's, checked before this runs.
+///
+/// Nothing here says the address exists or answers. Deliverability is not a
+/// property a ledger can carry, so the address is a claim like every other
+/// field of the profile.
+fn check_email(text: &str) -> Result<(), &'static str> {
+    check_codepoints(text)?;
+    let mut parts = text.split('@');
+    let (Some(local), Some(domain)) = (parts.next(), parts.next()) else {
+        return Err("it holds no at sign");
+    };
+    if parts.next().is_some() {
+        return Err("it holds more than one at sign");
+    }
+    if local.is_empty() {
+        return Err("it holds nothing before the at sign");
+    }
+    if domain.is_empty() {
+        return Err("it holds nothing after the at sign");
     }
     Ok(())
 }
@@ -2527,11 +2590,20 @@ mod tests {
             .code(),
             "invalid_hostname"
         );
+        assert_eq!(
+            WireError::InvalidEmail {
+                message: "ProfileUpdate",
+                field: "email",
+                reason: "it holds no at sign",
+            }
+            .code(),
+            "invalid_email"
+        );
     }
 
     /// An encoded `ProfileUpdate`. An empty argument is an absent field, which
     /// is how the canonical encoding spells "unset".
-    fn profile_update(display_name: &[u8], hostname: &[u8]) -> Vec<u8> {
+    fn profile_update(display_name: &[u8], hostname: &[u8], email: &[u8]) -> Vec<u8> {
         let mut out = Vec::new();
         if !display_name.is_empty() {
             out.extend_from_slice(&len_field(1, display_name));
@@ -2539,24 +2611,125 @@ mod tests {
         if !hostname.is_empty() {
             out.extend_from_slice(&len_field(2, hostname));
         }
+        if !email.is_empty() {
+            out.extend_from_slice(&len_field(3, email));
+        }
         out
     }
 
     fn profile(display_name: &str, hostname: &str) -> Result<(), WireError> {
         message(
             &PROFILE_UPDATE,
-            &profile_update(display_name.as_bytes(), hostname.as_bytes()),
+            &profile_update(display_name.as_bytes(), hostname.as_bytes(), b""),
         )
     }
 
+    /// A `ProfileUpdate` carrying an email and nothing else.
+    fn profile_email(email: &str) -> Result<(), WireError> {
+        message(&PROFILE_UPDATE, &profile_update(b"", b"", email.as_bytes()))
+    }
+
     #[test]
-    fn a_profile_update_takes_both_names_either_one_or_neither() {
+    fn a_profile_update_takes_any_of_its_three_fields_or_none() {
         profile("Alice Ashworth", "alice.example").expect("both names pass");
         profile("Alice Ashworth", "").expect("a display name alone passes");
         profile("", "alice.example").expect("a hostname alone passes");
-        // Clearing both is a zero-length payload, which is legal protobuf and
-        // means "unset both" (proposal 003 section 1).
+        profile_email("alice@alice.example").expect("an email alone passes");
+        message(
+            &PROFILE_UPDATE,
+            &profile_update(b"Alice Ashworth", b"alice.example", b"alice@alice.example"),
+        )
+        .expect("all three pass");
+        // Clearing every field is a zero-length payload, which is legal
+        // protobuf and means "unset all three" (proposal 003 section 1,
+        // proposal 005).
         profile("", "").expect("an empty payload passes");
+    }
+
+    #[test]
+    fn an_email_holds_exactly_one_at_sign_with_bytes_on_each_side() {
+        for address in [
+            "alice@alice.example",
+            "a@b",
+            "alice+zines@alice.example",
+            "アリス@例え.example",
+        ] {
+            profile_email(address).unwrap_or_else(|err| panic!("{address} must pass: {err}"));
+        }
+
+        for (address, reason) in [
+            ("alice.example", "it holds no at sign"),
+            ("alice@bob@alice.example", "it holds more than one at sign"),
+            ("@alice.example", "it holds nothing before the at sign"),
+            ("alice@", "it holds nothing after the at sign"),
+            ("@", "it holds nothing before the at sign"),
+        ] {
+            assert_eq!(
+                profile_email(address),
+                Err(WireError::InvalidEmail {
+                    message: "ProfileUpdate",
+                    field: "email",
+                    reason,
+                }),
+                "{address} must be refused"
+            );
+        }
+    }
+
+    #[test]
+    fn an_email_holding_a_forbidden_codepoint_is_refused() {
+        for (address, reason) in [
+            ("alice\t@alice.example", "it holds a C0 control character"),
+            (
+                "alice\u{85}@alice.example",
+                "it holds a C1 control character",
+            ),
+            (
+                "alice\u{202e}@alice.example",
+                "it holds a bidi control character",
+            ),
+            (
+                "alice\u{feff}@alice.example",
+                "it holds a zero-width or invisible format character",
+            ),
+        ] {
+            assert_eq!(
+                profile_email(address),
+                Err(WireError::InvalidEmail {
+                    message: "ProfileUpdate",
+                    field: "email",
+                    reason,
+                }),
+                "{address:?} must be refused"
+            );
+        }
+    }
+
+    #[test]
+    fn an_email_is_utf8_and_at_most_254_bytes() {
+        assert_eq!(
+            message(
+                &PROFILE_UPDATE,
+                &profile_update(b"", b"", b"alice@alice.exampl\xff")
+            ),
+            Err(WireError::InvalidUtf8 {
+                message: "ProfileUpdate",
+                field: "email",
+            })
+        );
+        let local = "a".repeat(MAX_EMAIL_BYTES - "@alice.example".len());
+        let at_cap = format!("{local}@alice.example");
+        assert_eq!(at_cap.len(), MAX_EMAIL_BYTES);
+        profile_email(&at_cap).expect("254 bytes pass");
+        assert_eq!(
+            profile_email(&format!("a{at_cap}")),
+            Err(WireError::FieldTooLong {
+                message: "ProfileUpdate",
+                field: "email",
+                len: MAX_EMAIL_BYTES + 1,
+                cap: MAX_EMAIL_BYTES,
+            })
+        );
     }
 
     #[test]
@@ -2622,7 +2795,7 @@ mod tests {
     #[test]
     fn a_display_name_is_utf8_and_at_most_64_bytes() {
         assert_eq!(
-            message(&PROFILE_UPDATE, &profile_update(b"Alice\xff", b"")),
+            message(&PROFILE_UPDATE, &profile_update(b"Alice\xff", b"", b"")),
             Err(WireError::InvalidUtf8 {
                 message: "ProfileUpdate",
                 field: "display_name",
@@ -2647,7 +2820,7 @@ mod tests {
 
     #[test]
     fn an_explicitly_encoded_empty_name_is_refused() {
-        for (number, field) in [(1, "display_name"), (2, "hostname")] {
+        for (number, field) in [(1, "display_name"), (2, "hostname"), (3, "email")] {
             assert_eq!(
                 message(&PROFILE_UPDATE, &len_field(number, b"")),
                 Err(WireError::DefaultValueEncoded {

@@ -136,6 +136,7 @@ fn payload_document(payload: &event_body::Payload) -> Value {
         event_body::Payload::ProfileUpdate(profile) => json!({
             "display_name": text(&profile.display_name),
             "hostname": text(&profile.hostname),
+            "email": text(&profile.email),
         }),
     }
 }

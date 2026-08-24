@@ -187,6 +187,83 @@ fn identity_create_matches_the_fixture() {
     assert_ne!(document["active_key"], document["reserve_commit"]);
 }
 
+/// A name or an email on the create adds one `ProfileUpdate` at seq 1, so a
+/// new identity's first two events are who it is and what it shows the world
+/// (proposal 005).
+#[test]
+fn identity_create_with_a_name_and_an_email_publishes_a_profile_at_seq_1() {
+    let home = Home::new();
+    let document = home.json(&[
+        "identity",
+        "create",
+        "--alias",
+        "alice",
+        "--name",
+        "Alice Ashworth",
+        "--email",
+        "alice@alice.example",
+    ]);
+    assert_shape(
+        &document,
+        &fixture("identity-create", "created-with-a-profile"),
+        "identity-create/created-with-a-profile",
+    );
+    assert_eq!(document["head_seq"], Value::from(1));
+    assert_ne!(document["head_event"], document["inception_event"]);
+    let profile = &document["profile"];
+    assert_eq!(profile["display_name"], Value::from("Alice Ashworth"));
+    assert_eq!(profile["email"], Value::from("alice@alice.example"));
+    assert_eq!(
+        profile["hostname"],
+        Value::Null,
+        "create claims no hostname"
+    );
+    assert_eq!(profile["seq"], Value::from(1));
+    assert_eq!(profile["event"], document["head_event"]);
+    assert_eq!(
+        profile["signing_principal"]["identity"],
+        document["identity_id"]
+    );
+
+    // The same document the identity routes serve reports it.
+    let shown = home.json(&["identity", "show", "alice"]);
+    assert_eq!(shown["profile"], *profile);
+    assert_eq!(shown["event_count"], Value::from(2));
+}
+
+/// The scanner's refusal lands before the mint, so a mistyped email costs
+/// neither a ledger nor the alias.
+#[test]
+fn identity_create_with_an_email_the_scanner_refuses_creates_nothing() {
+    let home = Home::new();
+    let expected = fixture("identity-create", "invalid-email");
+    let (code, document) = home.failure(&[
+        "identity",
+        "create",
+        "--alias",
+        "alice",
+        "--email",
+        "alice.example",
+    ]);
+    assert_eq!(code, 10);
+    assert_eq!(document["message"], expected["message"]);
+    assert_eq!(document["details"], expected["details"]);
+
+    // No identity, and the alias is still free.
+    let listed = home.json(&["identity", "list"]);
+    assert_eq!(listed["identities"], Value::Array(Vec::new()));
+    home.json(&["identity", "create", "--alias", "alice"]);
+}
+
+/// Neither flag given, the new ledger is one event long and publishes nothing.
+#[test]
+fn identity_create_without_a_name_or_an_email_publishes_no_profile() {
+    let home = Home::new();
+    let document = home.json(&["identity", "create", "--alias", "alice"]);
+    assert_eq!(document["profile"], Value::Null);
+    assert_eq!(document["head_seq"], Value::from(0));
+}
+
 #[test]
 fn identity_create_with_a_founder_makes_an_identity_root() {
     let home = Home::new();

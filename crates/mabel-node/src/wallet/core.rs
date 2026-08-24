@@ -25,12 +25,12 @@ use std::sync::{Arc, Mutex as StdMutex};
 use data_encoding::BASE64;
 use iroh_base::{EndpointId, SecretKey};
 use mabel_core::artifacts::{AcceptanceFile, IdentityDescriptor, InvitationBundle};
-use mabel_core::fold::{InvitationStatus, LedgerRoot, LedgerState};
+use mabel_core::fold::{InvitationStatus, LedgerRoot, LedgerState, Reason};
 use mabel_core::sign::{
     BuildError, BuiltEvent, Position, Root, build_acceptance, build_inception,
     build_membership_acceptance, build_membership_invitation, build_membership_removal,
     build_profile_update, build_trust_attestation, build_trust_revocation, build_witness_config,
-    ledger_timestamp_ms,
+    check_profile, ledger_timestamp_ms,
 };
 use mabel_core::{EventId, IdentityId, LedgerId, NONCE_BYTES};
 use mabel_proto::prost::Message;
@@ -305,8 +305,8 @@ impl WalletCore {
     /// Appends a `ProfileUpdate` replacing the whole profile (proposal 003
     /// section 1).
     ///
-    /// An omitted name clears that field, which is why the caller passes both.
-    /// A replacement whose effect equals the current folded profile is refused
+    /// An omitted field clears it, which is why the caller passes all three. A
+    /// replacement whose effect equals the current folded profile is refused
     /// here, before anything is signed: the fold must accept whatever a valid
     /// chain contains, so this guard belongs to the node.
     ///
@@ -320,12 +320,29 @@ impl WalletCore {
         identity: IdentityId,
         display_name: Option<&str>,
         hostname: Option<&str>,
+        email: Option<&str>,
+    ) -> Result<ProfileReplaced, ServiceError> {
+        check_lock(lock, identity)?;
+        self.append_profile_update(identity, display_name, hostname, email)
+    }
+
+    /// The profile append itself, without the lock check.
+    ///
+    /// [`WalletCore::create_identity`] reuses it on a ledger whose id it minted
+    /// a moment earlier from fresh randomness, so no other writer can name that
+    /// ledger yet and there is no lock to take.
+    fn append_profile_update(
+        &self,
+        identity: IdentityId,
+        display_name: Option<&str>,
+        hostname: Option<&str>,
+        email: Option<&str>,
     ) -> Result<ProfileReplaced, ServiceError> {
         let mut loaded = self.load(identity)?;
         let previous = loaded.profile();
-        refuse_no_op_profile(identity, previous.as_ref(), display_name, hostname)?;
-        let appended = self.append(lock, identity, &mut loaded, |signer, at, timestamp_ms| {
-            build_profile_update(signer, at, display_name, hostname, timestamp_ms)
+        refuse_no_op_profile(identity, previous.as_ref(), display_name, hostname, email)?;
+        let appended = self.append_event(identity, &mut loaded, |signer, at, timestamp_ms| {
+            build_profile_update(signer, at, display_name, hostname, email, timestamp_ms)
         })?;
         let profile = loaded.profile().ok_or_else(|| {
             // The fold records a profile for every `ProfileUpdate` it accepts,
@@ -342,7 +359,10 @@ impl WalletCore {
                 display_name: previous
                     .as_ref()
                     .and_then(|profile| profile.display_name.clone()),
-                hostname: previous.and_then(|profile| profile.hostname),
+                hostname: previous
+                    .as_ref()
+                    .and_then(|profile| profile.hostname.clone()),
+                email: previous.and_then(|profile| profile.email),
             },
             head_seq: appended.seq,
             head_event: ids::event(appended.event_id),
@@ -431,18 +451,28 @@ impl WalletCore {
     /// key signs the inception, and `controlled_by` records which local
     /// identity signs for it later.
     ///
+    /// A `display_name` or an `email` adds one `ProfileUpdate` at seq 1, so a
+    /// new identity's first two events are who it is and what it shows the
+    /// world (proposal 005). Neither given, the ledger is one event long.
+    ///
     /// # Errors
     ///
     /// Returns code 2 when the alias is already taken here, code 10 when the
-    /// inception does not build, and the storage errors of writing the keys
-    /// and the event.
+    /// inception or the profile does not build, and the storage errors of
+    /// writing the keys and the events.
     pub fn create_identity(
         &self,
         alias: &str,
         declared_kind: DocumentKind,
         founder: Option<IdentityId>,
+        display_name: Option<&str>,
+        email: Option<&str>,
     ) -> Result<CreatedIdentity, ServiceError> {
         self.refuse_reused_alias(alias)?;
+        // Before the mint, not after: a name or an email the scanner refuses
+        // must leave no ledger and no taken alias behind.
+        check_profile(display_name, None, email)
+            .map_err(|error| fold_error(&Reason::Wire(error)))?;
         let mut nonce = [0u8; NONCE_BYTES];
         getrandom::fill(&mut nonce).map_err(|error| {
             ServiceError::state("no_randomness", error.to_string())
@@ -524,6 +554,13 @@ impl WalletCore {
                 },
             )
             .map_err(storage_error)?;
+
+        // The profile lands as its own event at seq 1: the inception stays
+        // minimal, and the profile keeps the whole-replacement semantics it has
+        // everywhere else (proposal 005).
+        if display_name.is_some() || email.is_some() {
+            self.append_profile_update(identity, display_name, None, email)?;
+        }
 
         Ok(CreatedIdentity {
             identity: self.identity(identity)?,
@@ -933,6 +970,20 @@ impl WalletCore {
         F: FnOnce(&SecretKey, &Position, u64) -> Result<BuiltEvent, BuildError>,
     {
         check_lock(lock, loaded.ledger)?;
+        self.append_event(identity, loaded, build)
+    }
+
+    /// The append itself, for the one caller that holds no lock because the
+    /// ledger it writes was created in the same call.
+    fn append_event<F>(
+        &self,
+        identity: IdentityId,
+        loaded: &mut LoadedLedger,
+        build: F,
+    ) -> Result<AppendedEvent, ServiceError>
+    where
+        F: FnOnce(&SecretKey, &Position, u64) -> Result<BuiltEvent, BuildError>,
+    {
         self.require_valid(loaded)?;
         let head = loaded.state.head().ok_or_else(|| {
             ServiceError::usage(
@@ -1321,12 +1372,14 @@ fn refuse_no_op_profile(
     previous: Option<&Profile>,
     display_name: Option<&str>,
     hostname: Option<&str>,
+    email: Option<&str>,
 ) -> Result<(), ServiceError> {
     let current = (
         previous.and_then(|profile| profile.display_name.as_deref()),
         previous.and_then(|profile| profile.hostname.as_deref()),
+        previous.and_then(|profile| profile.email.as_deref()),
     );
-    if current != (display_name, hostname) {
+    if current != (display_name, hostname, email) {
         return Ok(());
     }
     let mut error = ServiceError::policy(
@@ -1335,7 +1388,8 @@ fn refuse_no_op_profile(
     )
     .with_detail("ledger_id", identity.to_string())
     .with_detail("display_name", display_name)
-    .with_detail("hostname", hostname);
+    .with_detail("hostname", hostname)
+    .with_detail("email", email);
     if let Some(profile) = previous {
         error = error
             .with_detail("profile_event", profile.event.to_string())
