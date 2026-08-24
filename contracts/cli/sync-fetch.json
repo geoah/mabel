@@ -48,6 +48,22 @@
         "fetched_at_ms": 1700000620000,
         "controlled_by": "vh4bkkokjt7jfmtazivnk5ykplavgpx5kcxvglfncbrlvowfaz6q"
       }
+    },
+    {
+      "case": "from-a-hostname",
+      "command": "mabel sync fetch sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq --from-host mabel.example --json",
+      "exit_code": 0,
+      "document": {
+        "ok": true,
+        "ledger_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+        "source": "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq",
+        "event_count": 4,
+        "stored": 4,
+        "head_seq": 3,
+        "head_event": "ewckxhi7cixugkyrql6eqnncbgxqtnrho3rpsp6plhhh7yr6rosq",
+        "fetched_at_ms": 1700000680000,
+        "controlled_by": null
+      }
     }
   ]
 }

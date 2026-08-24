@@ -728,6 +728,11 @@ fn witness_add_replaces_the_set_the_ledger_records() {
         "--witness",
         &witness,
     ]);
+    assert_shape(
+        &document,
+        &fixture("witness-add", "first-witness"),
+        "witness-add",
+    );
     assert_eq!(document["identity_id"], Value::from(alice.clone()));
     assert_eq!(document["witness"], Value::from(witness.clone()));
     assert_eq!(document["witnesses"], Value::from(vec![witness.clone()]));
@@ -760,6 +765,120 @@ fn witness_add_replaces_the_set_the_ledger_records() {
     assert_eq!(error["details"]["reason"], Value::from("unknown_argument"));
 }
 
+/// `--endpoints` names the machines this command may try while it resolves
+/// witness identities. They are this call's hints and nothing else: the set the
+/// event carries is identity ids, and `node.json` is not touched.
+#[test]
+fn witness_add_takes_endpoint_hints_and_records_none_of_them() {
+    let home = Home::new();
+    home.create("alice");
+    let keeper = home.create("keeper");
+    let endpoint = home.endpoint();
+
+    let document = home.json(&[
+        "witness",
+        "add",
+        "--identity",
+        "alice",
+        "--witness",
+        &keeper,
+        "--endpoints",
+        &endpoint,
+    ]);
+    assert_shape(
+        &document,
+        &fixture("witness-add", "hinted-witness"),
+        "witness-add",
+    );
+    assert_eq!(document["witness"], Value::from(keeper.clone()));
+    assert_eq!(document["witnesses"], Value::from(vec![keeper.clone()]));
+
+    // The hints served this call and were not written anywhere: `node.json`
+    // still configures no witness (proposal 006 section 5.3).
+    let config: Value = serde_json::from_slice(
+        &std::fs::read(home.path().join("node.json")).expect("node.json reads"),
+    )
+    .expect("node.json is JSON");
+    assert_eq!(config["witnesses"], Value::Array(Vec::new()), "{config}");
+
+    // An endpoint id that does not parse is refused before anything is signed.
+    let (code, error) = home.failure(&[
+        "witness",
+        "add",
+        "--identity",
+        "alice",
+        "--witness",
+        &keeper,
+        "--endpoints",
+        "keeper",
+    ]);
+    assert_eq!(code, 2);
+    assert_eq!(
+        error["details"]["reason"],
+        Value::from("malformed_endpoint_id")
+    );
+
+    // A link on `--witness` carries the same kind of hint, so the two together
+    // are `conflicting_source`.
+    let (code, error) = home.failure(&[
+        "witness",
+        "add",
+        "--identity",
+        "alice",
+        "--witness",
+        &format!("mabel://{keeper}?endpoints={endpoint}"),
+        "--endpoints",
+        &endpoint,
+    ]);
+    assert_eq!(code, 2);
+    assert_eq!(
+        error["details"]["reason"],
+        Value::from("conflicting_source")
+    );
+    assert_eq!(error["details"]["parameter"], Value::from("--endpoints"));
+}
+
+/// `--from-host` names the zone to ask, so it is refused beside the two keys
+/// that name a machine and an identity (proposal 006 sections 5 and 6).
+#[test]
+fn sync_fetch_refuses_from_host_beside_another_source() {
+    let home = Home::new();
+    let alice = home.create("alice");
+    let endpoint = home.endpoint();
+
+    for other in [
+        vec!["--from", endpoint.as_str()],
+        vec!["--from-witness", STRANGER],
+    ] {
+        let mut arguments = vec![
+            "sync",
+            "fetch",
+            alice.as_str(),
+            "--from-host",
+            "mabel.example",
+        ];
+        arguments.extend(other.iter().copied());
+        let (code, error) = home.failure(&arguments);
+        assert_eq!(code, 2, "{error}");
+        assert_eq!(
+            error["details"]["reason"],
+            Value::from("conflicting_source"),
+            "{error}"
+        );
+        assert_eq!(error["details"]["parameter"], Value::from("--from-host"));
+    }
+
+    // A value no profile could claim is a command line to fix, and is refused
+    // before any query leaves this machine.
+    let (code, error) = home.failure(&["sync", "fetch", &alice, "--from-host", "not a host"]);
+    assert_eq!(code, 2);
+    assert_eq!(
+        error["details"]["reason"],
+        Value::from("malformed_hostname")
+    );
+    assert_eq!(error["details"]["value"], Value::from("not a host"));
+}
+
 /// `mabel identity endpoints replace` publishes the machines that answer for an
 /// identity, replacing the whole list (proposal 006 section 2).
 #[test]
@@ -777,6 +896,11 @@ fn identity_endpoints_replace_publishes_the_machines_and_refuses_a_no_op() {
         "--endpoints",
         "auto",
     ]);
+    assert_shape(
+        &document,
+        &fixture("identity-endpoints-replace", "advertised"),
+        "identity-endpoints-replace",
+    );
     assert_eq!(document["identity_id"], Value::from(alice.clone()));
     assert_eq!(
         document["endpoints"],
@@ -798,6 +922,11 @@ fn identity_endpoints_replace_publishes_the_machines_and_refuses_a_no_op() {
         &endpoint,
     ]);
     assert_eq!(code, 20);
+    assert_shape(
+        &error,
+        &fixture("identity-endpoints-replace", "no-op"),
+        "identity-endpoints-replace",
+    );
     assert_eq!(
         error["details"]["reason"],
         Value::from("no_op_endpoint_advertisement")
@@ -814,6 +943,11 @@ fn identity_endpoints_replace_publishes_the_machines_and_refuses_a_no_op() {
         "--endpoints",
         "none",
     ]);
+    assert_shape(
+        &document,
+        &fixture("identity-endpoints-replace", "advertises-nothing"),
+        "identity-endpoints-replace",
+    );
     assert_eq!(document["endpoints"], Value::Array(Vec::new()));
     assert_eq!(document["previous"], Value::from(vec![endpoint]));
     assert_eq!(document["head_seq"], Value::from(2));
@@ -1305,11 +1439,22 @@ fn witness_set_default_refuses_an_unreachable_witness() {
     let unknown = base32(&[9u8; 32]);
     let (code, document) = home.failure(&["witness", "set-default", "--witness", &unknown]);
     assert_eq!(code, 2);
+    assert_shape(
+        &document,
+        &fixture("witness-set-default", "unresolvable"),
+        "witness-set-default",
+    );
     assert_eq!(
         document["details"]["reason"],
         Value::from("unresolvable_witness")
     );
-    assert_eq!(document["details"]["identity_id"], Value::from(unknown));
+    // One spelling on both surfaces: `witness` and what was dialled
+    // (proposal 006 section 8).
+    assert_eq!(document["details"]["witness"], Value::from(unknown));
+    assert_eq!(
+        document["details"]["endpoints_tried"],
+        Value::Array(Vec::new())
+    );
     assert!(config_witnesses(&home).is_empty());
 }
 

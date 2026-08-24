@@ -44,7 +44,8 @@ pub struct CreatedIdentity {
     /// The profile the `ProfileUpdate` at seq 1 left, `null` when the create
     /// named neither a display name nor an email (proposal 005).
     pub profile: Option<Profile>,
-    /// Witness endpoints, empty on a new ledger.
+    /// The witness identities the ledger names, empty on a new ledger
+    /// (proposal 006 section 1).
     pub witnesses: Vec<Id>,
 }
 

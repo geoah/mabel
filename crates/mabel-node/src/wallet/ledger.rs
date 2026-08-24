@@ -178,6 +178,28 @@ impl LoadedLedger {
             .collect()
     }
 
+    /// The machines the latest `EndpointAdvertisement` names, which are where
+    /// this identity answers (proposal 006 section 2).
+    #[must_use]
+    pub fn endpoints(&self) -> Vec<Id> {
+        self.state.endpoints().iter().map(ids::key).collect()
+    }
+
+    /// The endpoints the latest `WitnessConfig` names, payload tag 11.
+    ///
+    /// Nothing writes tag 11 any more and every chain written before proposal
+    /// 006 may hold one, so the document reports both lists rather than
+    /// merging them: they come from different payloads and mean different
+    /// things.
+    #[must_use]
+    pub fn witness_endpoints(&self) -> Vec<Id> {
+        self.state
+            .witness_endpoints()
+            .iter()
+            .map(ids::key)
+            .collect()
+    }
+
     /// Every attestation this ledger issued, revoked ones included, by
     /// ascending position.
     #[must_use]
@@ -336,6 +358,8 @@ impl LoadedLedger {
             head_event: ids::event(self.head_event),
             event_count: self.event_count(),
             witnesses: self.witnesses(),
+            endpoints: self.endpoints(),
+            witness_endpoints: self.witness_endpoints(),
             trust: self.trust(),
             principals: self.principals(),
             open_invitation_count: self.open_invitation_count(),

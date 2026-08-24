@@ -36,7 +36,7 @@ pub use resolver::{
     HickoryResolver, ResolveError, ResolveFuture, Resolver, StubResolver, TxtRecord,
 };
 pub use verify::{
-    MAX_CNAME_LINKS, MAX_LABEL_ENDPOINTS, TXT_ENDPOINTS_PREFIX, TXT_LABEL, TXT_PREFIX,
-    VerificationOutcome, VerificationStatus, check_hostname, endpoints_at_label, endpoints_claim,
-    endpoints_for_claim, mabel_claim, query_name, verify_hostname,
+    CallerZone, MAX_CNAME_LINKS, MAX_LABEL_ENDPOINTS, TXT_ENDPOINTS_PREFIX, TXT_LABEL, TXT_PREFIX,
+    VerificationOutcome, VerificationStatus, caller_zone, check_hostname, endpoints_at_label,
+    endpoints_claim, endpoints_for_claim, mabel_claim, query_name, verify_hostname,
 };

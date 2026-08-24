@@ -19,6 +19,8 @@
       "head_event": "wq5f7hcvvkoqcxlnbzkwqhhqz2mfj6l3xd7abzxbjdmmuvjyjbxa",
       "event_count": 2,
       "witnesses": [],
+      "endpoints": [],
+      "witness_endpoints": [],
       "trust": [],
       "principals": [
         {

@@ -443,9 +443,14 @@ pub enum WitnessCommand {
         /// The identity whose witness set is replaced, by alias or id.
         #[arg(long)]
         identity: String,
-        /// The witness identity, by alias or id.
+        /// The witness identity, by alias, id or link.
         #[arg(long)]
         witness: String,
+        /// Endpoint ids to try while this command resolves witness
+        /// identities, comma-separated or repeated. Used for this call alone
+        /// and never recorded. Not with a link that names endpoints.
+        #[arg(long, value_name = "ENDPOINT", value_delimiter = ',')]
+        endpoints: Vec<String>,
         #[command(flatten)]
         append: AppendOptions,
     },
@@ -501,6 +506,10 @@ pub enum SyncCommand {
         /// proposal 006 section 5.1. Not with --from.
         #[arg(long, value_name = "MABEL_ID")]
         from_witness: Option<String>,
+        /// A hostname to fetch from, whose `mabel-endpoints=` records name the
+        /// machines to dial. Not with --from or --from-witness.
+        #[arg(long, value_name = "HOSTNAME")]
+        from_host: Option<String>,
         /// Endpoint ticket to seed into address lookup. Repeatable.
         #[arg(long, value_name = "TICKET")]
         peer: Vec<String>,

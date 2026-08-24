@@ -1,18 +1,33 @@
 {
-  "route": "/api/identities/:identity_id/ledger?since=2&limit=512",
+  "route": "/api/identities/:identity_id/ledger?since=1&limit=512",
   "method": "GET",
   "request": null,
   "response": {
     "ok": true,
     "ledger_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
     "declared_kind": "person",
-    "since": 2,
+    "since": 1,
     "limit": 512,
     "head_seq": 3,
     "head_event": "ewckxhi7cixugkyrql6eqnncbgxqtnrho3rpsp6plhhh7yr6rosq",
     "event_count": 4,
     "more": false,
     "events": [
+      {
+        "event_id": "ksp5tvlygiuoldlrp2v57pfrnp76iqa23w7tlwuouq7wiwyzsm4q",
+        "seq": 1,
+        "ledger_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+        "prev": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+        "timestamp_ms": 1700000060000,
+        "author_key": "2bflemtufo2kwoqtnc6umfpe43icesvxdiawxl4fecrtfslxq43q",
+        "payload_kind": "witness_set",
+        "payload": {
+          "witnesses": [
+            "ovfp3btcnjyhwmyw3ldk3wmt2ppb5w5c5adyzcavswmyq7xkg7fq",
+            "q7hnsnk6ycwjyzwbmqjcaxwlmxvvfjbmwzq4gz4dbtvpojjuh3fq"
+          ]
+        }
+      },
       {
         "event_id": "65cssg5tnr3gyxe2rwhsgqc3nct3pwg2bqxr2oxpelejuoorlsnq",
         "seq": 2,

@@ -312,6 +312,51 @@ pub fn endpoints_at_label(records: &[TxtRecord]) -> Vec<EndpointId> {
     endpoints
 }
 
+/// What the records at one label say about a hostname the caller typed: row 1
+/// of the applicability matrix (proposal 006 section 6).
+///
+/// A caller named this hostname for this operation, so the response may yield
+/// both an identity and the endpoints beside it. The endpoints belong to the
+/// identity this same response resolved to, which is why a label that resolved
+/// to none reports none.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct CallerZone {
+    /// The identity the first parseable `mabel=` record names.
+    pub identity: Option<IdentityId>,
+    /// How many `mabel=` records the response carried, parseable or not.
+    pub claims: usize,
+    /// The endpoints at the label, empty when no `mabel=` record resolved.
+    pub endpoints: Vec<EndpointId>,
+}
+
+/// Reads the records at a label a caller typed, under row 1 of the
+/// applicability matrix (proposal 006 section 6).
+///
+/// `GET /api/resolve?input=<hostname>` and `mabel sync fetch --from-host` both
+/// read a response this way, so one zone answers both the same.
+#[must_use]
+pub fn caller_zone(records: &[TxtRecord]) -> CallerZone {
+    let mut zone = CallerZone::default();
+    for record in records {
+        let value = record.value();
+        let Some(claimed) = mabel_claim(&value) else {
+            continue;
+        };
+        zone.claims += 1;
+        if zone.identity.is_none()
+            && let Ok(identity) = claimed.parse::<IdentityId>()
+        {
+            zone.identity = Some(identity);
+        }
+    }
+    // A label that resolved to no identity has no identity to offer endpoints
+    // for, so its endpoints records are not read out.
+    if zone.identity.is_some() {
+        zone.endpoints = endpoints_at_label(records);
+    }
+    zone
+}
+
 /// The endpoints at one label, read for an identity that merely claimed the
 /// hostname: only when a `mabel=` record at the same label names that identity
 /// (row 2 of the applicability matrix, proposal 006 section 6).

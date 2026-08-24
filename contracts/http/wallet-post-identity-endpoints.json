@@ -1,0 +1,82 @@
+{
+  "route": "/api/identities/:identity_id/endpoints",
+  "method": "POST",
+  "request": {
+    "endpoints": [
+      "fd2ijzgxe3qk64jeqbgwjgqcg2cnmyyrfwghb6oar2wbg5ddxvla",
+      "pl3jspahmwxbfiulckl5kqptsazcvqjiajo47ruerssx7vdfrgcq"
+    ]
+  },
+  "response": {
+    "ok": true,
+    "ledger_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+    "head_seq": 9,
+    "head_event": "leirth7nn7ckdxhgnfsmiww5xe2fzcqbg2nxfempertryefecbwq",
+    "event": {
+      "event_id": "leirth7nn7ckdxhgnfsmiww5xe2fzcqbg2nxfempertryefecbwq",
+      "seq": 9,
+      "ledger_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+      "prev": "kzzez6rzx7an64mreymhzj5cntka5uoanam74eqlwgtbp2f5yzia",
+      "timestamp_ms": 1700000600000,
+      "author_key": "2bflemtufo2kwoqtnc6umfpe43icesvxdiawxl4fecrtfslxq43q",
+      "payload_kind": "endpoint_advertisement",
+      "payload": {
+        "endpoints": [
+          "fd2ijzgxe3qk64jeqbgwjgqcg2cnmyyrfwghb6oar2wbg5ddxvla",
+          "pl3jspahmwxbfiulckl5kqptsazcvqjiajo47ruerssx7vdfrgcq"
+        ]
+      }
+    }
+  },
+  "errors": [
+    {
+      "status": 400,
+      "body": {
+        "ok": false,
+        "code": 10,
+        "message": "Schema error: endpoints must hold 0 to 8 distinct endpoint ids",
+        "details": {
+          "reason": "duplicate_endpoint",
+          "field": "endpoints",
+          "value": "fd2ijzgxe3qk64jeqbgwjgqcg2cnmyyrfwghb6oar2wbg5ddxvla"
+        }
+      }
+    },
+    {
+      "status": 400,
+      "body": {
+        "ok": false,
+        "code": 2,
+        "message": "endpoints is required",
+        "details": {
+          "reason": "missing_field",
+          "field": "endpoints"
+        }
+      }
+    },
+    {
+      "status": 403,
+      "body": {
+        "ok": false,
+        "code": 2,
+        "message": "this home holds no key that may append to sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+        "details": {
+          "reason": "no_local_signer",
+          "identity": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq"
+        }
+      }
+    },
+    {
+      "status": 409,
+      "body": {
+        "ok": false,
+        "code": 20,
+        "message": "Policy error: sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq already advertises these 2 endpoints: nothing would change",
+        "details": {
+          "reason": "no_op_endpoint_advertisement",
+          "identity_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq"
+        }
+      }
+    }
+  ]
+}

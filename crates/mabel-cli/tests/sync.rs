@@ -852,6 +852,99 @@ fn a_shared_link_round_trips_through_a_fetch_with_no_from() {
     witness.stop();
 }
 
+/// `witness add --endpoints` hands this call the machines to try while it
+/// resolves the ledger's witness identities (proposal 006 section 5, source 2).
+///
+/// The append discipline asks a shared ledger's witnesses where it ends before
+/// signing. A witness identity nothing on disk names a machine for leaves it
+/// nothing to ask, and `--endpoints` is what puts one in front of it, for this
+/// call alone: `node.json` keeps naming no witness afterwards.
+#[test]
+fn witness_add_endpoints_reach_a_witness_no_local_source_names() {
+    let exchange = TempDir::new().expect("a temp directory");
+    let file = |name: &str| exchange.path().join(name);
+
+    // A ledger two homes control: the discipline queries only a ledger this
+    // home cannot have moved on its own.
+    let alice_home = Home::new("wallet");
+    alice_home.create("alice");
+    let acme = alice_home.found("acme", "alice");
+    let bob_home = Home::new("wallet");
+    bob_home.create("bob");
+    let descriptor = file("bob.descriptor");
+    bob_home.export("bob", &descriptor);
+    let bundle = file("acme.invitation");
+    alice_home.json(&[
+        "membership",
+        "invite",
+        "--ledger",
+        "acme",
+        "--by",
+        "alice",
+        "--invitee",
+        &descriptor.display().to_string(),
+        "--role",
+        "controller",
+        "--out",
+        &bundle.display().to_string(),
+    ]);
+    let acceptance = file("bob.acceptance");
+    bob_home.json(&[
+        "membership",
+        "accept",
+        &bundle.display().to_string(),
+        "--as",
+        "bob",
+        "--out",
+        &acceptance.display().to_string(),
+        "--yes",
+    ]);
+    alice_home.json(&[
+        "membership",
+        "admit",
+        "--ledger",
+        "acme",
+        "--by",
+        "alice",
+        &acceptance.display().to_string(),
+    ]);
+
+    // The set is empty, so this first add asks nobody where the ledger ends.
+    let keeper = alice_home.create("keeper");
+    alice_home.json(&["witness", "add", "--identity", &acme, "--witness", &keeper]);
+
+    // Nothing names a machine for keeper: no advertisement, no `peers.json`
+    // hint, no `node.json` entry. The query has nothing to dial and the append
+    // lands.
+    let document = alice_home.json(&["witness", "add", "--identity", &acme, "--witness", &acme]);
+    assert_eq!(document["head_seq"], Value::from(4));
+
+    // The same command with a machine named for this call does dial it, and
+    // this one answers for nothing.
+    let (code, error) = alice_home.failure(&[
+        "witness",
+        "add",
+        "--identity",
+        &acme,
+        "--witness",
+        &keeper,
+        "--endpoints",
+        NOWHERE,
+    ]);
+    assert_eq!(code, 30, "{error}");
+    assert!(
+        text(&error["message"]).starts_with("Network error: "),
+        "{error}"
+    );
+
+    // The hint was never recorded: `node.json` configures no witness.
+    let config: Value = serde_json::from_slice(
+        &std::fs::read(alice_home.path().join("node.json")).expect("node.json reads"),
+    )
+    .expect("node.json is JSON");
+    assert_eq!(config["witnesses"], Value::Array(Vec::new()), "{config}");
+}
+
 /// Ticket 031: the story 002 flow continues on the invitee's home.
 ///
 /// Alice founds a shared ledger and admits bob as a controller. Bob's home

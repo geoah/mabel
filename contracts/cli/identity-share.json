@@ -8,8 +8,11 @@
       "document": {
         "ok": true,
         "identity_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
-        "link": "mabel://sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq?endpoints=zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq",
-        "endpoints": ["zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq"],
+        "link": "mabel://sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq?endpoints=fd2ijzgxe3qk64jeqbgwjgqcg2cnmyyrfwghb6oar2wbg5ddxvla,pl3jspahmwxbfiulckl5kqptsazcvqjiajo47ruerssx7vdfrgcq",
+        "endpoints": [
+          "fd2ijzgxe3qk64jeqbgwjgqcg2cnmyyrfwghb6oar2wbg5ddxvla",
+          "pl3jspahmwxbfiulckl5kqptsazcvqjiajo47ruerssx7vdfrgcq"
+        ],
         "endpoints_from": "advertised"
       }
     },

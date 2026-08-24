@@ -17,6 +17,8 @@
             "head_event": "ktlxt5b2thxkcrwgdijtfkiigwswyqd3cpci2irwsjvswccwcohg",
             "event_count": 4,
             "witnesses": [],
+            "endpoints": [],
+            "witness_endpoints": [],
             "trust": [
               {
                 "attestation_event": "ktlxt5b2thxkcrwgdijtfkiigwswyqd3cpci2irwsjvswccwcohg",
@@ -69,6 +71,8 @@
             "head_event": "4zd7ieh7syef2weczchbfm2imeihf7fjqg3at2ponndly5pvidzh",
             "event_count": 5,
             "witnesses": [],
+            "endpoints": [],
+            "witness_endpoints": [],
             "trust": [
               {
                 "attestation_event": "ljmhbp5ymdoadjxd3aiblaaqcxw6nomsr6bnxhsnrcqxq6tloywp",
@@ -133,6 +137,8 @@
             "head_event": "jqtnsb2me7mj5xsze4gavqklohqhdmkshfiz65khjmxtxjruqh2q",
             "event_count": 1,
             "witnesses": [],
+            "endpoints": [],
+            "witness_endpoints": [],
             "trust": [],
             "principals": [
               {
@@ -166,6 +172,8 @@
             "head_event": "6sfatp5p3oujktumkxkmkzd364u7d63onkqg2lumkc4oswfmxhzk",
             "event_count": 5,
             "witnesses": [],
+            "endpoints": [],
+            "witness_endpoints": [],
             "trust": [
               {
                 "attestation_event": "6sfatp5p3oujktumkxkmkzd364u7d63onkqg2lumkc4oswfmxhzk",
@@ -212,6 +220,53 @@
               "unreachable": null
             },
             "contact": null
+          },
+          {
+            "identity_id": "ovfp3btcnjyhwmyw3ldk3wmt2ppb5w5c5adyzcavswmyq7xkg7fq",
+            "declared_kind": "service",
+            "alias": "witness",
+            "created_at_ms": 1700000200000,
+            "head_seq": 2,
+            "head_event": "bowqc3kbqkm3o5jdlknni6od44iotjdcxpjsc7fobvs4zmevblma",
+            "event_count": 3,
+            "witnesses": [],
+            "endpoints": [
+              "fd2ijzgxe3qk64jeqbgwjgqcg2cnmyyrfwghb6oar2wbg5ddxvla"
+            ],
+            "witness_endpoints": [],
+            "trust": [],
+            "principals": [
+              {
+                "identity": "ovfp3btcnjyhwmyw3ldk3wmt2ppb5w5c5adyzcavswmyq7xkg7fq",
+                "active_key": "47mnbylftwwg5og546qucadua7x7kr56c277c4yldkkener3uqtq",
+                "role": "controller",
+                "is_root": true
+              }
+            ],
+            "open_invitation_count": 0,
+            "profile": {
+              "display_name": "Seed Witness",
+              "hostname": null,
+              "email": null,
+              "signing_principal": {
+                "identity": "ovfp3btcnjyhwmyw3ldk3wmt2ppb5w5c5adyzcavswmyq7xkg7fq",
+                "key": "47mnbylftwwg5og546qucadua7x7kr56c277c4yldkkener3uqtq"
+              },
+              "event": "urk5747jd4jlww2p3sogzviiird2lap5lsnbjvffl6dhiqhr5d7a",
+              "seq": 1
+            },
+            "verification": {
+              "hostname": null,
+              "status": "unclaimed",
+              "checked_at_ms": null,
+              "last_verified_at_ms": null,
+              "stale": false,
+              "detail": null,
+              "unreachable": null
+            },
+            "contact": null,
+            "active_key": "47mnbylftwwg5og546qucadua7x7kr56c277c4yldkkener3uqtq",
+            "reserve_commit": "cjdafskaekqvftu6fq5ymge3qhuq6erfh6tytmntjasq7pefoz4a"
           }
         ],
         "witnesses": [],
@@ -221,7 +276,7 @@
     },
     {
       "case": "seeded-with-a-witness",
-      "command": "mabel dev seed --peer <ticket> --json",
+      "command": "mabel dev seed --peer <ticket> --witness hshqit7ffycpljkvzsydtb2qhxn4hwophxfdqlnldkkced4t3qma --json",
       "exit_code": 0,
       "document": {
         "ok": true,
@@ -231,12 +286,15 @@
             "declared_kind": "person",
             "alias": "alice",
             "created_at_ms": 1700000000000,
-            "head_seq": 4,
-            "head_event": "vt3armbpytxvdlfsq7mw3qe64ihhsztv44ixiv4oikj444wubtoz",
-            "event_count": 5,
+            "head_seq": 5,
+            "head_event": "wmu7bfvmhcqq36tiheyc4a53hr4ycwke75bcexok2wb3tttwql3a",
+            "event_count": 6,
             "witnesses": [
-              "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq"
+              "ovfp3btcnjyhwmyw3ldk3wmt2ppb5w5c5adyzcavswmyq7xkg7fq",
+              "hshqit7ffycpljkvzsydtb2qhxn4hwophxfdqlnldkkced4t3qma"
             ],
+            "endpoints": [],
+            "witness_endpoints": [],
             "trust": [
               {
                 "attestation_event": "ktlxt5b2thxkcrwgdijtfkiigwswyqd3cpci2irwsjvswccwcohg",
@@ -285,12 +343,15 @@
             "declared_kind": "person",
             "alias": "bob",
             "created_at_ms": 1700000060000,
-            "head_seq": 5,
-            "head_event": "x5qnmxl7deauocabfyvh6mqc7gqrbtnhqxbgc7xvyrfrd4dxmttg",
-            "event_count": 6,
+            "head_seq": 6,
+            "head_event": "hgtc43xfzbilfpri4wzfqzfid3mzylquiixu5xis32gr2y6lrxpa",
+            "event_count": 7,
             "witnesses": [
-              "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq"
+              "ovfp3btcnjyhwmyw3ldk3wmt2ppb5w5c5adyzcavswmyq7xkg7fq",
+              "hshqit7ffycpljkvzsydtb2qhxn4hwophxfdqlnldkkced4t3qma"
             ],
+            "endpoints": [],
+            "witness_endpoints": [],
             "trust": [
               {
                 "attestation_event": "ljmhbp5ymdoadjxd3aiblaaqcxw6nomsr6bnxhsnrcqxq6tloywp",
@@ -351,12 +412,15 @@
             "declared_kind": "person",
             "alias": "carol",
             "created_at_ms": 1700000120000,
-            "head_seq": 1,
-            "head_event": "mbbbku273mpldii4ikzx2lkw2mas2nad6v2yrigyerytyinygnhu",
-            "event_count": 2,
+            "head_seq": 2,
+            "head_event": "rbvyeeew7bq36d2wmh57ou2qq6hkf4zjtac7iay76u54ilbjq62a",
+            "event_count": 3,
             "witnesses": [
-              "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq"
+              "ovfp3btcnjyhwmyw3ldk3wmt2ppb5w5c5adyzcavswmyq7xkg7fq",
+              "hshqit7ffycpljkvzsydtb2qhxn4hwophxfdqlnldkkced4t3qma"
             ],
+            "endpoints": [],
+            "witness_endpoints": [],
             "trust": [],
             "principals": [
               {
@@ -386,12 +450,15 @@
             "declared_kind": "organization",
             "alias": "acme",
             "created_at_ms": 1700000180000,
-            "head_seq": 5,
-            "head_event": "eucgljk4topb7m2cy6ctb35qsm5ti5tsbizc53injr3e6fru2g2c",
-            "event_count": 6,
+            "head_seq": 6,
+            "head_event": "x7js36fzmn3q7nskgmjn7jiw6i3vl7gqlecn7hk5whvvrm7vw6cq",
+            "event_count": 7,
             "witnesses": [
-              "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq"
+              "ovfp3btcnjyhwmyw3ldk3wmt2ppb5w5c5adyzcavswmyq7xkg7fq",
+              "hshqit7ffycpljkvzsydtb2qhxn4hwophxfdqlnldkkced4t3qma"
             ],
+            "endpoints": [],
+            "witness_endpoints": [],
             "trust": [
               {
                 "attestation_event": "6sfatp5p3oujktumkxkmkzd364u7d63onkqg2lumkc4oswfmxhzk",
@@ -438,23 +505,74 @@
               "unreachable": null
             },
             "contact": null
+          },
+          {
+            "identity_id": "ovfp3btcnjyhwmyw3ldk3wmt2ppb5w5c5adyzcavswmyq7xkg7fq",
+            "declared_kind": "service",
+            "alias": "witness",
+            "created_at_ms": 1700000200000,
+            "head_seq": 4,
+            "head_event": "ycz6lxu4migiux6wrpqip4u25ttqm27b2vqh4nd3dga4kzqcegeq",
+            "event_count": 5,
+            "witnesses": [
+              "ovfp3btcnjyhwmyw3ldk3wmt2ppb5w5c5adyzcavswmyq7xkg7fq",
+              "hshqit7ffycpljkvzsydtb2qhxn4hwophxfdqlnldkkced4t3qma"
+            ],
+            "endpoints": [
+              "fd2ijzgxe3qk64jeqbgwjgqcg2cnmyyrfwghb6oar2wbg5ddxvla"
+            ],
+            "witness_endpoints": [],
+            "trust": [],
+            "principals": [
+              {
+                "identity": "ovfp3btcnjyhwmyw3ldk3wmt2ppb5w5c5adyzcavswmyq7xkg7fq",
+                "active_key": "47mnbylftwwg5og546qucadua7x7kr56c277c4yldkkener3uqtq",
+                "role": "controller",
+                "is_root": true
+              }
+            ],
+            "open_invitation_count": 0,
+            "profile": {
+              "display_name": "Seed Witness",
+              "hostname": null,
+              "email": null,
+              "signing_principal": {
+                "identity": "ovfp3btcnjyhwmyw3ldk3wmt2ppb5w5c5adyzcavswmyq7xkg7fq",
+                "key": "47mnbylftwwg5og546qucadua7x7kr56c277c4yldkkener3uqtq"
+              },
+              "event": "urk5747jd4jlww2p3sogzviiird2lap5lsnbjvffl6dhiqhr5d7a",
+              "seq": 1
+            },
+            "verification": {
+              "hostname": null,
+              "status": "unclaimed",
+              "checked_at_ms": null,
+              "last_verified_at_ms": null,
+              "stale": false,
+              "detail": null,
+              "unreachable": null
+            },
+            "contact": null,
+            "active_key": "47mnbylftwwg5og546qucadua7x7kr56c277c4yldkkener3uqtq",
+            "reserve_commit": "cjdafskaekqvftu6fq5ymge3qhuq6erfh6tytmntjasq7pefoz4a"
           }
         ],
         "witnesses": [
-          "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq"
+          "ovfp3btcnjyhwmyw3ldk3wmt2ppb5w5c5adyzcavswmyq7xkg7fq",
+          "hshqit7ffycpljkvzsydtb2qhxn4hwophxfdqlnldkkced4t3qma"
         ],
         "pushed": [
           {
             "ledger_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
-            "head_seq": 4,
-            "head_event": "vt3armbpytxvdlfsq7mw3qe64ihhsztv44ixiv4oikj444wubtoz",
+            "head_seq": 5,
+            "head_event": "wmu7bfvmhcqq36tiheyc4a53hr4ycwke75bcexok2wb3tttwql3a",
             "results": [
               {
                 "endpoint": "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq",
                 "status": "accepted",
                 "binding": "verified",
-                "head_seq": 4,
-                "stored": 5,
+                "head_seq": 5,
+                "stored": 6,
                 "reject_code": null,
                 "at_seq": null,
                 "message": null
@@ -463,15 +581,15 @@
           },
           {
             "ledger_id": "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq",
-            "head_seq": 5,
-            "head_event": "x5qnmxl7deauocabfyvh6mqc7gqrbtnhqxbgc7xvyrfrd4dxmttg",
+            "head_seq": 6,
+            "head_event": "hgtc43xfzbilfpri4wzfqzfid3mzylquiixu5xis32gr2y6lrxpa",
             "results": [
               {
                 "endpoint": "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq",
                 "status": "accepted",
                 "binding": "verified",
-                "head_seq": 5,
-                "stored": 6,
+                "head_seq": 6,
+                "stored": 7,
                 "reject_code": null,
                 "at_seq": null,
                 "message": null
@@ -480,15 +598,15 @@
           },
           {
             "ledger_id": "jqtnsb2me7mj5xsze4gavqklohqhdmkshfiz65khjmxtxjruqh2q",
-            "head_seq": 1,
-            "head_event": "mbbbku273mpldii4ikzx2lkw2mas2nad6v2yrigyerytyinygnhu",
+            "head_seq": 2,
+            "head_event": "rbvyeeew7bq36d2wmh57ou2qq6hkf4zjtac7iay76u54ilbjq62a",
             "results": [
               {
                 "endpoint": "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq",
                 "status": "accepted",
                 "binding": "verified",
-                "head_seq": 1,
-                "stored": 2,
+                "head_seq": 2,
+                "stored": 3,
                 "reject_code": null,
                 "at_seq": null,
                 "message": null
@@ -497,15 +615,32 @@
           },
           {
             "ledger_id": "2okqwhextnpkpmydrgrkk563vbehcklffwfzidxlh5dslawjmn6a",
-            "head_seq": 5,
-            "head_event": "eucgljk4topb7m2cy6ctb35qsm5ti5tsbizc53injr3e6fru2g2c",
+            "head_seq": 6,
+            "head_event": "x7js36fzmn3q7nskgmjn7jiw6i3vl7gqlecn7hk5whvvrm7vw6cq",
             "results": [
               {
                 "endpoint": "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq",
                 "status": "accepted",
                 "binding": "verified",
-                "head_seq": 5,
-                "stored": 6,
+                "head_seq": 6,
+                "stored": 7,
+                "reject_code": null,
+                "at_seq": null,
+                "message": null
+              }
+            ]
+          },
+          {
+            "ledger_id": "ovfp3btcnjyhwmyw3ldk3wmt2ppb5w5c5adyzcavswmyq7xkg7fq",
+            "head_seq": 4,
+            "head_event": "ycz6lxu4migiux6wrpqip4u25ttqm27b2vqh4nd3dga4kzqcegeq",
+            "results": [
+              {
+                "endpoint": "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq",
+                "status": "accepted",
+                "binding": "verified",
+                "head_seq": 4,
+                "stored": 5,
                 "reject_code": null,
                 "at_seq": null,
                 "message": null
@@ -553,11 +688,20 @@
               "hostname": null,
               "verification_status": "unclaimed",
               "provenance": "profile"
+            },
+            {
+              "identity_id": "ovfp3btcnjyhwmyw3ldk3wmt2ppb5w5c5adyzcavswmyq7xkg7fq",
+              "display_name": "Seed Witness",
+              "email": null,
+              "alias": "witness",
+              "hostname": null,
+              "verification_status": "unclaimed",
+              "provenance": "profile"
             }
           ],
-          "node_count": 4,
+          "node_count": 5,
           "edge_count": 4,
-          "fetch_count": 4,
+          "fetch_count": 5,
           "truncated": false,
           "truncated_by": null,
           "equivocations": [],

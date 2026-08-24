@@ -189,7 +189,7 @@ async fn the_node_document_matches_the_fixture_and_names_no_role() {
     let fixed = Fixed::new().await;
     let node = fixed.service.node().await.expect("the node answers");
     let actual = document(&node);
-    same_shape(&actual, &fixture_response("wallet-get-node.json"), "node");
+    same_shape(&actual, &fixture_response("node-get-node.json"), "node");
 
     assert!(
         actual.get("role").is_none(),

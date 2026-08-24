@@ -11,6 +11,7 @@ use iroh_base::{EndpointId, PublicKey};
 use mabel_core::id::ID_STR_LEN;
 use mabel_core::{EventId, IdentityId};
 use mabel_node::api::documents::Id;
+use mabel_node::verification::check_hostname;
 
 use crate::error::{CliError, Result};
 
@@ -72,6 +73,29 @@ pub fn parse_endpoint(raw: &str) -> Result<EndpointId> {
         .and_then(|bytes| bytes.try_into().ok())
         .ok_or_else(|| malformed_endpoint(raw))?;
     EndpointId::from_bytes(&bytes).map_err(|_| malformed_endpoint(raw))
+}
+
+/// Parses a hostname typed on the command line.
+///
+/// The syntax a profile hostname must satisfy (proposal 003 section 2), so a
+/// name a flag accepts is a name a ledger could claim. Trimmed and lowercased,
+/// the way `GET /api/resolve?input=` reads one.
+///
+/// # Errors
+///
+/// Returns code 2 with reason `malformed_hostname`: a flag value that is not a
+/// hostname is a command line to fix, not a schema failure.
+pub fn parse_hostname(raw: &str) -> Result<String> {
+    let trimmed = raw.trim().to_ascii_lowercase();
+    check_hostname(&trimmed).map_err(|detail| {
+        CliError::usage(
+            "malformed_hostname",
+            format!("{trimmed} is not a hostname: {detail}"),
+        )
+        .with_detail("value", trimmed.clone())
+        .with_detail("detail", detail)
+    })?;
+    Ok(trimmed)
 }
 
 fn malformed_endpoint(raw: &str) -> CliError {

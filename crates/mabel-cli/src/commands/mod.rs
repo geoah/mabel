@@ -148,8 +148,9 @@ fn dispatch(ctx: &Context, cli: &Cli) -> Result<Outcome> {
             WitnessCommand::Add {
                 identity,
                 witness,
+                endpoints,
                 append,
-            } => witness::add(ctx, identity, witness, append),
+            } => witness::add(ctx, identity, witness, endpoints, append),
             WitnessCommand::SetDefault { witness, endpoints } => {
                 witness::set_default(ctx, witness, endpoints)
             }
@@ -163,12 +164,16 @@ fn dispatch(ctx: &Context, cli: &Cli) -> Result<Outcome> {
                 ledger_id,
                 from,
                 from_witness,
+                from_host,
                 peer,
             } => sync::fetch(
                 ctx,
                 ledger_id,
-                from.as_deref(),
-                from_witness.as_deref(),
+                sync::Source {
+                    from: from.as_deref(),
+                    witness: from_witness.as_deref(),
+                    host: from_host.as_deref(),
+                },
                 peer,
             ),
         },

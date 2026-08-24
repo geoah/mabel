@@ -21,6 +21,92 @@
       }
     },
     {
+      "case": "no-local-signer",
+      "command": "POST /api/identities/sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq/endpoints",
+      "exit_code": 2,
+      "document": {
+        "ok": false,
+        "code": 2,
+        "message": "this home holds no key that may append to sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+        "details": {
+          "reason": "no_local_signer",
+          "identity": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq"
+        }
+      }
+    },
+    {
+      "case": "unresolvable-witness",
+      "command": "mabel witness set-default --witness jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq --json",
+      "exit_code": 2,
+      "document": {
+        "ok": false,
+        "code": 2,
+        "message": "no endpoint is known for the witness jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq: pass --endpoints, or fetch its ledger first",
+        "details": {
+          "reason": "unresolvable_witness",
+          "witness": "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq",
+          "endpoints_tried": []
+        }
+      }
+    },
+    {
+      "case": "endpoint-not-identity",
+      "command": "GET /api/witnesses/zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq/holdings",
+      "exit_code": 2,
+      "document": {
+        "ok": false,
+        "code": 2,
+        "message": "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq is a machine this home knows, not a witness identity",
+        "details": {
+          "reason": "endpoint_not_identity",
+          "value": "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq"
+        }
+      }
+    },
+    {
+      "case": "conflicting-source",
+      "command": "mabel sync fetch sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq --from zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq --from-witness jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq --json",
+      "exit_code": 2,
+      "document": {
+        "ok": false,
+        "code": 2,
+        "message": "--from names an endpoint and --from-witness names an identity: give one",
+        "details": {
+          "reason": "conflicting_source",
+          "parameter": "--from-witness"
+        }
+      }
+    },
+    {
+      "case": "invalid-mabel-link",
+      "command": "mabel sync fetch mabel://sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq%2f --json",
+      "exit_code": 2,
+      "document": {
+        "ok": false,
+        "code": 2,
+        "message": "mabel://sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq%2f is not a mabel link: it holds percent-encoding",
+        "details": {
+          "reason": "invalid_mabel_link",
+          "input": "mabel://sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq%2f",
+          "detail": "it holds percent-encoding"
+        }
+      }
+    },
+    {
+      "case": "unknown-query-parameter",
+      "command": "GET /api/resolve?input=alice.example&depth=2",
+      "exit_code": 2,
+      "document": {
+        "ok": false,
+        "code": 2,
+        "message": "depth is not a parameter of this route",
+        "details": {
+          "reason": "unknown_query_parameter",
+          "parameter": "depth"
+        }
+      }
+    },
+    {
       "case": "schema",
       "command": "mabel org accept ./acme.invite --as bob --out ./acme.acceptance --json",
       "exit_code": 10,

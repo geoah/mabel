@@ -31,7 +31,7 @@ use super::service::{
 /// One file under `contracts/http/`.
 #[derive(Debug, Clone, Copy)]
 pub struct Fixture {
-    /// The file name, `wallet-get-node.json` and so on.
+    /// The file name, `node-get-node.json` and so on.
     pub name: &'static str,
     /// Its contents.
     pub json: &'static str,
@@ -47,8 +47,8 @@ macro_rules! fixture {
 }
 
 /// Every frozen HTTP fixture, in the order `contracts/README.md` indexes them.
-pub const FIXTURES: [Fixture; 28] = [
-    fixture!("wallet-get-node"),
+pub const FIXTURES: [Fixture; 29] = [
+    fixture!("node-get-node"),
     fixture!("wallet-get-identities"),
     fixture!("wallet-post-identities"),
     fixture!("wallet-get-known-identities"),
@@ -67,6 +67,7 @@ pub const FIXTURES: [Fixture; 28] = [
     fixture!("wallet-get-graph"),
     fixture!("wallet-post-graph-sync"),
     fixture!("wallet-post-identity-witnesses"),
+    fixture!("wallet-post-identity-endpoints"),
     fixture!("wallet-get-identity-memberships"),
     fixture!("wallet-post-membership-invitations"),
     fixture!("wallet-post-membership-acceptances"),
@@ -287,6 +288,8 @@ pub struct StubNodeService {
     pub identity_keys: IdentityKeys,
     /// `POST /api/identities/{identity_id}/witnesses`.
     pub witnesses_appended: Appended,
+    /// `POST /api/identities/{identity_id}/endpoints`.
+    pub endpoints_appended: Appended,
     /// `POST /api/identities/{identity_id}/profile`.
     pub profile_replaced: ProfileReplaced,
     /// `POST /api/identities/{identity_id}/verification`.
@@ -350,7 +353,7 @@ impl StubNodeService {
             Fixture::named("wallet-get-identities.json").parse_response();
         let identity: IdentityView = Fixture::named("wallet-get-identity.json").parse_response();
         Self {
-            node: Fixture::named("wallet-get-node.json").parse_response(),
+            node: Fixture::named("node-get-node.json").parse_response(),
             identities: identities.identities,
             created_identity: Fixture::named("wallet-post-identities.json").parse_response(),
             known_identities: Fixture::named("wallet-get-known-identities.json").parse_response(),
@@ -358,6 +361,8 @@ impl StubNodeService {
             identity_ledger: Fixture::named("wallet-get-identity-ledger.json").parse_response(),
             identity_keys: Fixture::named("wallet-get-identity-keys.json").parse_response(),
             witnesses_appended: Fixture::named("wallet-post-identity-witnesses.json")
+                .parse_response(),
+            endpoints_appended: Fixture::named("wallet-post-identity-endpoints.json")
                 .parse_response(),
             profile_replaced: Fixture::named("wallet-post-identity-profile.json").parse_response(),
             verification_checked: Fixture::named("wallet-post-identity-verification.json")
@@ -470,13 +475,14 @@ impl NodeService for StubNodeService {
         )
     }
 
-    /// Both list appends answer the one `Appended` document, so the
-    /// advertisement route needs no second fixture: the shape is frozen by
-    /// `wallet-post-identity-witnesses.json` (ticket 038 adds the file).
+    /// Both list appends answer the one `Appended` document, and each has its
+    /// own fixture because the two differ in `payload_kind` and in the key
+    /// their `payload` holds: `witness_set` with `witnesses`,
+    /// `endpoint_advertisement` with `endpoints`.
     fn set_endpoints(&self, identity_id: Id, endpoints: Vec<Id>) -> ServiceFuture<'_, Appended> {
         self.answer(
             NodeCall::SetEndpoints(identity_id, endpoints),
-            self.witnesses_appended.clone(),
+            self.endpoints_appended.clone(),
         )
     }
 

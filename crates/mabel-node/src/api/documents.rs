@@ -543,6 +543,14 @@ pub struct Identity {
     /// The identities the latest `WitnessSet` names, which are the identities
     /// that may keep this ledger (proposal 006 section 1).
     pub witnesses: Vec<Id>,
+    /// The machines the latest `EndpointAdvertisement` names, which are where
+    /// this identity answers (proposal 006 section 2). Empty when the chain
+    /// advertises none.
+    pub endpoints: Vec<Id>,
+    /// The endpoints the latest `WitnessConfig` names, payload tag 11, which
+    /// nothing writes any more and every chain written before proposal 006 may
+    /// hold. Empty on a chain that carries none.
+    pub witness_endpoints: Vec<Id>,
     /// Attestations this identity issued, revoked ones included.
     pub trust: Vec<TrustEntry>,
     /// The folded principal set, by ascending identity id (proposal 002

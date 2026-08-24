@@ -17,6 +17,8 @@
             "head_event": "th2a3dvusqj6x5dwkpsg7sltxdu74ajyyvn4n3ypsll4yl2iq5la",
             "event_count": 5,
             "witnesses": [],
+            "endpoints": [],
+            "witness_endpoints": [],
             "trust": [],
             "principals": [
               {
@@ -65,6 +67,8 @@
               "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq",
               "5yy7qpeiu4jbtjx47g7obwu3yitcaweplik2mfcvknie36letzoa"
             ],
+            "endpoints": [],
+            "witness_endpoints": [],
             "trust": [
               {
                 "attestation_event": "65cssg5tnr3gyxe2rwhsgqc3nct3pwg2bqxr2oxpelejuoorlsnq",

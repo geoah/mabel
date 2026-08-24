@@ -142,3 +142,45 @@ fn failed(error: anyhow::Error) -> CliError {
         Err(error) => CliError::network("node_unavailable", error.to_string()),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::ServedNode;
+
+    /// The shutdown document is frozen by `contracts/cli/serve.json`, whose one
+    /// case covers `mabel serve` and its two hidden aliases: one command, one
+    /// case (proposal 006 section 8).
+    #[test]
+    fn the_shutdown_document_carries_the_keys_the_fixture_freezes() {
+        const SERVE: &str = include_str!("../../../../contracts/cli/serve.json");
+        let fixture: serde_json::Value = serde_json::from_str(SERVE).expect("valid JSON");
+        let cases = fixture["cases"].as_array().expect("cases");
+        assert_eq!(cases.len(), 1, "one command, one case");
+        assert_eq!(cases[0]["case"], serde_json::json!("served-until-ctrl-c"));
+
+        let served = ServedNode {
+            endpoint_id: crate::ids::key(&iroh_base::SecretKey::from_bytes(&[7u8; 32]).public()),
+            http_bind: "127.0.0.1:9080".parse().expect("an address"),
+            iroh_bind: vec!["0.0.0.0:9071".parse().expect("an address")],
+            identity_count: 2,
+            ledger_count: 4,
+            fork_count: 1,
+            witness_for: Vec::new(),
+        };
+        let mut rendered = serde_json::to_value(&served).expect("the document serializes");
+        rendered
+            .as_object_mut()
+            .expect("an object")
+            .insert("ok".to_owned(), serde_json::json!(true));
+
+        let mut expected: Vec<&String> = cases[0]["document"]
+            .as_object()
+            .expect("a document")
+            .keys()
+            .collect();
+        let mut actual: Vec<&String> = rendered.as_object().expect("an object").keys().collect();
+        expected.sort();
+        actual.sort();
+        assert_eq!(actual, expected, "the fixture and the document disagree");
+    }
+}

@@ -28,8 +28,18 @@ const BOB: &str = "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq";
 const CAROL: &str = "jqtnsb2me7mj5xsze4gavqklohqhdmkshfiz65khjmxtxjruqh2q";
 const ACME: &str = "2okqwhextnpkpmydrgrkk563vbehcklffwfzidxlh5dslawjmn6a";
 const ATTESTATION: &str = "65cssg5tnr3gyxe2rwhsgqc3nct3pwg2bqxr2oxpelejuoorlsnq";
-const WITNESS_ONE: &str = "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq";
-const WITNESS_TWO: &str = "5yy7qpeiu4jbtjx47g7obwu3yitcaweplik2mfcvknie36letzoa";
+/// The two machines `wallet-get-witnesses.json` names, one per witness.
+const ENDPOINT_ONE: &str = "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq";
+const ENDPOINT_TWO: &str = "5yy7qpeiu4jbtjx47g7obwu3yitcaweplik2mfcvknie36letzoa";
+/// The two witness identities Alice's `WitnessSet` names. A witness is an
+/// identity and never an endpoint id (proposal 006 section 1).
+const WITNESS_ONE: &str = "ovfp3btcnjyhwmyw3ldk3wmt2ppb5w5c5adyzcavswmyq7xkg7fq";
+const WITNESS_TWO: &str = "q7hnsnk6ycwjyzwbmqjcaxwlmxvvfjbmwzq4gz4dbtvpojjuh3fq";
+/// This node's own endpoint id, the first machine `node-get-node.json` names
+/// and the first Alice advertises.
+const NODE_ENDPOINT: &str = "fd2ijzgxe3qk64jeqbgwjgqcg2cnmyyrfwghb6oar2wbg5ddxvla";
+/// The second machine of `wallet-post-identity-endpoints.json`.
+const SECOND_MACHINE: &str = "pl3jspahmwxbfiulckl5kqptsazcvqjiajo47ruerssx7vdfrgcq";
 /// The hostname `wallet-get-resolve.json` looks up, and the one Alice's
 /// profile claims.
 const HOSTNAME: &str = "alice.example";
@@ -42,7 +52,7 @@ const ORIGIN: &str = "http://127.0.0.1:9080";
 /// The reasons this module produces itself, before any service is called.
 /// Every other reason in a fixture's `errors` array comes from a service, and
 /// the round-trip test below drives those through the stub.
-const API_OWNED_REASONS: [&str; 15] = [
+const API_OWNED_REASONS: [&str; 16] = [
     "host_not_loopback",
     "origin_mismatch",
     "content_type_not_json",
@@ -58,6 +68,7 @@ const API_OWNED_REASONS: [&str; 15] = [
     "invalid_mabel_link",
     "malformed_base64",
     "duplicate_witness",
+    "duplicate_endpoint",
 ];
 
 fn id(raw: &str) -> Id {
@@ -122,7 +133,7 @@ fn concrete_route(route: &str) -> String {
         .replace(":identity_id", ALICE)
         .replace(":ledger_id", ALICE)
         .replace(":event_id", ATTESTATION)
-        .replace(":endpoint_id", WITNESS_ONE)
+        .replace(":endpoint_id", ENDPOINT_ONE)
         .replace(":hostname", HOSTNAME)
 }
 
@@ -185,16 +196,6 @@ fn error_from_fixture(status: StatusCode, body: &Value) -> ServiceError {
 }
 
 // ---------------------------------------------------------------- wallet ----
-
-#[tokio::test]
-async fn wallet_get_node_matches_the_fixture() {
-    let name = "wallet-get-node.json";
-    let stub = Arc::new(StubNodeService::new());
-    let (status, body) = run(name, &stub).await;
-    expect_response(name, status, &body);
-    assert_eq!(body["storage_capacity"], json!(2_147_483_648_u64));
-    assert_eq!(stub.call(), NodeCall::Node);
-}
 
 #[tokio::test]
 async fn wallet_get_identities_matches_the_fixture_and_lists_organizations() {
@@ -361,14 +362,21 @@ async fn wallet_get_identity_ledger_matches_the_fixture_and_passes_since_through
         NodeCall::IdentityLedger(
             id(ALICE),
             EventPageRequest {
-                since: 2,
+                since: 1,
                 limit: 512
             }
         )
     );
-    // `?since=` is inclusive: the fixture asks for 2 and gets seq 2 first.
-    assert_eq!(body["since"], json!(2));
-    assert_eq!(body["events"][0]["seq"], json!(2));
+    // `?since=` is inclusive: the fixture asks for 1 and gets seq 1 first.
+    assert_eq!(body["since"], json!(1));
+    assert_eq!(body["events"][0]["seq"], json!(1));
+    // The page starts at the `WitnessSet`, so the route renders payload tag 19
+    // (proposal 006 section 3).
+    assert_eq!(body["events"][0]["payload_kind"], json!("witness_set"));
+    assert_eq!(
+        body["events"][0]["payload"]["witnesses"],
+        json!([WITNESS_ONE, WITNESS_TWO])
+    );
 }
 
 #[tokio::test]
@@ -661,6 +669,29 @@ async fn wallet_post_identity_witnesses_matches_the_fixture() {
     );
 }
 
+/// The advertisement route appends one `EndpointAdvertisement`, whole
+/// replacement, and answers the same `Appended` document the witness route
+/// does with the other payload (proposal 006 section 8).
+#[tokio::test]
+async fn wallet_post_identity_endpoints_matches_the_fixture() {
+    let name = "wallet-post-identity-endpoints.json";
+    let stub = Arc::new(StubNodeService::new());
+    let (status, body) = run(name, &stub).await;
+    expect_response(name, status, &body);
+    assert_eq!(
+        stub.call(),
+        NodeCall::SetEndpoints(id(ALICE), vec![id(NODE_ENDPOINT), id(SECOND_MACHINE)])
+    );
+    assert_eq!(
+        body["event"]["payload_kind"],
+        json!("endpoint_advertisement")
+    );
+    assert_eq!(
+        body["event"]["payload"]["endpoints"],
+        json!([NODE_ENDPOINT, SECOND_MACHINE])
+    );
+}
+
 #[tokio::test]
 async fn wallet_get_identity_memberships_matches_the_fixture() {
     let name = "wallet-get-identity-memberships.json";
@@ -816,7 +847,7 @@ async fn wallet_post_identity_fetch_matches_the_fixture() {
         NodeCall::FetchIdentity(FetchIdentity {
             from_witness: None,
             identity_id: id(ALICE),
-            from: Some(id(WITNESS_ONE)),
+            from: Some(id(ENDPOINT_ONE)),
         })
     );
     // The route answers the document `mabel sync fetch --json` prints, down
@@ -890,7 +921,7 @@ async fn wallet_get_resolve_takes_an_identity_id_and_a_link() {
 
     let stub = Arc::new(StubNodeService::new());
     let uri = format!(
-        "/api/resolve?input=mabel%3A%2F%2F{ALICE}%3Fendpoints%3D{WITNESS_ONE}%2C{WITNESS_TWO}"
+        "/api/resolve?input=mabel%3A%2F%2F{ALICE}%3Fendpoints%3D{ENDPOINT_ONE}%2C{ENDPOINT_TWO}"
     );
     let (status, _) = send(node(&stub), request("GET", &uri, &Value::Null)).await;
     assert_eq!(status, StatusCode::OK);
@@ -898,7 +929,7 @@ async fn wallet_get_resolve_takes_an_identity_id_and_a_link() {
         stub.call(),
         NodeCall::Resolve(ResolveInput::Link {
             identity_id: id(ALICE),
-            endpoints: vec![id(WITNESS_ONE), id(WITNESS_TWO)],
+            endpoints: vec![id(ENDPOINT_ONE), id(ENDPOINT_TWO)],
         })
     );
 }
@@ -954,7 +985,7 @@ async fn wallet_get_witnesses_matches_the_fixture_and_says_where_each_is_known_f
         .iter()
         .find(|witness| witness["named_by"] == json!([ACME, ALICE]))
         .expect("the fixture lists a witness two ledgers name");
-    assert_eq!(shared["endpoints"][0]["endpoint_id"], json!(WITNESS_ONE));
+    assert_eq!(shared["endpoints"][0]["endpoint_id"], json!(ENDPOINT_ONE));
     assert_eq!(shared["endpoints"][0]["binding"], json!("verified"));
     assert!(
         witnesses.iter().any(|witness| witness["endpoints"]
@@ -1008,7 +1039,7 @@ async fn wallet_get_witness_holdings_matches_the_fixture_and_pages_like_a_list()
 #[tokio::test]
 async fn the_old_witness_ledgers_path_is_no_longer_a_route() {
     let stub = Arc::new(StubNodeService::new());
-    let uri = format!("/api/witnesses/{WITNESS_ONE}/ledgers");
+    let uri = format!("/api/witnesses/{ENDPOINT_ONE}/ledgers");
     let (status, body) = send(node(&stub), request("GET", &uri, &Value::Null)).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
     assert_eq!(body["details"]["reason"], json!("unknown_route"));
@@ -1068,11 +1099,12 @@ async fn there_is_no_verify_route() {
 /// is `identity_count` and `witness_for` (proposal 006 section 8).
 #[tokio::test]
 async fn node_get_node_matches_the_fixture_and_names_no_role() {
-    let name = "wallet-get-node.json";
+    let name = "node-get-node.json";
     let stub = Arc::new(StubNodeService::new());
     let (status, body) = run(name, &stub).await;
     expect_response(name, status, &body);
     assert_eq!(stub.call(), NodeCall::Node);
+    assert_eq!(body["storage_capacity"], json!(2_147_483_648_u64));
     let document = body.as_object().expect("a document");
     assert!(!document.contains_key("role"), "{document:?}");
     assert!(document.contains_key("identity_count") && document.contains_key("witness_for"));
@@ -1163,6 +1195,46 @@ fn every_file_under_contracts_http_has_a_fixture_and_a_test() {
     );
 }
 
+/// The index of `contracts/README.md` names every fixture and no file that is
+/// gone: a renamed fixture with a stale row sends a reader to a file that does
+/// not exist.
+#[test]
+fn the_readme_index_names_every_fixture_and_nothing_else() {
+    const README: &str = include_str!("../../../../contracts/README.md");
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../contracts");
+
+    let mut on_disk: Vec<String> = ["http", "cli"]
+        .into_iter()
+        .flat_map(|directory| {
+            std::fs::read_dir(root.join(directory))
+                .unwrap_or_else(|error| panic!("contracts/{directory}: {error}"))
+                .map(move |entry| {
+                    let name = entry.expect("a dir entry").file_name();
+                    format!("{directory}/{}", name.to_string_lossy())
+                })
+        })
+        .filter(|name| name.ends_with(".json"))
+        .collect();
+    on_disk.sort();
+
+    // Every index row opens `| `<directory>/<file>.json` |`.
+    let mut indexed: Vec<String> = README
+        .lines()
+        .filter_map(|line| line.strip_prefix("| `"))
+        .filter_map(|line| line.split_once("` |").map(|(name, _)| name))
+        .filter(|name| {
+            (name.starts_with("http/") || name.starts_with("cli/")) && name.ends_with(".json")
+        })
+        .map(ToOwned::to_owned)
+        .collect();
+    indexed.sort();
+
+    assert_eq!(
+        on_disk, indexed,
+        "contracts/README.md and contracts/ disagree about which fixtures exist"
+    );
+}
+
 #[test]
 fn both_identity_routes_return_one_document_with_explicit_nulls() {
     // Proposal 003 section 5: the list rows and the show document are one
@@ -1219,7 +1291,12 @@ fn the_envelope_reproduces_every_case_of_the_cli_error_fixture() {
     const ERRORS: &str = include_str!("../../../../contracts/cli/errors.json");
     let fixture: Value = serde_json::from_str(ERRORS).expect("valid JSON");
     let cases = fixture["cases"].as_array().expect("cases");
-    assert_eq!(cases.len(), 9, "one case per code and layer prefix");
+    assert_eq!(
+        cases.len(),
+        15,
+        "one case per code and layer prefix, plus the six code 2 reasons \
+         proposal 006 added"
+    );
     for case in cases {
         let name = case["case"].as_str().expect("a case name");
         let document = &case["document"];
@@ -1279,7 +1356,7 @@ async fn every_service_error_example_renders_as_the_fixture_pins_it() {
 #[tokio::test]
 async fn a_host_that_is_not_loopback_answers_the_fixture_rejection() {
     for (fixture, host) in [
-        ("wallet-get-node.json", "evil.example"),
+        ("node-get-node.json", "evil.example"),
         ("wallet-get-identities.json", "localhost.example"),
     ] {
         let (expected_status, expected) = fixture_error(fixture, "host_not_loopback");
@@ -1636,6 +1713,33 @@ async fn a_duplicate_witness_answers_the_fixture_rejection() {
     let (status, answered) = send(node(&stub), request("POST", &uri, &body)).await;
     assert_eq!(status, expected_status);
     assert_eq!(answered, expected);
+}
+
+#[tokio::test]
+async fn a_duplicate_endpoint_answers_the_fixture_rejection() {
+    let (expected_status, expected) =
+        fixture_error("wallet-post-identity-endpoints.json", "duplicate_endpoint");
+    let stub = Arc::new(StubNodeService::new());
+    let uri = format!("/api/identities/{ALICE}/endpoints");
+    let body = json!({"endpoints": [NODE_ENDPOINT, NODE_ENDPOINT]});
+    let (status, answered) = send(node(&stub), request("POST", &uri, &body)).await;
+    assert_eq!(status, expected_status);
+    assert_eq!(answered, expected);
+    assert!(stub.calls().is_empty(), "the service must not be reached");
+}
+
+/// The list is a whole replacement, so an absent `endpoints` key is refused
+/// rather than read as "change nothing".
+#[tokio::test]
+async fn an_advertisement_with_no_endpoints_key_answers_the_fixture_rejection() {
+    let (expected_status, expected) =
+        fixture_error("wallet-post-identity-endpoints.json", "missing_field");
+    let stub = Arc::new(StubNodeService::new());
+    let uri = format!("/api/identities/{ALICE}/endpoints");
+    let (status, answered) = send(node(&stub), request("POST", &uri, &json!({}))).await;
+    assert_eq!(status, expected_status);
+    assert_eq!(answered, expected);
+    assert!(stub.calls().is_empty(), "the service must not be reached");
 }
 
 // ------------------------------------------------------- route boundaries ----

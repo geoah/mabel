@@ -13,9 +13,11 @@
       "head_event": "kzzez6rzx7an64mreymhzj5cntka5uoanam74eqlwgtbp2f5yzia",
       "event_count": 9,
       "witnesses": [
-        "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq",
-        "5yy7qpeiu4jbtjx47g7obwu3yitcaweplik2mfcvknie36letzoa"
+        "ovfp3btcnjyhwmyw3ldk3wmt2ppb5w5c5adyzcavswmyq7xkg7fq",
+        "q7hnsnk6ycwjyzwbmqjcaxwlmxvvfjbmwzq4gz4dbtvpojjuh3fq"
       ],
+      "endpoints": [],
+      "witness_endpoints": [],
       "trust": [
         {
           "attestation_event": "65cssg5tnr3gyxe2rwhsgqc3nct3pwg2bqxr2oxpelejuoorlsnq",

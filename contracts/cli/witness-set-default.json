@@ -25,7 +25,8 @@
         "message": "no endpoint is known for the witness jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq: pass --endpoints, or fetch its ledger first",
         "details": {
           "reason": "unresolvable_witness",
-          "identity_id": "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq"
+          "witness": "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq",
+          "endpoints_tried": []
         }
       }
     }

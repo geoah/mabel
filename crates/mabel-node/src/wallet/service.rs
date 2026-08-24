@@ -47,8 +47,7 @@ use crate::graph::{
 use crate::now_ms;
 use crate::storage::LedgerStorage;
 use crate::verification::{
-    HickoryResolver, ResolveFuture, Resolver, TxtRecord, endpoints_at_label, mabel_claim,
-    query_name, verify_hostname,
+    HickoryResolver, ResolveFuture, Resolver, TxtRecord, caller_zone, query_name, verify_hostname,
 };
 use crate::wallet::core::{AppendLock, WalletCore, no_local_signer, verification_document};
 use crate::wallet::error::{no_source_available, storage_error};
@@ -704,39 +703,19 @@ impl NodeService for NodeApiService {
                     status: Some(ResolveStatus::Unreachable),
                 });
             };
-            let mut claims = 0usize;
-            let mut identity_id = None;
-            for record in &records {
-                let value = record.value();
-                let Some(claimed) = mabel_claim(&value) else {
-                    continue;
-                };
-                claims += 1;
-                if identity_id.is_none()
-                    && let Ok(identity) = claimed.parse::<IdentityId>()
-                {
-                    identity_id = Some(ids::identity(identity));
-                }
-            }
-            let status = if identity_id.is_some() {
+            let zone = caller_zone(&records);
+            let status = if zone.identity.is_some() {
                 ResolveStatus::Resolved
-            } else if claims == 0 {
+            } else if zone.claims == 0 {
                 ResolveStatus::NoRecord
             } else {
                 ResolveStatus::MismatchedRecords
             };
-            // A label that resolved to no identity has no identity to offer
-            // endpoints for, so its endpoints records are not read out.
-            let endpoints = if identity_id.is_some() {
-                endpoints_at_label(&records).iter().map(ids::key).collect()
-            } else {
-                Vec::new()
-            };
             Ok(Resolved {
                 input_kind: ResolveInputKind::Hostname,
-                identity_id,
+                identity_id: zone.identity.map(ids::identity),
                 hostname: Some(hostname),
-                endpoints,
+                endpoints: zone.endpoints.iter().map(ids::key).collect(),
                 status: Some(status),
             })
         })

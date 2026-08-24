@@ -34,10 +34,11 @@
       "body": {
         "ok": false,
         "code": 2,
-        "message": "no endpoint is known for the witness jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq",
+        "message": "this home knows no machine that answers for jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq",
         "details": {
           "reason": "unresolvable_witness",
-          "identity_id": "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq"
+          "witness": "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq",
+          "endpoints_tried": []
         }
       }
     },

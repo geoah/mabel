@@ -378,7 +378,7 @@ mod tests {
     }
 
     /// The default set is the two loopback spellings and nothing else, and the
-    /// rejection names them in the words `contracts/http/wallet-get-node.json`
+    /// rejection names them in the words `contracts/http/node-get-node.json`
     /// freezes.
     #[test]
     fn allowing_no_host_leaves_the_default_rules_exactly_as_they_were() {

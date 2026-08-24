@@ -12,7 +12,7 @@ use mabel_node::WitnessEntry;
 use mabel_node::graph::Resolution;
 use mabel_node::wallet::WalletCore;
 
-use crate::append::{append, ensure_fresh};
+use crate::append::{append, ensure_fresh_hinted};
 use crate::cli::AppendOptions;
 use crate::context::Context;
 use crate::documents::{AddedWitness, DefaultWitness, DefaultWitnesses};
@@ -20,19 +20,51 @@ use crate::error::{CliError, Result};
 use crate::ids;
 use crate::render::Outcome;
 
-/// `mabel witness add --identity <alias|id> --witness <alias|id>`.
+/// `mabel witness add --identity <alias|id> --witness <alias|id|link>
+/// [--endpoints <endpoint,...>]`.
 ///
 /// The witness is named by identity id: a witness that moves machines keeps the
 /// same id, so this event stands whatever endpoint answers for it.
+///
+/// `--endpoints` names the machines to try while this command resolves witness
+/// identities, the one on `--witness` included. They are this call's
+/// `CallerHint`s (proposal 006 section 5, source 2), which is what makes the
+/// freshness query of section 5 reach a witness no local source names an
+/// endpoint for. They are used for this call and nothing else: neither
+/// `node.json` nor `peers.json` is written, the same rule a link's hints follow
+/// (section 5.3). A link on `--witness` carries the same kind of hint, so the
+/// flag and a link that names endpoints are refused together.
+///
+/// # Errors
+///
+/// Returns code 2 with reason `malformed_endpoint_id` for an endpoint that does
+/// not parse and `conflicting_source` when both `--endpoints` and a link on
+/// `--witness` name machines, and the errors of the append discipline.
 pub fn add(
     ctx: &Context,
     identity: &str,
     witness: &str,
+    endpoints: &[String],
     options: &AppendOptions,
 ) -> Result<Outcome> {
     let identity = ctx.resolve_local_hinted(identity, "--identity")?;
-    let witness = ctx.resolve(witness)?;
-    ensure_fresh(ctx, identity, options)?;
+    let (witness, linked) = ctx.resolve_hinted(witness)?;
+    let mut given = Vec::with_capacity(endpoints.len());
+    for endpoint in endpoints {
+        let endpoint = ids::parse_endpoint(endpoint)?;
+        if !given.contains(&endpoint) {
+            given.push(endpoint);
+        }
+    }
+    if !given.is_empty() && !linked.is_empty() {
+        return Err(CliError::usage(
+            "conflicting_source",
+            "--endpoints names machines and the link on --witness names others: give one",
+        )
+        .with_detail("parameter", "--endpoints"));
+    }
+    let hints = if given.is_empty() { linked } else { given };
+    ensure_fresh_hinted(ctx, identity, options, &hints)?;
     let mut loaded = ctx.load(identity)?;
 
     let mut witnesses = loaded.state.witness_identities().to_vec();
@@ -105,7 +137,8 @@ pub fn set_default(ctx: &Context, witness: &str, endpoints: &[String]) -> Result
                  ledger first"
             ),
         )
-        .with_detail("identity_id", witness.to_string()));
+        .with_detail("witness", witness.to_string())
+        .with_detail("endpoints_tried", Vec::<String>::new()));
     }
 
     let mut config = ctx.home().config()?;

@@ -225,6 +225,15 @@ pub fn show(ctx: &Context, name: &str) -> Result<Outcome> {
             text.push_str(&format!("\nwitness {witness}"));
         }
     }
+    // The machines row: what the chain advertises, which is where anyone
+    // resolving this identity dials it (proposal 006 section 2).
+    if document.endpoints.is_empty() {
+        text.push_str("\nno machine is advertised for this identity");
+    } else {
+        for endpoint in &document.endpoints {
+            text.push_str(&format!("\nmachine {endpoint}"));
+        }
+    }
     for entry in &document.trust {
         text.push_str(&format!(
             "\nattestation {} at seq {} names {}",

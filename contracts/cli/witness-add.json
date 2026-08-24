@@ -17,6 +17,23 @@
         "head_seq": 4,
         "head_event": "4dzeup2wrtqxnb6qegqxmkashov6ebmdfad57ydg3cw5npixxnra"
       }
+    },
+    {
+      "case": "hinted-witness",
+      "command": "mabel witness add --identity acme --witness jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq --endpoints zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq --json",
+      "exit_code": 0,
+      "document": {
+        "ok": true,
+        "identity_id": "2okqwhextnpkpmydrgrkk563vbehcklffwfzidxlh5dslawjmn6a",
+        "witness": "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq",
+        "witnesses": [
+          "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq"
+        ],
+        "event_id": "4dzeup2wrtqxnb6qegqxmkashov6ebmdfad57ydg3cw5npixxnra",
+        "timestamp_ms": 1700000300000,
+        "head_seq": 4,
+        "head_event": "4dzeup2wrtqxnb6qegqxmkashov6ebmdfad57ydg3cw5npixxnra"
+      }
     }
   ]
 }

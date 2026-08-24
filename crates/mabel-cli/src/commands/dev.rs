@@ -208,12 +208,21 @@ pub fn seed(ctx: &Context, tickets: &[String], named: &[String]) -> Result<Outco
         let configured = given.first().copied().unwrap_or(witness_identity);
         let mut naming = vec![witness_identity];
         naming.extend(given);
+        let dialled: Vec<String> = endpoints.iter().map(ToString::to_string).collect();
         for ledger in &ledgers {
             for witness in &naming {
-                witness::add(ctx, &ledger.to_string(), &witness.to_string(), &options)?;
+                // The ticket's machines are this call's hints: the second
+                // witness a ledger names is added on a chain the first already
+                // witnesses, and nothing on disk names a machine for it yet.
+                witness::add(
+                    ctx,
+                    &ledger.to_string(),
+                    &witness.to_string(),
+                    &dialled,
+                    &options,
+                )?;
             }
         }
-        let dialled: Vec<String> = endpoints.iter().map(ToString::to_string).collect();
         // The ticket's endpoints answer for the witness identity named on the
         // command line when there is one, and for the seeded identity
         // otherwise: a bootstrap record says which machine answers for which

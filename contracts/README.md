@@ -1,8 +1,9 @@
 # Contracts
 
-The frozen wire contract between the node HTTP APIs, the `mabel --json`
-output and the two UI routes. UI, CLI and HTTP work proceeds in parallel
-against these fixtures instead of against each other.
+The frozen wire contract between the node HTTP API, the `mabel --json`
+output and the UI. There is one router and every node serves it (proposal 006
+section 8), so one set of fixtures describes every node. UI, CLI and HTTP work
+proceeds in parallel against these fixtures instead of against each other.
 
 The fixtures are normative. A response or a `--json` document that does not
 match the shape here is a bug in the node or the CLI, not in the fixture.
@@ -20,13 +21,15 @@ before payload tag 17 existed, and `profile_update` is now one of its rows.
 Proposal 003 sections 1 to 5 are the source for the profile, verification,
 contact, lookup and graph surfaces. Proposal 005 amends that row again with
 `email`, and is the source for the public email and for creation with a
-profile.
+profile. Proposal 006 amends the table a third time with tags 18 and 19, and is
+the source for witness identities, endpoint advertisements, the `mabel://`
+link, the resolve route and the one router of section 8.
 
 ## Index
 
 | File | Surface |
 |---|---|
-| `http/wallet-get-node.json` | `GET /api/node`, one document for every node |
+| `http/node-get-node.json` | `GET /api/node`, one document for every node |
 | `http/wallet-get-identities.json` | `GET /api/identities` |
 | `http/wallet-post-identities.json` | `POST /api/identities` |
 | `http/wallet-get-known-identities.json` | `GET /api/identities/known?offset&limit` |
@@ -45,6 +48,7 @@ profile.
 | `http/wallet-get-graph.json` | `GET /api/graph` |
 | `http/wallet-post-graph-sync.json` | `POST /api/graph/sync` |
 | `http/wallet-post-identity-witnesses.json` | `POST /api/identities/:identity_id/witnesses` |
+| `http/wallet-post-identity-endpoints.json` | `POST /api/identities/:identity_id/endpoints` |
 | `http/wallet-get-identity-memberships.json` | `GET /api/identities/:identity_id/memberships` |
 | `http/wallet-post-membership-invitations.json` | `POST /api/identities/:identity_id/memberships/invitations` |
 | `http/wallet-post-membership-acceptances.json` | `POST /api/identities/:identity_id/memberships/acceptances` |
@@ -59,6 +63,7 @@ profile.
 | `cli/identity-show.json` | `mabel identity show --json` |
 | `cli/identity-export.json` | `mabel identity export --json` |
 | `cli/identity-share.json` | `mabel identity share --json` |
+| `cli/identity-endpoints-replace.json` | `mabel identity endpoints replace --json` |
 | `cli/profile-replace.json` | `mabel profile replace --json` |
 | `cli/contact-set.json` | `mabel contact set --json` and `mabel contact show --json` |
 | `cli/graph-sync.json` | `mabel graph sync --json` and `mabel graph status --json` |
@@ -67,7 +72,6 @@ profile.
 | `cli/trust-revoke.json` | `mabel trust revoke --json` |
 | `cli/trust-list.json` | `mabel trust list --json` |
 | `cli/witness-add.json` | `mabel witness add --json` |
-| `cli/witness-run.json` | `mabel witness run --json` |
 | `cli/witness-set-default.json` | `mabel witness set-default --json` |
 | `cli/membership-invite.json` | `mabel membership invite --json` |
 | `cli/membership-accept.json` | `mabel membership accept --json` |
@@ -78,22 +82,37 @@ profile.
 | `cli/sync-fetch.json` | `mabel sync fetch --json` |
 | `cli/node-id.json` | `mabel node id --json` |
 | `cli/node-ticket.json` | `mabel node ticket --json` |
-| `cli/wallet-serve.json` | `mabel wallet serve --json` |
+| `cli/serve.json` | `mabel serve --json` |
 | `cli/verify-trust.json` | `mabel verify trust --json` |
 | `cli/verify-ledger.json` | `mabel verify ledger --json` |
 | `cli/dev-seed.json` | `mabel dev seed --json` |
-| `cli/errors.json` | the error envelope, one case per exit code and layer prefix |
+| `cli/errors.json` | the error envelope, one case per exit code and layer prefix, plus one per code 2 reason proposal 006 added |
 
 `mabel identity rotate` has no fixture: it exits 70 with the error envelope
-`cli/errors.json` already pins. `wallet serve` and `witness run` print their
-document when the process stops, so their one case is the shutdown document.
+`cli/errors.json` already pins. `mabel serve` prints its document when the
+process stops, so its one case is the shutdown document, and the hidden aliases
+`wallet serve` and `witness run` print that same document: one command, one
+case (proposal 006 section 8).
+
+Six cases in `cli/errors.json` pin a `details.reason` rather than a code and a
+prefix: `no_local_signer`, `unresolvable_witness`, `endpoint_not_identity`,
+`conflicting_source`, `invalid_mabel_link` and `unknown_query_parameter`, all
+code 2 with no prefix. Two of them exist on the HTTP surface alone, so their
+`command` names the request instead of a command line: `no_local_signer`, which
+a mutating route answers, and `unknown_query_parameter`, which needs a query
+string.
 
 `cli/dev-seed.json` carries the identity document of `cli/identity-list.json`
 inside its `identities` array, and the `Pushed` and `GraphStatus` documents of
 `cli/sync-push.json` and `cli/graph-sync.json` inside `pushed` and `graph`. A
 seeded home is an ordinary home, so the answer to "what did the seed create" is
 the same document every other surface reports. Its `identities` are in creation
-order, alice then bob then carol then acme, not by ascending id.
+order, alice then bob then carol then acme then witness, not by ascending id.
+The fifth is the witness identity the seed mints, a `service` that advertises
+the seeding node's own endpoint and is named in every seeded ledger's
+`WitnessSet` (proposal 006 section 1). Its top-level `witnesses` array holds
+identity ids, not endpoint ids: the seeded witness first, then whatever
+`--witness` named.
 
 Each `http/*.json` holds `route`, `method`, `request` (an example body, or
 `null` for GET), `response` (an example 200 body) and `errors` (examples of
@@ -108,8 +127,10 @@ command, so it carries `envelope` instead.
 `declared_kind`, `attestation_event`, `storage_capacity`. Decision 012
 applies to JSON fields and route paths, so `organization` never appears as
 `org`. One thing keeps one name across both surfaces: a ledger is
-`ledger_id` in the witness API and in the CLI, never `ledger` in one and
-`ledger_id` in the other.
+`ledger_id` in the HTTP API and in the CLI, never `ledger` in one and
+`ledger_id` in the other. A refusal keeps one spelling too, reason and detail
+keys together: `unresolvable_witness` carries `witness` and `endpoints_tried`
+whether the CLI or the HTTP API answers it.
 
 **Ids and byte fields.** Every byte field renders as lowercase RFC 4648
 base32 without padding: 32-byte values (identity ids, ledger ids, event ids,
@@ -148,10 +169,13 @@ numbers, 0-based, never strings. Counts (`event_count`, `stored`,
 carries a human time, as RFC 3339 UTC.
 
 **Declared kind.** `declared_kind` names what an identity says it is. The
-closed set is `person`, `organization`, `agent`, `service`. Proposal 001
-mints only `person` and `organization`, so those are the only values in the
-fixtures; a node that meets `agent` or `service` in input it cannot handle
-answers code 70.
+closed set is `person`, `organization`, `agent`, `service`. `POST
+/api/identities` mints `person` and `organization` alone, and a node that meets
+`agent` or `service` in input it cannot handle answers code 70. Three of the
+four appear in the fixtures: `mabel dev seed` mints its witness identity as a
+`service`, which `cli/dev-seed.json` pins, because a witness is an identity
+like any other and no ledger rule reads the kind (proposal 006 section 1).
+`agent` appears in no fixture.
 
 **Nullability.** A field that does not apply is present and `null`, never
 absent: `prev` and `ledger_id` are `null` in a seq-0 event document,
@@ -250,12 +274,22 @@ fields including `valid_to_seq` and `failed_at_seq` live in `details`.
 **Identity document**, returned by `GET /api/identities`, `GET
 /api/identities/:identity_id`, `POST /api/identities` and `mabel identity
 list`: `identity_id`, `declared_kind`, `alias`, `created_at_ms`, `head_seq`,
-`head_event`, `event_count`, `witnesses`, `trust`, `principals`,
-`open_invitation_count`, `profile`, `verification`, `contact`. A raw-rooted
+`head_event`, `event_count`, `witnesses`, `endpoints`, `witness_endpoints`,
+`trust`, `principals`, `open_invitation_count`, `profile`, `verification`,
+`contact`. A raw-rooted
 identity adds `active_key` and `reserve_commit`; an identity-rooted one holds
 no key of its own and omits both. The list route returns the same document as
 the show route, not a truncated one: both parse into one type, with no key
 present in one and absent in the other (proposal 003 section 5).
+
+Three arrays fold three different payloads and never merge (proposal 006
+section 3). `witnesses` is the latest `WitnessSet`, identity ids, the
+identities that may keep this ledger. `endpoints` is the latest
+`EndpointAdvertisement`, endpoint ids, the machines that answer for this
+identity. `witness_endpoints` is the latest `WitnessConfig`, payload tag 11,
+endpoint ids, which nothing writes any more and a chain written before proposal
+006 may hold. All three are empty arrays, never `null`, and all three render as
+52 base32 characters, so which array a value sits in is what says what it names.
 
 `profile` is the fold of the latest `ProfileUpdate`, or `null` on a ledger
 that carries none: `display_name`, `hostname`, `email`, `signing_principal
@@ -280,6 +314,12 @@ gates ledger validity (decision 015).
 note, updated_at_ms}` or `null`. It lives in `contacts/<identity_id>.json`,
 covers foreign identities as well as this node's own, and is never signed or
 synced.
+
+`mabel identity create --json` answers a narrower document, not this one:
+`identity_id`, `declared_kind`, `alias`, `created_at_ms`, `inception_event`,
+`head_seq`, `head_event`, `profile`, `witnesses`, plus `active_key` and
+`reserve_commit` on a raw root. A ledger one event old advertises nothing and
+has attested nobody, so the create pins the keys that can differ.
 
 `GET /api/identities` is cache-only: it triggers no DNS lookup. `GET
 /api/identities/:identity_id` answers from the same cache and starts at most
@@ -363,7 +403,8 @@ entry carries `identity`, `active_key`, `role` (`member` or `controller`) and
 `open_invitation_count` counts the invitations still `open`; the invitations
 themselves are on `GET /api/identities/:identity_id/memberships`.
 
-**Event document**, returned by both ledger routes, nested in fork records and
+**Event document**, returned by `GET
+/api/identities/:identity_id/ledger?since=`, nested in fork records and
 returned beside every append: `event_id`, `seq`, `ledger_id`, `prev`,
 `timestamp_ms`, `author_key`, `payload_kind`, `payload`. `payload_kind` is the
 `oneof` tag name from `ledger.proto` in snake_case, and `payload` holds that
@@ -371,23 +412,41 @@ variant's fields with the same names. The node decodes; the UI holds no keys
 and does no crypto (proposal 001 section 10), so no raw event bytes are served
 over HTTP. Raw bytes cross machines over Iroh and through the file artifacts.
 
-The payload subtree is frozen. Eight `payload_kind` values exist, and each
-`payload` holds exactly these keys:
+The payload subtree is frozen. Ten `payload_kind` values exist, one per
+`oneof payload` tag of `ledger.proto`, and each `payload` holds exactly these
+keys:
 
-| `payload_kind` | `payload` keys |
-|---|---|
-| `inception` | `declared_kind`, `nonce`, `root` |
-| `witness_config` | `witnesses` |
-| `trust_attestation` | `subject` |
-| `trust_revocation` | `target` |
-| `membership_invitation` | `invitee`, `invitee_key`, `role`, `invitee_inception` |
-| `membership_acceptance` | `acceptance`, `signature` |
-| `membership_removal` | `target` |
-| `profile_update` | `display_name`, `hostname`, `email` |
+| Tag | `payload_kind` | `payload` keys |
+|---|---|---|
+| 10 | `inception` | `declared_kind`, `nonce`, `root` |
+| 11 | `witness_config` | `witnesses` |
+| 12 | `trust_attestation` | `subject` |
+| 13 | `trust_revocation` | `target` |
+| 14 | `membership_invitation` | `invitee`, `invitee_key`, `role`, `invitee_inception` |
+| 15 | `membership_acceptance` | `acceptance`, `signature` |
+| 16 | `membership_removal` | `target` |
+| 17 | `profile_update` | `display_name`, `hostname`, `email` |
+| 18 | `endpoint_advertisement` | `endpoints` |
+| 19 | `witness_set` | `witnesses` |
+
+Proposal 006 amends the freeze a third time, after tag 17 and after `email`: it
+adds tags 18 and 19, taking the table from eight rows to ten, and marks
+`witness_config` readable but never written. Tag 11 stays in the table because
+a chain written before proposal 006 holds those events and every route still
+renders them; nothing signs a new one, and `build_witness_config` is test-only.
+Tags 10 to 19 are now spent, so the next payload takes tag 20.
+
+`witness_set` and `witness_config` both hold `witnesses`, and the two lists
+mean different things: tag 19 names identities, tag 11 named endpoints
+(proposal 006 section 1). `endpoints` on tag 18 names endpoints. All three
+render as 52 base32 characters, so `payload_kind` is what says which a value is.
 
 `profile_update` replaces the whole profile: an omitted field is one the
 update cleared, and all three keys are present and `null` in the `payload`
 object when the event carries none (proposal 003 section 1, proposal 005).
+`witness_set` and `endpoint_advertisement` replace their whole list the same
+way, and an empty array is a legal value: it says this identity names no
+witness, or that nothing answers for it right now.
 
 `root` is the inception's root `oneof` (proposal 002 section 2), one key of
 `raw_root` (`active_key`, `reserve_commit`) or `identity_root` (`founder`,
@@ -405,21 +464,40 @@ and a golden vector name the same event: Alice is
 active key, the one conflicting fork event and the membership events are
 fabricated but consistent across files.
 
+Two witness identities and four machines run through the fixtures, and no id is
+both. The witnesses are `ovfp3btcnjyhwmyw3ldk3wmt2ppb5w5c5adyzcavswmyq7xkg7fq`,
+"the co-op witness", and `q7hnsnk6ycwjyzwbmqjcaxwlmxvvfjbmwzq4gz4dbtvpojjuh3fq`,
+which this home has not stored; Alice's `WitnessSet` names both. The machines
+are `zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq` and
+`54rw3lmckcpqf4ofkvyx3i74agumvale2qmzdu76ubpita6sw5va`, which answer for the
+co-op witness, `5yy7qpeiu4jbtjx47g7obwu3yitcaweplik2mfcvknie36letzoa`, which
+answers for the second, and
+`fd2ijzgxe3qk64jeqbgwjgqcg2cnmyyrfwghb6oar2wbg5ddxvla`, this node itself. A
+`WitnessSet` naming any of the four is what `endpoint_not_identity` refuses.
+
 Each fixture is one moment, not one snapshot of a single node.
 `wallet-post-identities.json` answers the moment Alice's ledger is two events
 long, the inception and the `ProfileUpdate` the create named;
 `wallet-post-trust.json` answers at seq 2 of Alice's ledger;
-`wallet-get-identity-ledger.json` reads it at head 3, the revocation of that
-attestation; `wallet-get-identity.json` reads it at head 8, with the profile
-at seq 7 and a second attestation at seq 8, and Alice's entry in
-`wallet-get-identities.json` carries that same head. The five membership
-fixtures sit
+`wallet-get-identity-ledger.json` reads it at head 3, from the witness set at
+seq 1 to the revocation of that attestation; `wallet-get-identity.json` reads
+it at head 8, with the profile at seq 7 and a second attestation at seq 8, and
+Alice's entry in `wallet-get-identities.json` carries that same head. The five
+membership fixtures sit
 between those two heads, Alice delegating to Bob on her own raw-rooted ledger:
 the invitation lands at seq 4, the acceptance at seq 5 and the removal at seq
 6, and `wallet-get-identity-memberships.json` reads that ledger at head 4,
 with the invitation still open. The acceptance fixture is
 the mirror image, Alice's wallet accepting an invitation to Bob's ledger,
 because a wallet only signs an acceptance for an identity whose key it holds.
+The two list appends sit at either end of that chain:
+`wallet-post-identity-witnesses.json` lands the `WitnessSet` at seq 1, which is
+the `prev` of the attestation at seq 2 and the first event
+`wallet-get-identity-ledger.json` pages from, and
+`wallet-post-identity-endpoints.json` lands the `EndpointAdvertisement` at seq
+9, past the head every other Alice fixture reads, which is why her identity
+document advertises nothing. `cli/identity-endpoints-replace.json` pins that
+same seq-9 event: one operation over one wallet core, two surfaces.
 
 ## Membership
 
@@ -605,6 +683,22 @@ reviewer can overrule them cheaply, before consumers are written.
   section 5.1, with `unresolvable_witness` when this home can reach none of
   them. Both keys at once is code 2 and reason `conflicting_source`, before
   anything is dialled.
+- `mabel sync fetch` takes a third key the route does not: `--from-host
+  <hostname>` resolves the `mabel-endpoints=` records at `_mabel.<hostname>.`
+  and dials them as `DnsEndpoint` sources, under row 1 of the applicability
+  matrix, so the records are read only when the same response carries a
+  `mabel=` record that names an identity (proposal 006 section 6). It is
+  refused beside `--from` or `--from-witness` with `conflicting_source` and
+  `details.parameter` naming `--from-host`, a value that is not a hostname is
+  code 2 and reason `malformed_hostname`, and a zone that names no machine is
+  code 2 and reason `unresolvable_hostname`.
+- `mabel witness add --endpoints <endpoint,...>` names machines for that call
+  alone: they are `CallerHint`s while the command resolves witness identities
+  for the freshness query, and neither `node.json` nor `peers.json` records
+  them (proposal 006 section 5.3). A link on `--witness` carries the same kind
+  of hint, so the flag and a link that names endpoints are `conflicting_source`
+  with `details.parameter` naming `--endpoints`. The event is unchanged: a
+  witness set holds identity ids.
 - `node.json.witnesses` holds `{identity, endpoints}` objects (proposal 006
   section 5.4). An array of 64-character hex endpoint ids is the
   pre-proposal-006 shape and fails to load, naming
@@ -651,9 +745,55 @@ reviewer can overrule them cheaply, before consumers are written.
   the contact note for an identity no crawl reached, because the fixture
   vocabulary holds no fourth foreign identity to name one with; the case is
   covered in `crates/mabel-node/tests/profile_graph.rs`.
-- A wallet route asked for an identity this home does not hold answers 404
+- A route asked for an identity this home does not hold answers 404
   with reason `unknown_ledger`, detail key `ledger_id` and the message `this
-  home holds no ledger <id>`. One spelling covers every wallet route, the
+  home holds no ledger <id>`. One spelling covers every route, the
   identity ones and the ledger ones, because an identity in this home is the
-  ledger it roots. `unknown_ledger` is the one spelling on every node:
-  `ledger_not_held` died with the witness routes (proposal 006 section 8).
+  ledger it roots. `unknown_ledger` is the one route refusal on every node:
+  `ledger_not_held` died with the witness routes (proposal 006 section 8) and
+  survives as one thing only, the code 30 `Network error:` a fetch answers when
+  the peer it dialled does not hold the ledger, where it says nothing about
+  this home (`http/wallet-post-identity-fetch.json`).
+- Two fixtures take a `node-` prefix and the other 27 keep `wallet-`:
+  `http/node-get-node.json` and `http/node-get-forks.json`. The rule is what a
+  route answers about, not who serves it, since one router serves every node
+  (proposal 006 section 8): those two answer about the machine and what it
+  stores, and every other route answers about identities a home signs for or
+  reads, which is a wallet whatever else the node does. Witnessing adds no
+  route, so no `witness-` half is left to be symmetrical with, and renaming 27
+  files would buy a diff.
+- `POST /api/identities/:identity_id/endpoints` answers the `Appended`
+  document `POST /api/identities/:identity_id/witnesses` answers, with
+  `payload_kind: "endpoint_advertisement"` and an `endpoints` array in
+  `payload`. Both routes replace a whole list and neither takes an add or a
+  remove: one event says "these and only these", so a rotation names the
+  machine it keeps beside the new one. The list holds 0 to 8 distinct endpoint
+  ids; more is `endpoints_out_of_range` and a repeat is `duplicate_endpoint`,
+  both code 10, matching `witnesses_out_of_range` and `duplicate_witness`. An
+  absent `endpoints` key is `missing_field`, never "change nothing".
+- A replacement whose effect equals the current advertisement is refused before
+  signing with code 20, `Policy error:` and reason
+  `no_op_endpoint_advertisement`, exactly as `no_op_profile_update` is refused:
+  the two routes replace a whole document and answer a no-op the same way.
+- A mutating route naming a ledger this home holds and holds no key for
+  answers 403, code 2, reason `no_local_signer`, detail key `identity`, and
+  the message `this home holds no key that may append to <id>`. 403 rather
+  than 404: the ledger is here and the key is not. The CLI never reaches this
+  case, because it resolves a name to a local signer first and refuses with
+  `not_locally_controlled`, which names the ledger it did find.
+- `node.json` still recognises `role` and nothing reads it. `NodeConfig` sets
+  `deny_unknown_fields`, so deleting the field would stop every existing
+  `node.json` loading on upgrade for a value nothing reads; the node logs one
+  line at startup naming the file, the key and the fix, which is to delete the
+  line. No document carries `role`: `GET /api/node` reports `identity_count`
+  and `witness_for` instead (proposal 006 section 8).
+- `GET /api/node` reports `witness_for` as objects, not ids:
+  `{identity, advertised, reason}`, one per witness identity this home
+  witnesses for. `advertised` is the invariant of proposal 006 section 4.1,
+  whether that identity's own chain advertises an endpoint of this node, and
+  `reason` names why it does not when it is false, `null` otherwise. An empty
+  array means this home witnesses for nobody, which is a wallet.
+- `storage_capacity` bounds every node, not only a witness. One store serves
+  both capabilities (proposal 006 section 8), so the 10000-ledger cap and the
+  byte cap from `node.json` apply to a home with an empty `witness_for` too,
+  which is a bound a wallet did not have before.

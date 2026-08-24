@@ -13,9 +13,10 @@
 //! which every appending command runs before it signs, so no command line can
 //! append to a shared ledger on a head another wallet already moved.
 
-use iroh_base::SecretKey;
+use iroh_base::{EndpointId, SecretKey};
 use mabel_core::sign::{BuildError, BuiltEvent, Position, ledger_timestamp_ms};
 use mabel_core::{EventId, IdentityId, LedgerId};
+use mabel_node::graph::Resolution;
 use mabel_node::wallet::{Freshness, WalletCore, WalletSync};
 use mabel_node::{NewEvent, now_ms};
 
@@ -59,11 +60,31 @@ pub fn ensure_fresh(
     ledger: LedgerId,
     options: &AppendOptions,
 ) -> Result<Option<Freshness>> {
+    ensure_fresh_hinted(ctx, ledger, options, &[])
+}
+
+/// [`ensure_fresh`] with endpoints the caller named for this command.
+///
+/// The hints are source 2 of proposal 006 section 5 for every witness identity
+/// this operation resolves, which is what lets `witness add --endpoints` reach
+/// a witness no local source names an endpoint for. They are never written to
+/// `peers.json` or `node.json`.
+///
+/// # Errors
+///
+/// As [`ensure_fresh`].
+pub fn ensure_fresh_hinted(
+    ctx: &Context,
+    ledger: LedgerId,
+    options: &AppendOptions,
+    hints: &[EndpointId],
+) -> Result<Option<Freshness>> {
     if options.no_sync {
         return Ok(None);
     }
     let core = WalletCore::new(ctx.home().clone());
-    let witnesses = core.witnesses_of(ledger)?;
+    let resolution = Resolution::for_operation().with_caller_hints(hints.to_vec());
+    let witnesses = core.witnesses_of_resolved(ledger, &resolution)?;
     if witnesses.is_empty() {
         return Ok(None);
     }
