@@ -153,7 +153,9 @@ impl HickoryResolver {
     }
 }
 
-fn unavailable(error: &NetError) -> ResolveError {
+// Generic because `read_system_conf` returns a different error type per
+// platform (a `ProtoError` on macOS, a `NetError` on Linux).
+fn unavailable(error: &impl std::fmt::Display) -> ResolveError {
     ResolveError::Unavailable {
         message: error.to_string(),
     }
