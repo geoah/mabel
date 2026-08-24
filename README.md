@@ -94,6 +94,31 @@ topology serves mid-run. Set
 `MABEL_E2E_COMMIT` to build a different commit, `MABEL_E2E_REBUILD=1` to force
 the build, and `KEEP_TOPOLOGY=1` to leave the containers up afterwards.
 
+## Releases
+
+Every push to main publishes a GitHub prerelease tagged
+`v<version>-build.<run number>`, where `<version>` is the workspace version in
+`Cargo.toml`. It carries two tarballs, `x86_64-linux` and `aarch64-macos`, each
+holding the `mabel` binary with the UI compiled in, and it pushes the same
+commit's image to `ghcr.io/geoah/mabel` tagged with the release tag, the short
+commit sha and `latest`. Nobody reviews these builds: a prerelease is whatever
+main was at that commit.
+
+A real release is a tag pushed by hand, which runs the same jobs and publishes a
+full release instead of a prerelease:
+
+```sh
+git tag v0.1.0 && git push origin v0.1.0
+```
+
+The tag has to match the `Cargo.toml` version, so bump `[workspace.package]`
+first. The workflow stops before building when the two disagree, rather than
+attach `mabel-0.1.0-*.tar.gz` to a release called `v0.2.0`.
+
+`.github/workflows/ci.yml` runs `cargo fmt`, clippy, the workspace tests and the
+UI checks on every push and pull request. The Playwright suite is not in CI: it
+needs a docker daemon and the compose topology, so it stays a local check.
+
 ## Layout
 
 | Path | What is in it |

@@ -1,0 +1,98 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A newer push to the same branch or pull request supersedes this run.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
+
+env:
+  # Incremental state is a local build accelerator and the single largest thing
+  # in a debug target directory; a fresh runner never reuses it. Off keeps the
+  # cached target under the 10 GB the Actions cache allows a repository.
+  CARGO_INCREMENTAL: '0'
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # The workspace checks ticket 001 asked for. `cargo test` needs no ui/dist:
+  # the embed is declared allow_missing and the UI tests read a temp directory,
+  # so this job installs no node.
+  rust:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the Rust toolchain
+        run: |
+          set -euo pipefail
+          # The workspace needs rust-version 1.91 and edition 2024. rustup is
+          # preinstalled on the runner; this is a no-op when stable is current.
+          rustup toolchain install stable --profile minimal \
+            --component rustfmt,clippy --no-self-update
+          rustup default stable
+          rustc --version
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-ci-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-ci-
+
+      # protoc comes from protoc-bin-vendored in mabel-proto's build.rs, so no
+      # system protoc is installed here.
+      - run: cargo fmt --check
+
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - run: cargo test --workspace
+
+  ui:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      # playwright is a dev dependency of ui/ and none of these steps drive a
+      # browser, so `npm ci` must not download one.
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+    defaults:
+      run:
+        working-directory: ui
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - run: npm ci
+
+      - run: npm run lint
+
+      - run: npm test
+
+      - run: npm run build
+
+# The Playwright suite in tests/e2e is deliberately not run here. It brings up
+# the docker compose topology, builds two images from committed HEAD through
+# `git archive`, and drives containers with `docker compose exec` across a
+# bridge network with a custom DNS resolver. That needs a privileged docker
+# daemon and several minutes per story, so it stays a local check:
+#
+#   docker compose -f docker/compose.yaml up --build -d
+#   (cd tests/e2e && npm ci && npx playwright install --with-deps chromium && npm test)

@@ -1,0 +1,189 @@
+# Builds the tauri app in app/ for macOS and for the iOS simulator, and uploads
+# both as workflow artifacts. It publishes no release: whoever owns the release
+# workflow can attach these artifacts later with
+# `gh run download <run-id> --name mabel-app-<sha>-macos` followed by
+# `gh release upload <tag> <file>`.
+#
+# Nothing else in the repository depends on this workflow, and it depends on
+# nothing else: it builds ui/dist itself, because mabel-node embeds that
+# directory at compile time.
+name: app
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "app/**"
+      - "crates/**"
+      - "ui/**"
+      - "proto/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/app.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: app-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Pinned so a CLI release cannot change what this workflow produces.
+  TAURI_CLI_VERSION: 2.11.4
+  CARGO_TERM_COLOR: always
+
+jobs:
+  macos:
+    name: macOS app
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Short sha
+        id: sha
+        run: echo "short=$(git rev-parse --short=7 HEAD)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Build the UI bundle
+        # mabel-node compiles ui/dist into the binary, so this has to run before
+        # any cargo build. A checkout without it would produce an app that
+        # answers ui_not_built.
+        run: npm ci && npm run build
+        working-directory: ui
+
+      - name: Install the rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustc --version
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/bin
+            app/src-tauri/target
+          key: app-macos-${{ hashFiles('app/src-tauri/Cargo.lock') }}
+          restore-keys: app-macos-
+
+      - name: Install the tauri CLI
+        # Builds from source, which takes a few minutes on a cold cache.
+        run: cargo install tauri-cli --version ${{ env.TAURI_CLI_VERSION }} --locked
+      - name: Build the app and the dmg
+        # Native arm64. A universal binary needs
+        # `rustup target add x86_64-apple-darwin aarch64-apple-darwin` and
+        # `--target universal-apple-darwin`.
+        run: cargo tauri build
+        working-directory: app/src-tauri
+
+      - name: Zip the .app
+        # upload-artifact drops the executable bit, which would leave an .app
+        # that cannot be launched. ditto keeps the bundle intact.
+        run: |
+          cd app/src-tauri/target/release/bundle/macos
+          ditto -c -k --sequesterRsrc --keepParent Mabel.app Mabel-macos.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mabel-app-${{ steps.sha.outputs.short }}-macos
+          if-no-files-found: error
+          path: |
+            app/src-tauri/target/release/bundle/macos/Mabel-macos.zip
+            app/src-tauri/target/release/bundle/dmg/*.dmg
+
+  ios:
+    name: iOS simulator app
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Short sha
+        id: sha
+        run: echo "short=$(git rev-parse --short=7 HEAD)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Build the UI bundle
+        run: npm ci && npm run build
+        working-directory: ui
+
+      - name: Install the rust toolchain and the iOS targets
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/bin
+            app/src-tauri/target
+          key: app-ios-${{ hashFiles('app/src-tauri/Cargo.lock') }}
+          restore-keys: app-ios-
+
+      - name: Install cocoapods
+        # `tauri ios init` needs it to generate the Xcode project.
+        run: brew list cocoapods >/dev/null 2>&1 || brew install cocoapods
+
+      - name: Install the tauri CLI
+        run: cargo install tauri-cli --version ${{ env.TAURI_CLI_VERSION }} --locked
+
+      - name: Generate the Xcode project
+        # app/src-tauri/gen is not committed: it holds absolute paths from the
+        # machine that generated it, so every run regenerates it.
+        run: cargo tauri ios init --skip-targets-install
+        working-directory: app/src-tauri
+
+      - name: Build for the simulator, unsigned
+        # Device and App Store builds need an Apple signing certificate and a
+        # provisioning profile, which this repository does not hold. A simulator
+        # build needs neither, so this is what CI can prove.
+        run: |
+          set -eux
+          project=$(ls -d gen/apple/*.xcodeproj | head -1)
+          scheme=$(xcodebuild -project "$project" -list -json \
+            | python3 -c 'import json,sys; print(next(s for s in json.load(sys.stdin)["project"]["schemes"] if s.endswith("_iOS")))')
+          xcodebuild build \
+            -project "$project" \
+            -scheme "$scheme" \
+            -configuration debug \
+            -sdk iphonesimulator \
+            -destination "generic/platform=iOS Simulator" \
+            -derivedDataPath simulator-build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            ENABLE_BITCODE=NO
+        working-directory: app/src-tauri
+
+      - name: Zip the simulator app
+        run: |
+          set -eux
+          cd app/src-tauri
+          app=$(find simulator-build/Build/Products -maxdepth 2 -name "*.app" -print -quit)
+          test -n "$app"
+          ditto -c -k --sequesterRsrc --keepParent "$app" mabel-ios-simulator.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mabel-app-${{ steps.sha.outputs.short }}-ios-simulator
+          if-no-files-found: error
+          path: app/src-tauri/mabel-ios-simulator.zip

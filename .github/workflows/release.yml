@@ -1,0 +1,295 @@
+name: release
+
+# Two triggers, one pipeline. A push to main publishes a prerelease built from
+# that commit, tagged v<version>-build.<run_number>. A hand-pushed v<x>.<y>.<z>
+# tag publishes the full release from the same jobs and the same artifact set.
+on:
+  push:
+    branches: [main]
+    tags: ['v[0-9]+.[0-9]+.[0-9]+']
+
+# One run at a time per ref, so two quick pushes to main do not race for the
+# `latest` image tag. Runs queue rather than cancel: every commit gets its own
+# release.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+# No token for any job unless the job asks for it below.
+permissions: {}
+
+env:
+  IMAGE: ghcr.io/geoah/mabel
+  CARGO_TERM_COLOR: always
+  # `ui/` carries playwright as a dev dependency and the release bundle needs
+  # no browsers, so `npm ci` must not download them.
+  PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+
+jobs:
+  # Resolve the version, the tag and the release notes input once, so the build
+  # jobs and the release job cannot disagree about what they are producing.
+  version:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
+      tag: ${{ steps.resolve.outputs.tag }}
+      name: ${{ steps.resolve.outputs.name }}
+      prerelease: ${{ steps.resolve.outputs.prerelease }}
+      short_sha: ${{ steps.resolve.outputs.short_sha }}
+      subject: ${{ steps.resolve.outputs.subject }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve version and tag
+        id: resolve
+        run: |
+          set -euo pipefail
+
+          # The workspace root owns the version: [workspace.package] in
+          # Cargo.toml. Every crate inherits it with `version.workspace = true`.
+          version=$(awk -F'"' '
+            /^\[workspace\.package\]/ { in_section = 1; next }
+            /^\[/                     { in_section = 0 }
+            in_section && /^version[[:space:]]*=/ { print $2; exit }
+          ' Cargo.toml)
+          if [ -z "$version" ]; then
+            echo "no version field in [workspace.package] of Cargo.toml" >&2
+            exit 1
+          fi
+
+          short_sha=$(git rev-parse --short=7 "$GITHUB_SHA")
+
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            tag="$GITHUB_REF_NAME"
+            prerelease=false
+            # A tag that disagrees with Cargo.toml would ship artifacts named
+            # after a different version than the release, so stop here instead.
+            if [ "$tag" != "v${version}" ]; then
+              echo "tag $tag does not match the Cargo.toml version $version" >&2
+              exit 1
+            fi
+          else
+            tag="v${version}-build.${GITHUB_RUN_NUMBER}"
+            prerelease=true
+          fi
+
+          {
+            echo "version=$version"
+            echo "tag=$tag"
+            echo "name=$tag ($short_sha)"
+            echo "prerelease=$prerelease"
+            echo "short_sha=$short_sha"
+            # A subject is one line by construction, but it is untrusted text:
+            # every reader below takes it from the environment, never inlined
+            # into a shell command or a workflow expression.
+            echo "subject<<MABEL_SUBJECT_EOF"
+            git log -1 --pretty=%s "$GITHUB_SHA"
+            echo "MABEL_SUBJECT_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "releasing $tag from $short_sha (prerelease=$prerelease)"
+
+  # One set of steps for both targets. macos-latest is arm64, so both binaries
+  # are native builds and neither needs a cross toolchain.
+  binaries:
+    needs: version
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - os: ubuntu-latest
+            asset: x86_64-linux
+          - os: macos-latest
+            asset: aarch64-macos
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Install the Rust toolchain
+        run: |
+          set -euo pipefail
+          # The runner images ship a stable Rust, but the workspace needs
+          # rust-version 1.91 and edition 2024, so ask rustup for current
+          # stable. It is a no-op when the image is already there.
+          rustup toolchain install stable --profile minimal --no-self-update
+          rustup default stable
+          rustc --version
+          cargo --version
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-release-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-release-
+
+      # First, because `cargo build --release` embeds ui/dist into the binary
+      # with rust-embed. The embed is declared allow_missing, so building in the
+      # other order silently ships a binary that answers `ui_not_built`.
+      - name: Build the UI bundle
+        working-directory: ui
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run build
+          test -f dist/index.html
+
+      - name: Build the release binary
+        run: |
+          set -euo pipefail
+          cargo build --release --locked --package mabel-cli
+          ./target/release/mabel --version
+
+      - name: Package the tarball
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          ASSET: ${{ matrix.asset }}
+        run: |
+          set -euo pipefail
+          stem="mabel-${VERSION}-${ASSET}"
+          mkdir -p "dist/${stem}"
+          cp target/release/mabel "dist/${stem}/"
+          cp README.md "dist/${stem}/"
+          # The repository declares license = "MIT" but carries no LICENSE file
+          # yet, so ship it only once it exists.
+          if [ -f LICENSE ]; then
+            cp LICENSE "dist/${stem}/"
+          fi
+          tar -czf "dist/${stem}.tar.gz" -C dist "${stem}"
+          tar -tzf "dist/${stem}.tar.gz"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tarball-${{ matrix.asset }}
+          path: dist/*.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+
+  # The image builds the UI in its own stage, so this job needs no node setup.
+  # protoc comes from protoc-bin-vendored in mabel-proto's build.rs, so there is
+  # no system protoc to install here or in the binary jobs.
+  docker:
+    needs: version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      # The Dockerfile uses BuildKit cache mounts and this exports the layer
+      # cache to the Actions cache, so a per-commit build reuses dependencies.
+      - uses: docker/setup-buildx-action@v3
+
+      # GITHUB_TOKEN with packages:write is the only credential ghcr needs.
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          target: runtime
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:${{ needs.version.outputs.short_sha }}
+            ${{ env.IMAGE }}:${{ needs.version.outputs.tag }}
+            ${{ env.IMAGE }}:latest
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ needs.version.outputs.version }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  release:
+    needs: [version, binaries, docker]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: tarball-*
+          merge-multiple: true
+
+      - name: Write the release notes
+        env:
+          SUBJECT: ${{ needs.version.outputs.subject }}
+          TAG: ${{ needs.version.outputs.tag }}
+          SHORT_SHA: ${{ needs.version.outputs.short_sha }}
+          PRERELEASE: ${{ needs.version.outputs.prerelease }}
+        run: |
+          set -euo pipefail
+          # An unquoted heredoc, so the variables expand and the escaped
+          # backticks stay literal. A substituted value is not rescanned, so a
+          # commit subject carrying shell syntax is text and nothing else.
+          cat > notes.md <<EOF
+          $SUBJECT
+
+          Commit \`$SHORT_SHA\` (\`$GITHUB_SHA\`).
+
+          Container image:
+
+          \`\`\`sh
+          docker pull $IMAGE:$TAG
+          \`\`\`
+
+          The same image is tagged \`$TAG\`, \`$SHORT_SHA\` and \`latest\`.
+          EOF
+
+          if [ "$PRERELEASE" = true ]; then
+            cat >> notes.md <<'EOF'
+
+          This is an automatic build of one commit on main, not a reviewed
+          release. Push a `v<x>.<y>.<z>` tag for that.
+          EOF
+          fi
+
+          cat notes.md
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.version.outputs.tag }}
+          NAME: ${{ needs.version.outputs.name }}
+          PRERELEASE: ${{ needs.version.outputs.prerelease }}
+        run: |
+          set -euo pipefail
+
+          # Both binary jobs must have landed their tarball.
+          count=$(find dist -name '*.tar.gz' -type f | wc -l)
+          if [ "$count" -ne 2 ]; then
+            echo "expected 2 tarballs, found $count" >&2
+            find dist -type f >&2
+            exit 1
+          fi
+
+          args=(--title "$NAME" --notes-file notes.md)
+          if [ "$PRERELEASE" = true ]; then
+            # The tag does not exist yet: point it at the commit that built.
+            args+=(--prerelease --target "$GITHUB_SHA")
+          fi
+
+          gh release create "$TAG" "${args[@]}" dist/*.tar.gz
