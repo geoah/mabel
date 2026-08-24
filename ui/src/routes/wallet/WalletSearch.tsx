@@ -79,7 +79,7 @@ export function WalletSearch() {
             data-testid="wallet-search-input"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="52 base32 characters, or alice.example"
+            placeholder="alice.example or paste a Mabel ID"
             className="font-mono text-xs"
           />
         </InlineField>

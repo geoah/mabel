@@ -1,3 +1,6 @@
+import type { ReactNode } from "react";
+import { Link } from "react-router";
+
 import type { ResolvedIdentity as ResolvedIdentityDocument } from "@/api/types";
 import { Identifier } from "@/components/Identifier";
 import { cn } from "@/lib/utils";
@@ -5,34 +8,50 @@ import { cn } from "@/lib/utils";
 import { resolveName, useSharedName, VerificationMark } from "./names";
 import { IdentityPillBadge, type Pill, usePill } from "./pill";
 
+/**
+ * `inline` is one line, which is every sentence and tight row. `stacked` is a
+ * card heading: the name at 16px on its own line with the id under it. `page` is
+ * the same, with the name as the page's h1 at 24px.
+ */
+export type IdentityInlineLayout = "inline" | "stacked" | "page";
+
 interface IdentityInlineProps {
   identity: ResolvedIdentityDocument;
   /** True when the identity document reports its verified result as aged. */
   stale?: boolean;
   /** Lands on the wrapper; the name, pill, id and verdict add their own suffixes. */
   testId?: string;
-  /** Routes the id, for the ids that address a screen. */
+  /** Routes the name, for the ids that address a screen. */
   to?: string;
-  /** Overrides `<testId>-link` on the routed id, for a list a suite navigates by. */
+  /** Overrides `<testId>-link` on the routed name, for a list a suite navigates by. */
   linkTestId?: string;
   /** Overrides the pill the screen's own facts would give this id. */
   pill?: Pill | null;
-  /**
-   * `stacked` puts the name on its own line, larger, with the id under it: what
-   * a card heading needs. `inline` is one line, which is every other use.
-   */
-  layout?: "inline" | "stacked";
+  layout?: IdentityInlineLayout;
+  /** Drawn at the end of the name line: what the identity says it is. */
+  trailing?: ReactNode;
+  /** Drawn at the far end of the name line, on a card: the pills and the controls. */
+  aside?: ReactNode;
   /** Draws the whole id, for an inline use that sits on a card and has the width. */
   full?: boolean;
+  /**
+   * Makes the name's link cover the nearest positioned ancestor, which is the
+   * card it heads: one anchor, reachable by keyboard, and the whole card clicks.
+   */
+  stretch?: boolean;
   className?: string;
 }
 
 /**
- * One identity on one line: the name it publishes or the one you gave it, the
- * verdict on the handle it claims, its pill, and its id with a button that
- * copies it. Every sentence, list row, path hop and tight row that names an
- * identity renders this, so no screen invents its own spelling of a name and an
- * id (proposal 005).
+ * One identity: the name it publishes or the one you gave it, the verdict on the
+ * handle it claims, its pill, and its id with a button that copies it. Every
+ * sentence, list row, path hop and card heading that names an identity renders
+ * this, so no screen invents its own spelling of a name and an id (proposal
+ * 005).
+ *
+ * The name is the link. A nameless identity has only its id to click, so the id
+ * carries the link instead, and either way one anchor per identity is what a
+ * keyboard and a screen reader reach.
  */
 export function IdentityInline({
   identity,
@@ -42,7 +61,10 @@ export function IdentityInline({
   linkTestId,
   pill,
   layout = "inline",
+  trailing,
+  aside,
   full = false,
+  stretch = false,
   className,
 }: IdentityInlineProps) {
   const { name, source, nickname } = resolveName(identity);
@@ -51,18 +73,42 @@ export function IdentityInline({
   const shared = useSharedName(name);
   const fromScope = usePill(identity.identity_id);
   const shown = pill === undefined ? fromScope : pill;
-  const stacked = layout === "stacked";
+  const stacked = layout !== "inline";
+  const linkId = linkTestId ?? (testId && `${testId}-link`);
+  const NameTag = layout === "page" ? "h1" : layout === "stacked" ? "h3" : "span";
 
   const heading = (
     <>
+      {/* The name and what the identity says it is stay together: on a phone the
+          pair wraps as one, so the kind never ends up alone on a line. */}
       {name !== null && (
-        <span
+        <NameTag
           data-testid={testId && `${testId}-name`}
-          className={stacked ? "text-base leading-tight font-medium" : "text-sm"}
+          className={
+            layout === "page"
+              ? "text-2xl leading-tight font-semibold tracking-tight"
+              : layout === "stacked"
+                ? "text-base leading-tight font-medium"
+                : "text-sm"
+          }
         >
-          {name}
-        </span>
+          {to === undefined ? (
+            name
+          ) : (
+            <Link
+              to={to}
+              data-testid={linkId}
+              className={cn(
+                "hover:underline focus-visible:outline-none",
+                stretch && "after:absolute after:inset-0",
+              )}
+            >
+              {name}
+            </Link>
+          )}
+        </NameTag>
       )}
+      {trailing}
       {/* The name you gave them, after the name they publish. */}
       {nickname !== null && (
         <span
@@ -87,31 +133,49 @@ export function IdentityInline({
       // A card has the width for the whole id, and a Mabel ID is the only thing
       // that tells two identities apart: no card truncates one.
       full={shared || stacked || full}
-      to={to}
-      linkTestId={linkTestId ?? (testId && `${testId}-link`)}
-      className="text-muted-foreground"
+      // A nameless identity is reachable by its id and by nothing else.
+      to={name === null ? to : undefined}
+      linkTestId={name === null ? linkId : undefined}
+      stretch={name === null && stretch}
+      copyLabel="Copy Mabel ID"
     />
   );
 
+  if (!stacked) {
+    return (
+      <span
+        data-testid={testId}
+        data-identity-id={identity.identity_id}
+        data-name-source={source}
+        data-shared-name={String(shared)}
+        className={cn("inline-flex flex-wrap items-baseline gap-x-2 gap-y-0.5", className)}
+      >
+        {heading}
+        {id}
+      </span>
+    );
+  }
+
   return (
-    <span
+    <div
       data-testid={testId}
       data-identity-id={identity.identity_id}
       data-name-source={source}
       data-shared-name={String(shared)}
-      className={cn(
-        stacked
-          ? "flex min-w-0 flex-col items-start gap-0.5"
-          : "inline-flex flex-wrap items-baseline gap-x-2 gap-y-0.5",
-        className,
-      )}
+      className={cn("flex min-w-0 flex-col gap-2", className)}
     >
-      {stacked ? (
-        <span className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">{heading}</span>
-      ) : (
-        heading
-      )}
+      {/* The name, what it says it is, and the pills: one line, the pills at the
+          end of it. The id comes under the line, across the whole card. */}
+      {/* items-start, not center: on a phone the name and what it says it is
+          wrap onto two lines, and the pills stay beside the name rather than
+          drifting down to the middle of the block. */}
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">{heading}</div>
+        {aside !== undefined && (
+          <div className="flex shrink-0 items-center gap-1">{aside}</div>
+        )}
+      </div>
       {id}
-    </span>
+    </div>
   );
 }

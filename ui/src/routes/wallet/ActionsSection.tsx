@@ -1,6 +1,8 @@
+import type { ReactNode } from "react";
+
 import type { Identity, MembershipView } from "@/api/types";
 import { Action } from "@/components/Action";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Section } from "@/components/Section";
 
 import { ContactPanel } from "./ContactPanel";
 import { HandlePanel } from "./HandlePanel";
@@ -12,10 +14,34 @@ import { type TrustActions, TrustAddForm, TrustRevokeForm } from "./TrustPanel";
 import { WitnessConfigPanel } from "./WitnessConfigPanel";
 
 /**
+ * One group of tasks under a plain heading, its rows divided by a rule and by
+ * nothing else. Twelve rows in one list is a list nobody reads to the end; four
+ * headings of three are four decisions.
+ */
+function ActionGroup({
+  title,
+  description,
+  testId,
+  children,
+}: {
+  title: string;
+  description: string;
+  testId: string;
+  children: ReactNode;
+}) {
+  return (
+    <Section title={title} description={description} testId={testId}>
+      <div className="divide-y">{children}</div>
+    </Section>
+  );
+}
+
+/**
  * Everything this wallet can do to one identity, each named by the task it
- * performs for the person doing it (decision 017). Every one of them starts
- * closed: an address book page that opens as twelve forms is not an address
- * book page, and no single one of them is the thing a reader came for.
+ * performs for the person doing it (decision 017), grouped by what the task is
+ * about. Every one of them starts closed: an address book page that opens as
+ * twelve forms is not an address book page, and no single one of them is the
+ * thing a reader came for.
  */
 export function ActionsSection({
   identity,
@@ -29,42 +55,12 @@ export function ActionsSection({
   onAppended: () => void;
 }) {
   return (
-    <Card data-testid="identity-actions">
-      <CardHeader>
-        <CardTitle>What you can do</CardTitle>
-        <CardDescription>
-          Everything here changes the public record, except the local info.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-2">
-        <Action
-          testId="action-trust"
-          title="Say you trust someone"
-          description="Their Mabel ID goes on this identity's public record."
-        >
-          <TrustAddForm actions={trust} />
-        </Action>
-        <Action
-          testId="action-revoke"
-          title="Take back trust"
-          description="Name the identity you no longer trust. Both entries stay on the record."
-        >
-          <TrustRevokeForm identity={identity} actions={trust} />
-        </Action>
-        <Action
-          testId="action-witnesses"
-          title="Choose who keeps a copy"
-          description="A witness keeps a copy of this record so other people can read it."
-        >
-          <WitnessConfigPanel identity={identity} onAppended={onAppended} />
-        </Action>
-        <Action
-          testId="action-push"
-          title="Send the record to the witnesses"
-          description="Send this record to each witness you chose."
-        >
-          <SyncPushPanel identityId={identity.identity_id} />
-        </Action>
+    <div data-testid="identity-actions" className="space-y-8">
+      <ActionGroup
+        testId="action-group-profile"
+        title="Profile"
+        description="What this identity publishes about itself, and what only this device keeps."
+      >
         <Action
           testId="action-profile"
           title="Change the public name and email"
@@ -80,13 +76,6 @@ export function ActionsSection({
           <HandlePanel identity={identity} onAppended={onAppended} />
         </Action>
         <Action
-          testId="action-keys"
-          title="Save your keys"
-          description="Copy or download the two secret keys that control this identity."
-        >
-          <KeysPanel identityId={identity.identity_id} />
-        </Action>
-        <Action
           testId="action-contact"
           title="Update local info"
           description="The nickname and note only this device sees."
@@ -97,6 +86,52 @@ export function ActionsSection({
             onSaved={onAppended}
           />
         </Action>
+      </ActionGroup>
+      <ActionGroup
+        testId="action-group-trust"
+        title="Trust"
+        description="What this identity says in public about the people it trusts."
+      >
+        <Action
+          testId="action-trust"
+          title="Say you trust someone"
+          description="Their Mabel ID goes on this identity's public record."
+        >
+          <TrustAddForm actions={trust} />
+        </Action>
+        <Action
+          testId="action-revoke"
+          title="Take back trust"
+          description="Name the identity you no longer trust. Both entries stay on the record."
+        >
+          <TrustRevokeForm identity={identity} actions={trust} />
+        </Action>
+      </ActionGroup>
+      <ActionGroup
+        testId="action-group-witnesses"
+        title="Witnesses and sync"
+        description="Who keeps a copy of this record, and when they get the newest one."
+      >
+        <Action
+          testId="action-witnesses"
+          title="Choose who keeps a copy"
+          description="A witness keeps a copy of this record so other people can read it."
+        >
+          <WitnessConfigPanel identity={identity} onAppended={onAppended} />
+        </Action>
+        <Action
+          testId="action-push"
+          title="Send the record to the witnesses"
+          description="Send this record to each witness you chose."
+        >
+          <SyncPushPanel identityId={identity.identity_id} />
+        </Action>
+      </ActionGroup>
+      <ActionGroup
+        testId="action-group-control"
+        title="Control and keys"
+        description="Who may sign for this identity, and the keys that do the signing."
+      >
         <Action
           testId="action-invite"
           title="Invite someone to help control this identity"
@@ -125,7 +160,14 @@ export function ActionsSection({
         >
           <RemoveForm identity={identity} memberships={memberships} onAppended={onAppended} />
         </Action>
-      </CardContent>
-    </Card>
+        <Action
+          testId="action-keys"
+          title="Save your keys"
+          description="Copy or download the two secret keys that control this identity."
+        >
+          <KeysPanel identityId={identity.identity_id} />
+        </Action>
+      </ActionGroup>
+    </div>
   );
 }

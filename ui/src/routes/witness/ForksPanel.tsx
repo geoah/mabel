@@ -3,7 +3,7 @@ import type { ForkRecord, LedgerEvent } from "@/api/types";
 import { ErrorEnvelopeView } from "@/components/ErrorEnvelopeView";
 import { Field, FieldGrid } from "@/components/Field";
 import { Identifier } from "@/components/Identifier";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Section } from "@/components/Section";
 import { usePagedList } from "@/hooks/usePagedList";
 import { formatTimestamp } from "@/lib/time";
 
@@ -23,7 +23,9 @@ function ForkEventPane({
   testId: string;
 }) {
   return (
-    <div className="rounded-md border p-3" data-testid={testId}>
+    // No border: this pane sits inside the bordered conflict record, and the
+    // sentence above it is what tells the two entries apart.
+    <div data-testid={testId}>
       <p className="mb-2 text-xs font-medium">
         {side === "kept"
           ? "kept: the entry this witness stored first"
@@ -75,7 +77,7 @@ function ForkRecordView({ record }: { record: ForkRecord }) {
       <p className="text-xs" data-testid={`fork-statement-${key}`}>
         {record.statement}
       </p>
-      <div className="grid gap-3">
+      <div className="grid gap-3 divide-y">
         <ForkEventPane event={record.kept} side="kept" testId={`fork-kept-${key}`} />
         <ForkEventPane
           event={record.conflicting}
@@ -112,22 +114,21 @@ export function ForksPanel({ ledgerId }: { ledgerId: string }) {
   }
 
   return (
-    <Card data-testid="witness-forks">
-      <CardHeader>
-        <CardTitle>Conflicts</CardTitle>
-        <CardDescription data-testid="fork-evidence-note">{FORK_EVIDENCE_NOTE}</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {page.error && <ErrorEnvelopeView error={page.error} testId="witness-forks-error" />}
-        {page.capped && (
-          <p data-testid="witness-forks-capped" className="text-sm">
-            Showing the first {page.items.length} conflicts. This record has more.
-          </p>
-        )}
-        {page.items.map((record) => (
-          <ForkRecordView key={`${record.ledger_id}-${record.seq}`} record={record} />
-        ))}
-      </CardContent>
-    </Card>
+    <Section
+      testId="witness-forks"
+      title="Conflicts"
+      descriptionTestId="fork-evidence-note"
+      description={FORK_EVIDENCE_NOTE}
+    >
+      {page.error && <ErrorEnvelopeView error={page.error} testId="witness-forks-error" />}
+      {page.capped && (
+        <p data-testid="witness-forks-capped" className="text-sm">
+          Showing the first {page.items.length} conflicts. This record has more.
+        </p>
+      )}
+      {page.items.map((record) => (
+        <ForkRecordView key={`${record.ledger_id}-${record.seq}`} record={record} />
+      ))}
+    </Section>
   );
 }

@@ -244,6 +244,26 @@ const SCREENS = [
   },
   { name: "witness-ledgers", path: `/witnesses/${WITNESS}`, ready: "identity-cards" },
   {
+    // The same holdings, narrowed to the records this wallet controls.
+    name: "witness-ledgers-ours",
+    path: `/witnesses/${WITNESS}`,
+    ready: "witness-holdings-ours",
+    async act(page) {
+      await page.getByTestId("witness-holdings-ours").click();
+      await page.getByTestId("identity-cards").waitFor();
+    },
+  },
+  {
+    // And to the people this wallet has a reason to trust.
+    name: "witness-ledgers-trusted",
+    path: `/witnesses/${WITNESS}`,
+    ready: "witness-holdings-trusted",
+    async act(page) {
+      await page.getByTestId("witness-holdings-trusted").click();
+      await page.getByTestId("identity-cards").waitFor();
+    },
+  },
+  {
     name: "witness-unreachable",
     path: `/witnesses/${UNREACHABLE_WITNESS}`,
     ready: "witness-unreachable",
@@ -324,6 +344,9 @@ async function main() {
         if (screen.act) {
           await screen.act(page);
         }
+        // The harness's own reset control belongs to no screen: it is hidden
+        // before anything is measured or captured.
+        await page.addStyleTag({ content: "[data-harness-controls] { display: none !important; }" });
         await page.waitForTimeout(150);
 
         const overflow = await page.evaluate(measureOverflow);

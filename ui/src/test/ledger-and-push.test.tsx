@@ -68,7 +68,7 @@ describe("identity detail", () => {
     expect(screen.getByTestId("ledger-event-count")).toHaveTextContent(String(acme.event_count));
     // Acme is founded by another identity, so its record opens with an
     // inception naming that founder.
-    expect(screen.getByTestId("event-payload-kind-0")).toHaveTextContent("inception");
+    expect(screen.getByTestId("event-gloss-0")).toHaveTextContent("created this identity");
     expect(screen.queryByTestId("ledger-not-fetched")).not.toBeInTheDocument();
     expect(screen.queryByTestId("ledger-partial")).not.toBeInTheDocument();
 

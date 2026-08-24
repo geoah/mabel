@@ -11,7 +11,7 @@ import {
   IdentityPillBadge,
   usePill,
 } from "@/components/identity";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Section } from "@/components/Section";
 import {
   Collapsible,
   CollapsibleChevron,
@@ -19,7 +19,11 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { describeAge } from "@/lib/time";
-import { GraphStalenessBanner, useGraphSync } from "@/routes/wallet/GraphSyncControl";
+import {
+  GraphStalenessBanner,
+  SEARCH_TRUNCATED,
+  useGraphSync,
+} from "@/routes/wallet/GraphSyncControl";
 
 /**
  * The reverse list is never "who trusts them". It is who your wallet happens to
@@ -179,17 +183,17 @@ function EntryList({
   info?: string;
 }) {
   return (
-    <Collapsible className="rounded-md border">
+    <Collapsible>
       <CollapsibleTrigger
         data-testid={`${testId}-toggle`}
-        className="flex min-h-11 w-full items-center gap-2 px-3 text-left text-sm hover:bg-accent"
+        className="flex min-h-11 w-full items-center gap-2 rounded-md px-1 text-left text-sm font-medium hover:bg-accent"
       >
         <CollapsibleChevron />
         <span data-testid={`${testId}-label`}>{title}</span>
         {info !== undefined && <InfoTip text={info} testId={`${testId}-note`} />}
         <span className="ml-auto text-xs text-muted-foreground">{count}</span>
       </CollapsibleTrigger>
-      <CollapsibleContent className="border-t p-3">
+      <CollapsibleContent className="pb-3 pl-6">
         <IdentityCardList
           entries={entries}
           testId={testId}
@@ -234,41 +238,43 @@ export function KnowledgeSection({
   }));
 
   return (
-    <Card data-testid="lookup-result">
-      <CardHeader>
-        <CardTitle>How you know them</CardTitle>
-        <CardDescription className="flex flex-wrap items-baseline gap-2">
+    <Section
+      testId="lookup-result"
+      title="How you know them"
+      description={
+        <span className="flex flex-wrap items-baseline gap-2">
           from your
           <IdentityInline identity={response.from} testId="lookup-from" />
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <GraphStalenessBanner
-          stale={response.graph_stale}
-          lastSyncMs={response.last_sync_ms}
-          sync={sync}
-          testId="lookup-graph-stale"
-        />
-        {response.graph_truncated && (
-          <p data-testid="lookup-graph-truncated" className="text-sm">
-            Your wallet may not have seen everything.
-          </p>
-        )}
-        {response.equivocation && !onAPath && (
-          <EquivocationNotice equivocation={response.equivocation} testId="lookup-equivocation" />
-        )}
-        <Verdict identityId={response.identity.identity_id} degrees={response.degrees} />
-        {response.paths.length > 0 && (
-          <div data-testid="lookup-paths" className="space-y-3">
-            {response.paths.map((path, index) => (
-              <PathChain
-                key={path.hops.map((hop) => hop.attestation_event).join("-")}
-                path={path}
-                index={index}
-              />
-            ))}
-          </div>
-        )}
+        </span>
+      }
+    >
+      <GraphStalenessBanner
+        stale={response.graph_stale}
+        lastSyncMs={response.last_sync_ms}
+        sync={sync}
+        testId="lookup-graph-stale"
+      />
+      {response.graph_truncated && (
+        <p data-testid="lookup-graph-truncated" className="text-sm">
+          {SEARCH_TRUNCATED}
+        </p>
+      )}
+      {response.equivocation && !onAPath && (
+        <EquivocationNotice equivocation={response.equivocation} testId="lookup-equivocation" />
+      )}
+      <Verdict identityId={response.identity.identity_id} degrees={response.degrees} />
+      {response.paths.length > 0 && (
+        <div data-testid="lookup-paths" className="space-y-3">
+          {response.paths.map((path, index) => (
+            <PathChain
+              key={path.hops.map((hop) => hop.attestation_event).join("-")}
+              path={path}
+              index={index}
+            />
+          ))}
+        </div>
+      )}
+      <div className="divide-y">
         <EntryList
           title="Who they trust"
           count={trust.length}
@@ -284,7 +290,7 @@ export function KnowledgeSection({
           empty="Your wallet has not seen anyone trust them."
           info={REVERSE_LABEL}
         />
-      </CardContent>
-    </Card>
+      </div>
+    </Section>
   );
 }

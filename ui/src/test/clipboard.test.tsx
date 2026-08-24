@@ -79,7 +79,7 @@ describe("a copy that could not happen", () => {
     clipboardRefuses();
     withoutExecCommand();
 
-    await user.click(screen.getByRole("button", { name: "copy" }));
+    await user.click(screen.getByRole("button", { name: "Copy" }));
 
     expect(await screen.findByTestId("copy-failed")).toHaveTextContent(COPY_FAILED);
     expect(screen.getByRole("button", { name: COPY_FAILED })).toHaveAttribute(

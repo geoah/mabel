@@ -1,5 +1,4 @@
-import { type MouseEvent, type ReactNode, useState } from "react";
-import { useNavigate } from "react-router";
+import { type ReactNode, useState } from "react";
 
 import type {
   Contact,
@@ -20,6 +19,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+import { ICON_BUTTON } from "@/components/ui/icon-button";
 import { formatDate } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
@@ -284,17 +284,16 @@ function RecordRows({
 
 /**
  * One identity as a card, and one surface: the card draws the only border. The
- * kind on the first small line, the name under it, its id under that, and the
- * pill with the expand chevron in the top right corner. The chevron opens the
- * record in place, and the same open block without the chevron is the identity
- * page's top section. One component, three states, so a list entry and a page
- * heading cannot drift apart (proposal 005).
+ * name and what the identity says it is on one line, the pills and the expand
+ * control at the end of that same line, and the id under it. The chevron opens
+ * the record in place, and the same open block without the chevron is the
+ * identity page's top section, whose name is the page's h1. One component, three
+ * states, so a list entry and a page heading cannot drift apart (proposal 005).
  *
- * A card that routes somewhere is clickable across its whole surface. The id
- * link inside it is the real anchor, so the keyboard and a screen reader reach
- * the same page without the card pretending to be a link; a click that lands on
- * any link or button inside the card is that control's click and never the
- * card's.
+ * A card that routes somewhere is clickable across its whole surface: the name
+ * is a real anchor whose box is stretched over the card, so the keyboard and a
+ * screen reader reach the same page and nothing here listens for a click on a
+ * div. Every control on the card sits above that anchor and keeps its own click.
  */
 export function IdentityCard({
   facts,
@@ -315,7 +314,6 @@ export function IdentityCard({
   resolvePrincipal?: (identityId: string) => ResolvedIdentityDocument;
 }) {
   const page = state === "page";
-  const navigate = useNavigate();
   const pill = usePill(facts.resolved.identity_id);
   const to = page ? null : facts.to;
   // The card holds the open state, because the short line above the name is the
@@ -328,89 +326,76 @@ export function IdentityCard({
   // control at all: the pill in its corner is the whole answer.
   const expandable =
     facts.record !== null || facts.email !== null || (facts.stored === true && facts.headSeq !== null);
-  const kindLine =
-    facts.declaredKind !== null ||
-    (markers !== undefined && markers !== null && markers !== false);
-
-  function openPage(event: MouseEvent<HTMLDivElement>) {
-    if (to === null) {
-      return;
-    }
-    // Every link and every button inside the card keeps its own click: the copy
-    // button copies, the expand control expands, a principal's link opens that
-    // principal.
-    if ((event.target as HTMLElement).closest("a,button")) {
-      return;
-    }
-    void navigate(to);
-  }
+  const extra = markers !== undefined && markers !== null && markers !== false;
 
   return (
     <Card
       data-testid={testIds("")}
-      onClick={openPage}
       className={cn(
-        "p-3 sm:p-4",
-        to !== null && "cursor-pointer transition-colors hover:border-foreground/30 hover:bg-accent",
+        // relative for the name's stretched link, and the ring so a card reached
+        // by keyboard is as obvious as one under the pointer.
+        "relative p-3 focus-within:ring-1 focus-within:ring-ring sm:p-4",
+        to !== null &&
+          "cursor-pointer transition-colors hover:border-foreground/30 hover:bg-accent/40",
       )}
     >
       <Collapsible open={shown} onOpenChange={setOpen}>
-        {/* The top line: what this identity says it is on the left as a badge,
-            the pills and the expand control in the corner. The name and the id
-            come under it, across the whole card, because a 52-character id and a
-            copy button do not share a phone's width with a badge. */}
-        <div className="flex items-start justify-between gap-2">
-          {kindLine && (
-            <p
-              data-testid={testIds("kind-line")}
-              className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground"
-            >
-              {facts.declaredKind !== null && (
-                <DeclaredKindValue kind={facts.declaredKind} testId={testIds("declared-kind")} />
-              )}
-              {markers}
-            </p>
-          )}
-          <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-1">
-            {pill !== null && <IdentityPillBadge pill={pill} testId={`${testIds("name")}-pill`} />}
-            {/* Everything on a card with no copy of the record came from a
-                crawl, and that is worth a pill beside the ones about trust. */}
-            {facts.stored === false && (
-              <Badge
-                variant="outline"
-                data-testid={testIds("unheld")}
-                title="Your wallet holds no copy of this record, only what a crawl read."
-              >
-                not stored here
-              </Badge>
-            )}
-            {!page && expandable && (
-              <CollapsibleTrigger
-                data-testid={testIds("expand")}
-                aria-label={shown ? "Hide the record" : "Show the record"}
-                title={shown ? "Hide the record" : "Show the record"}
-                onClick={(event) => event.stopPropagation()}
-                className="-my-1 -mr-1 inline-flex size-8 items-center justify-center rounded-md border bg-background text-muted-foreground hover:bg-accent hover:text-foreground"
-              >
-                <CollapsibleChevron className="size-4" />
-              </CollapsibleTrigger>
-            )}
-          </div>
-        </div>
         <IdentityInline
           identity={facts.resolved}
           stale={facts.stale}
           testId={testIds("name")}
           linkTestId={linkTestId}
-          to={facts.to ?? undefined}
-          layout="stacked"
-          className="mt-0.5"
-          // The card draws the pill itself, in its top right corner.
+          to={to ?? undefined}
+          stretch
+          layout={page ? "page" : "stacked"}
+          // The card draws the pill itself, at the end of the name line.
           pill={null}
+          trailing={
+            facts.declaredKind !== null && (
+              <DeclaredKindValue kind={facts.declaredKind} testId={testIds("declared-kind")} />
+            )
+          }
+          aside={
+            <>
+              {pill !== null && <IdentityPillBadge pill={pill} testId={`${testIds("name")}-pill`} />}
+              {/* Everything on a card with no copy of the record came from a
+                  crawl, and that is worth a pill beside the ones about trust. */}
+              {facts.stored === false && (
+                <Badge
+                  variant="outline"
+                  data-testid={testIds("unheld")}
+                  className="bg-background"
+                  title="Your wallet holds no copy of this record, only what a crawl read."
+                >
+                  not stored here
+                </Badge>
+              )}
+              {!page && expandable && (
+                <CollapsibleTrigger
+                  data-testid={testIds("expand")}
+                  aria-label={shown ? "Hide the record" : "Show the record"}
+                  title={shown ? "Hide the record" : "Show the record"}
+                  className={cn(ICON_BUTTON, "relative z-10")}
+                >
+                  <CollapsibleChevron className="size-4" />
+                </CollapsibleTrigger>
+              )}
+            </>
+          }
         />
+        {/* What the listing that drew this card carries: how many entries a
+            witness holds of it, how long ago a crawl saw it. */}
+        {extra && (
+          <p
+            data-testid={testIds("kind-line")}
+            className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground"
+          >
+            {markers}
+          </p>
+        )}
         <CollapsibleContent
           data-testid={testIds("details")}
-          className="mt-3 border-t pt-3"
+          className="relative z-10 mt-4 border-t pt-4"
         >
           <RecordRows facts={facts} testIds={testIds} resolvePrincipal={resolvePrincipal} />
         </CollapsibleContent>

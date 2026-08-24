@@ -14,7 +14,9 @@ import {
  * wallet can do without opening anything.
  *
  * It is the shared collapsible, with the one chevron every expanding block in
- * this app draws.
+ * this app draws, and it has no border of its own: the rows of one group are
+ * divided by a rule, and the only borders inside an opened row belong to its
+ * form and to the cards it lists.
  *
  * Everything is closed by default. `defaultOpen` exists for a panel that is the
  * only thing on its screen, and no action on the identity page uses it.
@@ -33,18 +35,18 @@ export function Action({
   children: ReactNode;
 }) {
   return (
-    <Collapsible data-testid={testId} defaultOpen={defaultOpen} className="rounded-md border">
+    <Collapsible data-testid={testId} defaultOpen={defaultOpen}>
       <CollapsibleTrigger
         data-testid={`${testId}-summary`}
-        className="flex w-full min-h-11 items-start gap-2 px-3 py-2 text-left hover:bg-accent"
+        className="flex w-full min-h-11 items-start gap-2 rounded-md px-1 py-2 text-left hover:bg-accent"
       >
         <CollapsibleChevron className="mt-1" />
-        <span className="flex min-w-0 flex-col gap-0.5">
+        <span className="flex min-w-0 flex-col gap-1">
           <span className="text-sm font-medium">{title}</span>
           <span className="text-xs text-muted-foreground">{description}</span>
         </span>
       </CollapsibleTrigger>
-      <CollapsibleContent className="space-y-3 border-t px-3 py-3">{children}</CollapsibleContent>
+      <CollapsibleContent className="space-y-3 pb-3 pl-6">{children}</CollapsibleContent>
     </Collapsible>
   );
 }

@@ -76,18 +76,25 @@ describe("Identifier", () => {
     expect(screen.getByText(PARTS.middle)).toHaveClass("sr-only");
   });
 
-  it("copies the whole value and reports it until the button is left", async () => {
-    const { user } = host(<Identifier value={ALICE} />);
+  it("copies the whole value and holds the confirmation, whatever the pointer does", async () => {
+    const { user } = host(<Identifier value={ALICE} copyLabel="Copy Mabel ID" />);
 
-    await user.click(screen.getByRole("button", { name: "copy" }));
+    await user.click(screen.getByRole("button", { name: "Copy Mabel ID" }));
 
     expect(await navigator.clipboard.readText()).toBe(ALICE);
-    const copied = screen.getByRole("button", { name: "copied" });
+    // The label says what it copied, so a screen reader hears which of the ids
+    // on a card the button took.
+    const copied = screen.getByRole("button", { name: "Copy Mabel ID: copied" });
     expect(copied).toHaveAttribute("data-copied", "true");
 
+    // Leaving the button does not take the confirmation back: it holds for two
+    // seconds and then goes.
     await user.click(screen.getByRole("button", { name: ALICE }));
 
-    expect(screen.getByRole("button", { name: "copy" })).toHaveAttribute("data-copied", "false");
+    expect(screen.getByRole("button", { name: "Copy Mabel ID: copied" })).toHaveAttribute(
+      "data-copied",
+      "true",
+    );
   });
 
   it("wraps the whole value with no toggle in full mode", () => {
@@ -101,7 +108,7 @@ describe("Identifier", () => {
       "false",
     );
     expect(screen.queryByRole("button", { name: ALICE })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "copy" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Copy" })).toBeInTheDocument();
   });
 
   it("routes the value when a route is given, and keeps its testid", () => {

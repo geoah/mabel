@@ -20,7 +20,7 @@ describe("the node page", () => {
     // The id is whole, not truncated, and it can be copied.
     expect(id.querySelector("[data-value]")).toHaveAttribute("data-value", walletNode.endpoint_id);
     expect(id).toHaveTextContent(walletNode.endpoint_id);
-    expect(within(id).getByLabelText("copy")).toBeInTheDocument();
+    expect(within(id).getByLabelText("Copy Iroh ID")).toBeInTheDocument();
     // The endpoint id is the Iroh ID everywhere, and never "its id".
     expect(screen.getByTestId("node-endpoint-id-row")).toHaveTextContent("Iroh ID");
     expect(screen.getByTestId("node-relay")).toHaveTextContent("public relays");

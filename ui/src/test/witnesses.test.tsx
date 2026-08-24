@@ -2,7 +2,7 @@ import { screen, within } from "@testing-library/react";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
 
-import { ACME, ALICE, REACHABLE_WITNESS, UNREACHABLE_WITNESS } from "@/mocks/fixtures";
+import { ACME, ALICE, BOB, REACHABLE_WITNESS, UNREACHABLE_WITNESS } from "@/mocks/fixtures";
 import { server } from "@/mocks/server";
 
 import { renderApp } from "./render";
@@ -14,9 +14,12 @@ describe("the witness card list", () => {
 
     const card = screen.getByTestId(`witness-card-${REACHABLE_WITNESS}`);
     expect(card).toHaveTextContent(REACHABLE_WITNESS.slice(0, 8));
+    // The card names the identities that chose it. How many of them there are
+    // is a sentence on the witness's own page, not a line on its card.
     expect(within(card).getByTestId(`witness-card-named-by-${REACHABLE_WITNESS}`)).toHaveTextContent(
-      "chosen by 1 identity of yours",
+      "Alice Ashworth",
     );
+    expect(card).not.toHaveTextContent("chosen by");
     expect(
       within(card).getByTestId(`witness-card-default-${REACHABLE_WITNESS}`),
     ).toHaveTextContent("this node uses it by default");
@@ -108,6 +111,39 @@ describe("the witness card list", () => {
     expect(await screen.findByTestId(`identity-card-${second}`)).toBeInTheDocument();
     expect(screen.getByTestId(`identity-card-${ALICE}`)).toBeInTheDocument();
     expect(screen.queryByTestId("witness-ledgers-capped")).not.toBeInTheDocument();
+  });
+
+  it("narrows what a witness holds to yours and to the ones you trust", async () => {
+    const { user } = renderApp(`/witnesses/${REACHABLE_WITNESS}`);
+    await screen.findByTestId("identity-cards");
+
+    // Everything it holds, which is what the page opens on.
+    expect(screen.getByTestId("witness-holdings-all")).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByTestId(`identity-card-${ALICE}`)).toBeInTheDocument();
+    expect(screen.getByTestId(`identity-card-${BOB}`)).toBeInTheDocument();
+
+    await user.click(screen.getByTestId("witness-holdings-ours"));
+
+    // The ledgers this wallet controls, and nothing else.
+    expect(screen.getByTestId(`identity-card-${ALICE}`)).toBeInTheDocument();
+    expect(screen.queryByTestId(`identity-card-${BOB}`)).not.toBeInTheDocument();
+
+    await user.click(screen.getByTestId("witness-holdings-trusted"));
+
+    // The people one of your identities has vouched for, and nothing you own.
+    expect(screen.getByTestId(`identity-card-${BOB}`)).toBeInTheDocument();
+    expect(screen.queryByTestId(`identity-card-${ALICE}`)).not.toBeInTheDocument();
+  });
+
+  it("says how many of your identities chose this witness, on its own page", async () => {
+    renderApp(`/witnesses/${REACHABLE_WITNESS}`);
+
+    expect(await screen.findByTestId("witness-chosen-by")).toHaveTextContent(
+      "Chosen by 1 of your identities.",
+    );
+    expect(screen.getByTestId("witness-chosen-by")).toHaveTextContent(
+      "This node uses it by default.",
+    );
   });
 
   it("states an unreachable witness as a fact about the connection", async () => {

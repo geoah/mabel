@@ -18,11 +18,14 @@ const buttonVariants = cva(
         link: "text-primary underline-offset-4 hover:underline",
       },
       // Touch first: every control clears 40px on a phone and tightens on md+.
+      // `icon-sm` is the one exception and the one square an icon button beside
+      // a pill draws: 32px at every width, so a row of them lines up.
       size: {
         default: "h-10 px-4 py-2 md:h-9",
         sm: "h-10 rounded-md px-3 text-xs md:h-8",
         lg: "h-11 rounded-md px-8 md:h-10",
         icon: "size-10 md:size-9",
+        "icon-sm": "size-8",
       },
     },
     defaultVariants: { variant: "default", size: "default" },

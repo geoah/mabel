@@ -1,18 +1,17 @@
-import type { MouseEvent, ReactNode } from "react";
-import { useNavigate } from "react-router";
+import type { ReactNode } from "react";
 
 import { Identifier } from "@/components/Identifier";
 import { Card } from "@/components/ui/card";
 
 /**
  * One witness as a card, in the same shape as an identity card and with the same
- * single border: the kind on the first small line, the Iroh ID under it, and a
- * badge in the top right corner. The id is never truncated here, because it is
- * the only name a witness has.
+ * single border: the word witness and any badge on the first line, the Iroh ID
+ * under it. The id is never truncated here, because it is the only name a
+ * witness has, and it is the card's anchor: nothing on a witness expands, so the
+ * card draws no control at all.
  *
  * Every screen that draws a witness draws this, so the list of witnesses and the
- * witnesses one identity chose cannot drift apart. The whole card is clickable
- * and the id is the real anchor, exactly as on an identity card.
+ * witnesses one identity chose cannot drift apart.
  */
 export function WitnessCard({
   endpointId,
@@ -28,42 +27,35 @@ export function WitnessCard({
   /** The lines under the id: where this wallet knows the witness from. */
   children?: ReactNode;
 }) {
-  const navigate = useNavigate();
   const to = `/witnesses/${endpointId}`;
-
-  function open(event: MouseEvent<HTMLDivElement>) {
-    if ((event.target as HTMLElement).closest("a,button")) {
-      return;
-    }
-    void navigate(to);
-  }
 
   return (
     <Card
       data-testid={`${testIdPrefix}-${endpointId}`}
-      onClick={open}
-      className="cursor-pointer p-3 transition-colors hover:border-foreground/30 hover:bg-accent sm:p-4"
+      className="relative cursor-pointer p-3 transition-colors focus-within:ring-1 focus-within:ring-ring hover:border-foreground/30 hover:bg-accent/40 sm:p-4"
     >
-      {/* The top line: the kind, and the badge in the corner. The id comes under
-          it, across the whole card: 52 characters and a copy button do not share
-          a phone's width with a badge. */}
-      <div className="flex items-start justify-between gap-2">
-        <p
+      {/* The first line: the kind, and the badge at the end of it. The id comes
+          under it, across the whole card: 52 characters and a copy button do not
+          share a phone's width with a badge. */}
+      <div className="flex items-center justify-between gap-3">
+        <h3
           data-testid={`${testIdPrefix}-kind-line-${endpointId}`}
-          className="min-w-0 text-xs text-muted-foreground"
+          className="min-w-0 text-base leading-tight font-medium"
         >
           witness
-        </p>
-        {badge !== undefined && <div className="ml-auto shrink-0">{badge}</div>}
+        </h3>
+        {badge !== undefined && <div className="shrink-0">{badge}</div>}
       </div>
       <Identifier
         value={endpointId}
         full
         to={to}
+        stretch
         linkTestId={`${testIdPrefix}-link-${endpointId}`}
-        className="mt-0.5"
+        copyLabel="Copy Iroh ID"
+        className="mt-2"
       />
-      {children !== undefined && <div className="mt-1">{children}</div>}
+      {children !== undefined && <div className="relative z-10 mt-2">{children}</div>}
     </Card>
   );
 }

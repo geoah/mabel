@@ -10,6 +10,7 @@ import {
   IdentityPillScope,
   type PillFacts,
 } from "@/components/identity";
+import { Section } from "@/components/Section";
 import { Button } from "@/components/ui/button";
 import { useResource } from "@/hooks/useResource";
 
@@ -76,9 +77,11 @@ export function KnownIdentities({ own }: { own: Identity[] }) {
   );
 
   return (
-    <section data-testid="known-identities" className="space-y-3 border-t pt-4">
-      <div className="flex items-center justify-between gap-2">
-        <h2 className="text-sm font-semibold tracking-tight">Known identities</h2>
+    <Section
+      testId="known-identities"
+      title="Known identities"
+      description="Everyone your wallet has a record of and does not control."
+      action={
         <Button
           type="button"
           variant={trustedOnly ? "default" : "outline"}
@@ -90,7 +93,8 @@ export function KnownIdentities({ own }: { own: Identity[] }) {
         >
           Trusted only
         </Button>
-      </div>
+      }
+    >
       {known.loading && <p data-testid="known-identities-loading">loading</p>}
       {known.error && (
         <ErrorEnvelopeView error={known.error} testId="known-identities-error" />
@@ -111,6 +115,6 @@ export function KnownIdentities({ own }: { own: Identity[] }) {
           />
         </IdentityPillScope>
       )}
-    </section>
+    </Section>
   );
 }

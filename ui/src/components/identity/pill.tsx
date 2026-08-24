@@ -94,12 +94,18 @@ export function usePill(identityId: string): Pill | null {
   return pillFor(identityId, useContext(PillContext));
 }
 
+/**
+ * All three are filled, and none of them is the tone a card's hover paints:
+ * a pill that vanishes under the pointer is a pill that says nothing. The
+ * declared kind wears the outline tone instead, so the two never read as one
+ * kind of fact.
+ */
 const TONES: Record<PillKind, string> = {
   // The quiet one on purpose: every card in your own wallet wears it, so a
   // solid black badge on each of them is the loudest thing on the screen.
-  own: "border-border",
-  trusted: "border-green-700/40 bg-green-50 text-green-900",
-  degree: "border-amber-700/40 bg-amber-50 text-amber-900",
+  own: "border-foreground/15 bg-muted text-foreground",
+  trusted: "border-green-700/40 bg-green-100 text-green-900",
+  degree: "border-amber-700/40 bg-amber-100 text-amber-900",
 };
 
 const TITLES: Record<PillKind, string> = {

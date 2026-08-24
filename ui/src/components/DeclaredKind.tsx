@@ -7,13 +7,19 @@ import { Badge } from "@/components/ui/badge";
  * surface says "declared kind" rather than repeating a disclaimer beside it
  * (proposal 005, which removed the advisory sentence outright).
  *
- * A card draws it as a badge in the quiet tone: it labels what the identity says
- * it is. The pills, which say something about your own trust, keep the corner
- * and the colours.
+ * A card draws it beside the name, in the outline tone: an outlined white pill
+ * stays legible on a card the pointer is over, which a filled grey one did not.
+ * The pills, which say something about your own trust, keep the corner and the
+ * filled colours.
  */
 export function DeclaredKindValue({ kind, testId }: { kind: DeclaredKind; testId: string }) {
   return (
-    <Badge variant="secondary" data-testid={testId} data-declared-kind={kind}>
+    <Badge
+      variant="outline"
+      data-testid={testId}
+      data-declared-kind={kind}
+      className="bg-background font-normal text-muted-foreground"
+    >
       {kind}
     </Badge>
   );

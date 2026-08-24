@@ -9,6 +9,7 @@ import {
   IdentityListScope,
   resolvedFrom,
 } from "@/components/identity";
+import { PageSections, Section } from "@/components/Section";
 import { WitnessCard } from "@/components/WitnessCard";
 import { Badge } from "@/components/ui/badge";
 import { useResource } from "@/hooks/useResource";
@@ -16,9 +17,9 @@ import { GraphSyncCard } from "@/routes/wallet/GraphSyncControl";
 
 /**
  * One witness endpoint and where this wallet knows it from: the identities whose
- * folded witness config names it, and whether node.json carries it as a default.
- * The identities are named the way every other screen names one, so the block
- * reads as people rather than as a column of opaque ids.
+ * folded witness config names it, named the way every other screen names one, so
+ * the card reads as people rather than as a count. How many of them there are is
+ * a sentence on the witness's own page, not a line on its card.
  */
 function KnownWitnessCard({
   witness,
@@ -41,16 +42,9 @@ function KnownWitnessCard({
         ) : undefined
       }
     >
-      <p
-        data-testid={`witness-card-named-by-${endpoint}`}
-        className="text-xs text-muted-foreground"
-      >
-        chosen by {witness.named_by.length}{" "}
-        {witness.named_by.length === 1 ? "identity" : "identities"} of yours
-      </p>
       {chose.length > 0 && (
         <IdentityListScope identities={chose}>
-          <span className="mt-1 flex flex-col gap-1">
+          <div data-testid={`witness-card-named-by-${endpoint}`} className="flex flex-col gap-2">
             {chose.map((identity) => (
               <IdentityInline
                 key={identity.identity_id}
@@ -61,7 +55,7 @@ function KnownWitnessCard({
                 full
               />
             ))}
-          </span>
+          </div>
         </IdentityListScope>
       )}
     </WitnessCard>
@@ -85,14 +79,14 @@ export function WitnessesPage() {
   }, [identities.data]);
 
   return (
-    <div className="space-y-4">
+    <PageSections>
       {/* Flat sections, like the wallet page: the cards here are the witnesses,
           so no card wraps them. */}
-      <section data-testid="witness-list" className="space-y-3">
-        <h2 className="text-sm font-semibold tracking-tight">Witnesses</h2>
-        <p className="text-xs text-muted-foreground">
-          The ones your identities chose, and the ones this node uses by default.
-        </p>
+      <Section
+        testId="witness-list"
+        title="Witnesses"
+        description="The ones your identities chose, and the ones this node uses by default."
+      >
         {witnesses.loading && <p data-testid="witness-list-loading">loading</p>}
         {witnesses.error && (
           <ErrorEnvelopeView error={witnesses.error} testId="witness-list-error" />
@@ -109,9 +103,9 @@ export function WitnessesPage() {
             ))}
           </ul>
         )}
-      </section>
+      </Section>
       {/* The sync reads witnesses, so the control that starts one lives here. */}
       <GraphSyncCard />
-    </div>
+    </PageSections>
   );
 }

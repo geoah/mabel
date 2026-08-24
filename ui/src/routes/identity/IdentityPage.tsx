@@ -14,6 +14,7 @@ import {
   type PillFacts,
   trustedSubjects,
 } from "@/components/identity";
+import { PageSections } from "@/components/Section";
 import { degreesOf, named, useResolvedNames } from "@/hooks/useResolvedNames";
 import { useResource } from "@/hooks/useResource";
 import { ActionsSection } from "@/routes/wallet/ActionsSection";
@@ -43,20 +44,23 @@ function ContactSection({ identityId }: { identityId: string }) {
   const contact = useResource(() => getContact(identityId), [identityId, version]);
 
   return (
-    <Action
-      testId="lookup-contact"
-      title="Update local info"
-      description="The nickname and note only this device sees."
-    >
-      {contact.error && <ErrorEnvelopeView error={contact.error} testId="lookup-contact-error" />}
-      {contact.data && (
-        <ContactPanel
-          identityId={identityId}
-          contact={contact.data.contact}
-          onSaved={() => setVersion((value) => value + 1)}
-        />
-      )}
-    </Action>
+    // One row on its own, so it takes the rule its siblings in a group get.
+    <div className="border-t">
+      <Action
+        testId="lookup-contact"
+        title="Update local info"
+        description="The nickname and note only this device sees."
+      >
+        {contact.error && <ErrorEnvelopeView error={contact.error} testId="lookup-contact-error" />}
+        {contact.data && (
+          <ContactPanel
+            identityId={identityId}
+            contact={contact.data.contact}
+            onSaved={() => setVersion((value) => value + 1)}
+          />
+        )}
+      </Action>
+    </div>
   );
 }
 
@@ -132,7 +136,7 @@ export function IdentityPage() {
 
   return (
     <IdentityPillScope facts={pills}>
-      <div className="space-y-4">
+      <PageSections>
         {loading && <p data-testid="identity-detail-loading">loading</p>}
         {identity.error && <ErrorEnvelopeView error={identity.error} testId="identity-detail-error" />}
         {memberships.error && (
@@ -199,7 +203,7 @@ export function IdentityPage() {
             onAppended={refresh}
           />
         )}
-      </div>
+      </PageSections>
     </IdentityPillScope>
   );
 }

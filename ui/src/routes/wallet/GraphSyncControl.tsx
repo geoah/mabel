@@ -3,8 +3,8 @@ import { type ReactNode, useState } from "react";
 import { type ApiError, getGraph, syncGraph } from "@/api/client";
 import type { Graph } from "@/api/types";
 import { ErrorEnvelopeView } from "@/components/ErrorEnvelopeView";
+import { Section } from "@/components/Section";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { asApiError, useResource } from "@/hooks/useResource";
 import { GRAPH_CONSENT_KEY, useConsent } from "@/lib/preferences";
 import { describeAge } from "@/lib/time";
@@ -13,6 +13,14 @@ import { describeAge } from "@/lib/time";
  * What a sync tells the world, stated before the first one and remembered per
  * node home (proposal 003, Consequences).
  */
+/**
+ * What a truncated crawl leaves a reader with: the state it stopped in, and the
+ * one thing they can do about it. "Your wallet may not have seen everything"
+ * said the first half and stopped.
+ */
+export const SEARCH_TRUNCATED =
+  "The last search stopped before every connection was checked. Look again.";
+
 const GRAPH_CONSENT_SENTENCES = [
   "Every witness your wallet asks learns which people you are interested in.",
   "Your wallet reads their records to answer how you know someone, and keeps no copy.",
@@ -89,7 +97,7 @@ function GraphSyncNotices({ sync, children }: { sync: GraphSync; children?: Reac
     return null;
   }
   return (
-    <div className="space-y-2 rounded-md border bg-card p-3 text-left">
+    <div className="space-y-2 text-left">
       {sync.asking && (
         <div data-testid="graph-sync-consent" className="space-y-2">
           {GRAPH_CONSENT_SENTENCES.map((sentence) => (
@@ -143,28 +151,24 @@ export function GraphSyncCard() {
   const current = sync.graph;
 
   return (
-    <Card data-testid="graph-sync">
-      <CardHeader>
-        <CardTitle>Finding people through the people you trust</CardTitle>
-        <CardDescription>
-          Your wallet follows who trusts whom, and only when you press the button.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-2">
-        <p data-testid="graph-sync-state" className="text-sm">
-          {current === null
-            ? "Your wallet has not looked yet."
-            : `Your wallet last looked ${describeAge(current.last_sync_ms)}.`}
+    <Section
+      testId="graph-sync"
+      title="Finding people through the people you trust"
+      description="Your wallet follows who trusts whom, and only when you press the button."
+    >
+      <p data-testid="graph-sync-state" className="text-sm">
+        {current === null
+          ? "Your wallet has not looked yet."
+          : `Your wallet last looked ${describeAge(current.last_sync_ms)}.`}
+      </p>
+      {current?.truncated && (
+        <p data-testid="graph-sync-truncated" className="text-sm">
+          {SEARCH_TRUNCATED}
         </p>
-        {current?.truncated && (
-          <p data-testid="graph-sync-truncated" className="text-sm">
-            Your wallet may not have seen everything.
-          </p>
-        )}
-        <GraphSyncButton sync={sync} testId="graph-sync-button" />
-        <GraphSyncNotices sync={sync} />
-      </CardContent>
-    </Card>
+      )}
+      <GraphSyncButton sync={sync} testId="graph-sync-button" />
+      <GraphSyncNotices sync={sync} />
+    </Section>
   );
 }
 

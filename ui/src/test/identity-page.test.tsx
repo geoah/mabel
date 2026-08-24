@@ -209,7 +209,7 @@ describe("how you know them", () => {
     expect(banner).toHaveTextContent("Your wallet last looked");
     expect(within(banner).getByTestId("lookup-graph-stale-sync")).toBeInTheDocument();
     expect(screen.getByTestId("lookup-graph-truncated")).toHaveTextContent(
-      "Your wallet may not have seen everything.",
+      "The last search stopped before every connection was checked. Look again.",
     );
     expect(screen.getByTestId("lookup-hop-0-0-stale")).toHaveTextContent("may be out of date");
   });

@@ -84,7 +84,7 @@ export function WitnessConfigPanel({
             data-testid="witness-add-endpoint"
             value={endpoint}
             onChange={(event) => setEndpoint(event.target.value)}
-            placeholder="52 base32 characters"
+            placeholder="paste the witness's Iroh ID"
             className="font-mono text-xs"
           />
         </InlineField>

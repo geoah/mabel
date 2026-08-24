@@ -89,7 +89,7 @@ describe("IdentityInline", () => {
   it("offers a copy button for the id on every line it draws", () => {
     host(<IdentityInline identity={document()} testId="who" />);
 
-    expect(within(screen.getByTestId("who")).getByLabelText("copy")).toBeInTheDocument();
+    expect(within(screen.getByTestId("who")).getByLabelText("Copy Mabel ID")).toBeInTheDocument();
   });
 
   it("renders the id alone when nothing names the identity", () => {

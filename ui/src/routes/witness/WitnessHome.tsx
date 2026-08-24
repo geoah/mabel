@@ -6,7 +6,7 @@ import {
   type IdentityCardEntry,
   IdentityCardList,
 } from "@/components/identity";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Section } from "@/components/Section";
 import { usePagedList } from "@/hooks/usePagedList";
 
 import { WITNESS_HOLDINGS_NOTE, WITNESS_READ_ONLY_NOTE } from "./notes";
@@ -53,35 +53,30 @@ export function WitnessHome() {
   }));
 
   return (
-    <Card data-testid="witness-ledger-list">
-      <CardHeader>
-        <CardTitle>Records</CardTitle>
-        <CardDescription data-testid="witness-holdings-note">
-          {WITNESS_HOLDINGS_NOTE}
-        </CardDescription>
-        <CardDescription data-testid="witness-read-only-note">
-          {WITNESS_READ_ONLY_NOTE}
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {page.loading && <p data-testid="witness-ledger-list-loading">loading</p>}
-        {page.error && (
-          <ErrorEnvelopeView error={page.error} testId="witness-ledger-list-error" />
-        )}
-        {page.capped && (
-          <p data-testid="witness-ledger-list-capped" className="text-sm">
-            Showing the first {page.items.length} records. This witness holds more.
-          </p>
-        )}
-        {page.loaded && (
-          <IdentityCardList
-            entries={entries}
-            testId="identity-cards"
-            empty="This witness holds no record."
-            emptyTestId="witness-ledger-list-empty"
-          />
-        )}
-      </CardContent>
-    </Card>
+    <Section
+      testId="witness-ledger-list"
+      title="Records"
+      descriptionTestId="witness-holdings-note"
+      description={WITNESS_HOLDINGS_NOTE}
+    >
+      <p data-testid="witness-read-only-note" className="text-sm text-muted-foreground">
+        {WITNESS_READ_ONLY_NOTE}
+      </p>
+      {page.loading && <p data-testid="witness-ledger-list-loading">loading</p>}
+      {page.error && <ErrorEnvelopeView error={page.error} testId="witness-ledger-list-error" />}
+      {page.capped && (
+        <p data-testid="witness-ledger-list-capped" className="text-sm">
+          Showing the first {page.items.length} records. This witness holds more.
+        </p>
+      )}
+      {page.loaded && (
+        <IdentityCardList
+          entries={entries}
+          testId="identity-cards"
+          empty="This witness holds no record."
+          emptyTestId="witness-ledger-list-empty"
+        />
+      )}
+    </Section>
   );
 }

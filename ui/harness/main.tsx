@@ -34,7 +34,12 @@ async function startMocks() {
  */
 function MockControls() {
   return (
-    <footer className="mx-auto w-full max-w-2xl px-3 pb-20 sm:px-4 md:pb-4">
+    // The attribute is how a capture hides it: it belongs to no screen, so it
+    // appears in no screenshot.
+    <footer
+      data-harness-controls
+      className="mx-auto w-full max-w-2xl px-3 pb-20 sm:px-4 md:pb-4"
+    >
       <div className="border-t pt-4">
         <Button
           type="button"

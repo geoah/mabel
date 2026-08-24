@@ -1,12 +1,19 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router";
 
+import { ICON_BUTTON } from "@/components/ui/icon-button";
 import { COPY_FAILED, copyText } from "@/lib/clipboard";
 import { cn } from "@/lib/utils";
 
 /** Characters kept visible at each end of a truncated identifier. */
 export const HEAD_CHARS = 8;
 export const TAIL_CHARS = 8;
+
+/** How long a copy stays confirmed on the button that did it. */
+const COPIED_MS = 2000;
+
+/** What a copy button says it copies, when the caller does not name it. */
+const COPY_LABEL = "Copy";
 
 export interface IdentifierParts {
   head: string;
@@ -59,36 +66,42 @@ function CheckIcon() {
 
 /**
  * Copies the identifier and reports it, including when it could not: a copy
- * nobody can see failing is worse than no copy button. The confirmation is held
- * until the button loses focus or the pointer leaves, so no timer fires after a
- * render.
+ * nobody can see failing is worse than no copy button. The label names what is
+ * copied, because "copy" alone tells a screen reader nothing about which of the
+ * three ids on a card it would take. The confirmation holds for two seconds and
+ * then goes, whatever the pointer does meanwhile.
  */
-function CopyButton({ value }: { value: string }) {
+function CopyButton({ value, label }: { value: string; label: string }) {
   const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
   const copied = state === "copied";
-  const label = state === "failed" ? COPY_FAILED : copied ? "copied" : "copy";
+  const spoken = state === "failed" ? COPY_FAILED : copied ? `${label}: copied` : label;
+
+  useEffect(() => {
+    if (state === "idle") {
+      return;
+    }
+    const timer = setTimeout(() => setState("idle"), COPIED_MS);
+    return () => clearTimeout(timer);
+  }, [state]);
 
   return (
     <>
       <button
         type="button"
-        aria-label={label}
-        title={label}
+        aria-label={spoken}
+        title={spoken}
         data-copied={copied}
         data-copy-failed={state === "failed"}
-        // A copy button inside a clickable card copies and nothing else.
+        // A copy button inside a clickable card copies and nothing else, and it
+        // sits above the card's own stretched link.
         onClick={(event) => {
           event.stopPropagation();
           void copyText(value).then((ok) => setState(ok ? "copied" : "failed"));
         }}
-        onBlur={() => setState("idle")}
-        onPointerLeave={() => setState("idle")}
-        className={cn(
-          "inline-flex size-10 shrink-0 items-center justify-center rounded-md md:size-6",
-          "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-          copied ? "text-foreground" : "text-muted-foreground hover:text-foreground",
-          "hover:bg-accent",
-        )}
+        // The negative margin keeps a 32px button from making the row it sits in
+        // taller than its neighbours: one id in a table of short rows used to
+        // stretch its own row by eight pixels.
+        className={cn(ICON_BUTTON, "relative z-10 -my-1", copied && "text-foreground")}
       >
         {copied ? <CheckIcon /> : <ClipboardIcon />}
       </button>
@@ -109,23 +122,32 @@ interface IdentifierProps {
   /**
    * Renders the truncated value as text with no expand and no copy button. It
    * is what an identifier inside a link uses: a button inside an anchor is not
-   * valid HTML, and the whole identity card is one anchor.
+   * valid HTML.
    */
   plain?: boolean;
   /** Routes the value, for the ids that address a screen. */
   to?: string;
   /** The testid a suite reads on the link, when to is given. */
   linkTestId?: string;
+  /** Makes the routed value cover its positioned ancestor: a card's click target. */
+  stretch?: boolean;
+  /** What the copy button says it copies: "Copy Mabel ID", "Copy Iroh ID". */
+  copyLabel?: string;
   className?: string;
 }
 
 /**
  * One identifier: a 52-character id, key, endpoint id or event id.
  *
- * The middle characters stay in the DOM inside an sr-only span, so the element's
- * text is always the whole value for a screen reader, a test and a page copy,
- * while a reader sees the first and last eight characters with an ellipsis drawn
- * by CSS. Clicking the value shows the rest; the title attribute carries it too.
+ * A whole id stays whole, because it is the only thing telling two identities
+ * apart, and it is drawn small, monospace and muted so it does not outshout the
+ * name above it. The value and its copy button sit on one row, centred against
+ * each other.
+ *
+ * The middle characters of a truncated value stay in the DOM inside an sr-only
+ * span, so the element's text is always the whole value for a screen reader, a
+ * test and a page copy, while a reader sees the first and last eight characters
+ * with an ellipsis drawn by CSS.
  */
 export function Identifier({
   value,
@@ -133,6 +155,8 @@ export function Identifier({
   plain = false,
   to,
   linkTestId,
+  stretch = false,
+  copyLabel = COPY_LABEL,
   className,
 }: IdentifierProps) {
   const [expanded, setExpanded] = useState(false);
@@ -158,15 +182,20 @@ export function Identifier({
       data-value={value}
       data-truncated={String(!whole)}
       className={cn(
-        "inline-flex max-w-full gap-1 font-mono text-xs",
-        // A truncated value is one short line and stays on it; a whole value
-        // breaks wherever it must, because no column fits 52 characters.
-        whole ? "items-start break-all" : "items-center whitespace-nowrap",
+        // Small, monospace and muted: the id is evidence under a name, not the
+        // heading of the card it sits on.
+        "inline-flex max-w-full items-center gap-1 font-mono text-[11px] text-muted-foreground",
+        whole ? "break-all" : "whitespace-nowrap",
         className,
       )}
     >
       {to !== undefined ? (
-        <Link to={to} data-testid={linkTestId} title={value} className="min-w-0 underline">
+        <Link
+          to={to}
+          data-testid={linkTestId}
+          title={value}
+          className={cn("min-w-0 underline", stretch && "after:absolute after:inset-0")}
+        >
           {body}
         </Link>
       ) : full || plain ? (
@@ -182,12 +211,12 @@ export function Identifier({
             event.stopPropagation();
             setExpanded(!expanded);
           }}
-          className="min-w-0 text-left underline decoration-dotted decoration-from-font underline-offset-2 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          className="relative z-10 min-w-0 text-left underline decoration-dotted decoration-from-font underline-offset-2 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
         >
           {body}
         </button>
       )}
-      {!plain && <CopyButton value={value} />}
+      {!plain && <CopyButton value={value} label={copyLabel} />}
     </span>
   );
 }

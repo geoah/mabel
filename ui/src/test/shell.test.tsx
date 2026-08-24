@@ -202,7 +202,7 @@ describe("finding people through the people you trust", () => {
     expect(card).toHaveTextContent("only when you press the button");
     expect(screen.getByTestId("graph-sync-state")).toHaveTextContent("Your wallet last looked");
     expect(screen.getByTestId("graph-sync-truncated")).toHaveTextContent(
-      "Your wallet may not have seen everything.",
+      "The last search stopped before every connection was checked. Look again.",
     );
     expect(screen.getByTestId("graph-sync-button")).toBeInTheDocument();
   });

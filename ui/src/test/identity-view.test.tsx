@@ -67,28 +67,29 @@ describe("the identity page's top section", () => {
     expect(screen.getByTestId("identity-detail-open-invitations")).toHaveTextContent("none");
   });
 
-  it("carries the your-identity pill in the top right corner of the card", async () => {
+  it("carries the your-identity pill at the end of the name's own line", async () => {
     renderApp(`/identities/${ALICE}`);
     await screen.findByTestId("identity-detail");
 
     const pill = await screen.findByTestId("identity-detail-resolved-pill");
     expect(pill).toHaveTextContent("your identity");
     expect(pill).toHaveAttribute("data-pill", "own");
-    // The pill sits on the card's own top line, not inside the name.
-    const kindLine = screen.getByTestId("identity-detail-kind-line");
-    expect(pill.parentElement?.previousElementSibling).toBe(kindLine);
-    expect(screen.getByTestId("identity-detail-resolved").contains(pill)).toBe(false);
+    // The name is this page's h1, and the pill sits at the end of its line.
+    const name = screen.getByTestId("identity-detail-resolved-name");
+    expect(name.tagName).toBe("H1");
+    expect(pill.parentElement?.previousElementSibling).toBe(name.parentElement);
   });
 
-  it("puts the kind on the line above the name", async () => {
+  it("puts the kind beside the name, on the same line", async () => {
     renderApp(`/identities/${ALICE}`);
     await screen.findByTestId("identity-detail");
 
-    const line = screen.getByTestId("identity-detail-kind-line");
-    expect(line).toHaveTextContent("person");
-    const name = screen.getByTestId("identity-detail-resolved");
-    // The kind line comes first in the DOM, so it reads first on the screen.
-    expect(line.compareDocumentPosition(name)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    const kind = screen.getByTestId("identity-detail-declared-kind");
+    const name = screen.getByTestId("identity-detail-resolved-name");
+    expect(kind).toHaveTextContent("person");
+    expect(kind.parentElement).toBe(name.parentElement);
+    // There is no small line above the name any more.
+    expect(screen.queryByTestId("identity-detail-kind-line")).not.toBeInTheDocument();
   });
 
   it("drops the back link: the browser has one, and the nav has two entries", async () => {
@@ -105,13 +106,16 @@ describe("ledger lines", () => {
     await screen.findByTestId("ledger-events");
 
     expect(screen.getByTestId("event-seq-0")).toHaveTextContent("0");
-    expect(screen.getByTestId("event-payload-kind-0")).toHaveTextContent("inception");
     expect(screen.getByTestId("event-gloss-0")).toHaveTextContent("created this identity");
+    // A closed line is a position and a plain sentence: the kind string and the
+    // payload are inside the entry, which is where a reader who wants them goes.
+    expect(screen.queryByTestId("event-payload-kind-0")).not.toBeInTheDocument();
     expect(screen.queryByTestId("event-payload-0")).not.toBeInTheDocument();
 
     await user.click(screen.getByTestId("event-expand-0"));
 
     expect(screen.getByTestId("event-detail-0")).toBeInTheDocument();
+    expect(screen.getByTestId("event-payload-kind-0")).toHaveTextContent("inception");
     expect(screen.getByTestId("event-payload-0")).toHaveTextContent('"nonce"');
     expect(screen.getByTestId("event-id-0")).toBeInTheDocument();
 
@@ -178,6 +182,44 @@ describe("state and actions", () => {
     const trust = screen.getByTestId("trust-panel");
     const ledger = screen.getByTestId("ledger-panel");
     expect(trust.compareDocumentPosition(ledger)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+
+  it("says in one line what the trust list is, and what an empty one means", async () => {
+    renderApp(`/identities/${ALICE}`);
+    await screen.findByTestId("trust-panel");
+
+    expect(screen.getByTestId("trust-panel-description")).toHaveTextContent(
+      "People this identity currently trusts.",
+    );
+
+    renderApp(`/identities/${ACME}`);
+
+    expect(await screen.findByTestId("trust-list-empty")).toHaveTextContent(
+      "This identity does not trust anyone yet.",
+    );
+  });
+
+  it("groups the actions under four plain headings", async () => {
+    renderApp(`/identities/${ALICE}`);
+    await screen.findByTestId("identity-actions");
+
+    const groups = [
+      ["action-group-profile", "Profile", ["action-profile", "action-handle", "action-contact"]],
+      ["action-group-trust", "Trust", ["action-trust", "action-revoke"]],
+      ["action-group-witnesses", "Witnesses and sync", ["action-witnesses", "action-push"]],
+      [
+        "action-group-control",
+        "Control and keys",
+        ["action-invite", "action-accept", "action-admit", "action-remove", "action-keys"],
+      ],
+    ] as const;
+    for (const [testId, heading, rows] of groups) {
+      const group = screen.getByTestId(testId);
+      expect(within(group).getAllByRole("heading")[0]).toHaveTextContent(heading);
+      for (const row of rows) {
+        expect(within(group).getByTestId(row)).toBeInTheDocument();
+      }
+    }
   });
 
   it("names every operation with one line saying what it does", async () => {

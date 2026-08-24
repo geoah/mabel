@@ -3,8 +3,8 @@ import type { WalletNodeInfo, WitnessNodeInfo } from "@/api/types";
 import { ErrorEnvelopeView } from "@/components/ErrorEnvelopeView";
 import { Identifier } from "@/components/Identifier";
 import { KeyValue, KeyValueTable } from "@/components/KeyValue";
+import { PageSections, Section } from "@/components/Section";
 import { WitnessCard } from "@/components/WitnessCard";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useResource } from "@/hooks/useResource";
 
 /** The relay setting, in the two words it is worth. */
@@ -59,62 +59,52 @@ export function NodePage() {
   const data = node.data;
 
   return (
-    <div className="space-y-4">
-      <Card data-testid="node-page">
-        <CardHeader>
-          <CardTitle>This node</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {node.loading && <p data-testid="node-loading">loading</p>}
-          {node.error && <ErrorEnvelopeView error={node.error} testId="node-error" />}
-          {data && (
-            <KeyValueTable>
-              <KeyValue label="role" testId="node-role">
-                {data.role}
-              </KeyValue>
-              <KeyValue label="Iroh ID" testId="node-endpoint-id">
-                <Identifier value={data.endpoint_id} full />
-              </KeyValue>
-              <KeyValue label="relay" testId="node-relay">
-                {RELAY[data.relay] ?? data.relay}
-              </KeyValue>
-              {data.role === "wallet" ? (
-                <WalletRows node={data} />
-              ) : (
-                <WitnessRows node={data} />
-              )}
-              <KeyValue label="space used" testId="node-storage">
-                {bytes(data.storage_used)} of {bytes(data.storage_capacity)}
-              </KeyValue>
-              <KeyValue label="version" testId="node-version">
-                {data.version}
-              </KeyValue>
-            </KeyValueTable>
-          )}
-        </CardContent>
-      </Card>
+    <PageSections>
+      <Section testId="node-page" title="This node">
+        {node.loading && <p data-testid="node-loading">loading</p>}
+        {node.error && <ErrorEnvelopeView error={node.error} testId="node-error" />}
+        {data && (
+          <KeyValueTable>
+            <KeyValue label="role" testId="node-role">
+              {data.role}
+            </KeyValue>
+            <KeyValue label="Iroh ID" testId="node-endpoint-id">
+              <Identifier value={data.endpoint_id} full copyLabel="Copy Iroh ID" />
+            </KeyValue>
+            <KeyValue label="relay" testId="node-relay">
+              {RELAY[data.relay] ?? data.relay}
+            </KeyValue>
+            {data.role === "wallet" ? <WalletRows node={data} /> : <WitnessRows node={data} />}
+            <KeyValue label="space used" testId="node-storage">
+              {bytes(data.storage_used)} of {bytes(data.storage_capacity)}
+            </KeyValue>
+            <KeyValue label="version" testId="node-version">
+              {data.version}
+            </KeyValue>
+          </KeyValueTable>
+        )}
+      </Section>
       {data && (
-        <Card data-testid="node-witnesses">
-          <CardHeader>
-            <CardTitle>Witnesses it uses by default</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {data.witnesses.length === 0 ? (
-              <p data-testid="node-witnesses-empty" className="text-sm">
-                none
-              </p>
-            ) : (
-              <ul data-testid="node-witness-cards" className="grid gap-2">
-                {data.witnesses.map((endpointId) => (
-                  <li key={endpointId} className="min-w-0">
-                    <WitnessCard endpointId={endpointId} testIdPrefix="node-witness" />
-                  </li>
-                ))}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
+        <Section
+          testId="node-witnesses"
+          title="Witnesses it uses by default"
+          description="An identity that names no witness of its own gets these."
+        >
+          {data.witnesses.length === 0 ? (
+            <p data-testid="node-witnesses-empty" className="text-sm">
+              none
+            </p>
+          ) : (
+            <ul data-testid="node-witness-cards" className="grid gap-2">
+              {data.witnesses.map((endpointId) => (
+                <li key={endpointId} className="min-w-0">
+                  <WitnessCard endpointId={endpointId} testIdPrefix="node-witness" />
+                </li>
+              ))}
+            </ul>
+          )}
+        </Section>
       )}
-    </div>
+    </PageSections>
   );
 }

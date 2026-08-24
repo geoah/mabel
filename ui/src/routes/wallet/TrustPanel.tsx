@@ -12,8 +12,8 @@ import {
 } from "@/components/identity";
 import { Identifier } from "@/components/Identifier";
 import { InlineField, InlineForm } from "@/components/InlineForm";
+import { Section } from "@/components/Section";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { named, type ResolvedNames } from "@/hooks/useResolvedNames";
 import { asApiError } from "@/hooks/useResource";
@@ -191,6 +191,10 @@ export function TrustRevokeForm({
   );
 }
 
+/** What the list is, in one line, and what it says when it holds nothing. */
+export const TRUST_DESCRIPTION = "People this identity currently trusts.";
+export const TRUST_EMPTY = "This identity does not trust anyone yet.";
+
 /**
  * The state: who this identity trusts, one full card each, the same card every
  * other list of identities draws. Trust taken back is not drawn here at all: it
@@ -218,26 +222,23 @@ export function TrustPanel({
     }));
 
   return (
-    <Card data-testid="trust-panel">
-      <CardHeader>
-        <CardTitle>{owner === null ? "Who this identity trusts" : `Who ${owner} trusts`}</CardTitle>
-        <CardDescription>
-          Everyone it has said it trusts and has not taken back.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <IdentityCardList
-          entries={entries}
-          testId="trust-list"
-          empty="This identity has not said it trusts anyone yet."
-          emptyTestId="trust-list-empty"
-        />
-        {actions.appended && (
-          <p data-testid="trust-appended-event" className="text-xs">
-            Saved as entry <Identifier value={actions.appended} />
-          </p>
-        )}
-      </CardContent>
-    </Card>
+    <Section
+      testId="trust-panel"
+      title={owner === null ? "Who this identity trusts" : `Who ${owner} trusts`}
+      description={TRUST_DESCRIPTION}
+      descriptionTestId="trust-panel-description"
+    >
+      <IdentityCardList
+        entries={entries}
+        testId="trust-list"
+        empty={TRUST_EMPTY}
+        emptyTestId="trust-list-empty"
+      />
+      {actions.appended && (
+        <p data-testid="trust-appended-event" className="text-xs">
+          Saved as entry <Identifier value={actions.appended} />
+        </p>
+      )}
+    </Section>
   );
 }

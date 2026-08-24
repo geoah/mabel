@@ -130,7 +130,7 @@ describe("the witness node's debug route", () => {
     await screen.findByTestId("ledger-events");
     expect(screen.getByTestId("witness-detail-declared-kind")).toHaveTextContent("person");
     expect(screen.getByTestId("witness-detail-head-seq")).toHaveTextContent("3");
-    expect(screen.getByTestId("event-payload-kind-0")).toHaveTextContent("inception");
+    expect(screen.getByTestId("event-gloss-0")).toHaveTextContent("created this identity");
     expect(screen.queryByTestId("event-payload-0")).not.toBeInTheDocument();
 
     await user.click(screen.getByTestId("event-expand-0"));

@@ -47,33 +47,42 @@ function card(identity: Identity, state: "collapsed" | "expanded" | "page" = "co
 }
 
 describe("the card's layout", () => {
-  it("reads kind, then name, with the pill and the chevron in the top right corner", () => {
+  it("reads name, kind and pills on one line, with the id under it", () => {
     card(alice);
 
-    const kind = screen.getByTestId(`identity-card-kind-line-${ALICE}`);
-    const name = screen.getByTestId(`identity-card-name-${ALICE}`);
+    const heading = screen.getByTestId(`identity-card-name-${ALICE}`);
+    const name = screen.getByTestId(`identity-card-name-${ALICE}-name`);
+    const kind = screen.getByTestId(`identity-card-declared-kind-${ALICE}`);
     const pill = screen.getByTestId(`identity-card-name-${ALICE}-pill`);
     const expand = screen.getByTestId(`identity-card-expand-${ALICE}`);
 
     expect(kind).toHaveTextContent("person");
-    // The kind line comes before the name line in the DOM, so it reads first.
-    expect(kind.compareDocumentPosition(name)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    // The kind sits beside the name, in the same row, not on a line above it.
+    expect(kind.parentElement).toBe(name.parentElement);
+    // The pill and the expand control share the end of that same row.
+    expect(pill.parentElement).toBe(expand.parentElement);
+    expect(pill.parentElement?.parentElement).toBe(name.parentElement?.parentElement);
+    // The id comes under the row, across the whole card.
+    const id = heading.querySelector(`[data-value="${ALICE}"]`);
+    expect(name.parentElement?.parentElement?.contains(id!)).toBe(false);
     // One surface: the card draws the only border, and nothing inside it draws
     // a second one.
     const card_ = screen.getByTestId(`identity-card-${ALICE}`);
     for (const inner of card_.querySelectorAll("div")) {
       expect(inner.className).not.toMatch(/(^|\s)border($|\s)/);
     }
-    // The pill and the chevron share the corner, and neither is inside the name.
-    expect(pill.parentElement).toBe(expand.parentElement);
-    expect(name.contains(pill)).toBe(false);
   });
 
-  it("opens the identity page on a click anywhere that is not a control", async () => {
+  it("opens the identity page from the name, whose link covers the card", async () => {
     const { user } = renderApp("/wallet");
     await screen.findByTestId("identity-cards");
 
-    await user.click(screen.getByTestId(`identity-card-kind-line-${ALICE}`));
+    const link = screen.getByTestId(`identity-card-link-${ALICE}`);
+    // The anchor's own box is stretched over the card, which is what makes the
+    // whole card clickable without a click handler on a div.
+    expect(link.className).toMatch(/after:absolute/);
+
+    await user.click(link);
 
     expect(await screen.findByTestId("identity-detail")).toBeInTheDocument();
   });
@@ -89,7 +98,7 @@ describe("the card's layout", () => {
     expect(screen.queryByTestId("identity-detail")).not.toBeInTheDocument();
 
     const heading = screen.getByTestId(`identity-card-name-${ALICE}`);
-    await user.click(within(heading).getByLabelText("copy"));
+    await user.click(within(heading).getByLabelText("Copy Mabel ID"));
 
     expect(screen.getByTestId("identity-cards")).toBeInTheDocument();
     expect(screen.queryByTestId("identity-detail")).not.toBeInTheDocument();
@@ -122,7 +131,7 @@ describe("the collapsed card", () => {
       `/identities/${ALICE}`,
     );
     const heading = screen.getByTestId(`identity-card-name-${ALICE}`);
-    expect(within(heading).getByLabelText("copy")).toBeInTheDocument();
+    expect(within(heading).getByLabelText("Copy Mabel ID")).toBeInTheDocument();
     // A card has the room for the whole Mabel ID, and it draws all of it.
     const id = heading.querySelector(`[data-value="${ALICE}"]`);
     expect(id).toHaveAttribute("data-truncated", "false");

@@ -24,10 +24,20 @@ const GLOSS: Record<string, string> = {
   membership_removal: "removed someone",
 };
 
-/** One entry, opened: the fields the record carries, contents last. */
+/** What a kind this build does not know is called on the closed line. */
+const UNKNOWN_GLOSS = "did something this version does not know about";
+
+/**
+ * One entry, opened: the fields the record carries, contents last. The raw kind
+ * string and the payload live here and nowhere else, because neither is a thing
+ * a reader of a ledger line can act on.
+ */
 function EventDetail({ event }: { event: LedgerEvent }) {
   return (
     <KeyValueTable>
+      <KeyValue label="kind" testId={`event-payload-kind-${event.seq}`}>
+        <span className="font-mono text-xs">{event.payload_kind}</span>
+      </KeyValue>
       <KeyValue label="entry id" testId={`event-id-${event.seq}`}>
         <Identifier value={event.event_id} />
       </KeyValue>
@@ -58,7 +68,7 @@ export function EventLines({ events }: { events: LedgerEvent[] }) {
           <Collapsible>
             <CollapsibleTrigger
               data-testid={`event-expand-${event.seq}`}
-              className="flex w-full items-baseline gap-2 py-1 text-left"
+              className="flex w-full items-baseline gap-2 rounded-md px-1 py-2 text-left hover:bg-accent"
             >
               <CollapsibleChevron className="translate-y-0.5" />
               <span
@@ -67,21 +77,13 @@ export function EventLines({ events }: { events: LedgerEvent[] }) {
               >
                 {event.seq}
               </span>
-              <span className="min-w-0 flex-1">
-                <span data-testid={`event-gloss-${event.seq}`} className="text-sm">
-                  {GLOSS[event.payload_kind] ?? ""}
-                </span>{" "}
-                <span
-                  data-testid={`event-payload-kind-${event.seq}`}
-                  className="font-mono text-xs text-muted-foreground"
-                >
-                  {event.payload_kind}
-                </span>
+              <span data-testid={`event-gloss-${event.seq}`} className="min-w-0 flex-1 text-sm">
+                {GLOSS[event.payload_kind] ?? UNKNOWN_GLOSS}
               </span>
             </CollapsibleTrigger>
             <CollapsibleContent
               data-testid={`event-detail-${event.seq}`}
-              className="rounded-md bg-muted/40 px-2 py-1"
+              className="rounded-md bg-muted/40 px-2 py-1 pl-8"
             >
               <EventDetail event={event} />
             </CollapsibleContent>

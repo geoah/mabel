@@ -3,7 +3,7 @@ import { type ReactNode, useState } from "react";
 import { getIdentityLedger } from "@/api/client";
 import { ErrorEnvelopeView } from "@/components/ErrorEnvelopeView";
 import { EventLines } from "@/components/EventLines";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Section } from "@/components/Section";
 import {
   Pagination,
   PaginationContent,
@@ -70,12 +70,11 @@ export function LedgerPanel({
   const current = Math.floor(since / PAGE_SIZE) + 1;
 
   return (
-    <Card data-testid="ledger-panel">
-      <CardHeader>
-        <CardTitle>Ledger</CardTitle>
-        <CardDescription>Everything this identity has signed, oldest first.</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-3">
+    <Section
+      testId="ledger-panel"
+      title="Ledger"
+      description="Everything this identity has signed, oldest first. Open a line to read the entry."
+    >
         {page.loading && <p data-testid="ledger-loading">loading</p>}
         {page.error && <ErrorEnvelopeView error={page.error} testId="ledger-error" />}
         {page.data && held === 0 && (
@@ -144,7 +143,6 @@ export function LedgerPanel({
             )}
           </>
         )}
-      </CardContent>
-    </Card>
+    </Section>
   );
 }

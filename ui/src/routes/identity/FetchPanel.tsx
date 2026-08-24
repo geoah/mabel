@@ -2,8 +2,8 @@ import { useState } from "react";
 
 import { type ApiError, fetchIdentity } from "@/api/client";
 import { ErrorEnvelopeView } from "@/components/ErrorEnvelopeView";
+import { Section } from "@/components/Section";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { asApiError } from "@/hooks/useResource";
 
 /**
@@ -60,16 +60,12 @@ export function FetchPanel({
   onFetched: () => void;
 }) {
   return (
-    <Card data-testid="identity-fetch">
-      <CardHeader>
-        <CardTitle>Fetch this record from a witness</CardTitle>
-        <CardDescription>
-          Asks the witnesses your wallet knows, in order, and keeps what they send.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <FetchButton identityId={identityId} onFetched={onFetched} />
-      </CardContent>
-    </Card>
+    <Section
+      testId="identity-fetch"
+      title="Fetch this record from a witness"
+      description="Asks the witnesses your wallet knows, in order, and keeps what they send."
+    >
+      <FetchButton identityId={identityId} onFetched={onFetched} />
+    </Section>
   );
 }
