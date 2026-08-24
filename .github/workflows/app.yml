@@ -110,8 +110,12 @@ jobs:
           restore-keys: app-macos-
 
       - name: Install the tauri CLI
-        # Builds from source, which takes a few minutes on a cold cache.
-        run: cargo install tauri-cli --version ${{ env.TAURI_CLI_VERSION }} --locked
+        # Builds from source on a cold cache; a warm cache restores the
+        # binary, which cargo install refuses to overwrite, so skip when the
+        # right version is already there.
+        run: |
+          cargo tauri --version 2>/dev/null | grep -qF "${{ env.TAURI_CLI_VERSION }}" \
+            || cargo install tauri-cli --version ${{ env.TAURI_CLI_VERSION }} --locked --force
       - name: Generate the icon set
         # The checked-in icons are bare PNGs; the macOS bundler needs the
         # derived set (icon.icns included) or it fails with "No matching
@@ -185,7 +189,9 @@ jobs:
         run: brew list cocoapods >/dev/null 2>&1 || brew install cocoapods
 
       - name: Install the tauri CLI
-        run: cargo install tauri-cli --version ${{ env.TAURI_CLI_VERSION }} --locked
+        run: |
+          cargo tauri --version 2>/dev/null | grep -qF "${{ env.TAURI_CLI_VERSION }}" \
+            || cargo install tauri-cli --version ${{ env.TAURI_CLI_VERSION }} --locked --force
 
       - name: Generate the icon set
         # Same reason as the macOS job: the generated project expects the
