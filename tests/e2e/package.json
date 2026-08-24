@@ -1,7 +1,7 @@
 {
   "name": "mabel-e2e",
   "private": true,
-  "version": "1.0.0",
+  "version": "0.5.0",
   "description": "The Playwright suite that runs docs/stories/001 to 007 against docker/compose.yaml",
   "scripts": {
     "test": "playwright test",
