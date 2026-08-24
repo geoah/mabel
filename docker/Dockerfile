@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
-# One image for both node roles (proposal 001 section 11, ticket 015). The
-# command picks the role: `mabel witness run` or `mabel wallet serve`.
+# One image for every node (proposal 001 section 11, ticket 015). One command
+# serves them all: `mabel serve`, over whatever the home holds.
 #
 # Build from the repository root:
 #   docker build -f docker/Dockerfile -t mabel:dev .
@@ -107,7 +107,8 @@ EXPOSE 9070/udp
 USER mabel
 WORKDIR /data
 
-# The entrypoint prepares the home and then execs `mabel <command>`, so the
-# role is the command: `witness run` or `wallet serve`.
+# The entrypoint prepares the home and then execs `mabel <command>`. What the
+# node can do is read from the home the entrypoint prepared, not from the
+# command (proposal 006 section 8).
 ENTRYPOINT ["/usr/local/bin/mabel-entrypoint"]
-CMD ["wallet", "serve", "--iroh-port", "9070"]
+CMD ["serve", "--iroh-port", "9070"]

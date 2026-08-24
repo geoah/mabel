@@ -26,10 +26,10 @@ profile.
 
 | File | Surface |
 |---|---|
-| `http/wallet-get-node.json` | `GET /api/node` (wallet) |
+| `http/wallet-get-node.json` | `GET /api/node`, one document for every node |
 | `http/wallet-get-identities.json` | `GET /api/identities` |
 | `http/wallet-post-identities.json` | `POST /api/identities` |
-| `http/wallet-get-known-identities.json` | `GET /api/identities/known` |
+| `http/wallet-get-known-identities.json` | `GET /api/identities/known?offset&limit` |
 | `http/wallet-get-identity.json` | `GET /api/identities/:identity_id` |
 | `http/wallet-get-identity-ledger.json` | `GET /api/identities/:identity_id/ledger?since=` |
 | `http/wallet-get-identity-keys.json` | `GET /api/identities/:identity_id/keys` |
@@ -41,7 +41,7 @@ profile.
 | `http/wallet-get-lookup.json` | `GET /api/lookup/:identity_id?from=` |
 | `http/wallet-get-resolve.json` | `GET /api/resolve?input=` |
 | `http/wallet-get-witnesses.json` | `GET /api/witnesses` |
-| `http/wallet-get-witness-ledgers.json` | `GET /api/witnesses/:endpoint_id/ledgers?offset&limit` |
+| `http/wallet-get-witness-holdings.json` | `GET /api/witnesses/:identity_id/holdings?offset&limit` |
 | `http/wallet-get-graph.json` | `GET /api/graph` |
 | `http/wallet-post-graph-sync.json` | `POST /api/graph/sync` |
 | `http/wallet-post-identity-witnesses.json` | `POST /api/identities/:identity_id/witnesses` |
@@ -53,11 +53,7 @@ profile.
 | `http/wallet-post-trust.json` | `POST /api/trust` |
 | `http/wallet-post-trust-revoke.json` | `POST /api/trust/:event_id/revoke` |
 | `http/wallet-post-sync-push.json` | `POST /api/sync/push` |
-| `http/witness-get-node.json` | `GET /api/node` (witness) |
-| `http/witness-get-ledgers.json` | `GET /api/ledgers` |
-| `http/witness-get-ledger.json` | `GET /api/ledgers/:ledger_id` |
-| `http/witness-get-ledger-events.json` | `GET /api/ledgers/:ledger_id/events?since=` |
-| `http/witness-get-forks.json` | `GET /api/forks` |
+| `http/node-get-forks.json` | `GET /api/forks?ledger_id&offset&limit` |
 | `cli/identity-create.json` | `mabel identity create --json` |
 | `cli/identity-list.json` | `mabel identity list --json` |
 | `cli/identity-show.json` | `mabel identity show --json` |
@@ -168,12 +164,15 @@ identity-rooted ledger holds no key of its own, so its identity document has
 no key field to null out, and a consumer reads their absence as the root kind
 (`wallet-get-identities.json`, the first entry).
 
-**Ordering.** `GET /api/identities` and `GET /api/ledgers` sort by ascending
-id, matching the `List` request in `sync.proto`, so paging is stable. Events
-sort by ascending `seq`.
+**Ordering.** `GET /api/identities` and `GET /api/identities/known` sort by
+ascending id, matching the `List` request in `sync.proto`, so paging is stable.
+Events sort by ascending `seq`. A `List` answers the ledgers a node signs for
+plus the ones it keeps as a witness, not everything it stores (proposal 006
+section 8).
 
 **Paging.** `offset`, `limit` and `more` on every paged route, echoed back in
-the response. `?since=` is inclusive: the response starts at `seq == since`
+the response. `GET /api/identities/known` defaults `limit` to 100 and clamps it
+to 256, which is `MAX_LIST_LIMIT` in `mabel-net`. `?since=` is inclusive: the response starts at `seq == since`
 (proposal 001, clarifications).
 
 ## The envelope
@@ -569,17 +568,20 @@ reviewer can overrule them cheaply, before consumers are written.
   id. Proposal 003 section 3 defaults it to the identity selected in the
   wallet, which is a browser fact the node does not hold; a client that cares
   sends the parameter.
-- `GET /api/witnesses/:endpoint_id/ledgers` names its array `ledgers`, not
+- `GET /api/witnesses/:identity_id/holdings` names its array `ledgers`, not
   `entries`, and each row carries six keys: `ledger_id`, `declared_kind`,
   `head_seq`, `head_event`, `event_count` and `fork_count`. The row is what
-  the `List` request of `sync.proto` serves, so the `source_endpoint` of
-  `witness-get-ledgers.json` cannot appear: it comes from the witness's own
-  `ledgers/<id>/meta.json`, which no peer sends. Proposal 004 fixes both the
-  key and the row.
+  the `List` request of `sync.proto` serves, so `source_endpoint`,
+  `first_seen_ms` and `forks_truncated` cannot appear: they come from the
+  answering node's own `ledgers/<id>/meta.json`, which no peer sends. The last
+  segment is `holdings` and the key is an identity id (proposal 006 section 8);
+  an id equal to an endpoint id this home knows answers 404 with reason
+  `endpoint_not_identity`, before any dial.
 - A witness that cannot be dialled, or that refuses the `List`, answers 502
-  with code 30 and reason `witness_unreachable`, naming the endpoint in
-  `details.endpoint_id`. One spelling covers the ledger list and the fetch
-  route.
+  with code 30 and reason `witness_unreachable`, naming the identity in
+  `details.identity_id` and every endpoint dialled in
+  `details.endpoints_tried`. A fetch that named a bare endpoint keeps
+  `details.endpoint_id`, because that caller named a machine and no identity.
 - `GET /api/resolve?input=` takes one identity id, one hostname or one
   `mabel://` link and says which it read in `input_kind` (`identity`,
   `hostname` or `link`). It writes nothing: it never reads or fills the
@@ -653,7 +655,5 @@ reviewer can overrule them cheaply, before consumers are written.
   with reason `unknown_ledger`, detail key `ledger_id` and the message `this
   home holds no ledger <id>`. One spelling covers every wallet route, the
   identity ones and the ledger ones, because an identity in this home is the
-  ledger it roots. The witness routes keep `ledger_not_held`
-  (`witness-get-ledger.json`, `witness-get-ledger-events.json`): a witness
-  holds copies and says so, and "this home holds no ledger" would claim
-  something about a ledger it never rooted.
+  ledger it roots. `unknown_ledger` is the one spelling on every node:
+  `ledger_not_held` died with the witness routes (proposal 006 section 8).

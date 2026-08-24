@@ -35,7 +35,7 @@ services:
       MABEL_HTTP_PORT: "9083"
       MABEL_IROH_PORT: "9073"
       MABEL_PUBLISH_TICKET: /shared/witness-two
-    command: ["witness", "run", "--http", "0.0.0.0:9083", "--iroh-port", "9073"]
+    command: ["serve", "--http", "0.0.0.0:9083", "--iroh-port", "9073"]
     ports:
       - "9083:9083/tcp"
       - "9073:9073/udp"

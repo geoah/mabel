@@ -46,6 +46,7 @@ use crate::api::error::ServiceError;
 use crate::api::service::EventPageRequest;
 use crate::config::NodeConfig;
 use crate::contacts::{ContactEntry, ContactStore};
+use crate::events::event_document;
 use crate::graph::{Resolution, SourceClass};
 use crate::home::{DeclaredKind, IdentityMeta, NodeHome};
 use crate::ledger::{LedgerMeta, LedgerStore, NewEvent};
@@ -54,7 +55,6 @@ use crate::verification::{VerificationEntry, VerificationStore};
 use crate::wallet::error::{artifact_error, build_error, fold_error, storage_error};
 use crate::wallet::ids;
 use crate::wallet::ledger::LoadedLedger;
-use crate::witness::events::event_document;
 
 /// What one append produced.
 #[derive(Debug, Clone)]
@@ -88,22 +88,49 @@ impl AppendLock {
     }
 }
 
-/// The wallet's view of one node home.
+/// The signing view of one node home.
 #[derive(Debug, Clone)]
 pub struct WalletCore {
     home: NodeHome,
     /// One mutex per ledger this process has written, kept for the life of the
-    /// wallet. An entry is a few words and a home holds tens of ledgers.
+    /// process. An entry is a few words and a home holds tens of ledgers.
     locks: Arc<StdMutex<HashMap<LedgerId, Arc<tokio::sync::Mutex<()>>>>>,
+    /// The index of the one store, when a node is serving over this home.
+    ///
+    /// The store answers `Get` and `List` from an in-memory index, and this is
+    /// the other writer of the same files: every ledger this core writes is
+    /// noted, so a peer reads what is on disk (proposal 006 section 8). `None`
+    /// in the CLI, which serves nothing.
+    index: Option<Arc<crate::storage::LedgerStorage>>,
 }
 
 impl WalletCore {
-    /// A wallet over `home`.
+    /// A core over `home`, writing for nobody but itself.
     #[must_use]
     pub fn new(home: NodeHome) -> Self {
         Self {
             home,
             locks: Arc::new(StdMutex::new(HashMap::new())),
+            index: None,
+        }
+    }
+
+    /// The same core, noting every ledger it writes in `index`.
+    #[must_use]
+    pub fn with_index(mut self, index: Arc<crate::storage::LedgerStorage>) -> Self {
+        self.index = Some(index);
+        self
+    }
+
+    /// Tells the index a ledger's files moved.
+    ///
+    /// A failure costs freshness on the sync surface and never fails the write
+    /// that already landed, so it is logged and swallowed.
+    fn note(&self, ledger: LedgerId) {
+        if let Some(index) = &self.index
+            && let Err(error) = index.note_ledger(ledger)
+        {
+            tracing::warn!(%ledger, %error, "the store index could not be refreshed");
         }
     }
 
@@ -821,7 +848,7 @@ impl WalletCore {
         let controller_on_raw_root = summary.controller_on_raw_root();
         Ok(Accepted {
             ledger_id: ids::identity(summary.ledger),
-            declared_kind: crate::witness::events::declared_kind(summary.declared_kind),
+            declared_kind: crate::events::declared_kind(summary.declared_kind),
             root: root_name(summary.root),
             controllers,
             invitation_event: ids::event(summary.invitation_event),
@@ -1051,6 +1078,7 @@ impl WalletCore {
         loaded.events.push(built.signed_event.clone());
         loaded.head_seq = at.seq;
         loaded.head_event = built.event_id;
+        self.note(loaded.ledger);
         Ok(AppendedEvent {
             event_id: built.event_id,
             seq: at.seq,
@@ -1094,11 +1122,7 @@ impl WalletCore {
             if error.is_insecure_permissions() {
                 return storage_error(error);
             }
-            ServiceError::usage(
-                "no_signing_key",
-                format!("this home holds no key that may sign for {identity}"),
-            )
-            .with_detail("identity", identity.to_string())
+            no_local_signer(identity)
         })
     }
 
@@ -1322,6 +1346,7 @@ impl WalletCore {
         let stored = batch.len() as u64;
         store.append(&batch).map_err(storage_error)?;
         store.note_first_seen(source).map_err(storage_error)?;
+        self.note(ledger);
         Ok(stored)
     }
 
@@ -1350,6 +1375,7 @@ impl WalletCore {
         }
         remove(&store.head_path())?;
         store.rebuild_head().map_err(storage_error)?;
+        self.note(ledger);
         Ok(())
     }
 
@@ -1497,6 +1523,22 @@ pub fn no_keys_held(identity: IdentityId) -> ServiceError {
         format!("this home holds no key of its own for {identity}: its controllers sign for it"),
     )
     .with_detail("identity_id", identity.to_string())
+}
+
+/// The 403 a ledger this home holds and cannot append to answers (proposal 006
+/// section 8).
+///
+/// One router serves every node, so a mutating route exists on a home that
+/// holds no key for the ledger it names. 403 rather than 404: the ledger is
+/// here and the key is not.
+#[must_use]
+pub fn no_local_signer(identity: IdentityId) -> ServiceError {
+    ServiceError::usage(
+        "no_local_signer",
+        format!("this home holds no key that may append to {identity}"),
+    )
+    .with_detail("identity", identity.to_string())
+    .with_status(axum::http::StatusCode::FORBIDDEN)
 }
 
 /// The 404 a ledger this home does not hold answers.

@@ -2,7 +2,7 @@
 //!
 //! One admission crosses two wallets: Alice's home invites, Bob's home signs
 //! the acceptance, Alice's home admits it. Every step goes through
-//! [`WalletService`], the same trait the axum handlers call, so what the
+//! [`NodeService`], the same trait the axum handlers call, so what the
 //! fixtures freeze and what the node does are the same shapes.
 //!
 //! Nothing here touches the network. Each wallet binds an endpoint with relays
@@ -18,19 +18,19 @@ use mabel_core::sign::build_trust_attestation;
 use mabel_core::{IdentityId, LedgerId};
 use mabel_node::api::documents::{DeclaredKind, Id, RoleName, RootName, StatusName};
 use mabel_node::api::service::{
-    AcceptInvitation, AddTrust, AdmitAcceptance, CreateIdentity, Invite, RemoveMembership,
-    WalletService,
+    AcceptInvitation, AddTrust, AdmitAcceptance, CreateIdentity, Invite, NodeService,
+    RemoveMembership,
 };
 use mabel_node::api::{DEFAULT_HTTP_BIND, ServiceError};
-use mabel_node::wallet::{WalletApiService, WalletCore, WalletSync};
-use mabel_node::{HomeOptions, NodeConfig, NodeHome, NodeRole, RelayMode};
+use mabel_node::wallet::{NodeApiService, WalletCore, WalletSync};
+use mabel_node::{HomeOptions, LedgerStorage, NodeConfig, NodeHome, RelayMode};
 use tempfile::TempDir;
 
 /// One wallet home and the HTTP service over it.
 struct Wallet {
     _dir: TempDir,
     core: Arc<WalletCore>,
-    service: WalletApiService,
+    service: NodeApiService,
 }
 
 impl Wallet {
@@ -38,7 +38,6 @@ impl Wallet {
     async fn new() -> Self {
         let dir = tempfile::tempdir().expect("a temp directory");
         let config = NodeConfig {
-            role: NodeRole::Wallet,
             relay: RelayMode::Disabled,
             ..NodeConfig::default()
         };
@@ -49,8 +48,13 @@ impl Wallet {
         let endpoint = mabel_node::bind_endpoint(RelayMode::Disabled, secret, None, &[])
             .await
             .expect("the endpoint binds");
-        let service = WalletApiService::new(
-            Arc::clone(&core),
+        let storage = Arc::new(
+            LedgerStorage::open_from_config(core.home().clone(), endpoint.id())
+                .expect("the index builds"),
+        );
+        let service = NodeApiService::new(
+            Arc::new(WalletCore::new(core.home().clone()).with_index(Arc::clone(&storage))),
+            storage,
             WalletSync::new(endpoint),
             DEFAULT_HTTP_BIND,
             RelayMode::Disabled,
@@ -326,7 +330,13 @@ async fn only_the_invitee_can_accept_and_only_with_the_key_the_invitation_names(
         .await
         .expect_err("this home holds no key for the invitee");
     assert_eq!(error.code(), 2);
-    assert_eq!(error.reason(), "no_signing_key");
+    assert_eq!(
+        error.reason(),
+        "no_local_signer",
+        "one router serves every node, so a home with no key for this ledger \
+         refuses the append rather than the route (proposal 006 section 8)"
+    );
+    assert_eq!(error.status(), axum::http::StatusCode::FORBIDDEN);
 }
 
 #[tokio::test]

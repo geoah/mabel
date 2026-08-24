@@ -28,8 +28,19 @@ pub(super) type Query = HashMap<String, String>;
 /// Largest `limit` on the event routes.
 pub(super) const MAX_EVENT_LIMIT: u32 = 512;
 
-/// Largest `limit` on `GET /api/ledgers`.
-pub(super) const MAX_LEDGER_LIMIT: u32 = 256;
+/// Largest `limit` on the witness holdings proxy, which is `MAX_LIST_LIMIT` in
+/// `mabel-net`: the proxy cannot ask for more than a `List` answers.
+pub(super) const MAX_LEDGER_LIMIT: u32 = mabel_net::MAX_LIST_LIMIT;
+
+/// Largest `limit` on `GET /api/identities/known`, the same number for the same
+/// reason (proposal 006 section 8).
+pub(super) const MAX_KNOWN_LIMIT: u32 = mabel_net::MAX_LIST_LIMIT;
+
+/// The `limit` `GET /api/identities/known` uses when the caller names none.
+///
+/// A default of the maximum would page a home holding ten thousand ledgers into
+/// one response; a client that wants more asks for it.
+pub(super) const DEFAULT_KNOWN_LIMIT: u32 = 100;
 
 /// Largest `limit` on `GET /api/forks`.
 pub(super) const MAX_FORK_LIMIT: u32 = 64;
@@ -166,14 +177,26 @@ pub(super) fn event_page(query: &Query) -> Result<EventPageRequest, ServiceError
     })
 }
 
-/// `?offset=` and `?limit=` for `GET /api/ledgers` and for the witness ledger
-/// proxy of proposal 004, which pages the same way and clamps to the same
-/// maximum.
+/// `?offset=` and `?limit=` for the witness holdings proxy of proposal 004,
+/// which pages the way a `List` pages.
 pub(super) fn ledger_page(query: &Query) -> Result<PageRequest, ServiceError> {
     only(query, &["offset", "limit"])?;
     Ok(PageRequest {
         offset: offset(query)?,
         limit: limit(query, MAX_LEDGER_LIMIT)?,
+    })
+}
+
+/// `?offset=` and `?limit=` for `GET /api/identities/known`, which defaults to
+/// [`DEFAULT_KNOWN_LIMIT`] rather than to its maximum.
+pub(super) fn known_page(query: &Query) -> Result<PageRequest, ServiceError> {
+    only(query, &["offset", "limit"])?;
+    Ok(PageRequest {
+        offset: offset(query)?,
+        limit: match present(query, "limit") {
+            None => DEFAULT_KNOWN_LIMIT,
+            Some(_) => limit(query, MAX_KNOWN_LIMIT)?,
+        },
     })
 }
 

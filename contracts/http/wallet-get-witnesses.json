@@ -6,26 +6,39 @@
     "ok": true,
     "witnesses": [
       {
-        "endpoint_id": "54rw3lmckcpqf4ofkvyx3i74agumvale2qmzdu76ubpita6sw5va",
-        "named_by": [
-          "2okqwhextnpkpmydrgrkk563vbehcklffwfzidxlh5dslawjmn6a"
+        "identity_id": "ovfp3btcnjyhwmyw3ldk3wmt2ppb5w5c5adyzcavswmyq7xkg7fq",
+        "display_name": "the co-op witness",
+        "endpoints": [
+          {
+            "endpoint_id": "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq",
+            "binding": "verified"
+          },
+          {
+            "endpoint_id": "54rw3lmckcpqf4ofkvyx3i74agumvale2qmzdu76ubpita6sw5va",
+            "binding": "hinted"
+          }
         ],
-        "is_node_default": false
-      },
-      {
-        "endpoint_id": "5yy7qpeiu4jbtjx47g7obwu3yitcaweplik2mfcvknie36letzoa",
-        "named_by": [
-          "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq"
-        ],
-        "is_node_default": true
-      },
-      {
-        "endpoint_id": "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq",
         "named_by": [
           "2okqwhextnpkpmydrgrkk563vbehcklffwfzidxlh5dslawjmn6a",
           "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq"
         ],
-        "is_node_default": true
+        "is_node_default": true,
+        "stored": true
+      },
+      {
+        "identity_id": "q7hnsnk6ycwjyzwbmqjcaxwlmxvvfjbmwzq4gz4dbtvpojjuh3fq",
+        "display_name": null,
+        "endpoints": [
+          {
+            "endpoint_id": "5yy7qpeiu4jbtjx47g7obwu3yitcaweplik2mfcvknie36letzoa",
+            "binding": "hinted"
+          }
+        ],
+        "named_by": [
+          "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq"
+        ],
+        "is_node_default": true,
+        "stored": false
       }
     ]
   },

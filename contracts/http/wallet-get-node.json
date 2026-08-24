@@ -4,7 +4,6 @@
   "request": null,
   "response": {
     "ok": true,
-    "role": "wallet",
     "endpoint_id": "fd2ijzgxe3qk64jeqbgwjgqcg2cnmyyrfwghb6oar2wbg5ddxvla",
     "http_bind": "127.0.0.1:9080",
     "relay": "n0",
@@ -12,9 +11,18 @@
       "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq",
       "5yy7qpeiu4jbtjx47g7obwu3yitcaweplik2mfcvknie36letzoa"
     ],
+    "witness_for": [
+      {
+        "identity": "ovfp3btcnjyhwmyw3ldk3wmt2ppb5w5c5adyzcavswmyq7xkg7fq",
+        "advertised": true,
+        "reason": null
+      }
+    ],
     "storage_capacity": 2147483648,
     "storage_used": 18432,
     "identity_count": 2,
+    "ledger_count": 4,
+    "fork_count": 1,
     "version": "0.1.0"
   },
   "errors": [

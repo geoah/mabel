@@ -24,8 +24,8 @@ use mabel_core::{EventId, IdentityId, LedgerId};
 use mabel_net::store::Provenance;
 use mabel_net::{ALPN, Client, EndpointConfig, LedgerProtocol, RelayChoice, bind_endpoint};
 use mabel_node::NewEvent;
-use mabel_node::witness::{AdmissionPolicy, WitnessCaps, WitnessStorage, WitnessStore};
-use mabel_node::{HomeOptions, NodeConfig, NodeHome, NodeRole, RelayMode};
+use mabel_node::{AdmissionPolicy, LedgerStorage, NodeStore, StorageCaps};
+use mabel_node::{HomeOptions, NodeConfig, NodeHome, RelayMode};
 use tempfile::TempDir;
 
 /// Decision 013: a networked test never waits longer than this.
@@ -192,16 +192,16 @@ impl Home {
     /// Storage over this home with `caps`, witnessing for what `node.json`
     /// names.
     #[must_use]
-    pub fn storage(&self, caps: WitnessCaps) -> Arc<WitnessStorage> {
+    pub fn storage(&self, caps: StorageCaps) -> Arc<LedgerStorage> {
         self.storage_with(caps, AdmissionPolicy::witnessing_for(self.witness_for()))
     }
 
     /// Storage over this home with `caps` and an explicit admission policy,
     /// which is how a test turns the retired tag-11 clause on.
     #[must_use]
-    pub fn storage_with(&self, caps: WitnessCaps, policy: AdmissionPolicy) -> Arc<WitnessStorage> {
+    pub fn storage_with(&self, caps: StorageCaps, policy: AdmissionPolicy) -> Arc<LedgerStorage> {
         Arc::new(
-            WitnessStorage::open(self.home.clone(), self.endpoint_id(), caps, policy)
+            LedgerStorage::open(self.home.clone(), self.endpoint_id(), caps, policy)
                 .expect("the index builds"),
         )
     }
@@ -209,7 +209,6 @@ impl Home {
 
 fn create(root: &Path, storage_capacity: u64, witness_for: Vec<IdentityId>) -> NodeHome {
     let config = NodeConfig {
-        role: NodeRole::Witness,
         http_bind: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0),
         witnesses: Vec::new(),
         witness_for,
@@ -409,7 +408,7 @@ pub struct Served {
     /// The home, whose temp directory outlives the router.
     pub home: Home,
     /// The storage both surfaces share.
-    pub storage: Arc<WitnessStorage>,
+    pub storage: Arc<LedgerStorage>,
     /// The endpoint id a chain must name to be admitted.
     pub endpoint_id: EndpointId,
     /// Where a client dials.
@@ -419,17 +418,17 @@ pub struct Served {
 
 impl Served {
     /// A witness with `caps` over a fresh home.
-    pub async fn start(caps: WitnessCaps) -> Self {
+    pub async fn start(caps: StorageCaps) -> Self {
         Self::over(home(), caps).await
     }
 
     /// A witness with the section 5 caps over a fresh home.
     pub async fn new() -> Self {
-        Self::start(WitnessCaps::default()).await
+        Self::start(StorageCaps::default()).await
     }
 
     /// A witness over `home`, whose node key is the endpoint's key.
-    pub async fn over(home: Home, caps: WitnessCaps) -> Self {
+    pub async fn over(home: Home, caps: StorageCaps) -> Self {
         let key = home.home.node_key().expect("the node key reads");
         let storage = home.storage(caps);
         let endpoint =
@@ -441,7 +440,7 @@ impl Served {
         let router = Router::builder(endpoint)
             .accept(
                 ALPN,
-                LedgerProtocol::new(Arc::new(WitnessStore::new(storage.clone()))),
+                LedgerProtocol::new(Arc::new(NodeStore::new(storage.clone()))),
             )
             .spawn();
         Self {

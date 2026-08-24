@@ -1,10 +1,10 @@
-//! Services that answer from the frozen fixtures.
+//! The service that answers from the frozen fixtures.
 //!
 //! The stub answers every route with the `response` document of the matching
 //! file under `contracts/http/`, records the calls it received, and can be
 //! told to fail with any [`ServiceError`]. The contract tests use it to check
-//! both routers against the fixtures without a node home; the wallet and
-//! witness runtimes answer the same routes in production.
+//! the router against the fixtures without a node home; the runtime answers the
+//! same routes in production.
 //!
 //! Because the fixtures are compiled in with `include_str!`, a fixture whose
 //! shape drifts from [`super::documents`] fails the test suite instead of
@@ -18,15 +18,14 @@ use serde_json::Value;
 use super::documents::{
     Accepted, Admitted, Appended, ContactView, CreatedIdentity, FetchedLedger, ForkList,
     GraphSynced, GraphView, Id, Identity, IdentityKeys, IdentityList, IdentityView, Invited,
-    KnownIdentity, KnownIdentityList, LedgerList, LedgerPage, LedgerView, Lookup, MembershipView,
-    ProfileReplaced, Pushed, Removed, Resolved, Revoked, VerificationChecked, WalletNode,
-    WitnessLedgers, WitnessList, WitnessNode,
+    KnownIdentityList, LedgerPage, Lookup, MembershipView, NodeDocument, ProfileReplaced, Pushed,
+    Removed, Resolved, Revoked, VerificationChecked, WitnessHoldings, WitnessList,
 };
 use super::error::ServiceError;
 use super::service::{
     AcceptInvitation, AddTrust, AdmitAcceptance, CreateIdentity, EventPageRequest, FetchIdentity,
-    ForkQuery, Invite, LookupRequest, PageRequest, PushRequest, RemoveMembership, ReplaceProfile,
-    ResolveInput, ServiceFuture, SetContact, WalletService, WitnessService,
+    ForkQuery, Invite, LookupRequest, NodeService, PageRequest, PushRequest, RemoveMembership,
+    ReplaceProfile, ResolveInput, ServiceFuture, SetContact,
 };
 
 /// One file under `contracts/http/`.
@@ -48,7 +47,7 @@ macro_rules! fixture {
 }
 
 /// Every frozen HTTP fixture, in the order `contracts/README.md` indexes them.
-pub const FIXTURES: [Fixture; 32] = [
+pub const FIXTURES: [Fixture; 28] = [
     fixture!("wallet-get-node"),
     fixture!("wallet-get-identities"),
     fixture!("wallet-post-identities"),
@@ -64,7 +63,7 @@ pub const FIXTURES: [Fixture; 32] = [
     fixture!("wallet-get-lookup"),
     fixture!("wallet-get-resolve"),
     fixture!("wallet-get-witnesses"),
-    fixture!("wallet-get-witness-ledgers"),
+    fixture!("wallet-get-witness-holdings"),
     fixture!("wallet-get-graph"),
     fixture!("wallet-post-graph-sync"),
     fixture!("wallet-post-identity-witnesses"),
@@ -76,11 +75,7 @@ pub const FIXTURES: [Fixture; 32] = [
     fixture!("wallet-post-trust"),
     fixture!("wallet-post-trust-revoke"),
     fixture!("wallet-post-sync-push"),
-    fixture!("witness-get-node"),
-    fixture!("witness-get-ledgers"),
-    fixture!("witness-get-ledger"),
-    fixture!("witness-get-ledger-events"),
-    fixture!("witness-get-forks"),
+    fixture!("node-get-forks"),
 ];
 
 impl Fixture {
@@ -207,9 +202,9 @@ impl Fixture {
     }
 }
 
-/// Which [`WalletService`] method was called, and with what.
+/// Which [`NodeService`] method was called, and with what.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum WalletCall {
+pub enum NodeCall {
     /// `GET /api/node`.
     Node,
     /// `GET /api/identities`.
@@ -217,7 +212,7 @@ pub enum WalletCall {
     /// `POST /api/identities`.
     CreateIdentity(CreateIdentity),
     /// `GET /api/identities/known`.
-    KnownIdentities,
+    KnownIdentities(PageRequest),
     /// `GET /api/identities/{identity_id}`.
     Identity(Id),
     /// `GET /api/identities/{identity_id}/ledger`.
@@ -244,8 +239,10 @@ pub enum WalletCall {
     Resolve(ResolveInput),
     /// `GET /api/witnesses`.
     Witnesses,
-    /// `GET /api/witnesses/{endpoint_id}/ledgers`.
-    WitnessLedgers(Id, PageRequest),
+    /// `GET /api/witnesses/{identity_id}/holdings`.
+    WitnessHoldings(Id, PageRequest),
+    /// `GET /api/forks`.
+    Forks(ForkQuery),
     /// `GET /api/graph`.
     Graph,
     /// `POST /api/graph/sync`.
@@ -268,20 +265,20 @@ pub enum WalletCall {
     Push(PushRequest),
 }
 
-/// A [`WalletService`] that answers from `contracts/http/wallet-*.json`.
+/// A [`NodeService`] that answers from the frozen fixtures.
 ///
 /// The document fields are public, so a test can change one answer and leave
 /// the rest frozen.
 #[derive(Debug)]
-pub struct StubWalletService {
+pub struct StubNodeService {
     /// `GET /api/node`.
-    pub node: WalletNode,
+    pub node: NodeDocument,
     /// `GET /api/identities`.
     pub identities: Vec<Identity>,
     /// `POST /api/identities`.
     pub created_identity: CreatedIdentity,
     /// `GET /api/identities/known`.
-    pub known_identities: Vec<KnownIdentity>,
+    pub known_identities: KnownIdentityList,
     /// `GET /api/identities/{identity_id}`.
     pub identity: Identity,
     /// `GET /api/identities/{identity_id}/ledger`.
@@ -306,8 +303,10 @@ pub struct StubWalletService {
     pub resolved: Resolved,
     /// `GET /api/witnesses`.
     pub witnesses: WitnessList,
-    /// `GET /api/witnesses/{endpoint_id}/ledgers`.
-    pub witness_ledgers: WitnessLedgers,
+    /// `GET /api/witnesses/{identity_id}/holdings`.
+    pub witness_holdings: WitnessHoldings,
+    /// `GET /api/forks`.
+    pub forks: ForkList,
     /// `GET /api/graph`.
     pub graph: GraphView,
     /// `POST /api/graph/sync`.
@@ -329,16 +328,16 @@ pub struct StubWalletService {
     /// `POST /api/sync/push`.
     pub pushed: Pushed,
     failure: Mutex<Option<ServiceError>>,
-    calls: Mutex<Vec<WalletCall>>,
+    calls: Mutex<Vec<NodeCall>>,
 }
 
-impl Default for StubWalletService {
+impl Default for StubNodeService {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl StubWalletService {
+impl StubNodeService {
     /// A stub primed from the frozen fixtures.
     ///
     /// # Panics
@@ -350,13 +349,11 @@ impl StubWalletService {
         let identities: IdentityList =
             Fixture::named("wallet-get-identities.json").parse_response();
         let identity: IdentityView = Fixture::named("wallet-get-identity.json").parse_response();
-        let known: KnownIdentityList =
-            Fixture::named("wallet-get-known-identities.json").parse_response();
         Self {
             node: Fixture::named("wallet-get-node.json").parse_response(),
             identities: identities.identities,
             created_identity: Fixture::named("wallet-post-identities.json").parse_response(),
-            known_identities: known.identities,
+            known_identities: Fixture::named("wallet-get-known-identities.json").parse_response(),
             identity: identity.identity,
             identity_ledger: Fixture::named("wallet-get-identity-ledger.json").parse_response(),
             identity_keys: Fixture::named("wallet-get-identity-keys.json").parse_response(),
@@ -371,7 +368,8 @@ impl StubWalletService {
             lookup: Fixture::named("wallet-get-lookup.json").parse_response(),
             resolved: Fixture::named("wallet-get-resolve.json").parse_response(),
             witnesses: Fixture::named("wallet-get-witnesses.json").parse_response(),
-            witness_ledgers: Fixture::named("wallet-get-witness-ledgers.json").parse_response(),
+            witness_holdings: Fixture::named("wallet-get-witness-holdings.json").parse_response(),
+            forks: Fixture::named("node-get-forks.json").parse_response(),
             graph: Fixture::named("wallet-get-graph.json").parse_response(),
             graph_synced: Fixture::named("wallet-post-graph-sync.json").parse_response(),
             memberships: Fixture::named("wallet-get-identity-memberships.json").parse_response(),
@@ -394,7 +392,7 @@ impl StubWalletService {
 
     /// The calls this stub received, in order.
     #[must_use]
-    pub fn calls(&self) -> Vec<WalletCall> {
+    pub fn calls(&self) -> Vec<NodeCall> {
         lock(&self.calls).clone()
     }
 
@@ -404,13 +402,13 @@ impl StubWalletService {
     ///
     /// Panics unless exactly one call was made.
     #[must_use]
-    pub fn call(&self) -> WalletCall {
+    pub fn call(&self) -> NodeCall {
         let calls = self.calls();
         assert_eq!(calls.len(), 1, "expected one call, got {calls:?}");
         calls.into_iter().next().expect("one call")
     }
 
-    fn answer<T: Send + 'static>(&self, call: WalletCall, value: T) -> ServiceFuture<'_, T> {
+    fn answer<T: Send + 'static>(&self, call: NodeCall, value: T) -> ServiceFuture<'_, T> {
         lock(&self.calls).push(call);
         let result = match lock(&self.failure).clone() {
             Some(error) => Err(error),
@@ -420,28 +418,31 @@ impl StubWalletService {
     }
 }
 
-impl WalletService for StubWalletService {
-    fn node(&self) -> ServiceFuture<'_, WalletNode> {
-        self.answer(WalletCall::Node, self.node.clone())
+impl NodeService for StubNodeService {
+    fn node(&self) -> ServiceFuture<'_, NodeDocument> {
+        self.answer(NodeCall::Node, self.node.clone())
     }
 
     fn identities(&self) -> ServiceFuture<'_, Vec<Identity>> {
-        self.answer(WalletCall::Identities, self.identities.clone())
+        self.answer(NodeCall::Identities, self.identities.clone())
     }
 
     fn create_identity(&self, request: CreateIdentity) -> ServiceFuture<'_, CreatedIdentity> {
         self.answer(
-            WalletCall::CreateIdentity(request),
+            NodeCall::CreateIdentity(request),
             self.created_identity.clone(),
         )
     }
 
-    fn known_identities(&self) -> ServiceFuture<'_, Vec<KnownIdentity>> {
-        self.answer(WalletCall::KnownIdentities, self.known_identities.clone())
+    fn known_identities(&self, page: PageRequest) -> ServiceFuture<'_, KnownIdentityList> {
+        self.answer(
+            NodeCall::KnownIdentities(page),
+            self.known_identities.clone(),
+        )
     }
 
     fn identity(&self, identity_id: Id) -> ServiceFuture<'_, Identity> {
-        self.answer(WalletCall::Identity(identity_id), self.identity.clone())
+        self.answer(NodeCall::Identity(identity_id), self.identity.clone())
     }
 
     fn identity_ledger(
@@ -450,21 +451,21 @@ impl WalletService for StubWalletService {
         page: EventPageRequest,
     ) -> ServiceFuture<'_, LedgerPage> {
         self.answer(
-            WalletCall::IdentityLedger(identity_id, page),
+            NodeCall::IdentityLedger(identity_id, page),
             self.identity_ledger.clone(),
         )
     }
 
     fn identity_keys(&self, identity_id: Id) -> ServiceFuture<'_, IdentityKeys> {
         self.answer(
-            WalletCall::IdentityKeys(identity_id),
+            NodeCall::IdentityKeys(identity_id),
             self.identity_keys.clone(),
         )
     }
 
     fn set_witnesses(&self, identity_id: Id, witnesses: Vec<Id>) -> ServiceFuture<'_, Appended> {
         self.answer(
-            WalletCall::SetWitnesses(identity_id, witnesses),
+            NodeCall::SetWitnesses(identity_id, witnesses),
             self.witnesses_appended.clone(),
         )
     }
@@ -474,224 +475,105 @@ impl WalletService for StubWalletService {
     /// `wallet-post-identity-witnesses.json` (ticket 038 adds the file).
     fn set_endpoints(&self, identity_id: Id, endpoints: Vec<Id>) -> ServiceFuture<'_, Appended> {
         self.answer(
-            WalletCall::SetEndpoints(identity_id, endpoints),
+            NodeCall::SetEndpoints(identity_id, endpoints),
             self.witnesses_appended.clone(),
         )
     }
 
     fn replace_profile(&self, request: ReplaceProfile) -> ServiceFuture<'_, ProfileReplaced> {
         self.answer(
-            WalletCall::ReplaceProfile(request),
+            NodeCall::ReplaceProfile(request),
             self.profile_replaced.clone(),
         )
     }
 
     fn check_verification(&self, identity_id: Id) -> ServiceFuture<'_, VerificationChecked> {
         self.answer(
-            WalletCall::CheckVerification(identity_id),
+            NodeCall::CheckVerification(identity_id),
             self.verification_checked.clone(),
         )
     }
 
     fn contact(&self, identity_id: Id) -> ServiceFuture<'_, ContactView> {
-        self.answer(WalletCall::Contact(identity_id), self.contact.clone())
+        self.answer(NodeCall::Contact(identity_id), self.contact.clone())
     }
 
     fn set_contact(&self, request: SetContact) -> ServiceFuture<'_, ContactView> {
-        self.answer(WalletCall::SetContact(request), self.contact_set.clone())
+        self.answer(NodeCall::SetContact(request), self.contact_set.clone())
     }
 
     fn fetch_identity(&self, request: FetchIdentity) -> ServiceFuture<'_, FetchedLedger> {
-        self.answer(WalletCall::FetchIdentity(request), self.fetched.clone())
+        self.answer(NodeCall::FetchIdentity(request), self.fetched.clone())
     }
 
     fn lookup(&self, request: LookupRequest) -> ServiceFuture<'_, Lookup> {
-        self.answer(WalletCall::Lookup(request), self.lookup.clone())
+        self.answer(NodeCall::Lookup(request), self.lookup.clone())
     }
 
     fn resolve(&self, input: ResolveInput) -> ServiceFuture<'_, Resolved> {
-        self.answer(WalletCall::Resolve(input), self.resolved.clone())
+        self.answer(NodeCall::Resolve(input), self.resolved.clone())
     }
 
     fn witnesses(&self) -> ServiceFuture<'_, WitnessList> {
-        self.answer(WalletCall::Witnesses, self.witnesses.clone())
+        self.answer(NodeCall::Witnesses, self.witnesses.clone())
     }
 
-    fn witness_ledgers(
+    fn witness_holdings(
         &self,
-        endpoint_id: Id,
+        identity_id: Id,
         page: PageRequest,
-    ) -> ServiceFuture<'_, WitnessLedgers> {
+    ) -> ServiceFuture<'_, WitnessHoldings> {
         self.answer(
-            WalletCall::WitnessLedgers(endpoint_id, page),
-            self.witness_ledgers.clone(),
+            NodeCall::WitnessHoldings(identity_id, page),
+            self.witness_holdings.clone(),
         )
     }
 
     fn graph(&self) -> ServiceFuture<'_, GraphView> {
-        self.answer(WalletCall::Graph, self.graph.clone())
+        self.answer(NodeCall::Graph, self.graph.clone())
     }
 
     fn sync_graph(&self) -> ServiceFuture<'_, GraphSynced> {
-        self.answer(WalletCall::SyncGraph, self.graph_synced.clone())
+        self.answer(NodeCall::SyncGraph, self.graph_synced.clone())
     }
 
     fn memberships(&self, identity_id: Id) -> ServiceFuture<'_, MembershipView> {
-        self.answer(
-            WalletCall::Memberships(identity_id),
-            self.memberships.clone(),
-        )
+        self.answer(NodeCall::Memberships(identity_id), self.memberships.clone())
     }
 
     fn invite(&self, request: Invite) -> ServiceFuture<'_, Invited> {
-        self.answer(WalletCall::Invite(request), self.invited.clone())
+        self.answer(NodeCall::Invite(request), self.invited.clone())
     }
 
     fn accept_invitation(&self, request: AcceptInvitation) -> ServiceFuture<'_, Accepted> {
-        self.answer(WalletCall::AcceptInvitation(request), self.accepted.clone())
+        self.answer(NodeCall::AcceptInvitation(request), self.accepted.clone())
     }
 
     fn admit_acceptance(&self, request: AdmitAcceptance) -> ServiceFuture<'_, Admitted> {
-        self.answer(WalletCall::AdmitAcceptance(request), self.admitted.clone())
+        self.answer(NodeCall::AdmitAcceptance(request), self.admitted.clone())
     }
 
     fn remove_membership(&self, request: RemoveMembership) -> ServiceFuture<'_, Removed> {
-        self.answer(WalletCall::RemoveMembership(request), self.removed.clone())
+        self.answer(NodeCall::RemoveMembership(request), self.removed.clone())
     }
 
     fn add_trust(&self, request: AddTrust) -> ServiceFuture<'_, Appended> {
-        self.answer(WalletCall::AddTrust(request), self.trust_appended.clone())
+        self.answer(NodeCall::AddTrust(request), self.trust_appended.clone())
     }
 
     fn revoke_trust(&self, event_id: Id, issuer: Id) -> ServiceFuture<'_, Revoked> {
         self.answer(
-            WalletCall::RevokeTrust(event_id, issuer),
+            NodeCall::RevokeTrust(event_id, issuer),
             self.revoked.clone(),
         )
     }
 
     fn push(&self, request: PushRequest) -> ServiceFuture<'_, Pushed> {
-        self.answer(WalletCall::Push(request), self.pushed.clone())
-    }
-}
-
-/// Which [`WitnessService`] method was called, and with what.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum WitnessCall {
-    /// `GET /api/node`.
-    Node,
-    /// `GET /api/ledgers`.
-    Ledgers(PageRequest),
-    /// `GET /api/ledgers/{ledger_id}`.
-    Ledger(Id),
-    /// `GET /api/ledgers/{ledger_id}/events`.
-    LedgerEvents(Id, EventPageRequest),
-    /// `GET /api/forks`.
-    Forks(ForkQuery),
-}
-
-/// A [`WitnessService`] that answers from `contracts/http/witness-*.json`.
-#[derive(Debug)]
-pub struct StubWitnessService {
-    /// `GET /api/node`.
-    pub node: WitnessNode,
-    /// `GET /api/ledgers`.
-    pub ledgers: LedgerList,
-    /// `GET /api/ledgers/{ledger_id}`.
-    pub ledger: LedgerView,
-    /// `GET /api/ledgers/{ledger_id}/events`.
-    pub events: LedgerPage,
-    /// `GET /api/forks`.
-    pub forks: ForkList,
-    failure: Mutex<Option<ServiceError>>,
-    calls: Mutex<Vec<WitnessCall>>,
-}
-
-impl Default for StubWitnessService {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl StubWitnessService {
-    /// A stub primed from the frozen fixtures.
-    ///
-    /// # Panics
-    ///
-    /// Panics when a fixture does not parse into the document type that serves
-    /// it.
-    #[must_use]
-    pub fn new() -> Self {
-        Self {
-            node: Fixture::named("witness-get-node.json").parse_response(),
-            ledgers: Fixture::named("witness-get-ledgers.json").parse_response(),
-            ledger: Fixture::named("witness-get-ledger.json").parse_response(),
-            events: Fixture::named("witness-get-ledger-events.json").parse_response(),
-            forks: Fixture::named("witness-get-forks.json").parse_response(),
-            failure: Mutex::new(None),
-            calls: Mutex::new(Vec::new()),
-        }
-    }
-
-    /// Makes every later call fail with `error`.
-    pub fn fail_with(&self, error: ServiceError) {
-        *lock(&self.failure) = Some(error);
-    }
-
-    /// The calls this stub received, in order.
-    #[must_use]
-    pub fn calls(&self) -> Vec<WitnessCall> {
-        lock(&self.calls).clone()
-    }
-
-    /// The one call this stub received.
-    ///
-    /// # Panics
-    ///
-    /// Panics unless exactly one call was made.
-    #[must_use]
-    pub fn call(&self) -> WitnessCall {
-        let calls = self.calls();
-        assert_eq!(calls.len(), 1, "expected one call, got {calls:?}");
-        calls.into_iter().next().expect("one call")
-    }
-
-    fn answer<T: Send + 'static>(&self, call: WitnessCall, value: T) -> ServiceFuture<'_, T> {
-        lock(&self.calls).push(call);
-        let result = match lock(&self.failure).clone() {
-            Some(error) => Err(error),
-            None => Ok(value),
-        };
-        Box::pin(async move { result })
-    }
-}
-
-impl WitnessService for StubWitnessService {
-    fn node(&self) -> ServiceFuture<'_, WitnessNode> {
-        self.answer(WitnessCall::Node, self.node.clone())
-    }
-
-    fn ledgers(&self, page: PageRequest) -> ServiceFuture<'_, LedgerList> {
-        self.answer(WitnessCall::Ledgers(page), self.ledgers.clone())
-    }
-
-    fn ledger(&self, ledger_id: Id) -> ServiceFuture<'_, LedgerView> {
-        self.answer(WitnessCall::Ledger(ledger_id), self.ledger.clone())
-    }
-
-    fn ledger_events(
-        &self,
-        ledger_id: Id,
-        page: EventPageRequest,
-    ) -> ServiceFuture<'_, LedgerPage> {
-        self.answer(
-            WitnessCall::LedgerEvents(ledger_id, page),
-            self.events.clone(),
-        )
+        self.answer(NodeCall::Push(request), self.pushed.clone())
     }
 
     fn forks(&self, query: ForkQuery) -> ServiceFuture<'_, ForkList> {
-        self.answer(WitnessCall::Forks(query), self.forks.clone())
+        self.answer(NodeCall::Forks(query), self.forks.clone())
     }
 }
 

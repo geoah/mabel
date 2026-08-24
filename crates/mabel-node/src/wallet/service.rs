@@ -1,9 +1,16 @@
-//! The wallet HTTP surface, over the same core the CLI drives.
+//! The node HTTP surface, over the same core the CLI drives (proposal 006
+//! section 8).
 //!
-//! Every method turns the validated request into one call on [`WalletCore`]
-//! or [`WalletSync`] and renders the document the fixtures under
-//! `contracts/http/` freeze. Blocking file work runs under `spawn_blocking`;
-//! the network work is already async.
+//! One service answers every route on every node. It reads two things over one
+//! home: [`WalletCore`], which folds the ledgers and owns every append rule,
+//! and [`LedgerStorage`], the one store, which holds the index the sync server
+//! answers from, the fork records and the caps. Nothing here is gated on what
+//! the home holds.
+//!
+//! Every method turns the validated request into one call on [`WalletCore`],
+//! [`LedgerStorage`] or [`WalletSync`] and renders the document the fixtures
+//! under `contracts/http/` freeze. Blocking file work runs under
+//! `spawn_blocking`; the network work is already async.
 //!
 //! Verification is not here. Proposal 004 removed `POST /api/verify` with the
 //! verify tab, so [`crate::wallet::Verifier`] is a CLI concern and this
@@ -18,29 +25,32 @@ use iroh_base::EndpointId;
 use mabel_core::{IdentityId, LedgerId};
 
 use crate::api::documents::{
-    Accepted, Admitted, Appended, ContactView, CreatedIdentity, DeclaredKind, FetchedLedger,
-    GraphSynced, GraphView, Id, Identity, IdentityKeys, Invited, KnownIdentity, LedgerPage, Lookup,
-    MembershipView, ProfileReplaced, Pushed, Relay, Removed, ResolveInputKind, ResolveStatus,
-    Resolved, Revoked, Role, VerificationChecked, WalletNode, WitnessEntry, WitnessLedgerEntry,
-    WitnessLedgers, WitnessList,
+    Accepted, Admitted, Appended, Binding, ContactView, CreatedIdentity, DeclaredKind,
+    FetchedLedger, ForkList, GraphSynced, GraphView, Id, Identity, IdentityKeys, Invited,
+    KnownIdentityList, LedgerPage, Lookup, MembershipView, NodeDocument, ProfileReplaced, Pushed,
+    Relay, Removed, ResolveInputKind, ResolveStatus, Resolved, Revoked, VerificationChecked,
+    WitnessEndpoint, WitnessEntry, WitnessForRow, WitnessHoldings, WitnessLedgerEntry, WitnessList,
 };
 use crate::api::error::ServiceError;
 use crate::api::service::{
     AcceptInvitation, AddTrust, AdmitAcceptance, CreateIdentity, EventPageRequest, FetchIdentity,
-    Invite, LookupRequest, PageRequest, PushRequest, RemoveMembership, ReplaceProfile,
-    ResolveInput, ServiceFuture, SetContact, WalletService,
+    ForkQuery, Invite, LookupRequest, NodeService, PageRequest, PushRequest, RemoveMembership,
+    ReplaceProfile, ResolveInput, ServiceFuture, SetContact,
 };
+use crate::bindings;
 use crate::config::RelayMode;
+use crate::events::fork_document;
 use crate::graph::{
     CrawlOptions, GraphStore, LedgerFetcher, NetLedgerFetcher, Resolution, SourceClass, crawl,
     plan_sources,
 };
 use crate::now_ms;
+use crate::storage::LedgerStorage;
 use crate::verification::{
     HickoryResolver, ResolveFuture, Resolver, TxtRecord, endpoints_at_label, mabel_claim,
     query_name, verify_hostname,
 };
-use crate::wallet::core::{AppendLock, WalletCore, verification_document};
+use crate::wallet::core::{AppendLock, WalletCore, no_local_signer, verification_document};
 use crate::wallet::error::{no_source_available, storage_error};
 use crate::wallet::ids;
 use crate::wallet::lookup::{Names, default_root, graph_status, known_identities, lookup_document};
@@ -49,9 +59,10 @@ use crate::wallet::sync::WalletSync;
 /// The version `GET /api/node` reports.
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-/// The wallet API over one home and one Iroh endpoint.
-pub struct WalletApiService {
+/// The node API over one home, one store and one Iroh endpoint.
+pub struct NodeApiService {
     core: Arc<WalletCore>,
+    storage: Arc<LedgerStorage>,
     sync: WalletSync,
     http_bind: SocketAddr,
     relay: Relay,
@@ -66,18 +77,18 @@ pub struct WalletApiService {
     refreshing: Arc<StdMutex<HashSet<IdentityId>>>,
 }
 
-impl std::fmt::Debug for WalletApiService {
+impl std::fmt::Debug for NodeApiService {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter
-            .debug_struct("WalletApiService")
+            .debug_struct("NodeApiService")
             .field("http_bind", &self.http_bind)
             .field("relay", &self.relay)
             .finish_non_exhaustive()
     }
 }
 
-impl WalletApiService {
-    /// A service over `core`, dialling peers through `sync`.
+impl NodeApiService {
+    /// A service over `core` and `storage`, dialling peers through `sync`.
     ///
     /// The resolver is built from the system configuration; a machine with
     /// none gets one that answers every query `unavailable`, which the
@@ -86,6 +97,7 @@ impl WalletApiService {
     #[must_use]
     pub fn new(
         core: Arc<WalletCore>,
+        storage: Arc<LedgerStorage>,
         sync: WalletSync,
         http_bind: SocketAddr,
         relay: RelayMode,
@@ -99,6 +111,7 @@ impl WalletApiService {
         };
         Self {
             core,
+            storage,
             sync,
             http_bind,
             relay: match relay {
@@ -145,21 +158,39 @@ impl WalletApiService {
     }
 }
 
-impl WalletService for WalletApiService {
-    fn node(&self) -> ServiceFuture<'_, WalletNode> {
+impl NodeService for NodeApiService {
+    /// What this node holds and witnesses for, never a role (proposal 006
+    /// section 8).
+    ///
+    /// The counts come from the one store, so they are the numbers the sync
+    /// server enforces its caps against, and each `witness_for` entry carries
+    /// the advertisement invariant beside it (section 4.1).
+    fn node(&self) -> ServiceFuture<'_, NodeDocument> {
         let http_bind = self.http_bind;
         let relay = self.relay;
+        let storage = self.storage.clone();
         self.blocking(move |core| {
             let config = core.config()?;
-            Ok(WalletNode {
-                role: Role::Wallet,
+            let totals = storage.totals();
+            Ok(NodeDocument {
                 endpoint_id: ids::key(&core.endpoint_id()?),
                 http_bind,
                 relay,
                 witnesses: config.witness_bootstrap().iter().map(ids::key).collect(),
-                storage_capacity: config.storage_capacity,
-                storage_used: core.storage_used()?,
+                witness_for: storage
+                    .witness_for_entries()
+                    .iter()
+                    .map(|entry| WitnessForRow {
+                        identity: ids::identity(entry.identity),
+                        advertised: entry.advertised(),
+                        reason: entry.gap.map(|gap| gap.reason().to_owned()),
+                    })
+                    .collect(),
+                storage_capacity: storage.caps().storage_capacity,
+                storage_used: totals.storage_used,
                 identity_count: core.identities()?.len() as u64,
+                ledger_count: totals.ledger_count,
+                fork_count: totals.fork_count,
                 version: VERSION.to_owned(),
             })
         })
@@ -171,12 +202,21 @@ impl WalletService for WalletApiService {
 
     /// Answers from the home and the stored crawl generation, cache-only: a
     /// list route never fans out into one DNS query or one fetch per row.
-    fn known_identities(&self) -> ServiceFuture<'_, Vec<KnownIdentity>> {
+    ///
+    /// One page at a time: a home may hold up to ten thousand ledgers, and only
+    /// the ids on the page are folded (proposal 006 section 8).
+    fn known_identities(&self, page: PageRequest) -> ServiceFuture<'_, KnownIdentityList> {
         self.blocking(move |core| {
             let generation = GraphStore::in_home(core.home())
                 .current_generation()
                 .map_err(storage_error)?;
-            known_identities(core, generation.as_ref())
+            let found = known_identities(core, generation.as_ref(), page)?;
+            Ok(KnownIdentityList {
+                offset: page.offset,
+                limit: page.limit,
+                more: found.more,
+                identities: found.rows,
+            })
         })
     }
 
@@ -325,13 +365,12 @@ impl WalletService for WalletApiService {
                 let resolution = Resolution::for_operation().with_caller_hints(caller);
                 match from_witness {
                     Some(witness) => {
+                        if known_endpoint(&core, witness)? {
+                            return Err(endpoint_not_identity(&ids::identity(witness)));
+                        }
                         let endpoints = resolution.witness_endpoints(&core, witness)?;
                         if endpoints.is_empty() {
-                            return Err(ServiceError::usage(
-                                "unresolvable_witness",
-                                format!("no endpoint is known for the witness {witness}"),
-                            )
-                            .with_detail("identity_id", witness.to_string()));
+                            return Err(unresolvable_witness(&ids::identity(witness), &[]));
                         }
                         Ok(endpoints.iter().map(ids::key).collect())
                     }
@@ -354,7 +393,7 @@ impl WalletService for WalletApiService {
                     Ok(fetched) => return Ok(fetched_document(&fetched)),
                     Err(error) if error.reason() == "peer_unreachable" => {
                         refused = Some(
-                            witness_unreachable(
+                            endpoint_unreachable(
                                 endpoint_id,
                                 format!("{endpoint_id} did not answer for {ledger}"),
                                 unreachable_detail(&error),
@@ -478,12 +517,17 @@ impl WalletService for WalletApiService {
         self.blocking(move |core| core.identity_keys(ids::parse_identity(&identity_id)?))
     }
 
+    /// Replaces the witness set of one ledger, after every named id has been
+    /// shown to be an identity this home can resolve (proposal 006 section 8).
     fn set_witnesses(&self, identity_id: Id, witnesses: Vec<Id>) -> ServiceFuture<'_, Appended> {
         Box::pin(async move {
             let identity = ids::parse_identity(&identity_id)?;
             let mut named = Vec::with_capacity(witnesses.len());
             for witness in &witnesses {
                 named.push(ids::parse_identity(witness)?);
+            }
+            for witness in &named {
+                self.resolvable(*witness).await?;
             }
             let lock = self.core.append_lock(identity).await;
             self.fresh(identity, &lock).await?;
@@ -706,41 +750,139 @@ impl WalletService for WalletApiService {
         })
     }
 
-    /// Proxies one `List` request to a witness over the sync protocol.
+    /// The fork records this home holds, for one ledger or for all of them.
     ///
-    /// Nothing is stored: this is what that witness holds right now, read
-    /// live, and the ledgers it names are fetched only by the explicit fetch
-    /// route (proposal 004).
-    fn witness_ledgers(
-        &self,
-        endpoint_id: Id,
-        page: PageRequest,
-    ) -> ServiceFuture<'_, WitnessLedgers> {
-        Box::pin(async move {
-            let endpoint = ids::parse_endpoint(&endpoint_id)?;
-            let served = self
-                .sync
-                .list(endpoint, page.offset, page.limit)
-                .await
-                .map_err(|error| {
-                    witness_unreachable(
-                        &endpoint_id,
-                        format!("{endpoint_id} did not answer the ledger list"),
-                        error.to_string(),
-                    )
-                })?;
-            Ok(WitnessLedgers {
-                endpoint_id,
+    /// Every node answers this: a fork is a fact about a stored ledger, and a
+    /// home that merely fetched a ledger can meet equivocation on it (proposal
+    /// 006 section 8).
+    fn forks(&self, query: ForkQuery) -> ServiceFuture<'_, ForkList> {
+        let storage = self.storage.clone();
+        self.blocking(move |_| {
+            let ledger = match &query.ledger_id {
+                Some(id) => Some(ids::parse_ledger(id)?),
+                None => None,
+            };
+            let page = query.page;
+            let found = storage.forks(ledger, page.offset as usize, page.limit as usize);
+            let mut entries = Vec::with_capacity(found.items.len());
+            for record in &found.items {
+                entries.push(fork_document(record)?);
+            }
+            Ok(ForkList {
                 offset: page.offset,
                 limit: page.limit,
-                more: served.more,
-                ledgers: served.items.iter().map(witness_ledger_entry).collect(),
+                more: found.more,
+                entries,
             })
+        })
+    }
+
+    /// Proxies one `List` request to a witness identity over the sync protocol.
+    ///
+    /// The identity is resolved to endpoints through proposal 006 section 5.1
+    /// first, and each endpoint is asked in that order until one answers.
+    /// Nothing is stored: this is what that witness holds right now, read live,
+    /// and the ledgers it names are fetched only by the explicit fetch route
+    /// (proposal 004).
+    ///
+    /// An id equal to an endpoint id this home knows is refused before any dial
+    /// with a 404: both keys render as 52 base32 characters, so the mistake is
+    /// worth naming rather than dialling nothing (proposal 006 section 8).
+    fn witness_holdings(
+        &self,
+        identity_id: Id,
+        page: PageRequest,
+    ) -> ServiceFuture<'_, WitnessHoldings> {
+        Box::pin(async move {
+            let identity = ids::parse_identity(&identity_id)?;
+            let asked = identity_id.clone();
+            let core = self.core.clone();
+            let endpoints = spawn(move || {
+                if known_endpoint(&core, identity)? {
+                    // A drill-in route answers 404 for it: the client asked
+                    // for a page that is not there.
+                    return Err(endpoint_not_identity(&asked).with_status(StatusCode::NOT_FOUND));
+                }
+                let endpoints = Resolution::for_operation().witness_endpoints(&core, identity)?;
+                if endpoints.is_empty() {
+                    return Err(unresolvable_witness(&asked, &[]));
+                }
+                Ok(endpoints)
+            })
+            .await?;
+
+            let mut failures: Vec<String> = Vec::new();
+            for endpoint in &endpoints {
+                match self.sync.list(*endpoint, page.offset, page.limit).await {
+                    Ok(served) => {
+                        return Ok(WitnessHoldings {
+                            identity_id,
+                            endpoint_id: ids::key(endpoint),
+                            offset: page.offset,
+                            limit: page.limit,
+                            more: served.more,
+                            ledgers: served.items.iter().map(witness_ledger_entry).collect(),
+                        });
+                    }
+                    Err(error) => failures.push(format!("{}: {error}", ids::key(endpoint))),
+                }
+            }
+            Err(witness_unreachable(
+                &identity_id,
+                format!("no machine answering for {identity_id} served its ledger list"),
+                &endpoints,
+                failures.join("; "),
+            ))
         })
     }
 }
 
-impl WalletApiService {
+impl NodeApiService {
+    /// Refuses a witness id this home cannot resolve to a known identity
+    /// (proposal 006 section 8).
+    ///
+    /// Two refusals, in order. An id equal to an endpoint id this home knows is
+    /// `endpoint_not_identity`, before any dial. Anything else must resolve: a
+    /// local copy answers it outright, and an id with no copy is fetched once
+    /// through the endpoints section 5.1 resolves it to, which is what
+    /// `--endpoints` bootstraps. An id with no copy and no reachable endpoint is
+    /// `unresolvable_witness`, naming what was dialled.
+    async fn resolvable(&self, witness: IdentityId) -> Result<(), ServiceError> {
+        let core = self.core.clone();
+        let endpoints = spawn(move || {
+            if known_endpoint(&core, witness)? {
+                return Err(endpoint_not_identity(&ids::identity(witness)));
+            }
+            if core.holds(witness)? {
+                return Ok(Vec::new());
+            }
+            Resolution::for_operation().witness_endpoints(&core, witness)
+        })
+        .await?;
+        if endpoints.is_empty() {
+            // Either the copy is already here, or nothing names a machine for
+            // it; the first is the common case and answers with no dial.
+            let core = self.core.clone();
+            let held = spawn(move || core.holds(witness)).await?;
+            return if held {
+                Ok(())
+            } else {
+                Err(unresolvable_witness(&ids::identity(witness), &[]))
+            };
+        }
+        for endpoint in &endpoints {
+            if self
+                .sync
+                .fetch(&self.core, witness, *endpoint)
+                .await
+                .is_ok()
+            {
+                return Ok(());
+            }
+        }
+        Err(unresolvable_witness(&ids::identity(witness), &endpoints))
+    }
+
     /// Starts one background hostname re-check, unless one is already running
     /// for this identity (proposal 003 section 2).
     ///
@@ -788,9 +930,14 @@ impl WalletApiService {
         spawn(move || core.witnesses_of(identity)).await
     }
 
-    /// The append discipline: a ledger this wallet does not solely control is
+    /// The append preconditions: the ledger is here, this home holds a key that
+    /// may append to it, and a ledger this home does not solely control is
     /// checked against its witnesses before anything is signed (proposal 001
-    /// section 5).
+    /// section 5, proposal 006 section 8).
+    ///
+    /// The signer check runs before any dial: a mutating route naming a ledger
+    /// this home merely stores answers `no_local_signer` rather than spending
+    /// ten seconds on a freshness query it cannot use.
     ///
     /// The caller holds `identity`'s append lock and keeps holding it through
     /// the append, so the head this leaves behind is the head that is signed
@@ -803,6 +950,9 @@ impl WalletApiService {
         let core = self.core.clone();
         let shared = spawn(move || {
             let loaded = core.load(identity)?;
+            if !core.home().can_sign_for(identity) {
+                return Err(no_local_signer(identity));
+            }
             Ok(!core.solely_controls(&loaded.state))
         })
         .await?;
@@ -841,41 +991,104 @@ impl Resolver for UnavailableResolver {
     }
 }
 
-/// Every witness endpoint this wallet knows, ascending, with the stored
-/// ledgers that name it (proposal 004).
+/// Every witness identity this home knows, ascending, with the machines that
+/// answer for it and the stored ledgers that name it (proposal 006 sections 1
+/// and 8).
 ///
-/// Two sources: the retired tag-11 `WitnessConfig` of every ledger under
-/// `ledgers/`, and the bootstrap endpoints `node.json` records beside each
-/// configured witness identity. An endpoint only `node.json` names has an empty
-/// `named_by`.
+/// Two sources for the rows: the tag-19 `WitnessSet` of every ledger under
+/// `ledgers/`, and the witness identities `node.json` configures. An identity
+/// only `node.json` names has an empty `named_by`.
 ///
-/// A tag-19 `WitnessSet` names identities, not endpoints, so nothing here reads
-/// it: turning a witness identity into the endpoints that answer for it is
-/// resolution, and these rows become identity rows in ticket 037.
+/// The machines come from resolution (section 5.1), which reads what this home
+/// already holds and dials nothing, and each carries the binding of section 4.2:
+/// `verified` when the identity's own chain advertises it, `hinted` otherwise.
 fn known_witnesses(core: &WalletCore) -> Result<Vec<WitnessEntry>, ServiceError> {
-    let mut named: BTreeMap<Id, BTreeSet<Id>> = BTreeMap::new();
+    let mut named: BTreeMap<IdentityId, BTreeSet<Id>> = BTreeMap::new();
     for ledger in core.home().ledgers().map_err(storage_error)? {
-        for endpoint in core.load(ledger)?.state.witness_endpoints() {
+        for witness in core.load(ledger)?.state.witness_identities() {
             named
-                .entry(ids::key(endpoint))
+                .entry(*witness)
                 .or_default()
                 .insert(ids::identity(ledger));
         }
     }
-    let mut defaults: BTreeSet<Id> = BTreeSet::new();
-    for endpoint in core.config()?.witness_bootstrap() {
-        let endpoint = ids::key(&endpoint);
-        named.entry(endpoint.clone()).or_default();
-        defaults.insert(endpoint);
+    let mut defaults: BTreeSet<IdentityId> = BTreeSet::new();
+    for entry in &core.config()?.witnesses {
+        named.entry(entry.identity).or_default();
+        defaults.insert(entry.identity);
     }
-    Ok(named
-        .into_iter()
-        .map(|(endpoint_id, named_by)| WitnessEntry {
-            is_node_default: defaults.contains(&endpoint_id),
-            endpoint_id,
+    // One resolution for the whole list: it dials nothing, and an identity
+    // named by two ledgers is resolved once (proposal 006 section 5.1).
+    let resolution = Resolution::for_operation();
+    let names = Names::new(core, None);
+    let mut rows = Vec::new();
+    for (identity, named_by) in named {
+        let bindings = bindings::read(core.home(), identity).map_err(storage_error)?;
+        let endpoints = resolution
+            .witness_endpoints(core, identity)?
+            .into_iter()
+            .map(|endpoint| WitnessEndpoint {
+                endpoint_id: ids::key(&endpoint),
+                binding: bindings
+                    .as_ref()
+                    .map_or(Binding::Hinted, |bindings| bindings.binding(endpoint)),
+            })
+            .collect();
+        rows.push(WitnessEntry {
+            identity_id: ids::identity(identity),
+            display_name: names.resolve(identity).display_name,
+            endpoints,
             named_by: named_by.into_iter().collect(),
-        })
-        .collect())
+            is_node_default: defaults.contains(&identity),
+            stored: core.holds(identity)?,
+        });
+    }
+    // By the rendered id, which is the order a client can reproduce from the
+    // document.
+    rows.sort_by(|left, right| left.identity_id.cmp(&right.identity_id));
+    Ok(rows)
+}
+
+/// Whether `identity` is an endpoint id this home knows, which is the one id a
+/// witness surface refuses before dialling anything (proposal 006 section 8).
+///
+/// The endpoints this home knows are its own endpoint id, every endpoint a
+/// stored ledger advertises or lists in a retired tag-11 `WitnessConfig`, every
+/// bootstrap endpoint `node.json` records, and every `peers.json` hint. The two
+/// key types are both 32 opaque bytes, so the comparison is on the bytes.
+fn known_endpoint(core: &WalletCore, identity: IdentityId) -> Result<bool, ServiceError> {
+    let wanted = EndpointId::from_bytes(identity.as_bytes()).ok();
+    let Some(wanted) = wanted else {
+        // 32 bytes that are not a curve point cannot be an endpoint id, so
+        // nothing here can name it.
+        return Ok(false);
+    };
+    if core.endpoint_id()? == wanted {
+        return Ok(true);
+    }
+    for endpoint in core.config()?.witness_bootstrap() {
+        if endpoint == wanted {
+            return Ok(true);
+        }
+    }
+    let peers = core.home().peers().map_err(storage_error)?;
+    if peers
+        .ledgers
+        .values()
+        .flatten()
+        .any(|hint| hint.endpoint == wanted)
+    {
+        return Ok(true);
+    }
+    for ledger in core.home().ledgers().map_err(storage_error)? {
+        let loaded = core.load(ledger)?;
+        if loaded.state.endpoints().contains(&wanted)
+            || loaded.state.witness_endpoints().contains(&wanted)
+        {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 /// The endpoints a fetch of `ledger` may ask, in the source order of proposal
@@ -898,11 +1111,13 @@ fn fetch_sources(
         }
     }
     for witness in known_witnesses(core)? {
-        let Ok(endpoint) = ids::parse_endpoint(&witness.endpoint_id) else {
-            continue;
-        };
-        if resolution.admit(SourceClass::ChainNamed, endpoint) {
-            push_source(&mut sources, witness.endpoint_id);
+        for machine in witness.endpoints {
+            let Ok(endpoint) = ids::parse_endpoint(&machine.endpoint_id) else {
+                continue;
+            };
+            if resolution.admit(SourceClass::ChainNamed, endpoint) {
+                push_source(&mut sources, machine.endpoint_id);
+            }
         }
     }
     Ok(sources)
@@ -914,12 +1129,58 @@ fn push_source(sources: &mut Vec<Id>, endpoint: Id) {
     }
 }
 
-/// A witness that could not be dialled or did not answer: code 30, reason
-/// `witness_unreachable`, the endpoint named in `details`.
-fn witness_unreachable(endpoint_id: &Id, sentence: String, detail: String) -> ServiceError {
+/// A witness identity whose machines could not be dialled or did not answer:
+/// code 30, reason `witness_unreachable`, the identity and every endpoint tried
+/// named in `details` (proposal 006 section 8).
+fn witness_unreachable(
+    identity_id: &Id,
+    sentence: String,
+    tried: &[EndpointId],
+    detail: String,
+) -> ServiceError {
+    ServiceError::network("witness_unreachable", sentence)
+        .with_detail("identity_id", identity_id.as_str())
+        .with_detail(
+            "endpoints_tried",
+            tried.iter().map(ids::key).collect::<Vec<Id>>(),
+        )
+        .with_detail("error", detail)
+}
+
+/// An endpoint that did not answer a fetch: the one caller that names an
+/// endpoint and no identity.
+fn endpoint_unreachable(endpoint_id: &Id, sentence: String, detail: String) -> ServiceError {
     ServiceError::network("witness_unreachable", sentence)
         .with_detail("endpoint_id", endpoint_id.as_str())
         .with_detail("error", detail)
+}
+
+/// An id this home cannot resolve to a known identity: code 2, reason
+/// `unresolvable_witness` (proposal 006 section 8).
+fn unresolvable_witness(identity_id: &Id, tried: &[EndpointId]) -> ServiceError {
+    ServiceError::usage(
+        "unresolvable_witness",
+        format!("this home knows no machine that answers for {identity_id}"),
+    )
+    .with_detail("witness", identity_id.as_str())
+    .with_detail(
+        "endpoints_tried",
+        tried.iter().map(ids::key).collect::<Vec<Id>>(),
+    )
+}
+
+/// An id that names a machine this home knows and not an identity: code 2,
+/// reason `endpoint_not_identity`, refused before any dial (proposal 006
+/// section 8).
+///
+/// The id is not ambiguous, it is wrong: an endpoint id and an identity id are
+/// both 52 base32 characters, and nothing in the string says which it is.
+fn endpoint_not_identity(identity_id: &Id) -> ServiceError {
+    ServiceError::usage(
+        "endpoint_not_identity",
+        format!("{identity_id} is a machine this home knows, not a witness identity"),
+    )
+    .with_detail("value", identity_id.as_str())
 }
 
 /// The sentence a `peer_unreachable` failure carried, so respelling it as

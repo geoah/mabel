@@ -1,7 +1,7 @@
 //! The profile, verification, contact, lookup and graph routes against a real
 //! home (ticket 026, proposal 003).
 //!
-//! Every test here runs [`WalletApiService`] over a temp node home with a stub
+//! Every test here runs [`NodeApiService`] over a temp node home with a stub
 //! resolver and a stub fetcher, so nothing opens a socket and nothing queries
 //! DNS. The Iroh endpoint the service holds is bound with relays disabled and
 //! is never dialled: the crawl reads the stub, and the hostname check reads the
@@ -15,13 +15,13 @@ use mabel_core::proto::DeclaredKind as ProtoDeclaredKind;
 use mabel_core::sign::{Position, Root, build_inception, build_profile_update};
 use mabel_node::api::documents::{DeclaredKind, Id, KnownIdentity, Provenance, VerificationStatus};
 use mabel_node::api::service::{
-    AddTrust, CreateIdentity, EventPageRequest, LookupRequest, ReplaceProfile, SetContact,
-    WalletService,
+    AddTrust, CreateIdentity, EventPageRequest, LookupRequest, NodeService, PageRequest,
+    ReplaceProfile, SetContact,
 };
 use mabel_node::graph::{StubFetcher, stub_identity};
 use mabel_node::verification::{StubResolver, VerificationStore};
-use mabel_node::wallet::{WalletApiService, WalletCore, WalletSync};
-use mabel_node::{HomeOptions, NodeConfig, NodeHome, NodeRole, RelayMode};
+use mabel_node::wallet::{NodeApiService, WalletCore, WalletSync};
+use mabel_node::{HomeOptions, LedgerStorage, NodeConfig, NodeHome, RelayMode};
 use tempfile::TempDir;
 
 /// A wallet home, the core over it and the HTTP service over that.
@@ -31,7 +31,7 @@ use tempfile::TempDir;
 struct Wallet {
     _dir: TempDir,
     core: Arc<WalletCore>,
-    service: WalletApiService,
+    service: NodeApiService,
     /// The resolver the service holds, so a test can assert that a route
     /// queried nothing.
     resolver: Arc<StubResolver>,
@@ -42,7 +42,6 @@ impl Wallet {
     async fn plain() -> Self {
         let dir = tempfile::tempdir().expect("a temp directory");
         let config = NodeConfig {
-            role: NodeRole::Wallet,
             relay: RelayMode::Disabled,
             ..NodeConfig::default()
         };
@@ -88,13 +87,18 @@ async fn service(
     core: &Arc<WalletCore>,
     resolver: Arc<StubResolver>,
     fetcher: StubFetcher,
-) -> WalletApiService {
+) -> NodeApiService {
     let secret = core.home().node_key().expect("the node key reads");
     let endpoint = mabel_node::bind_endpoint(RelayMode::Disabled, secret, None, &[])
         .await
         .expect("the endpoint binds");
-    WalletApiService::new(
+    let storage = Arc::new(
+        LedgerStorage::open_from_config(core.home().clone(), endpoint.id())
+            .expect("the index builds"),
+    );
+    NodeApiService::new(
         core.clone(),
+        storage,
         WalletSync::new(endpoint),
         "127.0.0.1:9080".parse().expect("a bind address"),
         RelayMode::Disabled,
@@ -836,9 +840,13 @@ async fn the_known_list_merges_the_stored_ledgers_the_crawl_and_the_contact_note
 
     let rows = wallet
         .service
-        .known_identities()
+        .known_identities(PageRequest {
+            offset: 0,
+            limit: 100,
+        })
         .await
-        .expect("the list answers");
+        .expect("the list answers")
+        .identities;
     let ids: Vec<Id> = rows.iter().map(|row| row.identity_id.clone()).collect();
     assert_eq!(ids.len(), 3, "{ids:?}");
     assert!(
@@ -904,9 +912,13 @@ async fn a_revoked_attestation_leaves_the_row_untrusted() {
         .expect("the attestation lands");
     let rows = wallet
         .service
-        .known_identities()
+        .known_identities(PageRequest {
+            offset: 0,
+            limit: 100,
+        })
         .await
-        .expect("the list answers");
+        .expect("the list answers")
+        .identities;
     assert!(row(&rows, bob).trusted);
 
     wallet
@@ -916,9 +928,13 @@ async fn a_revoked_attestation_leaves_the_row_untrusted() {
         .expect("the revocation lands");
     let rows = wallet
         .service
-        .known_identities()
+        .known_identities(PageRequest {
+            offset: 0,
+            limit: 100,
+        })
         .await
-        .expect("the list answers");
+        .expect("the list answers")
+        .identities;
     let stored = row(&rows, bob);
     assert!(!stored.trusted);
     assert!(stored.stored, "the copy is still here");
@@ -933,8 +949,12 @@ async fn a_home_with_only_its_own_identity_knows_nobody() {
     wallet.identity("alice");
     let rows = wallet
         .service
-        .known_identities()
+        .known_identities(PageRequest {
+            offset: 0,
+            limit: 100,
+        })
         .await
-        .expect("the list answers");
+        .expect("the list answers")
+        .identities;
     assert!(rows.is_empty(), "{rows:?}");
 }

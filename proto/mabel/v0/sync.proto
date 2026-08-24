@@ -23,6 +23,10 @@ message PushReq {
   repeated SignedEvent events = 2; // <= 512 events, <= 2 MiB
 }
 
+// A node answers the ledgers it is willing to be known to hold, not everything
+// it stores: the ledgers it signs for, plus the ones it keeps as a witness. A
+// ledger it merely fetched is served by GetReq to anyone who can name it and is
+// never enumerated (proposal 006 section 8).
 message ListReq {
   uint32 offset = 1;  // ordered by ascending ledger id
   uint32 limit = 2;   // clamped to 256

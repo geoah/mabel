@@ -65,7 +65,10 @@ impl WitnessEntry {
     }
 }
 
-/// What this node is (proposal 001 section 2).
+/// What this node was configured as, before one node served one API.
+///
+/// Read by nothing (proposal 006 section 8). It survives only so an existing
+/// `node.json` still loads.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum NodeRole {
@@ -93,8 +96,16 @@ pub enum RelayMode {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct NodeConfig {
-    /// Wallet or witness.
-    #[serde(default)]
+    /// Recognised, read by nothing, and never written (proposal 006 section
+    /// 8).
+    ///
+    /// One node serves one API, and what it can do is read from the identities
+    /// its home holds and from `witness_for`. The field stays because this
+    /// struct denies unknown fields, so deleting it would stop every
+    /// `node.json` written before this release from loading; a file that
+    /// carries it loads and the node says so once at startup. It is not written
+    /// back, so the fix the log line names, deleting the line, sticks.
+    #[serde(default, skip_serializing)]
     pub role: NodeRole,
     /// Address the HTTP API and UI bind to.
     #[serde(default = "default_http_bind")]
@@ -375,7 +386,9 @@ mod tests {
     fn round_trips_through_json() {
         let key = iroh_base::SecretKey::from_bytes(&[3u8; 32]).public();
         let config = NodeConfig {
-            role: NodeRole::Witness,
+            // `role` is never written, so it never round trips: it defaults on
+            // the way back in (proposal 006 section 8).
+            role: NodeRole::default(),
             http_bind: "127.0.0.1:1234".parse().unwrap(),
             allowed_hosts: vec!["witness.tailnet.example".to_owned()],
             witnesses: vec![WitnessEntry::new(ALICE.parse().unwrap(), vec![key])],
@@ -394,7 +407,16 @@ mod tests {
         let json = NodeConfig::default().to_json().unwrap();
         let text = String::from_utf8(json).unwrap();
         assert!(text.contains("\"relay\": \"n0\""), "{text}");
-        assert!(text.contains("\"role\": \"wallet\""), "{text}");
+    }
+
+    /// `role` loads from a file that carries it and is never written back, so
+    /// deleting the line sticks (proposal 006 section 8).
+    #[test]
+    fn role_loads_and_is_never_written() {
+        let loaded = NodeConfig::from_json(br#"{"role": "witness"}"#).expect("role still loads");
+        assert_eq!(loaded.role, NodeRole::Witness);
+        let text = String::from_utf8(loaded.to_json().unwrap()).unwrap();
+        assert!(!text.contains("role"), "{text}");
     }
 
     #[test]

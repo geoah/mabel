@@ -164,6 +164,10 @@ impl LedgerProtocol {
                 let outcome = self.store.push(ledger, events, provenance).await?;
                 Ok(wire::accepted_response(&outcome))
             }
+            // The store decides what a `List` names: the enumerable set, not the
+            // stored set (proposal 006 section 8). Nothing here filters, and
+            // nothing here is authorization: a caller that can name a ledger id
+            // still reads that ledger through `Get`.
             Request::List { offset, limit } => {
                 let limit = clamp(limit, MAX_LIST_LIMIT);
                 let page = self.store.list(offset as usize, limit).await?;

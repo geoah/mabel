@@ -1,14 +1,13 @@
-//! The two service traits the handlers call.
+//! The one service trait the handlers call.
 //!
 //! Handlers hold no node state and touch no storage: they validate the
 //! request, call one trait method and render what comes back (proposal 001
-//! section 10, ticket 012). The wallet runtime (ticket 011) implements
-//! [`WalletService`] and the witness runtime (ticket 010) implements
-//! [`WitnessService`]; [`crate::api::stub`] implements both from the frozen
+//! section 10, ticket 012). [`crate::wallet::NodeApiService`] implements it
+//! over one home, and [`crate::api::stub`] implements it from the frozen
 //! fixtures.
 //!
-//! Methods return a boxed future rather than `async fn` because the routers
-//! take `Arc<dyn WalletService>`, and an `async fn` in a trait is not
+//! Methods return a boxed future rather than `async fn` because the router
+//! takes `Arc<dyn NodeService>`, and an `async fn` in a trait is not
 //! dyn-compatible. Implementations write `Box::pin(async move { .. })`.
 
 use std::future::Future;
@@ -16,10 +15,9 @@ use std::pin::Pin;
 
 use super::documents::{
     Accepted, Admitted, Appended, ContactView, CreatedIdentity, DeclaredKind, FetchedLedger,
-    ForkList, GraphSynced, GraphView, Id, Identity, IdentityKeys, Invited, KnownIdentity,
-    LedgerList, LedgerPage, LedgerView, Lookup, MembershipView, ProfileReplaced, Pushed, Removed,
-    Resolved, Revoked, RoleName, VerificationChecked, WalletNode, WitnessLedgers, WitnessList,
-    WitnessNode,
+    ForkList, GraphSynced, GraphView, Id, Identity, IdentityKeys, Invited, KnownIdentityList,
+    LedgerPage, Lookup, MembershipView, NodeDocument, ProfileReplaced, Pushed, Removed, Resolved,
+    Revoked, RoleName, VerificationChecked, WitnessHoldings, WitnessList,
 };
 use super::error::ServiceError;
 
@@ -213,10 +211,12 @@ pub struct FetchIdentity {
     pub from_witness: Option<Id>,
 }
 
-/// The wallet API's view of the node (proposal 001 section 10).
-pub trait WalletService: Send + Sync + 'static {
-    /// `GET /api/node`.
-    fn node(&self) -> ServiceFuture<'_, WalletNode>;
+/// The HTTP surface of one node (proposal 001 section 10, proposal 006
+/// section 8).
+pub trait NodeService: Send + Sync + 'static {
+    /// `GET /api/node`, which reports what this node holds and witnesses for
+    /// rather than a role.
+    fn node(&self) -> ServiceFuture<'_, NodeDocument>;
 
     /// `GET /api/identities`, sorted by ascending id, organizations included.
     fn identities(&self) -> ServiceFuture<'_, Vec<Identity>>;
@@ -224,9 +224,9 @@ pub trait WalletService: Send + Sync + 'static {
     /// `POST /api/identities`.
     fn create_identity(&self, request: CreateIdentity) -> ServiceFuture<'_, CreatedIdentity>;
 
-    /// `GET /api/identities/known`, sorted by ascending id: every identity this
-    /// home has a local record of and does not control.
-    fn known_identities(&self) -> ServiceFuture<'_, Vec<KnownIdentity>>;
+    /// `GET /api/identities/known?offset&limit`, sorted by ascending id: every
+    /// identity this home has a local record of and does not control.
+    fn known_identities(&self, page: PageRequest) -> ServiceFuture<'_, KnownIdentityList>;
 
     /// `GET /api/identities/{identity_id}`.
     fn identity(&self, identity_id: Id) -> ServiceFuture<'_, Identity>;
@@ -273,16 +273,21 @@ pub trait WalletService: Send + Sync + 'static {
     /// verification cache (proposal 004, proposal 006 section 7).
     fn resolve(&self, input: ResolveInput) -> ServiceFuture<'_, Resolved>;
 
-    /// `GET /api/witnesses`, sorted by ascending `endpoint_id`.
+    /// `GET /api/witnesses`, the witness identities this home knows, sorted by
+    /// ascending `identity_id`.
     fn witnesses(&self) -> ServiceFuture<'_, WitnessList>;
 
-    /// `GET /api/witnesses/{endpoint_id}/ledgers`, a live `List` against that
-    /// witness.
-    fn witness_ledgers(
+    /// `GET /api/witnesses/{identity_id}/holdings`, a live `List` against the
+    /// endpoints that witness identity resolves to (proposal 006 sections 5
+    /// and 8).
+    fn witness_holdings(
         &self,
-        endpoint_id: Id,
+        identity_id: Id,
         page: PageRequest,
-    ) -> ServiceFuture<'_, WitnessLedgers>;
+    ) -> ServiceFuture<'_, WitnessHoldings>;
+
+    /// `GET /api/forks`, on every node.
+    fn forks(&self, query: ForkQuery) -> ServiceFuture<'_, ForkList>;
 
     /// `GET /api/graph`.
     fn graph(&self) -> ServiceFuture<'_, GraphView>;
@@ -314,23 +319,4 @@ pub trait WalletService: Send + Sync + 'static {
 
     /// `POST /api/sync/push`.
     fn push(&self, request: PushRequest) -> ServiceFuture<'_, Pushed>;
-}
-
-/// The witness API's view of the node, read-only (proposal 001 section 10).
-pub trait WitnessService: Send + Sync + 'static {
-    /// `GET /api/node`.
-    fn node(&self) -> ServiceFuture<'_, WitnessNode>;
-
-    /// `GET /api/ledgers`, sorted by ascending id.
-    fn ledgers(&self, page: PageRequest) -> ServiceFuture<'_, LedgerList>;
-
-    /// `GET /api/ledgers/{ledger_id}`.
-    fn ledger(&self, ledger_id: Id) -> ServiceFuture<'_, LedgerView>;
-
-    /// `GET /api/ledgers/{ledger_id}/events`.
-    fn ledger_events(&self, ledger_id: Id, page: EventPageRequest)
-    -> ServiceFuture<'_, LedgerPage>;
-
-    /// `GET /api/forks`.
-    fn forks(&self, query: ForkQuery) -> ServiceFuture<'_, ForkList>;
 }

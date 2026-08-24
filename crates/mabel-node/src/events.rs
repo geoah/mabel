@@ -9,13 +9,11 @@
 //! # Not frozen
 //!
 //! `payload_kind` is the `oneof` tag name from `ledger.proto` in snake_case, so
-//! an inception is `inception`. The fixture
-//! `contracts/http/witness-get-ledger-events.json` still spells it
-//! `person_inception` with the root's fields flat beside `declared_kind`, from
-//! before proposal 002 replaced the two inception messages with one carrying a
-//! `root` oneof; `contracts/README.md` lists the inception and membership
-//! payload names as not frozen, so this module follows `ledger.proto` and the
-//! fixture is the one that has to move.
+//! an inception is `inception` rather than the `person_inception` the older
+//! fixtures spell, from before proposal 002 replaced the two inception messages
+//! with one carrying a `root` oneof. `contracts/README.md` lists the inception
+//! and membership payload names as not frozen, so this module follows
+//! `ledger.proto` and a fixture that disagrees is the one that has to move.
 //!
 //! The blob fields an event embeds verbatim, `founder_inception`,
 //! `invitee_inception`, `acceptance` and its `signature`, render as base32 of
@@ -29,7 +27,7 @@ use mabel_proto::v0::{
 };
 use serde_json::{Value, json};
 
-use crate::api::documents::{DeclaredKind, Event, Id};
+use crate::api::documents::{DeclaredKind, Event, ForkRecord, Id};
 use crate::api::error::ServiceError;
 
 /// Renders 32 bytes as a document id.
@@ -47,6 +45,39 @@ pub(crate) fn id_of(bytes: &[u8; 32]) -> Id {
 /// embeds.
 fn base32(bytes: &[u8]) -> String {
     BASE32_NOPAD.encode(bytes).to_ascii_lowercase()
+}
+
+/// The sentence a fork record carries for a person (proposal 001 section 5,
+/// flag W).
+#[must_use]
+pub fn fork_statement(ledger: &Id, seq: u64) -> String {
+    format!(
+        "two distinct validly signed events exist at seq {seq} of {ledger}, produced by whoever held signing authority there; this is evidence of equivocation or of a lost race between honest controllers"
+    )
+}
+
+/// One record of `GET /api/forks`.
+///
+/// # Errors
+///
+/// Returns code 10 when either stored event does not decode.
+pub(crate) fn fork_document(
+    record: &mabel_net::store::ForkRecord,
+) -> Result<ForkRecord, ServiceError> {
+    let ledger_id = id_of(record.ledger.as_bytes());
+    Ok(ForkRecord {
+        statement: fork_statement(&ledger_id, record.seq),
+        ledger_id,
+        seq: record.seq,
+        observed_ms: record.observed_ms,
+        source_endpoint: record
+            .source_endpoint
+            // The documents have no null here: `source_endpoint` is a string in
+            // every fixture (`contracts/README.md`, "Nullability").
+            .map_or_else(|| id_of(&[0u8; 32]), |endpoint| id_of(endpoint.as_bytes())),
+        kept: event_document(&record.kept)?,
+        conflicting: event_document(&record.conflicting)?,
+    })
 }
 
 /// Renders a 32-byte field of a validated event.

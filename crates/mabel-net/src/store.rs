@@ -198,7 +198,13 @@ pub trait Store: fmt::Debug + Send + Sync + 'static {
         provenance: Provenance,
     ) -> StoreFuture<'_, PushOutcome>;
 
-    /// Stored ledgers by ascending ledger id, so paging is stable.
+    /// The enumerable ledgers by ascending ledger id, so paging is stable.
+    ///
+    /// This is the set the store is willing to be known to hold, not everything
+    /// it stores: on a node that is the ledgers it signs for plus the ones it
+    /// keeps as a witness (proposal 006 section 8). A ledger the store holds and
+    /// does not enumerate is still served by [`Store::head`] and
+    /// [`Store::read_from`] to a caller that can already name its id.
     fn list(&self, offset: usize, limit: usize) -> StoreFuture<'_, Page<LedgerSummary>>;
 
     /// Fork records, for one ledger or for every ledger.

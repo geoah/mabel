@@ -12,16 +12,16 @@ mod common;
 use std::sync::Arc;
 use std::time::Duration;
 
-use common::{Served, TIMEOUT, secret, subject, witness_identity};
+use common::{Chain, Served, TIMEOUT, secret, subject, witness_identity};
 use iroh_base::EndpointId;
 use mabel_core::sign::{Position, build_trust_attestation};
 use mabel_core::{EventId, IdentityId};
 use mabel_net::store::Provenance;
 use mabel_net::{Client, EndpointConfig, RelayChoice, bind_endpoint};
+use mabel_node::StorageCaps;
 use mabel_node::api::documents::{Appended, DeclaredKind, PushStatus, Pushed, SubjectResolution};
 use mabel_node::wallet::{Freshness, Sources, Verifier, WalletCore, WalletSync};
-use mabel_node::witness::WitnessCaps;
-use mabel_node::{HomeOptions, NodeConfig, NodeHome, NodeRole, RelayMode};
+use mabel_node::{HomeOptions, NodeConfig, NodeHome, RelayMode};
 use tempfile::TempDir;
 
 /// A wallet home in a temp directory, with the core over it.
@@ -35,7 +35,6 @@ impl Wallet {
     fn new() -> Self {
         let dir = tempfile::tempdir().expect("a temp directory");
         let config = NodeConfig {
-            role: NodeRole::Wallet,
             relay: RelayMode::Disabled,
             ..NodeConfig::default()
         };
@@ -767,11 +766,42 @@ async fn a_corrupted_local_subject_ledger_is_unresolved() {
 }
 
 #[tokio::test]
-async fn a_wallet_serves_its_own_ledgers_read_only() {
+async fn a_home_serves_the_ledgers_it_signs_for_and_takes_no_stranger_push() {
     bounded!({
         let wallet = Wallet::new();
         let alice = wallet.identity("alice");
-        let store = mabel_node::wallet::WalletReadStore::new(wallet.core.home().clone());
+        // A stranger's chain this home fetched: stored, and signed for by
+        // nobody here.
+        let stranger = Chain::new(0x41);
+        let store = wallet.core.home().ledger(stranger.ledger);
+        let events: Vec<mabel_node::NewEvent<'_>> = stranger
+            .events
+            .iter()
+            .enumerate()
+            .map(|(seq, bytes)| mabel_node::NewEvent {
+                seq: seq as u64,
+                event_id: mabel_net::wire::signed_event_id(bytes).expect("an event has an id"),
+                bytes,
+            })
+            .collect();
+        store.append(&events).expect("the fetched chain is written");
+
+        // One store on every node, with this home's own `witness_for`, which is
+        // empty: it signs for alice and witnesses for nobody (proposal 006
+        // section 8).
+        let storage = std::sync::Arc::new(
+            mabel_node::LedgerStorage::open_from_config(
+                wallet.core.home().clone(),
+                wallet
+                    .core
+                    .home()
+                    .node_key()
+                    .expect("the node key reads")
+                    .public(),
+            )
+            .expect("the index builds"),
+        );
+        let store = mabel_node::NodeStore::new(storage);
         let served = mabel_net::store::Store::head(&store, alice)
             .await
             .expect("the store answers")
@@ -785,21 +815,43 @@ async fn a_wallet_serves_its_own_ledgers_read_only() {
         assert_eq!(page.events, wallet.events(alice));
         assert!(!page.more);
 
+        // A ledger this home merely fetched is served by `Get` to anyone who
+        // can name it, and is never enumerated (proposal 006 section 8).
+        let fetched = mabel_net::store::Store::head(&store, stranger.ledger)
+            .await
+            .expect("the store answers")
+            .expect("the fetched ledger is served");
+        assert_eq!(fetched.head_seq, stranger.head_seq());
+
         let listed = mabel_net::store::Store::list(&store, 0, 16)
             .await
             .expect("the store answers");
-        assert_eq!(listed.items.len(), 1);
-        assert_eq!(listed.items[0].ledger, alice);
+        assert_eq!(
+            listed
+                .items
+                .iter()
+                .map(|row| row.ledger)
+                .collect::<Vec<_>>(),
+            vec![alice],
+            "List names only what this home signs for"
+        );
 
+        // A ledger this home neither signs for nor stores: the push is refused
+        // in the words of the rule that refused it (proposal 006 section 8).
+        let unheld = Chain::new(0x42);
         let refused = mabel_net::store::Store::push(
             &store,
-            alice,
-            wallet.events(alice),
+            unheld.ledger,
+            unheld.all(),
             Provenance::default(),
         )
         .await
-        .expect_err("a wallet stores nothing a stranger pushes");
+        .expect_err("a home witnessing for nobody stores no stranger's ledger");
         assert!(refused.to_string().contains("NOT_ADMITTED"), "{refused}");
+        assert!(
+            refused.to_string().contains("witnesses for nobody"),
+            "the refusal names the rule that refused it: {refused}"
+        );
     });
 }
 
@@ -822,7 +874,7 @@ fn rendered_event(event: EventId) -> String {
 #[test]
 fn the_tests_use_the_section_five_caps() {
     assert_eq!(
-        WitnessCaps::default().storage_capacity,
+        StorageCaps::default().storage_capacity,
         mabel_node::DEFAULT_STORAGE_CAPACITY
     );
     assert_eq!(TIMEOUT, Duration::from_secs(10));

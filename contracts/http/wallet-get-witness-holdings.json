@@ -1,9 +1,10 @@
 {
-  "route": "/api/witnesses/:endpoint_id/ledgers?offset=0&limit=256",
+  "route": "/api/witnesses/:identity_id/holdings?offset=0&limit=256",
   "method": "GET",
   "request": null,
   "response": {
     "ok": true,
+    "identity_id": "ovfp3btcnjyhwmyw3ldk3wmt2ppb5w5c5adyzcavswmyq7xkg7fq",
     "endpoint_id": "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq",
     "offset": 0,
     "limit": 256,
@@ -33,9 +34,9 @@
       "body": {
         "ok": false,
         "code": 10,
-        "message": "Schema error: endpoint id must be 52 base32 characters",
+        "message": "Schema error: identity id must be 52 base32 characters",
         "details": {
-          "reason": "malformed_endpoint_id",
+          "reason": "malformed_identity_id",
           "value": "witness-one"
         }
       }
@@ -54,15 +55,31 @@
       }
     },
     {
+      "status": 404,
+      "body": {
+        "ok": false,
+        "code": 2,
+        "message": "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq is a machine this home knows, not a witness identity",
+        "details": {
+          "reason": "endpoint_not_identity",
+          "value": "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq"
+        }
+      }
+    },
+    {
       "status": 502,
       "body": {
         "ok": false,
         "code": 30,
-        "message": "Network error: zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq did not answer the ledger list",
+        "message": "Network error: no machine answering for ovfp3btcnjyhwmyw3ldk3wmt2ppb5w5c5adyzcavswmyq7xkg7fq served its ledger list",
         "details": {
           "reason": "witness_unreachable",
-          "endpoint_id": "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq",
-          "error": "no route to zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq after 10s"
+          "identity_id": "ovfp3btcnjyhwmyw3ldk3wmt2ppb5w5c5adyzcavswmyq7xkg7fq",
+          "endpoints_tried": [
+            "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq",
+            "54rw3lmckcpqf4ofkvyx3i74agumvale2qmzdu76ubpita6sw5va"
+          ],
+          "error": "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq: no route to zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq after 10s"
         }
       }
     }

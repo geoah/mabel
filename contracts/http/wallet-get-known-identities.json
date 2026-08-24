@@ -1,9 +1,12 @@
 {
-  "route": "/api/identities/known",
+  "route": "/api/identities/known?offset=0&limit=100",
   "method": "GET",
   "request": null,
   "response": {
     "ok": true,
+    "offset": 0,
+    "limit": 100,
+    "more": false,
     "identities": [
       {
         "identity_id": "jqtnsb2me7mj5xsze4gavqklohqhdmkshfiz65khjmxtxjruqh2q",
@@ -43,6 +46,19 @@
         "details": {
           "reason": "host_not_loopback",
           "host": "localhost.example"
+        }
+      }
+    },
+    {
+      "status": 400,
+      "body": {
+        "ok": false,
+        "code": 2,
+        "message": "limit must be a positive integer, clamped to 256",
+        "details": {
+          "reason": "malformed_query_parameter",
+          "parameter": "limit",
+          "value": "all"
         }
       }
     }

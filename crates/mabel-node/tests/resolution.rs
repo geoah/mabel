@@ -19,7 +19,7 @@ use mabel_node::graph::{
 };
 use mabel_node::verification::{Resolver, StubResolver, TxtRecord, query_name};
 use mabel_node::wallet::{WalletCore, WalletSync};
-use mabel_node::{HomeOptions, NodeConfig, NodeHome, NodeRole, RelayMode, WitnessEntry};
+use mabel_node::{HomeOptions, NodeConfig, NodeHome, RelayMode, WitnessEntry};
 use tempfile::TempDir;
 
 /// A wallet home in a temp directory whose `node.json` names one witness
@@ -33,7 +33,6 @@ impl Reader {
     fn with_witness(endpoints: &[iroh_base::EndpointId]) -> Self {
         let dir = tempfile::tempdir().expect("a temp directory");
         let config = NodeConfig {
-            role: NodeRole::Wallet,
             relay: RelayMode::Disabled,
             witnesses: vec![WitnessEntry::new(witness_identity(), endpoints.to_vec())],
             ..NodeConfig::default()

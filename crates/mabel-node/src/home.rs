@@ -614,7 +614,7 @@ mod tests {
         ACTIVE_KEY_FILE, DeclaredKind, HomeOptions, IdentityMeta, NodeHome, RESERVE_KEY_FILE,
         resolve_home,
     };
-    use crate::config::{NodeConfig, NodeRole, RelayMode};
+    use crate::config::{NodeConfig, RelayMode};
 
     fn home(root: &Path) -> NodeHome {
         NodeHome::create(root, &NodeConfig::default(), HomeOptions::default()).unwrap()
@@ -667,7 +667,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let home = home(dir.path());
         let config = NodeConfig {
-            role: NodeRole::Witness,
+            witness_for: vec![mabel_core::IdentityId::from_bytes([7u8; 32])],
             relay: RelayMode::Disabled,
             ..NodeConfig::default()
         };

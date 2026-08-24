@@ -47,8 +47,11 @@ for port in "$witness_port" "$alice_port" "$bob_port"; do
 done
 
 step "the three nodes"
+# One document for every node: what a node can do is the identities it holds and
+# the identities it witnesses for (proposal 006 section 8).
 for port in "$witness_port" "$alice_port" "$bob_port"; do
-    get "$port" /api/node | jq -c '{role, endpoint_id, http_bind, relay}'
+    get "$port" /api/node |
+        jq -c '{endpoint_id, http_bind, relay, identity_count, witness_for: [.witness_for[].identity]}'
 done
 
 node="$(get "$witness_port" /api/node)"
@@ -80,8 +83,12 @@ post "$alice_port" /api/sync/push \
     jq -c '{head_seq, results}'
 
 step "the witness holds the ledger"
-entry="$(get "$witness_port" "/api/ledgers/$identity_id")"
-echo "$entry" | jq -c '{ledger_id: .entry.ledger_id, head_seq: .entry.head_seq, event_count: .entry.event_count, witnesses}'
+# A witness's holdings are ledgers it stores and cannot sign for, which is what
+# the identity routes answer on every node (proposal 006 section 8).
+entry="$(get "$witness_port" "/api/identities/$identity_id")"
+echo "$entry" | jq -c '{identity_id: .identity.identity_id, head_seq: .identity.head_seq, event_count: .identity.event_count, witnesses: .identity.witnesses}'
+get "$witness_port" "/api/identities/known?limit=10" |
+    jq -c '{more, held: [.identities[].identity_id]}'
 
 step "bob fetches the ledger through the witness"
 # A fetch verifies what the source served from nothing and requires the chain's
@@ -91,7 +98,7 @@ fetched="$(post "$bob_port" "/api/identities/$identity_id/fetch" \
     "{\"from\":\"$witness_id\"}")"
 echo "$fetched" | jq -c '{ledger_id, source, event_count, stored, head_seq}'
 
-witness_head="$(echo "$entry" | jq -r .entry.head_seq)"
+witness_head="$(echo "$entry" | jq -r .identity.head_seq)"
 alice_head="$(get "$alice_port" "/api/identities/$identity_id" | jq -r .identity.head_seq)"
 bob_head="$(echo "$fetched" | jq -r .head_seq)"
 for held in "$alice_head" "$bob_head"; do

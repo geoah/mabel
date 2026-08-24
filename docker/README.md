@@ -1,6 +1,6 @@
 # Containers
 
-One image runs both node roles, and `compose.yaml` brings up the topology of
+One image runs every node, and `compose.yaml` brings up the topology of
 proposal 001 section 11: one witness and two wallets, alice and bob, on one
 bridge network, with the witness's `EndpointTicket` seeded into both wallets.
 Nothing here contacts the internet at run time (ticket 015).
@@ -180,7 +180,7 @@ Text output is the ticket and nothing else, so `--peer "$(mabel node ticket
 because a container on the `compose.internal.yaml` network has no default
 route to detect from: `--port` there exits 2 with `no_local_address`.
 
-A wrong ticket is loud rather than silent: `wallet serve --peer` exits 2 with
+A wrong ticket is loud rather than silent: `serve --peer` exits 2 with
 reason `malformed_peer_ticket`, so the wallet never becomes healthy.
 
 `peers.json` holds ledger hints: an accepted `sync push` records the endpoint
@@ -193,7 +193,7 @@ reaches a node on the command line, never through this file.
   recreated and lands on a different address, the running wallets hold a stale
   hint; restart them (`docker compose -f docker/compose.yaml restart alice bob`)
   or bring the topology up together, which rewrites the ticket first.
-- `witness run` and `wallet serve` stop on SIGINT and do not handle SIGTERM, so
+- `mabel serve` stops on SIGINT and does not handle SIGTERM, so
   the services set `stop_signal: SIGINT`. Without it every `down` would wait out
   the stop grace period.
 - `node.json` is written by the entrypoint on every start from the service's
@@ -206,7 +206,10 @@ reaches a node on the command line, never through this file.
   ledger's own chain names.
   Nothing in mabel rewrites that file. `node.key`, the identities and the
   ledgers live on the home volume and survive a recreate; `down -v` drops them.
-- The image runs `mabel` as the container command, so the role is the command:
-  `witness run` or `wallet serve`. `docker run --rm mabel:dev node id` works the
-  same way, and `docker run --rm --entrypoint mabel mabel:dev --help` skips the
-  compose preparation entirely.
+- The image runs `mabel` as the container command, and the command is `serve`
+  on every node: what a node can do is read from the identities its home holds
+  and from `node.json.witness_for` (proposal 006 section 8). `MABEL_ROLE` still
+  picks whether the entrypoint mints a witness identity, and the `role` it
+  writes into `node.json` is recognised and read by nothing. `docker run --rm
+  mabel:dev node id` works the same way, and `docker run --rm --entrypoint mabel
+  mabel:dev --help` skips the compose preparation entirely.

@@ -1,8 +1,13 @@
-//! The [`Store`] the sync server answers `mabel/ledger/0` from.
+//! The [`Store`] the sync server answers `mabel/ledger/0` from, on every node
+//! (proposal 006 section 8).
 //!
-//! Every method hands the blocking file work of [`WitnessStorage`] to
+//! Every method hands the blocking file work of [`LedgerStorage`] to
 //! `tokio::task::spawn_blocking`, so a push that folds a chain and fsyncs
 //! event files never runs on a reactor thread.
+//!
+//! `list` answers the enumerable set and not the stored set, which is the
+//! contract `mabel-net`'s server takes from a `Store`: a ledger this home
+//! merely fetched is served by `Get` and never enumerated.
 
 use std::sync::Arc;
 
@@ -13,24 +18,24 @@ use mabel_net::store::{
 };
 
 use crate::error::StorageError;
-use crate::witness::storage::WitnessStorage;
+use crate::storage::LedgerStorage;
 
-/// A [`Store`] over one witness's home.
+/// A [`Store`] over one node's home.
 #[derive(Debug, Clone)]
-pub struct WitnessStore {
-    storage: Arc<WitnessStorage>,
+pub struct NodeStore {
+    storage: Arc<LedgerStorage>,
 }
 
-impl WitnessStore {
+impl NodeStore {
     /// A store over `storage`.
     #[must_use]
-    pub fn new(storage: Arc<WitnessStorage>) -> Self {
+    pub fn new(storage: Arc<LedgerStorage>) -> Self {
         Self { storage }
     }
 
     /// The storage this store serves, which the HTTP service shares.
     #[must_use]
-    pub fn storage(&self) -> &Arc<WitnessStorage> {
+    pub fn storage(&self) -> &Arc<LedgerStorage> {
         &self.storage
     }
 
@@ -38,7 +43,7 @@ impl WitnessStore {
     fn blocking<T, F>(&self, work: F) -> StoreFuture<'_, T>
     where
         T: Send + 'static,
-        F: FnOnce(&WitnessStorage) -> Result<T, StoreError> + Send + 'static,
+        F: FnOnce(&LedgerStorage) -> Result<T, StoreError> + Send + 'static,
     {
         let storage = self.storage.clone();
         Box::pin(async move {
@@ -52,13 +57,13 @@ impl WitnessStore {
     }
 }
 
-impl From<Arc<WitnessStorage>> for WitnessStore {
-    fn from(storage: Arc<WitnessStorage>) -> Self {
+impl From<Arc<LedgerStorage>> for NodeStore {
+    fn from(storage: Arc<LedgerStorage>) -> Self {
         Self::new(storage)
     }
 }
 
-impl Store for WitnessStore {
+impl Store for NodeStore {
     fn head(&self, ledger: LedgerId) -> StoreFuture<'_, Option<Head>> {
         self.blocking(move |storage| Ok(storage.head(ledger)))
     }

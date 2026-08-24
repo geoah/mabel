@@ -551,6 +551,7 @@ fn dev_seed_refuses_a_home_that_already_holds_an_identity() {
 /// home has a record of and does **not** control.
 #[test]
 fn dev_seed_leaves_a_home_the_wallet_core_reads() {
+    use mabel_node::api::service::PageRequest;
     use mabel_node::wallet::{WalletCore, known_identities};
     use mabel_node::{HomeOptions, NodeHome};
 
@@ -586,9 +587,13 @@ fn dev_seed_leaves_a_home_the_wallet_core_reads() {
     assert_eq!(carol.head_seq, 0);
     assert!(carol.contact.is_none());
 
-    let known = known_identities(&core, None).expect("the known list reads");
+    let page = PageRequest {
+        offset: 0,
+        limit: 100,
+    };
+    let known = known_identities(&core, None, page).expect("the known list reads");
     assert!(
-        known.is_empty(),
+        known.rows.is_empty(),
         "every seeded identity is local, so none is a known stranger: {known:?}"
     );
 }
@@ -1493,9 +1498,9 @@ fn the_global_flags_are_accepted_before_and_after_the_subcommand() {
 }
 
 #[test]
-fn witness_run_refuses_a_peer_that_is_not_a_ticket() {
+fn serve_refuses_a_peer_that_is_not_a_ticket() {
     let home = Home::new();
-    let (code, document) = home.failure(&["witness", "run", "--peer", "nope"]);
+    let (code, document) = home.failure(&["serve", "--peer", "nope"]);
     assert_eq!(code, 2);
     assert_eq!(
         document["details"]["reason"],
@@ -1505,20 +1510,37 @@ fn witness_run_refuses_a_peer_that_is_not_a_ticket() {
 }
 
 #[test]
-fn witness_run_takes_an_http_address_an_iroh_port_peer_tickets_and_a_ui_dir() {
-    let (code, stdout, _) = output(binary().args(["witness", "run", "--help"]));
+fn serve_takes_an_http_address_an_iroh_port_peer_tickets_and_a_ui_dir() {
+    let (code, stdout, _) = output(binary().args(["serve", "--help"]));
     assert_eq!(code, 0);
     for flag in ["--http", "--iroh-port", "--peer", "--ui-dir"] {
         assert!(stdout.contains(flag), "{flag} is not in the help: {stdout}");
     }
 }
 
+/// `wallet serve` and `witness run` still run and take the same flags, and
+/// neither is documented: one command serves every node (proposal 006 section
+/// 8, decision 012).
 #[test]
-fn wallet_serve_takes_an_http_address_an_iroh_port_peer_tickets_and_a_ui_dir() {
-    let (code, stdout, _) = output(binary().args(["wallet", "serve", "--help"]));
+fn the_two_old_serve_commands_are_hidden_aliases() {
+    let (code, stdout, _) = output(binary().arg("--help"));
     assert_eq!(code, 0);
-    for flag in ["--http", "--iroh-port", "--peer", "--ui-dir"] {
-        assert!(stdout.contains(flag), "{flag} is not in the help: {stdout}");
+    assert!(stdout.contains("serve"), "{stdout}");
+    for hidden in ["wallet", "witness run"] {
+        assert!(!stdout.contains(hidden), "{hidden} is documented: {stdout}");
+    }
+
+    for alias in [vec!["wallet", "serve"], vec!["witness", "run"]] {
+        let mut arguments = alias.clone();
+        arguments.push("--help");
+        let (code, stdout, _) = output(binary().args(&arguments));
+        assert_eq!(code, 0, "{alias:?}");
+        for flag in ["--http", "--iroh-port", "--peer", "--ui-dir"] {
+            assert!(
+                stdout.contains(flag),
+                "{alias:?} does not take {flag}: {stdout}"
+            );
+        }
     }
 }
 

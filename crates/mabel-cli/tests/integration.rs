@@ -394,15 +394,14 @@ impl Witness {
             &home,
             "witness",
             &[
-                "witness",
-                "run",
+                "serve",
                 "--http",
                 "127.0.0.1:0",
                 "--iroh-port",
                 &port.to_string(),
             ],
         );
-        daemon.wait_for("witness ");
+        daemon.wait_for("node ");
         Self {
             ticket: ticket(&endpoint, port),
             identity,

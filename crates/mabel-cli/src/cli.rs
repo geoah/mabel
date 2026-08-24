@@ -99,7 +99,14 @@ pub enum Command {
         #[command(subcommand)]
         command: VerifyCommand,
     },
-    /// Serve this home as a wallet.
+    /// Serve this home until ctrl-c: the HTTP API, the UI and the sync server.
+    Serve {
+        #[command(flatten)]
+        options: ServeOptions,
+    },
+    /// The old name of `serve`, kept so an existing command line still runs
+    /// (proposal 006 section 8).
+    #[command(hide = true)]
     Wallet {
         #[command(subcommand)]
         command: WalletCommand,
@@ -459,24 +466,11 @@ pub enum WitnessCommand {
         #[arg(long, value_name = "ENDPOINT", value_delimiter = ',')]
         endpoints: Vec<String>,
     },
-    /// Serve this home as a witness until ctrl-c.
+    /// The old name of `serve`.
+    #[command(hide = true)]
     Run {
-        /// Address the HTTP API binds, overriding node.json's http_bind.
-        #[arg(long, value_name = "ADDR")]
-        http: Option<SocketAddr>,
-        /// UDP port the Iroh endpoint binds, instead of an ephemeral one.
-        #[arg(long, value_name = "PORT")]
-        iroh_port: Option<u16>,
-        /// Endpoint ticket to seed into address lookup. Repeatable.
-        #[arg(long, value_name = "TICKET")]
-        peer: Vec<String>,
-        /// Serve the UI from this directory instead of the embedded bundle.
-        #[arg(long, value_name = "DIR")]
-        ui_dir: Option<PathBuf>,
-        /// Also accept requests whose Host is this value, added to node.json's
-        /// allowed_hosts. Repeatable.
-        #[arg(long, value_name = "HOST")]
-        allow_host: Vec<String>,
+        #[command(flatten)]
+        options: ServeOptions,
     },
 }
 
@@ -548,31 +542,39 @@ pub enum VerifyCommand {
     },
 }
 
-/// `mabel wallet ...`.
+/// What `mabel serve` takes, shared with the two hidden aliases.
+#[derive(Debug, Args)]
+pub struct ServeOptions {
+    /// Address the HTTP API binds, overriding node.json's http_bind.
+    #[arg(long, value_name = "ADDR")]
+    pub http: Option<SocketAddr>,
+    /// UDP port the Iroh endpoint binds, instead of an ephemeral one.
+    #[arg(long, value_name = "PORT")]
+    pub iroh_port: Option<u16>,
+    /// Endpoint ticket to seed into address lookup. Repeatable.
+    #[arg(long, value_name = "TICKET")]
+    pub peer: Vec<String>,
+    /// Serve the UI from this directory instead of the embedded bundle.
+    #[arg(long, value_name = "DIR")]
+    pub ui_dir: Option<PathBuf>,
+    /// Also accept requests whose Host is this value, added to node.json's
+    /// allowed_hosts. Repeatable.
+    ///
+    /// The HTTP API has no authentication, so allowing a host beyond loopback
+    /// hands whatever keys this home holds to whoever can reach that name: the
+    /// operator owns the network boundary (decision 018).
+    #[arg(long, value_name = "HOST")]
+    pub allow_host: Vec<String>,
+}
+
+/// `mabel wallet ...`, the hidden alias of `serve`.
 #[derive(Debug, Subcommand)]
 pub enum WalletCommand {
-    /// Serve this home as a wallet until ctrl-c.
+    /// The old name of `serve`.
+    #[command(hide = true)]
     Serve {
-        /// Address the HTTP API binds, overriding node.json's http_bind.
-        #[arg(long, value_name = "ADDR")]
-        http: Option<SocketAddr>,
-        /// UDP port the Iroh endpoint binds, instead of an ephemeral one.
-        #[arg(long, value_name = "PORT")]
-        iroh_port: Option<u16>,
-        /// Endpoint ticket to seed into address lookup. Repeatable.
-        #[arg(long, value_name = "TICKET")]
-        peer: Vec<String>,
-        /// Serve the UI from this directory instead of the embedded bundle.
-        #[arg(long, value_name = "DIR")]
-        ui_dir: Option<PathBuf>,
-        /// Also accept requests whose Host is this value, added to node.json's
-        /// allowed_hosts. Repeatable.
-        ///
-        /// The wallet has no authentication, so allowing a host beyond
-        /// loopback hands its keys to whoever can reach that name: the
-        /// operator owns the network boundary (decision 018).
-        #[arg(long, value_name = "HOST")]
-        allow_host: Vec<String>,
+        #[command(flatten)]
+        options: ServeOptions,
     },
 }
 

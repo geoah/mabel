@@ -40,22 +40,24 @@ One node home, no network:
 ```sh
 cargo run -p mabel-cli -- --home /tmp/mabel identity create --alias alice
 cargo run -p mabel-cli -- --home /tmp/mabel identity list --json
-cargo run -p mabel-cli -- --home /tmp/mabel wallet serve --http 127.0.0.1:9080
+cargo run -p mabel-cli -- --home /tmp/mabel serve --http 127.0.0.1:9080
 ```
 
-The wallet serves its HTTP API and the wallet UI on loopback only. `--json` on
-any command prints the document `contracts/cli/` freezes. `mabel --help` lists
-the rest: `identity`, `membership`, `profile`, `contact`, `graph`, `lookup`,
-`trust`, `witness`, `sync`, `verify`, `wallet` and `node`.
+The node serves its HTTP API and the UI on loopback only. `--json` on any
+command prints the document `contracts/cli/` freezes. `mabel --help` lists the
+rest: `identity`, `membership`, `profile`, `contact`, `graph`, `lookup`,
+`trust`, `witness`, `sync`, `verify`, `serve` and `node`.
 
-A witness in a second home, serving its read-only API and the debug UI that
-lists the ledgers it holds:
+One command serves every node: what a node can do is read from what it holds,
+the identities in its home and the `witness_for` of its `node.json`, never from
+a role. A witness is a second home whose `node.json` names the identities it
+witnesses for:
 
 ```sh
-cargo run -p mabel-cli -- --home /tmp/mabel-witness witness run --http 127.0.0.1:9081
+cargo run -p mabel-cli -- --home /tmp/mabel-witness serve --http 127.0.0.1:9081
 ```
 
-Both roles serve the bundle compiled into the binary. `--ui-dir ui/dist` reads
+Every node serves the bundle compiled into the binary. `--ui-dir ui/dist` reads
 it from disk instead, and a binary built with no `ui/dist` answers
 `ui_not_built` on the UI paths and keeps serving `/api`.
 
@@ -66,7 +68,7 @@ something to look at:
 
 ```sh
 cargo run -p mabel-cli -- --home /tmp/mabel-dev dev seed
-cargo run -p mabel-cli -- --home /tmp/mabel-dev wallet serve --http 127.0.0.1:9080
+cargo run -p mabel-cli -- --home /tmp/mabel-dev serve --http 127.0.0.1:9080
 (cd ui && npm run dev)     # port 5173, /api proxied to 127.0.0.1:9080
 ```
 
@@ -171,7 +173,7 @@ needs a docker daemon and the compose topology, so it stays a local check.
 |---|---|
 | `crates/mabel-core` | the fold, canonical encoding, digests, no networking |
 | `crates/mabel-net` | the Iroh sync protocol |
-| `crates/mabel-node` | wallet and witness runtimes, the HTTP API, the UI embed |
+| `crates/mabel-node` | the node home, the one store, the runtime, the HTTP API, the UI embed |
 | `crates/mabel-cli` | the `mabel` binary |
 | `proto/mabel/v0` | the normative `.proto` schemas |
 | `test-vectors/` | golden and rejection vectors |
@@ -198,7 +200,7 @@ the CLI, not in the fixture.
 
 [app/](app/README.md) is a Tauri v2 app for macOS and iOS: a wallet node running
 in the app process, with the same wallet UI in a webview in front of it. It calls
-the same `WalletRuntime::start` that `mabel wallet serve` calls, binds the HTTP
+the same `NodeRuntime::start` that `mabel serve` calls, binds the HTTP
 API to an ephemeral loopback port, and opens its window on
 `http://127.0.0.1:<port>/wallet`. It keeps its own node home under the app data
 directory rather than `~/.mabel`.

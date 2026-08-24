@@ -1,20 +1,28 @@
-//! What a witness holds, and every rule that decides whether it grows.
+//! What a node holds, and every rule that decides whether it grows.
 //!
-//! One [`WitnessStorage`] owns a node home and an in-memory index over it: for
-//! each ledger the folded [`LedgerState`], where the ledger ends, how many
-//! bytes it takes and the fork records recorded for it. The index is a cache
-//! and is rebuilt from the event files on startup or on demand
-//! ([`WitnessStorage::reload`]); the files are the truth.
+//! One [`LedgerStorage`] serves every node, whether it signs, witnesses or
+//! both (proposal 006 section 8). It owns a node home and an in-memory index
+//! over it: for each ledger the folded [`LedgerState`], where the ledger ends,
+//! how many bytes it takes and the fork records recorded for it. The index is
+//! a cache and is rebuilt from the event files on startup or on demand
+//! ([`LedgerStorage::reload`]); the files are the truth. A home with an empty
+//! `witness_for` builds the same index for its handful of ledgers, records
+//! forks on them, and enforces the same caps.
 //!
 //! Verification follows proposal 001 section 5: the first ingest of a ledger
 //! folds the whole pushed chain from nothing, and every later push applies
 //! only the spliced suffix to the kept state. Nothing is stored that the fold
 //! did not accept, and stored bytes are the received bytes (section 3.1).
 //!
+//! [`LedgerStorage::list`] answers the enumerable set, not the stored set: the
+//! ledgers this home signs for plus, when it witnesses for somebody, the ones
+//! it holds under a witness set naming one of those identities. A ledger this
+//! home merely fetched is served by `Get` to anyone who can name its id and is
+//! never enumerated (proposal 006 section 8).
+//!
 //! Every method here is blocking `std::fs` work. The async surfaces,
-//! [`crate::witness::WitnessStore`] and
-//! [`crate::witness::WitnessReadService`], call them from
-//! `tokio::task::spawn_blocking`.
+//! [`crate::NodeStore`] and [`crate::api::service::NodeService`], call them
+//! from `tokio::task::spawn_blocking`.
 
 use std::collections::BTreeMap;
 use std::sync::{Mutex, MutexGuard};
@@ -134,33 +142,36 @@ pub const MAX_EVENTS_PER_LEDGER: u64 = 4096;
 /// Bytes of events one ledger may hold (proposal 001 section 5).
 pub const MAX_BYTES_PER_LEDGER: u64 = 4 * 1024 * 1024;
 
-/// Ledgers one witness may hold (proposal 001 section 5).
+/// Ledgers one node may hold (proposal 001 section 5).
+///
+/// It bounds a home that witnesses for nobody too: one store, one cap
+/// (proposal 006 section 8).
 pub const MAX_LEDGERS: usize = 10_000;
 
 /// Fork records one ledger may hold, after which recording stops and
 /// `forks_truncated` is set (proposal 001 section 5).
 pub const MAX_FORK_RECORDS: u32 = 8;
 
-/// The caps one witness enforces.
+/// The caps one node enforces, whatever it does with what it holds.
 ///
 /// `storage_capacity` comes from `node.json`; the other four are the fixed
 /// numbers of proposal 001 section 5 and are settable so a test can cross a
 /// cap without writing four thousand events.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct WitnessCaps {
+pub struct StorageCaps {
     /// Events one ledger may hold.
     pub events_per_ledger: u64,
     /// Bytes of events one ledger may hold.
     pub bytes_per_ledger: u64,
-    /// Ledgers this witness may hold.
+    /// Ledgers this node may hold.
     pub ledgers: usize,
     /// Fork records one ledger may hold before recording stops.
     pub fork_records: u32,
-    /// Bytes of event data this witness accepts before refusing more.
+    /// Bytes of event data this node accepts before refusing more.
     pub storage_capacity: u64,
 }
 
-impl Default for WitnessCaps {
+impl Default for StorageCaps {
     fn default() -> Self {
         Self {
             events_per_ledger: MAX_EVENTS_PER_LEDGER,
@@ -172,7 +183,7 @@ impl Default for WitnessCaps {
     }
 }
 
-impl WitnessCaps {
+impl StorageCaps {
     /// The section 5 caps with `storage_capacity` from `node.json`.
     #[must_use]
     pub fn from_config(config: &NodeConfig) -> Self {
@@ -229,7 +240,7 @@ struct Entry {
     head_event: EventId,
     /// Bytes the stored events take.
     bytes: u64,
-    /// When this witness first stored an event of the ledger.
+    /// When this home first stored an event of the ledger.
     first_seen_ms: u64,
     /// When it last accepted one.
     updated_ms: u64,
@@ -297,18 +308,18 @@ struct Index {
     storage_used: u64,
 }
 
-/// A witness's ledgers, its folded-state cache, its caps and the identities it
+/// One node's ledgers, its folded-state cache, its caps and the identities it
 /// witnesses for.
 #[derive(Debug)]
-pub struct WitnessStorage {
+pub struct LedgerStorage {
     home: NodeHome,
-    caps: WitnessCaps,
+    caps: StorageCaps,
     policy: AdmissionPolicy,
     index: Mutex<Index>,
     advertised: Mutex<Advertised>,
 }
 
-impl WitnessStorage {
+impl LedgerStorage {
     /// Opens a home, builds the index from the event files and checks the
     /// advertisement invariant of proposal 006 section 4.1 once, naming each
     /// failing `witness_for` entry in the log.
@@ -322,7 +333,7 @@ impl WitnessStorage {
     pub fn open(
         home: NodeHome,
         endpoint: EndpointId,
-        caps: WitnessCaps,
+        caps: StorageCaps,
         policy: AdmissionPolicy,
     ) -> Result<Self> {
         let storage = Self {
@@ -353,15 +364,15 @@ impl WitnessStorage {
     ///
     /// # Errors
     ///
-    /// Returns the errors of [`NodeHome::config`] and [`WitnessStorage::open`].
+    /// Returns the errors of [`NodeHome::config`] and [`LedgerStorage::open`].
     pub fn open_from_config(home: NodeHome, endpoint: EndpointId) -> Result<Self> {
         let config = home.config()?;
-        let caps = WitnessCaps::from_config(&config);
+        let caps = StorageCaps::from_config(&config);
         let policy = AdmissionPolicy::from_config(&config);
         Self::open(home, endpoint, caps, policy)
     }
 
-    /// The home this witness stores into.
+    /// The home this storage reads and writes.
     #[must_use]
     pub fn home(&self) -> &NodeHome {
         &self.home
@@ -373,9 +384,9 @@ impl WitnessStorage {
         self.advertisement().endpoint
     }
 
-    /// The caps this witness enforces.
+    /// The caps this node enforces.
     #[must_use]
-    pub fn caps(&self) -> WitnessCaps {
+    pub fn caps(&self) -> StorageCaps {
         self.caps
     }
 
@@ -441,12 +452,66 @@ impl WitnessStorage {
         Ok(())
     }
 
+    /// Rereads one ledger's entry from its event files.
+    ///
+    /// The index and the files are one store, and something other than a push
+    /// writes to it: a local append and a fetch both land events through
+    /// [`crate::wallet::WalletCore`], and the sync server answers `Get` and
+    /// `List` from this index. Whoever writes calls this, so what a peer reads
+    /// is what is on disk.
+    ///
+    /// # Errors
+    ///
+    /// Returns the storage errors of reading that ledger's directory.
+    pub fn note_ledger(&self, ledger: LedgerId) -> Result<()> {
+        let entry = load_entry(&self.home.ledger(ledger))?;
+        let mut index = self.lock();
+        if let Some(previous) = index.ledgers.remove(&ledger) {
+            index.storage_used = index.storage_used.saturating_sub(previous.bytes);
+        }
+        if let Some(entry) = entry {
+            index.storage_used += entry.bytes;
+            index.ledgers.insert(ledger, entry);
+        }
+        if self.policy.witness_for.contains(&ledger) {
+            self.recheck(&index);
+        }
+        Ok(())
+    }
+
     // ------------------------------------------------------------ reads ----
 
-    /// Where a ledger ends, or `None` if this witness does not hold it.
+    /// Where a ledger ends, or `None` if this home does not hold it.
+    ///
+    /// A ledger the index has never seen is read from disk before the answer is
+    /// `None`: another process may have written it, and the files are the truth.
     #[must_use]
     pub fn head(&self, ledger: LedgerId) -> Option<Head> {
-        self.lock().ledgers.get(&ledger).map(Entry::head)
+        if let Some(head) = self.lock().ledgers.get(&ledger).map(Entry::head) {
+            return Some(head);
+        }
+        self.adopt(ledger)
+    }
+
+    /// Reads one ledger the index does not know from disk and keeps it.
+    ///
+    /// The index is a cache over the same directories every other writer in this
+    /// process uses, and a second process writing the same home is allowed
+    /// (`mabel identity create` beside a running node). A read that misses looks
+    /// once rather than answering that the ledger does not exist.
+    fn adopt(&self, ledger: LedgerId) -> Option<Head> {
+        let loaded = match load_entry(&self.home.ledger(ledger)) {
+            Ok(loaded) => loaded?,
+            Err(error) => {
+                warn!(%ledger, %error, "a stored ledger the index did not hold could not be read");
+                return None;
+            }
+        };
+        let head = loaded.head();
+        let mut index = self.lock();
+        index.storage_used += loaded.bytes;
+        index.ledgers.insert(ledger, loaded);
+        Some(head)
     }
 
     /// One page of a ledger's events from `since` inclusive.
@@ -475,8 +540,11 @@ impl WitnessStorage {
     ///
     /// # Errors
     ///
-    /// As [`WitnessStorage::read_from`].
+    /// As [`LedgerStorage::read_from`].
     pub fn page(&self, ledger: LedgerId, since: u64, limit: usize) -> Result<Option<StoredPage>> {
+        if self.head(ledger).is_none() {
+            return Ok(None);
+        }
         let (report, head_seq) = {
             let index = self.lock();
             let Some(entry) = index.ledgers.get(&ledger) else {
@@ -498,21 +566,47 @@ impl WitnessStorage {
         }))
     }
 
-    /// Stored ledgers by ascending ledger id.
+    /// The enumerable ledgers by ascending ledger id: what this home is willing
+    /// to be known to hold (proposal 006 section 8).
+    ///
+    /// That is the ledgers this home signs for, plus, when `witness_for` is
+    /// non-empty, the ones it holds whose witness set names an identity it
+    /// witnesses for. A ledger this home merely fetched is served by
+    /// [`LedgerStorage::head`] and [`LedgerStorage::read_from`] to anyone who
+    /// can already name its id, and is never enumerated: a wallet's stored set
+    /// is the list of identities its owner looked at, and advertising an
+    /// endpoint must not publish that list.
     #[must_use]
     pub fn list(&self, offset: usize, limit: usize) -> Page<LedgerSummary> {
         let index = self.lock();
-        let items: Vec<LedgerSummary> = index
+        let enumerable: Vec<(&LedgerId, &Entry)> = index
             .ledgers
+            .iter()
+            .filter(|(ledger, entry)| self.enumerable(**ledger, entry))
+            .collect();
+        let items: Vec<LedgerSummary> = enumerable
             .iter()
             .skip(offset)
             .take(limit)
-            .map(|(ledger, entry)| entry.summary(*ledger, self.caps.fork_records))
+            .map(|(ledger, entry)| entry.summary(**ledger, self.caps.fork_records))
             .collect();
         Page {
-            more: offset + items.len() < index.ledgers.len(),
+            more: offset + items.len() < enumerable.len(),
             items,
         }
+    }
+
+    /// Whether `List` names this ledger (proposal 006 section 8).
+    fn enumerable(&self, ledger: LedgerId, entry: &Entry) -> bool {
+        if self.home.can_sign_for(ledger) {
+            return true;
+        }
+        !self.policy.witness_for.is_empty()
+            && entry
+                .state
+                .witness_identities()
+                .iter()
+                .any(|witness| self.policy.witness_for.contains(witness))
     }
 
     /// Stored ledgers with their provenance and witness sets, by ascending
@@ -533,7 +627,7 @@ impl WitnessStorage {
         }
     }
 
-    /// One ledger's row, or `None` if this witness does not hold it.
+    /// One ledger's row, or `None` if this home does not hold it.
     #[must_use]
     pub fn report(&self, ledger: LedgerId) -> Option<LedgerReport> {
         self.lock()
@@ -587,7 +681,7 @@ impl WitnessStorage {
     ///
     /// # Errors
     ///
-    /// Returns `NOT_ADMITTED` when [`WitnessStorage::admits`] refuses,
+    /// Returns `NOT_ADMITTED` when [`LedgerStorage::admits`] refuses,
     /// `MALFORMED` for a gap, `TOO_LARGE` for a cap,
     /// `FORK` when a pushed event contends with a stored one, and `INVALID`
     /// when an event does not verify, with the valid prefix stored first.
@@ -644,7 +738,7 @@ impl WitnessStorage {
         if first != 0 {
             return Err(malformed(
                 first,
-                "this witness holds no such ledger, so the push must start at seq 0",
+                "this home holds no such ledger, so the push must start at seq 0",
             ));
         }
 
@@ -674,7 +768,7 @@ impl WitnessStorage {
         }
     }
 
-    /// A push against a ledger this witness holds: the overlap, then the
+    /// A push against a ledger this home holds: the overlap, then the
     /// suffix verified against the kept state.
     fn splice(
         &self,
@@ -995,13 +1089,13 @@ impl WitnessStorage {
         }
         if entry.is_none() && index.ledgers.len() >= self.caps.ledgers {
             return Err(too_large(format!(
-                "this witness already holds its cap of {} ledgers",
+                "this home already holds its cap of {} ledgers",
                 self.caps.ledgers
             )));
         }
         if index.storage_used + bytes > self.caps.storage_capacity {
             return Err(too_large(format!(
-                "this witness would store {} bytes, over its {}-byte capacity",
+                "this home would store {} bytes, over its {}-byte capacity",
                 index.storage_used + bytes,
                 self.caps.storage_capacity
             )));
@@ -1214,7 +1308,7 @@ fn malformed(at_seq: u64, msg: impl Into<String>) -> StoreError {
     StoreError::Rejected(Rejection::at(RejectCode::Malformed, at_seq, msg))
 }
 
-/// A cap this witness enforces.
+/// A cap this node enforces.
 fn too_large(msg: impl Into<String>) -> StoreError {
     StoreError::Rejected(Rejection::new(RejectCode::TooLarge, msg))
 }

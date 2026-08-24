@@ -1,23 +1,22 @@
-//! The loopback HTTP API of both node roles (proposal 001 section 10, ticket
-//! 012).
+//! The loopback HTTP API, one router served by every node (proposal 001
+//! section 10, proposal 006 section 8, ticket 012).
 //!
-//! [`wallet_router`] and [`witness_router`] serve every route indexed by
-//! `contracts/README.md`, in the shapes the fixtures under `contracts/http/`
-//! freeze. Handlers validate the request, call one method of
-//! [`WalletService`] or [`WitnessService`], and render the answer; they hold
-//! no node state and reach no storage, so the runtimes of tickets 010 and 011
-//! decide everything and this layer decides nothing (proposal 001 section 10).
-//! [`stub`] implements both traits from the fixtures, which is what the
-//! contract tests and the UI work of ticket 013 run against.
+//! [`node_router`] serves every route indexed by `contracts/README.md`, in the
+//! shapes the fixtures under `contracts/http/` freeze. Handlers validate the
+//! request, call one method of [`NodeService`], and render the answer; they
+//! hold no node state and reach no storage, so the runtime decides everything
+//! and this layer decides nothing. [`stub`] implements the trait from the
+//! fixtures, which is what the contract tests and the UI work of ticket 013
+//! run against.
 //!
 //! ```no_run
 //! use std::sync::Arc;
-//! use mabel_node::api::{ApiOptions, bind, stub::StubWalletService, wallet_router};
+//! use mabel_node::api::{ApiOptions, bind, node_router, stub::StubNodeService};
 //!
 //! # async fn serve() -> anyhow::Result<()> {
 //! let options = ApiOptions::default();
-//! let service = Arc::new(StubWalletService::new());
-//! let router = wallet_router(service, &options);
+//! let service = Arc::new(StubNodeService::new());
+//! let router = node_router(service, &options);
 //! let bound = bind::bind(options.http_bind).await?;
 //! axum::serve(bound.listener, router).await?;
 //! # Ok(())
@@ -38,9 +37,10 @@
 //! - There is no `POST /api/verify`. Proposal 004 removed it with the verify
 //!   tab, and `mabel verify trust|ledger` runs over the wallet core with no
 //!   HTTP in the path.
-//! - `GET /api/witnesses/{endpoint_id}/ledgers` names its array `ledgers` and
-//!   drops the three `witness-get-ledgers.json` fields that come from the
-//!   witness's own `meta.json` rather than from the `List` answer.
+//! - `GET /api/witnesses/{identity_id}/holdings` names its array `ledgers` and
+//!   carries neither `first_seen_ms`, `forks_truncated` nor `source_endpoint`:
+//!   those come from the answering node's own `meta.json` rather than from the
+//!   `List` answer.
 //! - `GET /api/resolve?input=` never reads or writes the verification cache.
 //!   Its four statuses are navigation, not the five-status verdict of proposal
 //!   003 section 2, and it takes an identity id, a hostname or a `mabel://`
@@ -72,11 +72,10 @@ pub mod documents;
 pub mod error;
 pub mod loopback;
 mod parse;
+mod routes;
 pub mod service;
 pub mod stub;
 mod ui;
-mod wallet;
-mod witness;
 
 use std::sync::Arc;
 
@@ -92,7 +91,7 @@ pub use bind::{DEFAULT_HTTP_BIND, DEFAULT_HTTP_PORT, HttpBind, non_loopback_warn
 pub use documents::Id;
 pub use error::{ErrorLayer, ServiceError};
 pub use loopback::LoopbackRules;
-pub use service::{WalletService, WitnessService};
+pub use service::NodeService;
 pub use ui::UiSource;
 
 use error::ServiceError as Error;
@@ -163,20 +162,12 @@ impl ApiOptions {
     }
 }
 
-/// The wallet API, the UI and the loopback rules, as one router.
-pub fn wallet_router(service: Arc<dyn WalletService>, options: &ApiOptions) -> Router {
-    assemble(Router::new().nest("/api", wallet::router(service)), options)
-}
-
-/// The witness API, the UI and the loopback rules, as one router.
+/// The node API, the UI and the loopback rules, as one router.
 ///
-/// The witness API is read-only: every route is a `GET`, and a mutating
-/// request to one of them answers 405 with the error envelope.
-pub fn witness_router(service: Arc<dyn WitnessService>, options: &ApiOptions) -> Router {
-    assemble(
-        Router::new().nest("/api", witness::router(service)),
-        options,
-    )
+/// Every node serves this, whether it signs, witnesses or both: no route is
+/// gated on what the home holds (proposal 006 section 8).
+pub fn node_router(service: Arc<dyn NodeService>, options: &ApiOptions) -> Router {
+    assemble(Router::new().nest("/api", routes::router(service)), options)
 }
 
 fn assemble(router: Router, options: &ApiOptions) -> Router {

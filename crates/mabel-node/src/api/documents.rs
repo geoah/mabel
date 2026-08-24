@@ -140,16 +140,6 @@ impl fmt::Display for DeclaredKind {
     }
 }
 
-/// Which role a node runs (proposal 001 section 2).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Role {
-    /// Holds identity keys and appends events.
-    Wallet,
-    /// Passive replica.
-    Witness,
-}
-
 /// The relay setting of the Iroh endpoint, as `GET /api/node` renders it.
 ///
 /// The api layer keeps its own copy of this enum so the HTTP documents do not
@@ -181,52 +171,34 @@ pub struct WitnessForRow {
     pub reason: Option<String>,
 }
 
-/// `GET /api/node` on a wallet.
+/// `GET /api/node`, the one document every node answers (proposal 006
+/// section 8).
+///
+/// There is no `role`. What this node can do is read from what it holds:
+/// `identity_count` is what it signs for, `witness_for` is who it accepts
+/// strangers' pushes on behalf of, and both may be zero and empty at once.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct WalletNode {
-    /// Always [`Role::Wallet`].
-    pub role: Role,
+pub struct NodeDocument {
     /// This node's Iroh endpoint id.
     pub endpoint_id: Id,
     /// Where the HTTP API listens.
     pub http_bind: SocketAddr,
     /// Relay setting.
     pub relay: Relay,
-    /// Witness endpoints this node pushes to by default.
-    pub witnesses: Vec<Id>,
-    /// Bytes of ledger data this node accepts before refusing more.
-    pub storage_capacity: u64,
-    /// Bytes currently stored.
-    pub storage_used: u64,
-    /// Identities in this node home.
-    pub identity_count: u64,
-    /// Build version.
-    pub version: String,
-}
-
-/// `GET /api/node` on a witness.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct WitnessNode {
-    /// Always [`Role::Witness`].
-    pub role: Role,
-    /// This node's Iroh endpoint id.
-    pub endpoint_id: Id,
-    /// Where the HTTP API listens.
-    pub http_bind: SocketAddr,
-    /// Relay setting.
-    pub relay: Relay,
-    /// Empty on a witness, which pushes to nobody.
+    /// Witness endpoints this node pushes to by default, from `node.json`.
     pub witnesses: Vec<Id>,
     /// The witness identities this home witnesses for, each with whether it
     /// admits a ledger this home does not store (proposal 006 section 4.1).
+    /// Empty means this home witnesses for nobody.
     pub witness_for: Vec<WitnessForRow>,
     /// Bytes of ledger data this node accepts before refusing more.
     pub storage_capacity: u64,
     /// Bytes currently stored.
     pub storage_used: u64,
-    /// Ledgers replicated here.
+    /// Identities in this node home, which is what it can sign for.
+    pub identity_count: u64,
+    /// Ledgers held, signed for, witnessed and merely fetched together.
     pub ledger_count: u64,
     /// Fork records held.
     pub fork_count: u64,
@@ -684,6 +656,12 @@ pub struct KnownIdentity {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct KnownIdentityList {
+    /// The offset that produced this page, echoed back.
+    pub offset: u32,
+    /// The effective limit after clamping, echoed back.
+    pub limit: u32,
+    /// Whether rows past this page exist.
+    pub more: bool,
     /// Sorted by ascending `identity_id`.
     pub identities: Vec<KnownIdentity>,
 }
@@ -725,8 +703,8 @@ pub struct IdentityKeys {
     pub reserve_commit: Id,
 }
 
-/// One page of events, from `GET /api/identities/:identity_id/ledger` and from
-/// `GET /api/ledgers/:ledger_id/events`. Both routes return this shape.
+/// One page of events, from `GET /api/identities/:identity_id/ledger`, which
+/// answers for any ledger this home holds (proposal 006 section 8).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LedgerPage {
@@ -1130,61 +1108,6 @@ pub enum VerificationReport {
     Ledger(LedgerReport),
 }
 
-/// One row of the witness ledger list.
-///
-/// `LedgerSummary.ledger` from `sync.proto` renders as `ledger_id` and
-/// `LedgerSummary.kind` as `declared_kind`; `source_endpoint` comes from
-/// `ledgers/<id>/meta.json` (`contracts/README.md`).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct LedgerEntry {
-    /// The ledger.
-    pub ledger_id: Id,
-    /// What it says it is.
-    pub declared_kind: DeclaredKind,
-    /// Sequence number of the head event.
-    pub head_seq: u64,
-    /// Id of the head event.
-    pub head_event: Id,
-    /// Events held.
-    pub event_count: u64,
-    /// When this witness first stored the ledger.
-    pub first_seen_ms: u64,
-    /// When it last changed.
-    pub updated_ms: u64,
-    /// Fork records held for it.
-    pub fork_count: u64,
-    /// Whether fork records were dropped after the cap.
-    pub forks_truncated: bool,
-    /// The endpoint the events arrived from.
-    pub source_endpoint: Id,
-}
-
-/// `GET /api/ledgers`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct LedgerList {
-    /// The offset that produced this page, echoed back.
-    pub offset: u32,
-    /// The effective limit after clamping, echoed back.
-    pub limit: u32,
-    /// Whether entries past this page exist.
-    pub more: bool,
-    /// Sorted by ascending `ledger_id`.
-    pub entries: Vec<LedgerEntry>,
-}
-
-/// `GET /api/ledgers/:ledger_id`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct LedgerView {
-    /// The summary row.
-    pub entry: LedgerEntry,
-    /// The identities the ledger's latest `WitnessSet` names (proposal 006
-    /// section 1).
-    pub witnesses: Vec<Id>,
-}
-
 /// One fork record: two validly signed events at the same sequence number.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -1402,25 +1325,44 @@ pub struct GraphSynced {
     pub graph: GraphStatus,
 }
 
-/// One witness endpoint this wallet knows, and where it knows it from
-/// (proposal 004).
+/// One machine that answers for a witness identity, and how this home knows it
+/// does (proposal 006 sections 2 and 4.2).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WitnessEndpoint {
+    /// The machine.
+    pub endpoint_id: Id,
+    /// `verified` when the identity's own record lists it, `hinted` when
+    /// nothing this home holds confirms it.
+    pub binding: Binding,
+}
+
+/// One witness identity this home knows, and where it knows it from (proposal
+/// 006 sections 1 and 8).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WitnessEntry {
-    /// The witness endpoint.
-    pub endpoint_id: Id,
-    /// Every stored ledger whose folded witness config names it, ascending by
-    /// id. Empty when only `node.json` names it.
+    /// The witness identity.
+    pub identity_id: Id,
+    /// The name its profile publishes, `null` when this home holds none.
+    pub display_name: Option<String>,
+    /// The machines that answer for it, in the resolution order of proposal 006
+    /// section 5.1.
+    pub endpoints: Vec<WitnessEndpoint>,
+    /// Every stored ledger whose folded witness set names it, ascending by id.
+    /// Empty when only `node.json` names it.
     pub named_by: Vec<Id>,
     /// Whether `node.json` lists it as a node-wide default.
     pub is_node_default: bool,
+    /// Whether `ledgers/<identity_id>/` holds a copy of its ledger.
+    pub stored: bool,
 }
 
 /// `GET /api/witnesses`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WitnessList {
-    /// Sorted by ascending `endpoint_id`.
+    /// Sorted by ascending `identity_id`.
     pub witnesses: Vec<WitnessEntry>,
 }
 
@@ -1446,12 +1388,14 @@ pub struct WitnessLedgerEntry {
     pub fork_count: u64,
 }
 
-/// `GET /api/witnesses/{endpoint_id}/ledgers`, a live proxy of the witness's
-/// own ledger list.
+/// `GET /api/witnesses/{identity_id}/holdings`, a live proxy of what that
+/// witness identity keeps.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct WitnessLedgers {
-    /// The witness that answered.
+pub struct WitnessHoldings {
+    /// The witness identity that was asked.
+    pub identity_id: Id,
+    /// The machine that answered for it.
     pub endpoint_id: Id,
     /// The offset that produced this page, echoed back.
     pub offset: u32,

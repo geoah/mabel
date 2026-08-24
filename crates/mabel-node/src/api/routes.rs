@@ -1,8 +1,18 @@
-//! The wallet routes, under `/api` (proposal 001 section 10).
+//! The node routes, under `/api` (proposal 001 section 10, proposal 006
+//! section 8).
 //!
-//! Every handler here validates, calls one [`WalletService`] method and
-//! renders. Nothing else: the node decides, and the UI holds no keys and does
-//! no crypto, so no route serves raw event bytes.
+//! One router, served by every node. Nothing here is gated on what the home
+//! holds: a home with no identities answers `{"ok": true, "identities": []}`,
+//! which is emptiness and not a refusal, and a mutating route naming a ledger
+//! this home holds but cannot append to answers `no_local_signer`.
+//!
+//! Every handler validates, calls one [`NodeService`] method and renders.
+//! Nothing else: the node decides, and the UI holds no keys and does no
+//! crypto, so no route serves raw event bytes.
+//!
+//! A static segment matches before `{identity_id}`, and an identity id is 52
+//! base32 characters, so no id collides with `known`, `holdings`, `endpoints`,
+//! `witnesses`, `fetch`, `ledger` or `keys`.
 
 use std::sync::Arc;
 
@@ -14,21 +24,19 @@ use axum::http::Uri;
 use axum::response::Response;
 use axum::routing::{get, post};
 
-use super::documents::{IdentityList, IdentityView, KnownIdentityList};
+use super::documents::{IdentityList, IdentityView};
 use super::error::ServiceError;
 use super::parse::{self, IdKind};
-use super::service::WalletService;
+use super::service::NodeService;
 use super::{Query, query, success};
 
-type Service = Arc<dyn WalletService>;
+type Service = Arc<dyn NodeService>;
 
-/// Every wallet route, to be nested under `/api`.
+/// Every node route, to be nested under `/api`.
 pub(super) fn router(service: Service) -> Router {
     Router::new()
         .route("/node", get(node))
         .route("/identities", get(identities).post(create_identity))
-        // A static segment matches before `{identity_id}`, and no identity id
-        // can spell `known`: an id is 52 base32 characters.
         .route("/identities/known", get(known_identities))
         .route("/identities/{identity_id}", get(identity))
         .route("/identities/{identity_id}/ledger", get(identity_ledger))
@@ -50,7 +58,12 @@ pub(super) fn router(service: Service) -> Router {
         // (proposal 006 section 7).
         .route("/resolve", get(resolve))
         .route("/witnesses", get(witnesses))
-        .route("/witnesses/{endpoint_id}/ledgers", get(witness_ledgers))
+        // The last segment changed with the key: an endpoint id and an identity
+        // id are both 52 base32 characters, so a client still sending an
+        // endpoint id gets a 404 rather than a dial that finds nothing
+        // (proposal 006 section 8).
+        .route("/witnesses/{identity_id}/holdings", get(witness_holdings))
+        .route("/forks", get(forks))
         .route("/graph", get(graph))
         .route("/graph/sync", post(sync_graph))
         .route("/identities/{identity_id}/memberships", get(memberships))
@@ -93,9 +106,12 @@ async fn create_identity(
     Ok(success(service.create_identity(request).await?))
 }
 
-async fn known_identities(State(service): State<Service>) -> Result<Response, ServiceError> {
-    let identities = service.known_identities().await?;
-    Ok(success(KnownIdentityList { identities }))
+async fn known_identities(
+    State(service): State<Service>,
+    parameters: Result<AxumQuery<Query>, QueryRejection>,
+) -> Result<Response, ServiceError> {
+    let page = parse::known_page(&query(parameters)?)?;
+    Ok(success(service.known_identities(page).await?))
 }
 
 async fn identity(
@@ -196,14 +212,26 @@ async fn witnesses(State(service): State<Service>) -> Result<Response, ServiceEr
     Ok(success(service.witnesses().await?))
 }
 
-async fn witness_ledgers(
+/// `GET /api/witnesses/{identity_id}/holdings`, the ledgers that witness
+/// identity keeps (proposal 006 section 8).
+async fn witness_holdings(
     State(service): State<Service>,
-    Path(endpoint_id): Path<String>,
+    Path(identity_id): Path<String>,
     parameters: Result<AxumQuery<Query>, QueryRejection>,
 ) -> Result<Response, ServiceError> {
-    let endpoint_id = parse::id(IdKind::Endpoint, &endpoint_id)?;
+    let identity_id = parse::id(IdKind::Identity, &identity_id)?;
     let page = parse::ledger_page(&query(parameters)?)?;
-    Ok(success(service.witness_ledgers(endpoint_id, page).await?))
+    Ok(success(service.witness_holdings(identity_id, page).await?))
+}
+
+/// `GET /api/forks`, on every node: a fork is a fact about a stored ledger and
+/// no other route reports it (proposal 006 section 8).
+async fn forks(
+    State(service): State<Service>,
+    parameters: Result<AxumQuery<Query>, QueryRejection>,
+) -> Result<Response, ServiceError> {
+    let request = parse::fork_query(&query(parameters)?)?;
+    Ok(success(service.forks(request).await?))
 }
 
 async fn graph(State(service): State<Service>) -> Result<Response, ServiceError> {

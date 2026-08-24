@@ -1,5 +1,5 @@
 //! The network commands of the CLI: `sync push`, `sync fetch`, `verify` over
-//! a peer, and `wallet serve`.
+//! a peer, and `mabel serve`.
 //!
 //! Every home here sets `relay: "disabled"` in `node.json` and every peer is
 //! dialled through a `--peer` ticket carrying its loopback address, so no test
@@ -346,15 +346,14 @@ impl Witness {
             &home,
             "witness",
             &[
-                "witness",
-                "run",
+                "serve",
                 "--http",
                 "127.0.0.1:0",
                 "--iroh-port",
                 &port.to_string(),
             ],
         );
-        daemon.wait_for("witness ");
+        daemon.wait_for("node ");
         Self {
             ticket: ticket(&endpoint, port),
             identity,
@@ -506,7 +505,7 @@ fn a_second_machine_for_the_witness_identity_verifies_the_binding() {
             &first_port.to_string(),
         ],
     );
-    first.wait_for("witness ");
+    first.wait_for("node ");
     let first_ticket = ticket(&first_endpoint, first_port);
 
     // A fetch, not a push: a machine that holds no copy of the witness identity
@@ -535,7 +534,7 @@ fn a_second_machine_for_the_witness_identity_verifies_the_binding() {
             &second_port.to_string(),
         ],
     );
-    second.wait_for("witness ");
+    second.wait_for("node ");
     let second_ticket = ticket(&second_endpoint, second_port);
 
     // Alice names the witness identity once and pushes to both its machines.
@@ -1368,16 +1367,12 @@ fn a_peer_that_cannot_be_reached_exits_30_with_the_network_prefix() {
 }
 
 #[test]
-fn wallet_serve_answers_the_node_route_and_stops_on_sigint() {
+fn serve_answers_the_node_route_and_stops_on_sigint() {
     let home = Home::new("wallet");
     let alice = home.create("alice");
-    let daemon = Daemon::start(
-        &home,
-        "wallet",
-        &["wallet", "serve", "--http", "127.0.0.1:0"],
-    );
+    let daemon = Daemon::start(&home, "wallet", &["serve", "--http", "127.0.0.1:0"]);
 
-    let endpoint = daemon.wait_for("wallet ");
+    let endpoint = daemon.wait_for("node ");
     assert_eq!(endpoint, home.endpoint(), "the endpoint id is printed");
     let address: SocketAddr = daemon
         .wait_for("http ")
@@ -1391,7 +1386,8 @@ fn wallet_serve_answers_the_node_route_and_stops_on_sigint() {
 
     let node = get(address, "/api/node");
     assert_eq!(node["ok"], Value::Bool(true));
-    assert_eq!(node["role"], Value::from("wallet"));
+    assert_eq!(node["role"], Value::Null, "no document names a role");
+    assert_eq!(node["witness_for"], Value::from(Vec::<Value>::new()));
     assert_eq!(node["endpoint_id"], Value::from(endpoint.as_str()));
     assert_eq!(node["identity_count"], Value::from(1));
     assert_eq!(node["relay"], Value::from("disabled"));
@@ -1421,7 +1417,7 @@ fn wallet_serve_answers_the_node_route_and_stops_on_sigint() {
 /// `--ui-dir` serves the files in that directory instead of the bundle
 /// compiled into the binary (ticket 012).
 #[test]
-fn wallet_serve_ui_dir_serves_the_files_in_that_directory() {
+fn serve_ui_dir_serves_the_files_in_that_directory() {
     let home = Home::new("wallet");
     home.create("alice");
     let ui = home.path().join("ui-dist");
@@ -1434,14 +1430,7 @@ fn wallet_serve_ui_dir_serves_the_files_in_that_directory() {
     let daemon = Daemon::start(
         &home,
         "wallet",
-        &[
-            "wallet",
-            "serve",
-            "--http",
-            "127.0.0.1:0",
-            "--ui-dir",
-            ui_dir,
-        ],
+        &["serve", "--http", "127.0.0.1:0", "--ui-dir", ui_dir],
     );
     let address: SocketAddr = daemon
         .wait_for("http ")
@@ -1457,7 +1446,7 @@ fn wallet_serve_ui_dir_serves_the_files_in_that_directory() {
     assert_eq!(body, "export const from_disk = true;\n");
 
     // The JSON API is unchanged by the flag.
-    assert_eq!(get(address, "/api/node")["role"], Value::from("wallet"));
+    assert_eq!(get(address, "/api/node")["identity_count"], Value::from(1));
 
     assert_eq!(daemon.interrupt(), 0, "the wallet stops cleanly");
 }
@@ -1466,14 +1455,13 @@ fn wallet_serve_ui_dir_serves_the_files_in_that_directory() {
 /// and it changes nothing else: every other host is refused exactly as before
 /// (decision 018).
 #[test]
-fn wallet_serve_allow_host_accepts_that_host_and_no_other() {
+fn serve_allow_host_accepts_that_host_and_no_other() {
     let home = Home::new("wallet");
     home.create("alice");
     let daemon = Daemon::start(
         &home,
         "wallet",
         &[
-            "wallet",
             "serve",
             "--http",
             "127.0.0.1:0",
@@ -1501,7 +1489,7 @@ fn wallet_serve_allow_host_accepts_that_host_and_no_other() {
         None,
     );
     assert_eq!(status, 200, "{body}");
-    assert_eq!(parse(&body)["role"], Value::from("wallet"));
+    assert_eq!(parse(&body)["identity_count"], Value::from(1));
     let (status, body) = request_as(
         address,
         "POST /api/identities HTTP/1.1",
@@ -1512,7 +1500,7 @@ fn wallet_serve_allow_host_accepts_that_host_and_no_other() {
     assert_eq!(parse(&body)["identity"]["alias"], Value::from("bob"));
 
     // Loopback still works, and every other host is still refused.
-    assert_eq!(get(address, "/api/node")["role"], Value::from("wallet"));
+    assert_eq!(get(address, "/api/node")["identity_count"], Value::from(2));
     let (status, body) = request_as(address, "GET /api/node HTTP/1.1", "evil.example", None);
     assert_eq!(status, 403, "{body}");
     let refused = parse(&body);
@@ -1534,13 +1522,9 @@ fn wallet_serve_allow_host_accepts_that_host_and_no_other() {
 
 /// Without the flag the default is unchanged: loopback alone.
 #[test]
-fn wallet_serve_without_allow_host_refuses_every_name() {
+fn serve_without_allow_host_refuses_every_name() {
     let home = Home::new("wallet");
-    let daemon = Daemon::start(
-        &home,
-        "wallet",
-        &["wallet", "serve", "--http", "127.0.0.1:0"],
-    );
+    let daemon = Daemon::start(&home, "wallet", &["serve", "--http", "127.0.0.1:0"]);
     let address: SocketAddr = daemon
         .wait_for("http ")
         .parse()
@@ -1584,7 +1568,6 @@ fn allowed_hosts_in_node_json_and_the_flag_are_both_accepted() {
         &home,
         "wallet",
         &[
-            "wallet",
             "serve",
             "--http",
             "127.0.0.1:0",

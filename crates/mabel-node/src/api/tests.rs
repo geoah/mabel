@@ -20,10 +20,8 @@ use super::service::{
     EventPageRequest, FetchIdentity, ForkQuery, LookupRequest, PageRequest, PushRequest,
     ReplaceProfile, ResolveInput, SetContact,
 };
-use super::stub::{
-    FIXTURES, Fixture, StubWalletService, StubWitnessService, WalletCall, WitnessCall,
-};
-use super::{ApiOptions, UiSource, documents::Id, wallet_router, witness_router};
+use super::stub::{FIXTURES, Fixture, NodeCall, StubNodeService};
+use super::{ApiOptions, UiSource, documents::Id, node_router};
 
 const ALICE: &str = "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq";
 const BOB: &str = "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq";
@@ -71,18 +69,9 @@ fn options() -> ApiOptions {
     ApiOptions::default().with_ui(UiSource::Disabled)
 }
 
-fn wallet(stub: &Arc<StubWalletService>) -> Router {
-    wallet_router(
-        Arc::clone(stub) as Arc<dyn super::WalletService>,
-        &options(),
-    )
-}
-
-fn witness(stub: &Arc<StubWitnessService>) -> Router {
-    witness_router(
-        Arc::clone(stub) as Arc<dyn super::WitnessService>,
-        &options(),
-    )
+/// The one router every node serves (proposal 006 section 8).
+fn node(stub: &Arc<StubNodeService>) -> Router {
+    node_router(Arc::clone(stub) as Arc<dyn super::NodeService>, &options())
 }
 
 /// A well-formed loopback request, with the headers a mutating route needs.
@@ -137,23 +126,12 @@ fn concrete_route(route: &str) -> String {
         .replace(":hostname", HOSTNAME)
 }
 
-/// Runs a fixture's own request against a wallet stub.
-async fn run_wallet(name: &str, stub: &Arc<StubWalletService>) -> (StatusCode, Value) {
+/// Runs a fixture's own request against the stub.
+async fn run(name: &str, stub: &Arc<StubNodeService>) -> (StatusCode, Value) {
     let fixture = Fixture::named(name);
     let uri = concrete_route(&fixture.route());
     send(
-        wallet(stub),
-        request(&fixture.method(), &uri, &fixture.request()),
-    )
-    .await
-}
-
-/// Runs a fixture's own request against a witness stub.
-async fn run_witness(name: &str, stub: &Arc<StubWitnessService>) -> (StatusCode, Value) {
-    let fixture = Fixture::named(name);
-    let uri = concrete_route(&fixture.route());
-    send(
-        witness(stub),
+        node(stub),
         request(&fixture.method(), &uri, &fixture.request()),
     )
     .await
@@ -211,20 +189,20 @@ fn error_from_fixture(status: StatusCode, body: &Value) -> ServiceError {
 #[tokio::test]
 async fn wallet_get_node_matches_the_fixture() {
     let name = "wallet-get-node.json";
-    let stub = Arc::new(StubWalletService::new());
-    let (status, body) = run_wallet(name, &stub).await;
+    let stub = Arc::new(StubNodeService::new());
+    let (status, body) = run(name, &stub).await;
     expect_response(name, status, &body);
     assert_eq!(body["storage_capacity"], json!(2_147_483_648_u64));
-    assert_eq!(stub.call(), WalletCall::Node);
+    assert_eq!(stub.call(), NodeCall::Node);
 }
 
 #[tokio::test]
 async fn wallet_get_identities_matches_the_fixture_and_lists_organizations() {
     let name = "wallet-get-identities.json";
-    let stub = Arc::new(StubWalletService::new());
-    let (status, body) = run_wallet(name, &stub).await;
+    let stub = Arc::new(StubNodeService::new());
+    let (status, body) = run(name, &stub).await;
     expect_response(name, status, &body);
-    assert_eq!(stub.call(), WalletCall::Identities);
+    assert_eq!(stub.call(), NodeCall::Identities);
 
     // An organization is an identity with `declared_kind: "organization"`;
     // there is no separate collection (proposal 001, clarifications).
@@ -249,10 +227,16 @@ async fn wallet_get_identities_matches_the_fixture_and_lists_organizations() {
 #[tokio::test]
 async fn wallet_get_known_identities_matches_the_fixture() {
     let name = "wallet-get-known-identities.json";
-    let stub = Arc::new(StubWalletService::new());
-    let (status, body) = run_wallet(name, &stub).await;
+    let stub = Arc::new(StubNodeService::new());
+    let (status, body) = run(name, &stub).await;
     expect_response(name, status, &body);
-    assert_eq!(stub.call(), WalletCall::KnownIdentities);
+    assert_eq!(
+        stub.call(),
+        NodeCall::KnownIdentities(PageRequest {
+            offset: 0,
+            limit: 100
+        })
+    );
 
     // The rows are ascending by `identity_id`, and neither of them is an
     // identity `GET /api/identities` lists.
@@ -310,21 +294,27 @@ async fn wallet_get_known_identities_matches_the_fixture() {
 /// request for the list is read as a malformed id.
 #[tokio::test]
 async fn the_known_route_is_matched_before_the_identity_route() {
-    let stub = Arc::new(StubWalletService::new());
+    let stub = Arc::new(StubNodeService::new());
     let request = request("GET", "/api/identities/known", &Value::Null);
-    let (status, body) = send(wallet(&stub), request).await;
+    let (status, body) = send(node(&stub), request).await;
     assert_eq!(status, StatusCode::OK, "{body}");
-    assert_eq!(stub.call(), WalletCall::KnownIdentities);
+    assert_eq!(
+        stub.call(),
+        NodeCall::KnownIdentities(PageRequest {
+            offset: 0,
+            limit: 100
+        })
+    );
 }
 
 #[tokio::test]
 async fn wallet_post_identities_matches_the_fixture() {
     let name = "wallet-post-identities.json";
-    let stub = Arc::new(StubWalletService::new());
-    let (status, body) = run_wallet(name, &stub).await;
+    let stub = Arc::new(StubNodeService::new());
+    let (status, body) = run(name, &stub).await;
     expect_response(name, status, &body);
     match stub.call() {
-        WalletCall::CreateIdentity(request) => {
+        NodeCall::CreateIdentity(request) => {
             assert_eq!(request.alias, "alice");
             assert_eq!(request.declared_kind, DeclaredKind::Person);
             assert_eq!(request.display_name.as_deref(), Some("Alice Ashworth"));
@@ -338,12 +328,12 @@ async fn wallet_post_identities_matches_the_fixture() {
 /// identity that publishes nothing (proposal 005).
 #[tokio::test]
 async fn a_create_body_may_omit_the_display_name_and_the_email() {
-    let stub = Arc::new(StubWalletService::new());
+    let stub = Arc::new(StubNodeService::new());
     let request = request("POST", "/api/identities", &json!({"alias": "alice"}));
-    let (status, _) = send(wallet(&stub), request).await;
+    let (status, _) = send(node(&stub), request).await;
     assert_eq!(status, StatusCode::OK);
     match stub.call() {
-        WalletCall::CreateIdentity(request) => {
+        NodeCall::CreateIdentity(request) => {
             assert_eq!(request.display_name, None);
             assert_eq!(request.email, None);
         }
@@ -354,21 +344,21 @@ async fn a_create_body_may_omit_the_display_name_and_the_email() {
 #[tokio::test]
 async fn wallet_get_identity_matches_the_fixture() {
     let name = "wallet-get-identity.json";
-    let stub = Arc::new(StubWalletService::new());
-    let (status, body) = run_wallet(name, &stub).await;
+    let stub = Arc::new(StubNodeService::new());
+    let (status, body) = run(name, &stub).await;
     expect_response(name, status, &body);
-    assert_eq!(stub.call(), WalletCall::Identity(id(ALICE)));
+    assert_eq!(stub.call(), NodeCall::Identity(id(ALICE)));
 }
 
 #[tokio::test]
 async fn wallet_get_identity_ledger_matches_the_fixture_and_passes_since_through() {
     let name = "wallet-get-identity-ledger.json";
-    let stub = Arc::new(StubWalletService::new());
-    let (status, body) = run_wallet(name, &stub).await;
+    let stub = Arc::new(StubNodeService::new());
+    let (status, body) = run(name, &stub).await;
     expect_response(name, status, &body);
     assert_eq!(
         stub.call(),
-        WalletCall::IdentityLedger(
+        NodeCall::IdentityLedger(
             id(ALICE),
             EventPageRequest {
                 since: 2,
@@ -384,10 +374,10 @@ async fn wallet_get_identity_ledger_matches_the_fixture_and_passes_since_through
 #[tokio::test]
 async fn wallet_get_identity_keys_matches_the_fixture() {
     let name = "wallet-get-identity-keys.json";
-    let stub = Arc::new(StubWalletService::new());
-    let (status, body) = run_wallet(name, &stub).await;
+    let stub = Arc::new(StubNodeService::new());
+    let (status, body) = run(name, &stub).await;
     expect_response(name, status, &body);
-    assert_eq!(stub.call(), WalletCall::IdentityKeys(id(ALICE)));
+    assert_eq!(stub.call(), NodeCall::IdentityKeys(id(ALICE)));
 
     // A 200 carries all four key values, the two secrets included, in the one
     // base32 spelling every byte field uses: 52 characters for 32 bytes
@@ -411,9 +401,9 @@ async fn wallet_get_identity_keys_answers_the_fixture_rejections() {
     let name = "wallet-get-identity-keys.json";
     for reason in ["unknown_ledger", "no_keys_held"] {
         let (expected_status, expected) = fixture_error(name, reason);
-        let stub = Arc::new(StubWalletService::new());
+        let stub = Arc::new(StubNodeService::new());
         stub.fail_with(error_from_fixture(expected_status, &expected));
-        let (status, body) = run_wallet(name, &stub).await;
+        let (status, body) = run(name, &stub).await;
         assert_eq!(status, expected_status, "{reason}");
         assert_eq!(body, expected, "{reason}");
     }
@@ -429,24 +419,24 @@ async fn a_keyless_identity_has_no_keys_to_hand_back() {
     assert_eq!(expected["code"], json!(20));
     assert_eq!(expected["details"]["identity_id"], json!(ACME));
 
-    let stub = Arc::new(StubWalletService::new());
+    let stub = Arc::new(StubNodeService::new());
     stub.fail_with(error_from_fixture(expected_status, &expected));
     let request = request("GET", &format!("/api/identities/{ACME}/keys"), &Value::Null);
-    let (status, body) = send(wallet(&stub), request).await;
+    let (status, body) = send(node(&stub), request).await;
     assert_eq!(status, StatusCode::CONFLICT);
     assert_eq!(body, expected);
-    assert_eq!(stub.call(), WalletCall::IdentityKeys(id(ACME)));
+    assert_eq!(stub.call(), NodeCall::IdentityKeys(id(ACME)));
 }
 
 #[tokio::test]
 async fn wallet_post_identity_profile_matches_the_fixture_and_requires_both_keys() {
     let name = "wallet-post-identity-profile.json";
-    let stub = Arc::new(StubWalletService::new());
-    let (status, body) = run_wallet(name, &stub).await;
+    let stub = Arc::new(StubNodeService::new());
+    let (status, body) = run(name, &stub).await;
     expect_response(name, status, &body);
     assert_eq!(
         stub.call(),
-        WalletCall::ReplaceProfile(ReplaceProfile {
+        NodeCall::ReplaceProfile(ReplaceProfile {
             identity_id: id(ALICE),
             display_name: Some("Alice Ashworth".to_owned()),
             hostname: Some("alice.example".to_owned()),
@@ -457,13 +447,13 @@ async fn wallet_post_identity_profile_matches_the_fixture_and_requires_both_keys
     // The operation is replacement, so a body naming one key would clear the
     // others by accident (proposal 003 section 1, proposal 005).
     let (expected_status, expected) = fixture_error(name, "missing_field");
-    let stub = Arc::new(StubWalletService::new());
+    let stub = Arc::new(StubNodeService::new());
     let request = request(
         "POST",
         &format!("/api/identities/{ALICE}/profile"),
         &json!({"display_name": "Alice Ashworth"}),
     );
-    let (status, body) = send(wallet(&stub), request).await;
+    let (status, body) = send(node(&stub), request).await;
     assert_eq!(status, expected_status);
     assert_eq!(body, expected);
     assert!(stub.calls().is_empty());
@@ -497,17 +487,17 @@ async fn a_profile_body_may_null_any_key() {
             None,
         ),
     ] {
-        let stub = Arc::new(StubWalletService::new());
+        let stub = Arc::new(StubNodeService::new());
         let request = request(
             "POST",
             &format!("/api/identities/{ALICE}/profile"),
             &request_body,
         );
-        let (status, _) = send(wallet(&stub), request).await;
+        let (status, _) = send(node(&stub), request).await;
         assert_eq!(status, StatusCode::OK, "{request_body}");
         assert_eq!(
             stub.call(),
-            WalletCall::ReplaceProfile(ReplaceProfile {
+            NodeCall::ReplaceProfile(ReplaceProfile {
                 identity_id: id(ALICE),
                 display_name: display_name.map(ToOwned::to_owned),
                 hostname: hostname.map(ToOwned::to_owned),
@@ -521,10 +511,10 @@ async fn a_profile_body_may_null_any_key() {
 #[tokio::test]
 async fn wallet_post_identity_verification_matches_the_fixture() {
     let name = "wallet-post-identity-verification.json";
-    let stub = Arc::new(StubWalletService::new());
-    let (status, body) = run_wallet(name, &stub).await;
+    let stub = Arc::new(StubNodeService::new());
+    let (status, body) = run(name, &stub).await;
     expect_response(name, status, &body);
-    assert_eq!(stub.call(), WalletCall::CheckVerification(id(ALICE)));
+    assert_eq!(stub.call(), NodeCall::CheckVerification(id(ALICE)));
     assert_eq!(body["verification"]["status"], json!("verified"));
     assert_eq!(body["verification"]["stale"], json!(false));
 }
@@ -535,9 +525,9 @@ async fn wallet_post_identity_verification_matches_the_fixture() {
 #[tokio::test]
 async fn wallet_get_identity_contact_matches_the_fixture_for_a_foreign_identity() {
     let name = "wallet-get-identity-contact.json";
-    let stub = Arc::new(StubWalletService::new());
+    let stub = Arc::new(StubNodeService::new());
     let (status, body) = send(
-        wallet(&stub),
+        node(&stub),
         request(
             "GET",
             &format!("/api/identities/{BOB}/contact"),
@@ -547,15 +537,15 @@ async fn wallet_get_identity_contact_matches_the_fixture_for_a_foreign_identity(
     .await;
     expect_response(name, status, &body);
     assert_eq!(body["identity_id"], json!(BOB));
-    assert_eq!(stub.call(), WalletCall::Contact(id(BOB)));
+    assert_eq!(stub.call(), NodeCall::Contact(id(BOB)));
 }
 
 #[tokio::test]
 async fn wallet_put_identity_contact_matches_the_fixture_and_caps_a_nickname() {
     let name = "wallet-put-identity-contact.json";
-    let stub = Arc::new(StubWalletService::new());
+    let stub = Arc::new(StubNodeService::new());
     let (status, body) = send(
-        wallet(&stub),
+        node(&stub),
         request(
             "PUT",
             &format!("/api/identities/{BOB}/contact"),
@@ -566,7 +556,7 @@ async fn wallet_put_identity_contact_matches_the_fixture_and_caps_a_nickname() {
     expect_response(name, status, &body);
     assert_eq!(
         stub.call(),
-        WalletCall::SetContact(SetContact {
+        NodeCall::SetContact(SetContact {
             identity_id: id(BOB),
             nickname: Some("bob at the print shop".to_owned()),
             note: Some("met at the 2023 zine fair; verifies his own hostname".to_owned()),
@@ -576,13 +566,13 @@ async fn wallet_put_identity_contact_matches_the_fixture_and_caps_a_nickname() {
     let (expected_status, expected) = fixture_error(name, "contact_field_too_long");
     let cap = expected["details"]["cap"].as_u64().expect("a cap") as usize;
     let len = expected["details"]["len"].as_u64().expect("a length") as usize;
-    let stub = Arc::new(StubWalletService::new());
+    let stub = Arc::new(StubNodeService::new());
     let request = request(
         "PUT",
         &format!("/api/identities/{BOB}/contact"),
         &json!({"nickname": "n".repeat(len), "note": null}),
     );
-    let (status, body) = send(wallet(&stub), request).await;
+    let (status, body) = send(node(&stub), request).await;
     assert_eq!(status, expected_status);
     assert_eq!(body, expected, "a nickname over {cap} bytes is refused");
     assert!(stub.calls().is_empty());
@@ -597,9 +587,9 @@ async fn wallet_get_lookup_matches_the_fixture_and_reads_from() {
         .as_str()
         .expect("the fixture names a target")
         .to_owned();
-    let stub = Arc::new(StubWalletService::new());
+    let stub = Arc::new(StubNodeService::new());
     let (status, body) = send(
-        wallet(&stub),
+        node(&stub),
         request(
             "GET",
             &format!("/api/lookup/{carol}?from={ALICE}"),
@@ -610,7 +600,7 @@ async fn wallet_get_lookup_matches_the_fixture_and_reads_from() {
     expect_response(name, status, &body);
     assert_eq!(
         stub.call(),
-        WalletCall::Lookup(LookupRequest {
+        NodeCall::Lookup(LookupRequest {
             identity_id: id(&carol),
             from: Some(id(ALICE)),
         })
@@ -622,13 +612,13 @@ async fn wallet_get_lookup_matches_the_fixture_and_reads_from() {
 
 #[tokio::test]
 async fn a_lookup_without_from_leaves_the_default_to_the_service() {
-    let stub = Arc::new(StubWalletService::new());
+    let stub = Arc::new(StubNodeService::new());
     let request = request("GET", &format!("/api/lookup/{BOB}"), &Value::Null);
-    let (status, _) = send(wallet(&stub), request).await;
+    let (status, _) = send(node(&stub), request).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(
         stub.call(),
-        WalletCall::Lookup(LookupRequest {
+        NodeCall::Lookup(LookupRequest {
             identity_id: id(BOB),
             from: None,
         })
@@ -638,20 +628,20 @@ async fn a_lookup_without_from_leaves_the_default_to_the_service() {
 #[tokio::test]
 async fn wallet_get_graph_matches_the_fixture() {
     let name = "wallet-get-graph.json";
-    let stub = Arc::new(StubWalletService::new());
-    let (status, body) = run_wallet(name, &stub).await;
+    let stub = Arc::new(StubNodeService::new());
+    let (status, body) = run(name, &stub).await;
     expect_response(name, status, &body);
-    assert_eq!(stub.call(), WalletCall::Graph);
+    assert_eq!(stub.call(), NodeCall::Graph);
     assert_eq!(body["graph"]["truncated_by"], json!("depth"));
 }
 
 #[tokio::test]
 async fn wallet_post_graph_sync_matches_the_fixture() {
     let name = "wallet-post-graph-sync.json";
-    let stub = Arc::new(StubWalletService::new());
-    let (status, body) = run_wallet(name, &stub).await;
+    let stub = Arc::new(StubNodeService::new());
+    let (status, body) = run(name, &stub).await;
     expect_response(name, status, &body);
-    assert_eq!(stub.call(), WalletCall::SyncGraph);
+    assert_eq!(stub.call(), NodeCall::SyncGraph);
     assert_eq!(
         body["graph"]["sync_id"],
         Fixture::named("wallet-get-graph.json").response()["graph"]["sync_id"],
@@ -662,22 +652,22 @@ async fn wallet_post_graph_sync_matches_the_fixture() {
 #[tokio::test]
 async fn wallet_post_identity_witnesses_matches_the_fixture() {
     let name = "wallet-post-identity-witnesses.json";
-    let stub = Arc::new(StubWalletService::new());
-    let (status, body) = run_wallet(name, &stub).await;
+    let stub = Arc::new(StubNodeService::new());
+    let (status, body) = run(name, &stub).await;
     expect_response(name, status, &body);
     assert_eq!(
         stub.call(),
-        WalletCall::SetWitnesses(id(ALICE), vec![id(WITNESS_ONE), id(WITNESS_TWO)])
+        NodeCall::SetWitnesses(id(ALICE), vec![id(WITNESS_ONE), id(WITNESS_TWO)])
     );
 }
 
 #[tokio::test]
 async fn wallet_get_identity_memberships_matches_the_fixture() {
     let name = "wallet-get-identity-memberships.json";
-    let stub = Arc::new(StubWalletService::new());
-    let (status, body) = run_wallet(name, &stub).await;
+    let stub = Arc::new(StubNodeService::new());
+    let (status, body) = run(name, &stub).await;
     expect_response(name, status, &body);
-    assert_eq!(stub.call(), WalletCall::Memberships(id(ALICE)));
+    assert_eq!(stub.call(), NodeCall::Memberships(id(ALICE)));
     // Every ledger carries a principal set, raw-rooted or identity-rooted
     // (proposal 002 section 1).
     assert_eq!(body["root"], json!("raw"));
@@ -688,11 +678,11 @@ async fn wallet_get_identity_memberships_matches_the_fixture() {
 #[tokio::test]
 async fn wallet_post_membership_invitations_matches_the_fixture() {
     let name = "wallet-post-membership-invitations.json";
-    let stub = Arc::new(StubWalletService::new());
-    let (status, body) = run_wallet(name, &stub).await;
+    let stub = Arc::new(StubNodeService::new());
+    let (status, body) = run(name, &stub).await;
     expect_response(name, status, &body);
     match stub.call() {
-        WalletCall::Invite(request) => {
+        NodeCall::Invite(request) => {
             assert_eq!(request.ledger_id, id(ALICE));
             assert_eq!(request.by, id(ALICE));
             assert_eq!(request.role, RoleName::Controller);
@@ -710,11 +700,11 @@ async fn wallet_post_membership_invitations_matches_the_fixture() {
 #[tokio::test]
 async fn wallet_post_membership_acceptances_matches_the_fixture_and_warns_on_a_raw_root() {
     let name = "wallet-post-membership-acceptances.json";
-    let stub = Arc::new(StubWalletService::new());
-    let (status, body) = run_wallet(name, &stub).await;
+    let stub = Arc::new(StubNodeService::new());
+    let (status, body) = run(name, &stub).await;
     expect_response(name, status, &body);
     match stub.call() {
-        WalletCall::AcceptInvitation(request) => {
+        NodeCall::AcceptInvitation(request) => {
             assert_eq!(request.identity_id, id(ALICE));
             assert_eq!(request.invitation_bundle.len(), 96);
         }
@@ -734,11 +724,11 @@ async fn wallet_post_membership_acceptances_matches_the_fixture_and_warns_on_a_r
 #[tokio::test]
 async fn wallet_post_membership_admissions_matches_the_fixture() {
     let name = "wallet-post-membership-admissions.json";
-    let stub = Arc::new(StubWalletService::new());
-    let (status, body) = run_wallet(name, &stub).await;
+    let stub = Arc::new(StubNodeService::new());
+    let (status, body) = run(name, &stub).await;
     expect_response(name, status, &body);
     match stub.call() {
-        WalletCall::AdmitAcceptance(request) => {
+        NodeCall::AdmitAcceptance(request) => {
             assert_eq!(request.ledger_id, id(ALICE));
             assert_eq!(request.by, id(ALICE));
             assert_eq!(request.acceptance.len(), 72);
@@ -754,11 +744,11 @@ async fn wallet_post_membership_admissions_matches_the_fixture() {
 #[tokio::test]
 async fn wallet_post_membership_removals_matches_the_fixture() {
     let name = "wallet-post-membership-removals.json";
-    let stub = Arc::new(StubWalletService::new());
-    let (status, body) = run_wallet(name, &stub).await;
+    let stub = Arc::new(StubNodeService::new());
+    let (status, body) = run(name, &stub).await;
     expect_response(name, status, &body);
     match stub.call() {
-        WalletCall::RemoveMembership(request) => {
+        NodeCall::RemoveMembership(request) => {
             assert_eq!(request.ledger_id, id(ALICE));
             assert_eq!(request.by, id(ALICE));
             assert_eq!(request.target, id(BOB));
@@ -774,11 +764,11 @@ async fn wallet_post_membership_removals_matches_the_fixture() {
 #[tokio::test]
 async fn wallet_post_trust_matches_the_fixture() {
     let name = "wallet-post-trust.json";
-    let stub = Arc::new(StubWalletService::new());
-    let (status, body) = run_wallet(name, &stub).await;
+    let stub = Arc::new(StubNodeService::new());
+    let (status, body) = run(name, &stub).await;
     expect_response(name, status, &body);
     match stub.call() {
-        WalletCall::AddTrust(request) => {
+        NodeCall::AddTrust(request) => {
             assert_eq!(request.issuer, id(ALICE));
             assert_eq!(request.subject, id(BOB));
         }
@@ -789,24 +779,24 @@ async fn wallet_post_trust_matches_the_fixture() {
 #[tokio::test]
 async fn wallet_post_trust_revoke_matches_the_fixture() {
     let name = "wallet-post-trust-revoke.json";
-    let stub = Arc::new(StubWalletService::new());
-    let (status, body) = run_wallet(name, &stub).await;
+    let stub = Arc::new(StubNodeService::new());
+    let (status, body) = run(name, &stub).await;
     expect_response(name, status, &body);
     assert_eq!(
         stub.call(),
-        WalletCall::RevokeTrust(id(ATTESTATION), id(ALICE))
+        NodeCall::RevokeTrust(id(ATTESTATION), id(ALICE))
     );
 }
 
 #[tokio::test]
 async fn wallet_post_sync_push_matches_the_fixture() {
     let name = "wallet-post-sync-push.json";
-    let stub = Arc::new(StubWalletService::new());
-    let (status, body) = run_wallet(name, &stub).await;
+    let stub = Arc::new(StubNodeService::new());
+    let (status, body) = run(name, &stub).await;
     expect_response(name, status, &body);
     assert_eq!(
         stub.call(),
-        WalletCall::Push(PushRequest {
+        NodeCall::Push(PushRequest {
             identity_id: id(ALICE),
             to: None
         })
@@ -818,12 +808,12 @@ async fn wallet_post_sync_push_matches_the_fixture() {
 #[tokio::test]
 async fn wallet_post_identity_fetch_matches_the_fixture() {
     let name = "wallet-post-identity-fetch.json";
-    let stub = Arc::new(StubWalletService::new());
-    let (status, body) = run_wallet(name, &stub).await;
+    let stub = Arc::new(StubNodeService::new());
+    let (status, body) = run(name, &stub).await;
     expect_response(name, status, &body);
     assert_eq!(
         stub.call(),
-        WalletCall::FetchIdentity(FetchIdentity {
+        NodeCall::FetchIdentity(FetchIdentity {
             from_witness: None,
             identity_id: id(ALICE),
             from: Some(id(WITNESS_ONE)),
@@ -837,13 +827,13 @@ async fn wallet_post_identity_fetch_matches_the_fixture() {
 
 #[tokio::test]
 async fn a_fetch_without_a_source_leaves_the_witness_choice_to_the_service() {
-    let stub = Arc::new(StubWalletService::new());
+    let stub = Arc::new(StubNodeService::new());
     let uri = format!("/api/identities/{BOB}/fetch");
-    let (status, _) = send(wallet(&stub), request("POST", &uri, &json!({"from": null}))).await;
+    let (status, _) = send(node(&stub), request("POST", &uri, &json!({"from": null}))).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(
         stub.call(),
-        WalletCall::FetchIdentity(FetchIdentity {
+        NodeCall::FetchIdentity(FetchIdentity {
             from_witness: None,
             identity_id: id(BOB),
             from: None,
@@ -854,12 +844,12 @@ async fn a_fetch_without_a_source_leaves_the_witness_choice_to_the_service() {
 #[tokio::test]
 async fn wallet_get_resolve_matches_the_fixture_and_passes_the_hostname_through() {
     let name = "wallet-get-resolve.json";
-    let stub = Arc::new(StubWalletService::new());
-    let (status, body) = run_wallet(name, &stub).await;
+    let stub = Arc::new(StubNodeService::new());
+    let (status, body) = run(name, &stub).await;
     expect_response(name, status, &body);
     assert_eq!(
         stub.call(),
-        WalletCall::Resolve(ResolveInput::Hostname(HOSTNAME.to_owned()))
+        NodeCall::Resolve(ResolveInput::Hostname(HOSTNAME.to_owned()))
     );
     assert_eq!(body["input_kind"], json!("hostname"));
     assert_eq!(body["status"], json!("resolved"));
@@ -867,9 +857,9 @@ async fn wallet_get_resolve_matches_the_fixture_and_passes_the_hostname_through(
 
     // A hostname the profile rule refuses never reaches the resolver.
     let (expected_status, expected) = fixture_error(name, "malformed_hostname");
-    let stub = Arc::new(StubWalletService::new());
+    let stub = Arc::new(StubNodeService::new());
     let (status, body) = send(
-        wallet(&stub),
+        node(&stub),
         request(
             "GET",
             "/api/resolve?input=alice_ashworth.example",
@@ -886,27 +876,27 @@ async fn wallet_get_resolve_matches_the_fixture_and_passes_the_hostname_through(
 /// hints reach it in the order the link named them (proposal 006 section 7).
 #[tokio::test]
 async fn wallet_get_resolve_takes_an_identity_id_and_a_link() {
-    let stub = Arc::new(StubWalletService::new());
+    let stub = Arc::new(StubNodeService::new());
     let (status, _) = send(
-        wallet(&stub),
+        node(&stub),
         request("GET", &format!("/api/resolve?input={ALICE}"), &Value::Null),
     )
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(
         stub.call(),
-        WalletCall::Resolve(ResolveInput::Identity(id(ALICE)))
+        NodeCall::Resolve(ResolveInput::Identity(id(ALICE)))
     );
 
-    let stub = Arc::new(StubWalletService::new());
+    let stub = Arc::new(StubNodeService::new());
     let uri = format!(
         "/api/resolve?input=mabel%3A%2F%2F{ALICE}%3Fendpoints%3D{WITNESS_ONE}%2C{WITNESS_TWO}"
     );
-    let (status, _) = send(wallet(&stub), request("GET", &uri, &Value::Null)).await;
+    let (status, _) = send(node(&stub), request("GET", &uri, &Value::Null)).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(
         stub.call(),
-        WalletCall::Resolve(ResolveInput::Link {
+        NodeCall::Resolve(ResolveInput::Link {
             identity_id: id(ALICE),
             endpoints: vec![id(WITNESS_ONE), id(WITNESS_TWO)],
         })
@@ -930,9 +920,9 @@ async fn wallet_get_resolve_refuses_a_double_encoded_link_and_a_repeated_input()
         ("missing_field", "input=".to_owned()),
     ] {
         let (expected_status, expected) = fixture_error(name, reason);
-        let stub = Arc::new(StubWalletService::new());
+        let stub = Arc::new(StubNodeService::new());
         let uri = format!("/api/resolve?{query}");
-        let (status, body) = send(wallet(&stub), request("GET", &uri, &Value::Null)).await;
+        let (status, body) = send(node(&stub), request("GET", &uri, &Value::Null)).await;
         assert_eq!(status, expected_status, "{reason}");
         assert_eq!(body, expected, "{reason}");
         assert!(stub.calls().is_empty(), "{reason}");
@@ -942,64 +932,69 @@ async fn wallet_get_resolve_refuses_a_double_encoded_link_and_a_repeated_input()
 #[tokio::test]
 async fn wallet_get_witnesses_matches_the_fixture_and_says_where_each_is_known_from() {
     let name = "wallet-get-witnesses.json";
-    let stub = Arc::new(StubWalletService::new());
-    let (status, body) = run_wallet(name, &stub).await;
+    let stub = Arc::new(StubNodeService::new());
+    let (status, body) = run(name, &stub).await;
     expect_response(name, status, &body);
-    assert_eq!(stub.call(), WalletCall::Witnesses);
+    assert_eq!(stub.call(), NodeCall::Witnesses);
 
     let witnesses = body["witnesses"].as_array().expect("an array");
-    let endpoints: Vec<&str> = witnesses
+    let identities: Vec<&str> = witnesses
         .iter()
-        .map(|witness| witness["endpoint_id"].as_str().expect("an endpoint id"))
+        .map(|witness| witness["identity_id"].as_str().expect("an identity id"))
         .collect();
-    let mut sorted = endpoints.clone();
+    let mut sorted = identities.clone();
     sorted.sort_unstable();
-    assert_eq!(endpoints, sorted, "witnesses sort by ascending endpoint id");
-    // A witness `node.json` does not name is still listed, because a stored
-    // ledger names it.
-    assert!(
-        witnesses
-            .iter()
-            .any(|witness| witness["is_node_default"] == json!(false)),
-        "{witnesses:?}"
+    assert_eq!(
+        identities, sorted,
+        "witnesses sort by ascending identity id"
     );
+    // A witness identity two ledgers name carries both, and each machine
+    // carries the binding of proposal 006 section 4.2.
     let shared = witnesses
         .iter()
-        .find(|witness| witness["endpoint_id"] == json!(WITNESS_ONE))
-        .expect("the fixture lists the first witness");
-    assert_eq!(shared["named_by"], json!([ACME, ALICE]));
+        .find(|witness| witness["named_by"] == json!([ACME, ALICE]))
+        .expect("the fixture lists a witness two ledgers name");
+    assert_eq!(shared["endpoints"][0]["endpoint_id"], json!(WITNESS_ONE));
+    assert_eq!(shared["endpoints"][0]["binding"], json!("verified"));
+    assert!(
+        witnesses.iter().any(|witness| witness["endpoints"]
+            .as_array()
+            .expect("an array")
+            .iter()
+            .any(|machine| machine["binding"] == json!("hinted"))),
+        "{witnesses:?}"
+    );
 }
 
 #[tokio::test]
-async fn wallet_get_witness_ledgers_matches_the_fixture_and_pages_like_the_witness_route() {
-    let name = "wallet-get-witness-ledgers.json";
-    let stub = Arc::new(StubWalletService::new());
-    let (status, body) = run_wallet(name, &stub).await;
+async fn wallet_get_witness_holdings_matches_the_fixture_and_pages_like_a_list() {
+    let name = "wallet-get-witness-holdings.json";
+    let stub = Arc::new(StubNodeService::new());
+    let (status, body) = run(name, &stub).await;
     expect_response(name, status, &body);
     assert_eq!(
         stub.call(),
-        WalletCall::WitnessLedgers(
-            id(WITNESS_ONE),
+        NodeCall::WitnessHoldings(
+            id(ALICE),
             PageRequest {
                 offset: 0,
                 limit: 256
             }
         )
     );
-    assert_eq!(body["endpoint_id"], json!(WITNESS_ONE));
     // The proxy carries what `List` serves, so the three fields that come
-    // from the witness's own meta.json are absent.
+    // from the answering node's own meta.json are absent.
     let entry = body["ledgers"][0].as_object().expect("a row");
     assert_eq!(entry.len(), 6, "{entry:?}");
     for absent in ["source_endpoint", "first_seen_ms", "forks_truncated"] {
         assert!(!entry.contains_key(absent), "{absent} is in {entry:?}");
     }
 
-    let (expected_status, expected) = fixture_error(name, "malformed_endpoint_id");
-    let stub = Arc::new(StubWalletService::new());
+    let (expected_status, expected) = fixture_error(name, "malformed_identity_id");
+    let stub = Arc::new(StubNodeService::new());
     let (status, body) = send(
-        wallet(&stub),
-        request("GET", "/api/witnesses/witness-one/ledgers", &Value::Null),
+        node(&stub),
+        request("GET", "/api/witnesses/witness-one/holdings", &Value::Null),
     )
     .await;
     assert_eq!(status, expected_status);
@@ -1007,22 +1002,52 @@ async fn wallet_get_witness_ledgers_matches_the_fixture_and_pages_like_the_witne
     assert!(stub.calls().is_empty());
 }
 
+/// The old drill-in path is gone, so a client sending an endpoint id where an
+/// identity id belongs gets a 404 rather than a dial that finds nothing
+/// (proposal 006 section 8).
 #[tokio::test]
-async fn a_witness_ledger_limit_over_the_maximum_reaches_the_service_clamped() {
-    let stub = Arc::new(StubWalletService::new());
-    let uri = format!("/api/witnesses/{WITNESS_ONE}/ledgers?offset=8&limit=100000");
-    let (status, _) = send(wallet(&stub), request("GET", &uri, &Value::Null)).await;
+async fn the_old_witness_ledgers_path_is_no_longer_a_route() {
+    let stub = Arc::new(StubNodeService::new());
+    let uri = format!("/api/witnesses/{WITNESS_ONE}/ledgers");
+    let (status, body) = send(node(&stub), request("GET", &uri, &Value::Null)).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(body["details"]["reason"], json!("unknown_route"));
+    assert!(stub.calls().is_empty());
+}
+
+/// `GET /api/ledgers` and its two drill-ins are answered by the identity routes
+/// (proposal 006 section 8).
+#[tokio::test]
+async fn the_ledger_routes_are_gone() {
+    let stub = Arc::new(StubNodeService::new());
+    for path in [
+        "/api/ledgers".to_owned(),
+        format!("/api/ledgers/{ALICE}"),
+        format!("/api/ledgers/{ALICE}/events"),
+    ] {
+        let (status, body) = send(node(&stub), request("GET", &path, &Value::Null)).await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{path}");
+        assert_eq!(body["details"]["reason"], json!("unknown_route"), "{path}");
+    }
+    assert!(stub.calls().is_empty());
+}
+
+#[tokio::test]
+async fn a_holdings_limit_over_the_maximum_reaches_the_service_clamped() {
+    let stub = Arc::new(StubNodeService::new());
+    let uri = format!("/api/witnesses/{ALICE}/holdings?offset=8&limit=100000");
+    let (status, _) = send(node(&stub), request("GET", &uri, &Value::Null)).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(
         stub.call(),
-        WalletCall::WitnessLedgers(
-            id(WITNESS_ONE),
+        NodeCall::WitnessHoldings(
+            id(ALICE),
             PageRequest {
                 offset: 8,
                 limit: 256
             }
         ),
-        "the proxy clamps to the same maximum as GET /api/ledgers"
+        "the proxy clamps to the maximum a List answers"
     );
 }
 
@@ -1030,80 +1055,43 @@ async fn a_witness_ledger_limit_over_the_maximum_reaches_the_service_clamped() {
 async fn there_is_no_verify_route() {
     // Proposal 004 removed `POST /api/verify` with the verify tab; verifying
     // trust and ledgers is a CLI concern.
-    let stub = Arc::new(StubWalletService::new());
-    let (status, body) = send(wallet(&stub), request("POST", "/api/verify", &json!({}))).await;
+    let stub = Arc::new(StubNodeService::new());
+    let (status, body) = send(node(&stub), request("POST", "/api/verify", &json!({}))).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
     assert_eq!(body["details"]["reason"], json!("unknown_route"));
     assert!(stub.calls().is_empty());
 }
 
-// --------------------------------------------------------------- witness ----
+// ------------------------------------------------------- one node router ----
 
+/// One document for `GET /api/node`, with no role in it: what this node can do
+/// is `identity_count` and `witness_for` (proposal 006 section 8).
 #[tokio::test]
-async fn witness_get_node_matches_the_fixture() {
-    let name = "witness-get-node.json";
-    let stub = Arc::new(StubWitnessService::new());
-    let (status, body) = run_witness(name, &stub).await;
+async fn node_get_node_matches_the_fixture_and_names_no_role() {
+    let name = "wallet-get-node.json";
+    let stub = Arc::new(StubNodeService::new());
+    let (status, body) = run(name, &stub).await;
     expect_response(name, status, &body);
-    assert_eq!(body["role"], json!("witness"));
-    assert_eq!(stub.call(), WitnessCall::Node);
+    assert_eq!(stub.call(), NodeCall::Node);
+    let document = body.as_object().expect("a document");
+    assert!(!document.contains_key("role"), "{document:?}");
+    assert!(document.contains_key("identity_count") && document.contains_key("witness_for"));
+    let entry = &body["witness_for"][0];
+    assert_eq!(entry["advertised"], json!(true));
+    assert!(entry["reason"].is_null());
 }
 
+/// `GET /api/forks` is a node route on every node: a fork is a fact about a
+/// stored ledger, and no other route reports it.
 #[tokio::test]
-async fn witness_get_ledgers_matches_the_fixture() {
-    let name = "witness-get-ledgers.json";
-    let stub = Arc::new(StubWitnessService::new());
-    let (status, body) = run_witness(name, &stub).await;
+async fn node_get_forks_matches_the_fixture() {
+    let name = "node-get-forks.json";
+    let stub = Arc::new(StubNodeService::new());
+    let (status, body) = run(name, &stub).await;
     expect_response(name, status, &body);
     assert_eq!(
         stub.call(),
-        WitnessCall::Ledgers(PageRequest {
-            offset: 0,
-            limit: 256
-        })
-    );
-    assert_eq!(body["entries"][0]["declared_kind"], json!("organization"));
-}
-
-#[tokio::test]
-async fn witness_get_ledger_matches_the_fixture() {
-    let name = "witness-get-ledger.json";
-    let stub = Arc::new(StubWitnessService::new());
-    let (status, body) = run_witness(name, &stub).await;
-    expect_response(name, status, &body);
-    assert_eq!(stub.call(), WitnessCall::Ledger(id(ALICE)));
-}
-
-#[tokio::test]
-async fn witness_get_ledger_events_matches_the_fixture() {
-    let name = "witness-get-ledger-events.json";
-    let stub = Arc::new(StubWitnessService::new());
-    let (status, body) = run_witness(name, &stub).await;
-    expect_response(name, status, &body);
-    assert_eq!(
-        stub.call(),
-        WitnessCall::LedgerEvents(
-            id(ALICE),
-            EventPageRequest {
-                since: 0,
-                limit: 512
-            }
-        )
-    );
-    // A seq-0 event carries `ledger_id` and `prev` as null, not absent.
-    let inception = &body["events"][0];
-    assert!(inception["ledger_id"].is_null() && inception["prev"].is_null());
-}
-
-#[tokio::test]
-async fn witness_get_forks_matches_the_fixture() {
-    let name = "witness-get-forks.json";
-    let stub = Arc::new(StubWitnessService::new());
-    let (status, body) = run_witness(name, &stub).await;
-    expect_response(name, status, &body);
-    assert_eq!(
-        stub.call(),
-        WitnessCall::Forks(ForkQuery {
+        NodeCall::Forks(ForkQuery {
             ledger_id: None,
             page: PageRequest {
                 offset: 0,
@@ -1111,6 +1099,45 @@ async fn witness_get_forks_matches_the_fixture() {
             }
         })
     );
+}
+
+/// Paging on `GET /api/identities/known`: the default, the maximum, and a value
+/// over it, which is clamped rather than refused (proposal 006 section 8).
+#[tokio::test]
+async fn known_identities_pages_at_the_default_the_maximum_and_over_it() {
+    for (query, expected) in [
+        (
+            "",
+            PageRequest {
+                offset: 0,
+                limit: 100,
+            },
+        ),
+        (
+            "?limit=256",
+            PageRequest {
+                offset: 0,
+                limit: 256,
+            },
+        ),
+        (
+            "?offset=100&limit=100000",
+            PageRequest {
+                offset: 100,
+                limit: 256,
+            },
+        ),
+    ] {
+        let stub = Arc::new(StubNodeService::new());
+        let uri = format!("/api/identities/known{query}");
+        let (status, body) = send(node(&stub), request("GET", &uri, &Value::Null)).await;
+        assert_eq!(status, StatusCode::OK, "{query}");
+        assert_eq!(stub.call(), NodeCall::KnownIdentities(expected), "{query}");
+        assert!(body["identities"].is_array(), "{query}");
+        for key in ["offset", "limit", "more"] {
+            assert!(body.get(key).is_some(), "{key} is absent for {query}");
+        }
+    }
 }
 
 // ------------------------------------------------------------- coverage -----
@@ -1236,15 +1263,9 @@ async fn every_service_error_example_renders_as_the_fixture_pins_it() {
             }
             let status = StatusCode::from_u16(status).expect("a status");
             let error = error_from_fixture(status, &expected);
-            let (answered, body) = if fixture.name.starts_with("wallet") {
-                let stub = Arc::new(StubWalletService::new());
-                stub.fail_with(error);
-                run_wallet(fixture.name, &stub).await
-            } else {
-                let stub = Arc::new(StubWitnessService::new());
-                stub.fail_with(error);
-                run_witness(fixture.name, &stub).await
-            };
+            let stub = Arc::new(StubNodeService::new());
+            stub.fail_with(error);
+            let (answered, body) = run(fixture.name, &stub).await;
             assert_eq!(answered, status, "{} {reason}", fixture.name);
             assert_eq!(body, expected, "{} {reason}", fixture.name);
             checked += 1;
@@ -1262,14 +1283,14 @@ async fn a_host_that_is_not_loopback_answers_the_fixture_rejection() {
         ("wallet-get-identities.json", "localhost.example"),
     ] {
         let (expected_status, expected) = fixture_error(fixture, "host_not_loopback");
-        let stub = Arc::new(StubWalletService::new());
+        let stub = Arc::new(StubNodeService::new());
         let uri = concrete_route(&Fixture::named(fixture).route());
         let request = Request::builder()
             .uri(uri)
             .header(header::HOST, host)
             .body(Body::empty())
             .expect("a request");
-        let (status, body) = send(wallet(&stub), request).await;
+        let (status, body) = send(node(&stub), request).await;
         assert_eq!(status, expected_status, "{host}");
         assert_eq!(body, expected, "{host}");
         assert!(stub.calls().is_empty(), "the service must not be reached");
@@ -1279,12 +1300,12 @@ async fn a_host_that_is_not_loopback_answers_the_fixture_rejection() {
 /// An operator who allowed a host reaches every route under that name, and the
 /// hosts they did not allow are refused exactly as before (decision 018).
 #[tokio::test]
-async fn an_allowed_host_reaches_the_wallet_routes_and_no_other_host_does() {
+async fn an_allowed_host_reaches_the_node_routes_and_no_other_host_does() {
     let allowing = || options().with_allowed_hosts(["wallet.tailnet.example"]);
-    let stub = Arc::new(StubWalletService::new());
+    let stub = Arc::new(StubNodeService::new());
     let router = || {
-        wallet_router(
-            Arc::clone(&stub) as Arc<dyn super::WalletService>,
+        node_router(
+            Arc::clone(&stub) as Arc<dyn super::NodeService>,
             &allowing(),
         )
     };
@@ -1328,15 +1349,15 @@ async fn an_allowed_host_reaches_the_wallet_routes_and_no_other_host_does() {
 
 #[tokio::test]
 async fn the_right_host_on_the_wrong_port_is_rejected() {
-    let (expected_status, expected) = fixture_error("witness-get-node.json", "host_not_loopback");
+    let (expected_status, expected) = fixture_error("node-get-forks.json", "host_not_loopback");
     assert_eq!(expected["details"]["host"], json!("127.0.0.1:9999"));
-    let stub = Arc::new(StubWitnessService::new());
+    let stub = Arc::new(StubNodeService::new());
     let request = Request::builder()
         .uri("/api/node")
         .header(header::HOST, "127.0.0.1:9999")
         .body(Body::empty())
         .expect("a request");
-    let (status, body) = send(witness(&stub), request).await;
+    let (status, body) = send(node(&stub), request).await;
     assert_eq!(status, expected_status);
     assert_eq!(body, expected);
 }
@@ -1345,7 +1366,7 @@ async fn the_right_host_on_the_wrong_port_is_rejected() {
 async fn a_mismatched_origin_on_a_mutating_route_answers_the_fixture_rejection() {
     let (expected_status, expected) =
         fixture_error("wallet-post-identities.json", "origin_mismatch");
-    let stub = Arc::new(StubWalletService::new());
+    let stub = Arc::new(StubNodeService::new());
     let request = Request::builder()
         .method("POST")
         .uri("/api/identities")
@@ -1354,7 +1375,7 @@ async fn a_mismatched_origin_on_a_mutating_route_answers_the_fixture_rejection()
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from(json!({"alias": "alice"}).to_string()))
         .expect("a request");
-    let (status, body) = send(wallet(&stub), request).await;
+    let (status, body) = send(node(&stub), request).await;
     assert_eq!(status, expected_status);
     assert_eq!(body, expected);
     assert!(stub.calls().is_empty());
@@ -1364,7 +1385,7 @@ async fn a_mismatched_origin_on_a_mutating_route_answers_the_fixture_rejection()
 async fn a_content_type_that_is_not_json_answers_the_fixture_rejection() {
     let (expected_status, expected) =
         fixture_error("wallet-post-identities.json", "content_type_not_json");
-    let stub = Arc::new(StubWalletService::new());
+    let stub = Arc::new(StubNodeService::new());
     let request = Request::builder()
         .method("POST")
         .uri("/api/identities")
@@ -1373,7 +1394,7 @@ async fn a_content_type_that_is_not_json_answers_the_fixture_rejection() {
         .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
         .body(Body::from("alias=alice"))
         .expect("a request");
-    let (status, body) = send(wallet(&stub), request).await;
+    let (status, body) = send(node(&stub), request).await;
     assert_eq!(status, StatusCode::UNSUPPORTED_MEDIA_TYPE);
     assert_eq!(status, expected_status);
     assert_eq!(body, expected);
@@ -1409,7 +1430,7 @@ async fn every_mutating_route_enforces_the_origin_and_content_type_rules() {
     }
 
     for route in &routes {
-        let stub = Arc::new(StubWalletService::new());
+        let stub = Arc::new(StubNodeService::new());
         let absent_origin = Request::builder()
             .method("POST")
             .uri(route)
@@ -1417,7 +1438,7 @@ async fn every_mutating_route_enforces_the_origin_and_content_type_rules() {
             .header(header::CONTENT_TYPE, "application/json")
             .body(Body::from("{}"))
             .expect("a request");
-        let (status, body) = send(wallet(&stub), absent_origin).await;
+        let (status, body) = send(node(&stub), absent_origin).await;
         assert_eq!(status, StatusCode::FORBIDDEN, "{route}");
         assert_eq!(
             body["details"]["reason"],
@@ -1434,7 +1455,7 @@ async fn every_mutating_route_enforces_the_origin_and_content_type_rules() {
             .header(header::CONTENT_TYPE, "application/json")
             .body(Body::from("{}"))
             .expect("a request");
-        let (status, body) = send(wallet(&stub), wrong_origin).await;
+        let (status, body) = send(node(&stub), wrong_origin).await;
         assert_eq!(status, StatusCode::FORBIDDEN, "{route}");
         assert_eq!(
             body["details"]["reason"],
@@ -1450,7 +1471,7 @@ async fn every_mutating_route_enforces_the_origin_and_content_type_rules() {
             .header(header::CONTENT_TYPE, "text/plain")
             .body(Body::from("{}"))
             .expect("a request");
-        let (status, body) = send(wallet(&stub), form_post).await;
+        let (status, body) = send(node(&stub), form_post).await;
         assert_eq!(status, StatusCode::UNSUPPORTED_MEDIA_TYPE, "{route}");
         assert_eq!(
             body["details"]["reason"],
@@ -1465,7 +1486,7 @@ async fn every_mutating_route_enforces_the_origin_and_content_type_rules() {
             .header(header::ORIGIN, ORIGIN)
             .body(Body::from("{}"))
             .expect("a request");
-        let (status, body) = send(wallet(&stub), no_content_type).await;
+        let (status, body) = send(node(&stub), no_content_type).await;
         assert_eq!(status, StatusCode::UNSUPPORTED_MEDIA_TYPE, "{route}");
         assert_eq!(
             body["details"]["reason"],
@@ -1476,7 +1497,7 @@ async fn every_mutating_route_enforces_the_origin_and_content_type_rules() {
         // The same route with the right headers reaches the handler. Whether
         // the empty body then validates is each route's own business.
         let allowed = request("POST", route, &json!({}));
-        let (status, _) = send(wallet(&stub), allowed).await;
+        let (status, _) = send(node(&stub), allowed).await;
         assert!(
             status != StatusCode::FORBIDDEN && status != StatusCode::UNSUPPORTED_MEDIA_TYPE,
             "{route} answered {status} to a well-formed request"
@@ -1488,21 +1509,10 @@ async fn every_mutating_route_enforces_the_origin_and_content_type_rules() {
 async fn a_malformed_path_id_answers_the_fixture_rejection() {
     let (expected_status, expected) =
         fixture_error("wallet-get-identity.json", "malformed_identity_id");
-    let stub = Arc::new(StubWalletService::new());
+    let stub = Arc::new(StubNodeService::new());
     let (status, body) = send(
-        wallet(&stub),
+        node(&stub),
         request("GET", "/api/identities/alice", &Value::Null),
-    )
-    .await;
-    assert_eq!(status, expected_status);
-    assert_eq!(body, expected);
-
-    let (expected_status, expected) =
-        fixture_error("witness-get-ledger.json", "malformed_ledger_id");
-    let stub = Arc::new(StubWitnessService::new());
-    let (status, body) = send(
-        witness(&stub),
-        request("GET", "/api/ledgers/sfttwjzd", &Value::Null),
     )
     .await;
     assert_eq!(status, expected_status);
@@ -1511,11 +1521,10 @@ async fn a_malformed_path_id_answers_the_fixture_rejection() {
 
 #[tokio::test]
 async fn a_malformed_fork_filter_answers_the_fixture_rejection() {
-    let (expected_status, expected) =
-        fixture_error("witness-get-forks.json", "malformed_ledger_id");
-    let stub = Arc::new(StubWitnessService::new());
+    let (expected_status, expected) = fixture_error("node-get-forks.json", "malformed_ledger_id");
+    let stub = Arc::new(StubNodeService::new());
     let (status, body) = send(
-        witness(&stub),
+        node(&stub),
         request("GET", "/api/forks?ledger_id=sfttwjzd", &Value::Null),
     )
     .await;
@@ -1530,30 +1539,21 @@ async fn a_malformed_query_parameter_answers_the_fixture_rejection() {
         "malformed_query_parameter",
     );
     assert_eq!(expected["details"]["value"], json!("-1"));
-    let stub = Arc::new(StubWalletService::new());
+    let stub = Arc::new(StubNodeService::new());
     let uri = format!("/api/identities/{ALICE}/ledger?since=-1");
-    let (status, body) = send(wallet(&stub), request("GET", &uri, &Value::Null)).await;
+    let (status, body) = send(node(&stub), request("GET", &uri, &Value::Null)).await;
     assert_eq!(status, expected_status);
     assert_eq!(body, expected);
 
     let (expected_status, expected) = fixture_error(
-        "witness-get-ledger-events.json",
+        "wallet-get-known-identities.json",
         "malformed_query_parameter",
     );
-    assert_eq!(expected["details"]["value"], json!("head"));
-    let stub = Arc::new(StubWitnessService::new());
-    let uri = format!("/api/ledgers/{ALICE}/events?since=head");
-    let (status, body) = send(witness(&stub), request("GET", &uri, &Value::Null)).await;
-    assert_eq!(status, expected_status);
-    assert_eq!(body, expected);
-
-    let (expected_status, expected) =
-        fixture_error("witness-get-ledgers.json", "malformed_query_parameter");
     assert_eq!(expected["details"]["parameter"], json!("limit"));
-    let stub = Arc::new(StubWitnessService::new());
+    let stub = Arc::new(StubNodeService::new());
     let (status, body) = send(
-        witness(&stub),
-        request("GET", "/api/ledgers?limit=all", &Value::Null),
+        node(&stub),
+        request("GET", "/api/identities/known?limit=all", &Value::Null),
     )
     .await;
     assert_eq!(status, expected_status);
@@ -1618,8 +1618,8 @@ async fn a_body_the_fixture_refuses_answers_the_fixture_rejection() {
     ];
     for (fixture, reason, route, body) in cases {
         let (expected_status, expected) = fixture_error(fixture, reason);
-        let stub = Arc::new(StubWalletService::new());
-        let (status, answered) = send(wallet(&stub), request("POST", route, &body)).await;
+        let stub = Arc::new(StubNodeService::new());
+        let (status, answered) = send(node(&stub), request("POST", route, &body)).await;
         assert_eq!(status, expected_status, "{fixture} {reason}");
         assert_eq!(answered, expected, "{fixture} {reason}");
         assert!(stub.calls().is_empty(), "{fixture} {reason}");
@@ -1630,10 +1630,10 @@ async fn a_body_the_fixture_refuses_answers_the_fixture_rejection() {
 async fn a_duplicate_witness_answers_the_fixture_rejection() {
     let (expected_status, expected) =
         fixture_error("wallet-post-identity-witnesses.json", "duplicate_witness");
-    let stub = Arc::new(StubWalletService::new());
+    let stub = Arc::new(StubNodeService::new());
     let uri = format!("/api/identities/{ALICE}/witnesses");
     let body = json!({"witnesses": [WITNESS_ONE, WITNESS_ONE]});
-    let (status, answered) = send(wallet(&stub), request("POST", &uri, &body)).await;
+    let (status, answered) = send(node(&stub), request("POST", &uri, &body)).await;
     assert_eq!(status, expected_status);
     assert_eq!(answered, expected);
 }
@@ -1642,16 +1642,16 @@ async fn a_duplicate_witness_answers_the_fixture_rejection() {
 
 #[tokio::test]
 async fn there_is_no_orgs_collection() {
-    let stub = Arc::new(StubWalletService::new());
-    let (status, body) = send(wallet(&stub), request("GET", "/api/orgs", &Value::Null)).await;
+    let stub = Arc::new(StubNodeService::new());
+    let (status, body) = send(node(&stub), request("GET", "/api/orgs", &Value::Null)).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
     assert_eq!(body["code"], json!(2));
     assert_eq!(body["details"]["reason"], json!("unknown_route"));
     assert_eq!(body["details"]["path"], json!("/api/orgs"));
 
-    let stub = Arc::new(StubWalletService::new());
+    let stub = Arc::new(StubNodeService::new());
     let (status, _) = send(
-        wallet(&stub),
+        node(&stub),
         request("GET", "/api/organizations", &Value::Null),
     )
     .await;
@@ -1680,10 +1680,10 @@ async fn the_membership_routes_spell_memberships_and_answer_the_frozen_documents
             "wallet-post-membership-removals.json",
         ),
     ] {
-        let stub = Arc::new(StubWalletService::new());
+        let stub = Arc::new(StubNodeService::new());
         let uri = format!("/api/identities/{ALICE}/{route}");
         let body = Fixture::named(fixture).request();
-        let (status, answered) = send(wallet(&stub), request("POST", &uri, &body)).await;
+        let (status, answered) = send(node(&stub), request("POST", &uri, &body)).await;
         assert_eq!(status, StatusCode::OK, "{route}: {answered}");
         assert_eq!(answered, Fixture::named(fixture).response(), "{route}");
         assert_eq!(stub.calls().len(), 1, "{route}");
@@ -1696,14 +1696,14 @@ async fn a_membership_artifact_that_is_not_base64_answers_the_fixture_rejection(
         "wallet-post-membership-invitations.json",
         "malformed_base64",
     );
-    let stub = Arc::new(StubWalletService::new());
+    let stub = Arc::new(StubNodeService::new());
     let uri = format!("/api/identities/{ALICE}/memberships/invitations");
     let body = json!({
         "by": ALICE,
         "role": "controller",
         "invitee_descriptor_base64": "not base64!"
     });
-    let (status, answered) = send(wallet(&stub), request("POST", &uri, &body)).await;
+    let (status, answered) = send(node(&stub), request("POST", &uri, &body)).await;
     assert_eq!(status, expected_status);
     assert_eq!(answered, expected);
     assert!(stub.calls().is_empty(), "the service must not be reached");
@@ -1711,12 +1711,12 @@ async fn a_membership_artifact_that_is_not_base64_answers_the_fixture_rejection(
 
 #[tokio::test]
 async fn a_membership_artifact_over_its_cap_is_refused_before_it_is_decoded() {
-    let stub = Arc::new(StubWalletService::new());
+    let stub = Arc::new(StubNodeService::new());
     let uri = format!("/api/identities/{ALICE}/memberships/admissions");
     // An `AcceptanceFile` is capped at 4 KiB (proposal 001 section 3.8).
     let oversize = "A".repeat(4 * 4096 / 3 + 8);
     let body = json!({"by": ALICE, "acceptance_base64": oversize});
-    let (status, answered) = send(wallet(&stub), request("POST", &uri, &body)).await;
+    let (status, answered) = send(node(&stub), request("POST", &uri, &body)).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(answered["code"], json!(10));
     assert_eq!(answered["details"]["reason"], json!("message_too_large"));
@@ -1725,9 +1725,9 @@ async fn a_membership_artifact_over_its_cap_is_refused_before_it_is_decoded() {
 }
 
 #[tokio::test]
-async fn the_witness_api_refuses_a_mutation_with_405() {
-    let stub = Arc::new(StubWitnessService::new());
-    let (status, body) = send(witness(&stub), request("POST", "/api/ledgers", &json!({}))).await;
+async fn a_read_only_route_refuses_a_mutation_with_405() {
+    let stub = Arc::new(StubNodeService::new());
+    let (status, body) = send(node(&stub), request("POST", "/api/forks", &json!({}))).await;
     assert_eq!(status, StatusCode::METHOD_NOT_ALLOWED);
     assert_eq!(body["code"], json!(2));
     assert_eq!(body["details"]["reason"], json!("method_not_allowed"));
@@ -1736,14 +1736,14 @@ async fn the_witness_api_refuses_a_mutation_with_405() {
 
 #[tokio::test]
 async fn a_since_at_the_head_sequence_reaches_the_service_unchanged() {
-    let stub = Arc::new(StubWalletService::new());
+    let stub = Arc::new(StubNodeService::new());
     let head_seq = stub.identity_ledger.head_seq;
     let uri = format!("/api/identities/{ALICE}/ledger?since={head_seq}");
-    let (status, _) = send(wallet(&stub), request("GET", &uri, &Value::Null)).await;
+    let (status, _) = send(node(&stub), request("GET", &uri, &Value::Null)).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(
         stub.call(),
-        WalletCall::IdentityLedger(
+        NodeCall::IdentityLedger(
             id(ALICE),
             EventPageRequest {
                 since: head_seq,
@@ -1755,18 +1755,21 @@ async fn a_since_at_the_head_sequence_reaches_the_service_unchanged() {
 
 #[tokio::test]
 async fn a_limit_over_the_maximum_reaches_the_service_clamped() {
-    let stub = Arc::new(StubWitnessService::new());
+    let stub = Arc::new(StubNodeService::new());
     let (status, _) = send(
-        witness(&stub),
-        request("GET", "/api/ledgers?limit=100000", &Value::Null),
+        node(&stub),
+        request("GET", "/api/forks?limit=100000", &Value::Null),
     )
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(
         stub.call(),
-        WitnessCall::Ledgers(PageRequest {
-            offset: 0,
-            limit: 256
+        NodeCall::Forks(ForkQuery {
+            ledger_id: None,
+            page: PageRequest {
+                offset: 0,
+                limit: 64
+            }
         })
     );
 }
@@ -1776,10 +1779,10 @@ async fn the_ui_bundle_serves_outside_api_and_never_inside_it() {
     let directory = tempfile::tempdir().expect("a temp dir");
     std::fs::write(directory.path().join("index.html"), "<!doctype html>").expect("write");
     let options = ApiOptions::default().with_ui(UiSource::Directory(directory.path().into()));
-    let service: Arc<dyn super::WalletService> = Arc::new(StubWalletService::new());
+    let service: Arc<dyn super::NodeService> = Arc::new(StubNodeService::new());
 
     for path in ["/", "/wallet", "/witness"] {
-        let router = wallet_router(Arc::clone(&service), &options);
+        let router = node_router(Arc::clone(&service), &options);
         let response = router
             .oneshot(request("GET", path, &Value::Null))
             .await
@@ -1791,7 +1794,7 @@ async fn the_ui_bundle_serves_outside_api_and_never_inside_it() {
         assert_eq!(&bytes[..], b"<!doctype html>", "{path}");
     }
 
-    let router = wallet_router(Arc::clone(&service), &options);
+    let router = node_router(Arc::clone(&service), &options);
     let (status, body) = send(router, request("GET", "/api/nope", &Value::Null)).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
     assert_eq!(body["details"]["reason"], json!("unknown_route"));
@@ -1799,14 +1802,14 @@ async fn the_ui_bundle_serves_outside_api_and_never_inside_it() {
 
 #[tokio::test]
 async fn the_loopback_rules_guard_the_ui_and_the_unknown_routes_too() {
-    let stub = Arc::new(StubWalletService::new());
+    let stub = Arc::new(StubNodeService::new());
     for path in ["/", "/api/nope"] {
         let request = Request::builder()
             .uri(path)
             .header(header::HOST, "evil.example")
             .body(Body::empty())
             .expect("a request");
-        let (status, body) = send(wallet(&stub), request).await;
+        let (status, body) = send(node(&stub), request).await;
         assert_eq!(status, StatusCode::FORBIDDEN, "{path}");
         assert_eq!(
             body["details"]["reason"],

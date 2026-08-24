@@ -3,7 +3,7 @@
 //!
 //! The push cases run over two in-process Iroh endpoints with relays disabled,
 //! so they exercise the same path a wallet takes. The cases that need a shrunk
-//! cap or a restart drive [`mabel_node::witness::WitnessStorage`] directly,
+//! cap or a restart drive [`mabel_node::witness::LedgerStorage`] directly,
 //! since neither is about the transport.
 
 #[macro_use]
@@ -18,9 +18,9 @@ use mabel_net::error::Rejection;
 use mabel_net::store::StoreError;
 use mabel_net::{Client, EndpointConfig, RelayChoice, bind_endpoint};
 use mabel_node::api::UiSource;
-use mabel_node::witness::{
-    AdmissionPolicy, AdvertisementGap, MAX_FORK_RECORDS, Totals, WitnessCaps, WitnessForEntry,
-    WitnessOptions, WitnessRuntime,
+use mabel_node::{
+    AdmissionPolicy, AdvertisementGap, MAX_FORK_RECORDS, NodeOptions, NodeRuntime, StorageCaps,
+    Totals, WitnessForEntry,
 };
 
 /// The rejection a storage call answered.
@@ -144,7 +144,7 @@ async fn a_push_for_an_unknown_ledger_not_naming_the_witness_is_not_admitted() {
 #[tokio::test]
 async fn a_home_that_witnesses_for_nobody_answers_not_admitted() {
     bounded!({
-        let served = Served::over(home_witnessing_for_nobody(), WitnessCaps::default()).await;
+        let served = Served::over(home_witnessing_for_nobody(), StorageCaps::default()).await;
         assert!(served.storage.witness_for().is_empty());
         let mut chain = Chain::new(4);
         chain.add_witness();
@@ -210,7 +210,7 @@ async fn a_push_naming_a_witness_this_home_witnesses_for_is_admitted_and_keeps_g
 #[test]
 fn the_event_that_drops_this_witness_lands_and_the_next_extension_does_not() {
     let home = home();
-    let storage = home.storage(WitnessCaps::default());
+    let storage = home.storage(StorageCaps::default());
     let mut chain = Chain::new(51);
     chain.add_witness();
     storage
@@ -248,7 +248,7 @@ fn the_event_that_drops_this_witness_lands_and_the_next_extension_does_not() {
 #[test]
 fn a_first_push_naming_nobody_is_refused_and_the_reason_names_the_rule() {
     let home = home();
-    let storage = home.storage(WitnessCaps::default());
+    let storage = home.storage(StorageCaps::default());
     let mut chain = Chain::new(52);
     chain.add_witness_set(&[]);
 
@@ -272,7 +272,7 @@ fn a_first_push_naming_nobody_is_refused_and_the_reason_names_the_rule() {
 #[test]
 fn an_entry_whose_identity_stops_advertising_this_home_takes_no_new_ledger() {
     let home = home();
-    let storage = home.storage(WitnessCaps::default());
+    let storage = home.storage(StorageCaps::default());
     assert_eq!(
         storage.witness_for_entries(),
         [WitnessForEntry {
@@ -340,7 +340,7 @@ fn the_three_advertisement_reasons_are_reported_and_rechecked() {
         mabel_node::DEFAULT_STORAGE_CAPACITY,
         vec![witness_identity()],
     );
-    let storage = no_copy.storage(WitnessCaps::default());
+    let storage = no_copy.storage(StorageCaps::default());
     assert_eq!(
         storage.witness_for_entries()[0].gap,
         Some(AdvertisementGap::NoLocalCopy)
@@ -362,7 +362,7 @@ fn the_three_advertisement_reasons_are_reported_and_rechecked() {
     cleared.advertise(&[]);
     assert_eq!(
         cleared
-            .storage(WitnessCaps::default())
+            .storage(StorageCaps::default())
             .witness_for_entries()[0]
             .gap,
         Some(AdvertisementGap::AdvertisesNothing)
@@ -371,7 +371,7 @@ fn the_three_advertisement_reasons_are_reported_and_rechecked() {
     // A regenerated `node.key` is a new endpoint id, and the invariant is
     // checked against it.
     let advertised = home();
-    let storage = advertised.storage(WitnessCaps::default());
+    let storage = advertised.storage(StorageCaps::default());
     assert!(storage.witness_for_entries()[0].advertised());
     storage.note_endpoint(secret(61).public());
     assert_eq!(
@@ -403,7 +403,7 @@ fn the_legacy_tag_eleven_clause_needs_all_three_of_its_gates() {
     // Leg one: the switch is off, which is the default.
     let strict = home();
     let chain = legacy(56, strict.endpoint_id());
-    let storage = strict.storage(WitnessCaps::default());
+    let storage = strict.storage(StorageCaps::default());
     assert!(!storage.accepts_legacy_witness_config());
     let rejection = rejected(
         storage
@@ -413,7 +413,7 @@ fn the_legacy_tag_eleven_clause_needs_all_three_of_its_gates() {
     assert_eq!(rejection.code, RejectCode::NotAdmitted);
 
     // Every gate open: the same chain lands.
-    let storage = strict.storage_with(WitnessCaps::default(), migrating(vec![witness_identity()]));
+    let storage = strict.storage_with(StorageCaps::default(), migrating(vec![witness_identity()]));
     let outcome = storage
         .push(chain.ledger, &chain.all(), from_endpoint(1))
         .expect("the legacy clause admits it");
@@ -423,7 +423,7 @@ fn the_legacy_tag_eleven_clause_needs_all_three_of_its_gates() {
     // witnesses for nobody and the clause cannot fire.
     let nobody = home_witnessing_for_nobody();
     let chain = legacy(57, nobody.endpoint_id());
-    let storage = nobody.storage_with(WitnessCaps::default(), migrating(Vec::new()));
+    let storage = nobody.storage_with(StorageCaps::default(), migrating(Vec::new()));
     let rejection = rejected(
         storage
             .push(chain.ledger, &chain.all(), from_endpoint(1))
@@ -439,7 +439,7 @@ fn the_legacy_tag_eleven_clause_needs_all_three_of_its_gates() {
     let elsewhere = home();
     let chain = legacy(58, secret(62).public());
     let storage =
-        elsewhere.storage_with(WitnessCaps::default(), migrating(vec![witness_identity()]));
+        elsewhere.storage_with(StorageCaps::default(), migrating(vec![witness_identity()]));
     let rejection = rejected(
         storage
             .push(chain.ledger, &chain.all(), from_endpoint(1))
@@ -778,7 +778,7 @@ async fn an_invalid_conflicting_event_is_rejected_and_not_stored() {
 #[test]
 fn the_ninth_fork_on_one_ledger_is_not_recorded_and_forks_truncated_is_set() {
     let home = home();
-    let storage = home.storage(WitnessCaps::default());
+    let storage = home.storage(StorageCaps::default());
     let mut chain = Chain::new(11);
     chain.add_witness();
     // Nine more valid events for seq 2, on top of the one that is stored.
@@ -843,7 +843,7 @@ fn the_ninth_fork_on_one_ledger_is_not_recorded_and_forks_truncated_is_set() {
         paged.extend(page.items.into_iter().map(|record| record.conflicting));
     }
     assert_eq!(paged, whole);
-    let reopened = home.storage(WitnessCaps::default());
+    let reopened = home.storage(StorageCaps::default());
     assert_eq!(
         reopened
             .forks(None, 0, 64)
@@ -861,9 +861,9 @@ fn the_ninth_fork_on_one_ledger_is_not_recorded_and_forks_truncated_is_set() {
 #[test]
 fn a_push_over_the_per_ledger_event_cap_is_rejected() {
     let home = home();
-    let storage = home.storage(WitnessCaps {
+    let storage = home.storage(StorageCaps {
         events_per_ledger: 2,
-        ..WitnessCaps::default()
+        ..StorageCaps::default()
     });
     let mut chain = Chain::new(12);
     chain.add_witness();
@@ -893,9 +893,9 @@ fn a_push_over_the_per_ledger_event_cap_is_rejected() {
 #[test]
 fn a_push_over_the_per_ledger_byte_cap_is_rejected() {
     let home = home();
-    let storage = home.storage(WitnessCaps {
+    let storage = home.storage(StorageCaps {
         bytes_per_ledger: 200,
-        ..WitnessCaps::default()
+        ..StorageCaps::default()
     });
     let mut chain = Chain::new(13);
     chain.add_witness();
@@ -916,9 +916,9 @@ fn a_push_over_the_ledger_count_cap_is_rejected() {
     let home = home();
     // Two ledgers: the witness identity's own chain, which the home holds so it
     // may take a new one at all, and the first pushed chain.
-    let storage = home.storage(WitnessCaps {
+    let storage = home.storage(StorageCaps {
         ledgers: 2,
-        ..WitnessCaps::default()
+        ..StorageCaps::default()
     });
     let mut first = Chain::new(14);
     first.add_witness();
@@ -945,7 +945,7 @@ fn a_push_over_the_storage_capacity_from_node_json_is_rejected() {
     let home = home();
     let held = home.stored_bytes();
     home.set_storage_capacity(held + 300);
-    let storage = home.storage(WitnessCaps::from_config(
+    let storage = home.storage(StorageCaps::from_config(
         &home.home.config().expect("node.json reads"),
     ));
     assert_eq!(storage.caps().storage_capacity, held + 300);
@@ -972,7 +972,7 @@ fn a_push_over_the_storage_capacity_from_node_json_is_rejected() {
 #[test]
 fn list_paging_is_stable_in_ascending_ledger_id_order() {
     let home = home();
-    let storage = home.storage(WitnessCaps::default());
+    let storage = home.storage(StorageCaps::default());
     // The witness identity's own chain is on disk before anything is pushed, so
     // it is one of the rows the paging walks.
     let mut stored = vec![witness_identity()];
@@ -1013,7 +1013,7 @@ fn a_restart_rebuilds_the_folded_state_from_disk() {
 
     let held = home.stored_bytes();
     let before = {
-        let storage = home.storage(WitnessCaps::default());
+        let storage = home.storage(StorageCaps::default());
         storage
             .push(chain.ledger, &chain.all(), from_endpoint(3))
             .expect("the chain names this witness");
@@ -1025,7 +1025,7 @@ fn a_restart_rebuilds_the_folded_state_from_disk() {
 
     // A second storage over the same home rebuilds everything from the event
     // files.
-    let storage = home.storage(WitnessCaps::default());
+    let storage = home.storage(StorageCaps::default());
     let after = storage
         .report(chain.ledger)
         .expect("the ledger is stored")
@@ -1062,7 +1062,7 @@ fn a_restart_rebuilds_the_folded_state_from_disk() {
 #[test]
 fn the_first_seen_record_and_its_endpoint_survive_later_pushes() {
     let home = home();
-    let storage = home.storage(WitnessCaps::default());
+    let storage = home.storage(StorageCaps::default());
     let mut chain = Chain::new(26);
     chain.add_witness();
     storage
@@ -1084,7 +1084,7 @@ fn the_first_seen_record_and_its_endpoint_survive_later_pushes() {
     assert_eq!(later.summary.first_seen_ms, first.summary.first_seen_ms);
 
     // And across a restart, since both come from meta.json.
-    let reopened = home.storage(WitnessCaps::default());
+    let reopened = home.storage(StorageCaps::default());
     let rebuilt = reopened.report(chain.ledger).expect("the ledger is stored");
     assert_eq!(rebuilt.source_endpoint, Some(secret(4).public()));
     assert_eq!(rebuilt.summary.first_seen_ms, first.summary.first_seen_ms);
@@ -1092,23 +1092,23 @@ fn the_first_seen_record_and_its_endpoint_survive_later_pushes() {
 
 // --------------------------------------------------------------- runtime ---
 
-/// `mabel witness run`: both listeners, one push, one HTTP read and a clean
-/// stop.
+/// `mabel serve` on a home that witnesses: both listeners, one push, one HTTP
+/// read and a clean stop.
 #[tokio::test]
 async fn the_runtime_serves_both_surfaces_and_shuts_down() {
     bounded!({
         let home = home();
         let endpoint_id = home.endpoint_id();
-        let witness = WitnessRuntime::start(
+        let witness = NodeRuntime::start(
             home.home.clone(),
-            WitnessOptions {
+            NodeOptions {
                 http_bind: Some("127.0.0.1:0".parse().expect("a loopback address")),
                 ui: UiSource::Disabled,
-                ..WitnessOptions::default()
+                ..NodeOptions::default()
             },
         )
         .await
-        .expect("the witness starts");
+        .expect("the node starts");
 
         assert_eq!(witness.endpoint_id(), endpoint_id, "the node key is reused");
         let http = witness.http_address();
@@ -1142,15 +1142,97 @@ async fn the_runtime_serves_both_surfaces_and_shuts_down() {
         let body = tokio::task::spawn_blocking(move || get(http, "/api/node"))
             .await
             .expect("the request finishes");
-        assert!(body.contains("\"role\":\"witness\""), "{body}");
+        assert!(
+            !body.contains("\"role\""),
+            "no document names a role: {body}"
+        );
         // The pushed chain beside the witness identity's own.
         assert!(body.contains("\"ledger_count\":2"), "{body}");
+        assert!(
+            body.contains("\"identity_count\":0"),
+            "this home holds no key and still answers: {body}"
+        );
+        assert!(body.contains("\"witness_for\":[{"), "{body}");
 
         stop.send(()).expect("the serve loop is listening");
         serving
             .await
             .expect("the serve task finishes")
-            .expect("the witness stops cleanly");
+            .expect("the node stops cleanly");
+    });
+}
+
+/// Proposal 006 section 8: `role` in `node.json` is recognised, read by
+/// nothing, and said once at startup, naming the file, the key and the fix.
+#[tokio::test]
+async fn a_node_json_carrying_role_loads_and_says_so_once() {
+    bounded!({
+        let home = home();
+        let path = home.home.config_path();
+        let raw = std::fs::read(&path).expect("node.json reads");
+        let mut written: serde_json::Value = serde_json::from_slice(&raw).expect("json");
+        assert!(
+            written.get("role").is_none(),
+            "a node.json this build writes carries no role: {written}"
+        );
+        // An existing file does, and still loads.
+        written["role"] = serde_json::Value::from("witness");
+        std::fs::write(&path, serde_json::to_vec_pretty(&written).expect("json"))
+            .expect("node.json is written");
+
+        let node = NodeRuntime::start(
+            home.home.clone(),
+            NodeOptions {
+                http_bind: Some("127.0.0.1:0".parse().expect("a loopback address")),
+                ui: UiSource::Disabled,
+                ..NodeOptions::default()
+            },
+        )
+        .await
+        .expect("a home carrying role still loads");
+        let notice = node.role_notice().expect("the key is named once");
+        assert!(notice.contains(&path.display().to_string()), "{notice}");
+        assert!(notice.contains("role"), "{notice}");
+        assert!(notice.contains("Delete the line"), "{notice}");
+
+        let (stop, stopped) = tokio::sync::oneshot::channel::<()>();
+        let serving = tokio::spawn(node.serve_until(async move {
+            let _ = stopped.await;
+        }));
+        stop.send(()).expect("the serve loop is listening");
+        serving
+            .await
+            .expect("the serve task finishes")
+            .expect("the node stops cleanly");
+    });
+}
+
+/// A home this build wrote carries no `role`, so nothing is said.
+#[tokio::test]
+async fn a_node_json_without_role_says_nothing() {
+    bounded!({
+        let home = home();
+        let node = NodeRuntime::start(
+            home.home.clone(),
+            NodeOptions {
+                http_bind: Some("127.0.0.1:0".parse().expect("a loopback address")),
+                ui: UiSource::Disabled,
+                ..NodeOptions::default()
+            },
+        )
+        .await
+        .expect("the node starts");
+        assert!(node.role_notice().is_none());
+
+        let (stop, stopped) = tokio::sync::oneshot::channel::<()>();
+        let serving = tokio::spawn(node.serve_until(async move {
+            let _ = stopped.await;
+        }));
+        stop.send(()).expect("the serve loop is listening");
+        serving
+            .await
+            .expect("the serve task finishes")
+            .expect("the node stops cleanly");
     });
 }
 
@@ -1175,7 +1257,7 @@ fn get(address: std::net::SocketAddr, path: &str) -> String {
 
 #[test]
 fn the_default_caps_are_the_numbers_of_section_five() {
-    let caps = WitnessCaps::default();
+    let caps = StorageCaps::default();
     assert_eq!(caps.events_per_ledger, 4096);
     assert_eq!(caps.bytes_per_ledger, 4 * 1024 * 1024);
     assert_eq!(caps.ledgers, 10_000);

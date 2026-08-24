@@ -16,19 +16,19 @@ use std::time::Duration;
 use common::Served;
 use iroh_base::{EndpointId, SecretKey};
 use mabel_core::IdentityId;
+use mabel_node::StorageCaps;
 use mabel_node::api::documents::{DeclaredKind, Id, ResolveInputKind, ResolveStatus};
-use mabel_node::api::service::{FetchIdentity, ResolveInput, WalletService};
+use mabel_node::api::service::{FetchIdentity, NodeService, ResolveInput};
 use mabel_node::verification::{StubResolver, TxtRecord, VerificationStore};
-use mabel_node::wallet::{WalletApiService, WalletCore, WalletSync};
-use mabel_node::witness::WitnessCaps;
-use mabel_node::{HomeOptions, NodeConfig, NodeHome, NodeRole, RelayMode};
+use mabel_node::wallet::{NodeApiService, WalletCore, WalletSync};
+use mabel_node::{HomeOptions, LedgerStorage, NodeConfig, NodeHome, RelayMode};
 use tempfile::TempDir;
 
 /// A wallet home, the core over it and the HTTP service over that.
 struct Wallet {
     _dir: TempDir,
     core: Arc<WalletCore>,
-    service: WalletApiService,
+    service: NodeApiService,
 }
 
 impl Wallet {
@@ -37,7 +37,6 @@ impl Wallet {
     async fn new(witnesses: &[EndpointId], peers: &[iroh::EndpointAddr]) -> Self {
         let dir = tempfile::tempdir().expect("a temp directory");
         let config = NodeConfig {
-            role: NodeRole::Wallet,
             relay: RelayMode::Disabled,
             witnesses: vec![mabel_node::WitnessEntry::new(
                 common::witness_identity(),
@@ -52,8 +51,14 @@ impl Wallet {
         let endpoint = mabel_node::bind_endpoint(RelayMode::Disabled, secret, None, peers)
             .await
             .expect("the endpoint binds");
-        let service = WalletApiService::new(
+        let storage = Arc::new(
+            LedgerStorage::open_from_config(core.home().clone(), endpoint.id())
+                .expect("the index builds"),
+        );
+        let core = Arc::new(WalletCore::new(core.home().clone()).with_index(Arc::clone(&storage)));
+        let service = NodeApiService::new(
             core.clone(),
+            storage,
             // A peer that is expected not to answer must not hold the test
             // for the full ten seconds of a deliberate push.
             WalletSync::new(endpoint).with_timeout(Duration::from_secs(3)),
@@ -67,9 +72,23 @@ impl Wallet {
         }
     }
 
-    /// A home with no node-wide witnesses and nothing to dial.
+    /// A home whose `node.json` names the witness identity with no machine
+    /// beside it, and nothing to dial.
     async fn plain() -> Self {
         Self::new(&[], &[]).await
+    }
+
+    /// A home whose `node.json` configures no witness at all.
+    async fn with_no_configured_witness() -> Self {
+        let wallet = Self::new(&[], &[]).await;
+        let mut config = wallet.core.home().config().expect("node.json reads");
+        config.witnesses = Vec::new();
+        wallet
+            .core
+            .home()
+            .write_config(&config)
+            .expect("node.json is written");
+        wallet
     }
 
     /// The same wallet, answering hostname lookups from `resolver`.
@@ -135,52 +154,109 @@ fn rendered(endpoint: EndpointId) -> Id {
 // -------------------------------------------------------------- witnesses ----
 
 #[tokio::test]
-async fn the_witness_list_names_every_ledger_whose_legacy_config_holds_each_endpoint() {
-    let shared = endpoint(1);
-    let only_alice = endpoint(2);
-    let only_default = endpoint(3);
-    let wallet = Wallet::new(&[shared, only_default], &[]).await;
+async fn the_witness_list_names_every_ledger_whose_witness_set_holds_each_identity() {
+    let configured = common::witness_identity();
+    let wallet = Wallet::new(&[endpoint(3)], &[]).await;
     let alice = wallet.identity("alice");
     let acme = wallet.identity("acme");
-    wallet.legacy_witnesses(alice, &[shared, only_alice]).await;
-    wallet.legacy_witnesses(acme, &[shared]).await;
+    // A witness set names identities (proposal 006 section 1), and the machines
+    // that answer for one come from resolution.
+    wallet.witnesses(alice).await;
+    wallet.witnesses(acme).await;
 
     let listed = wallet.service.witnesses().await.expect("a witness list");
-    let endpoints: Vec<&str> = listed
+    let identities: Vec<&str> = listed
         .witnesses
         .iter()
-        .map(|witness| witness.endpoint_id.as_str())
+        .map(|witness| witness.identity_id.as_str())
         .collect();
-    let mut sorted = endpoints.clone();
+    let mut sorted = identities.clone();
     sorted.sort_unstable();
-    assert_eq!(endpoints, sorted, "sorted by ascending endpoint id");
+    assert_eq!(identities, sorted, "sorted by ascending identity id");
 
-    let entry = |wanted: EndpointId| {
+    let entry = |wanted: mabel_core::IdentityId| {
         listed
             .witnesses
             .iter()
-            .find(|witness| witness.endpoint_id == rendered(wanted))
-            .unwrap_or_else(|| panic!("{} is not listed", rendered(wanted)))
+            .find(|witness| witness.identity_id == id(wanted))
+            .unwrap_or_else(|| panic!("{wanted} is not listed"))
     };
     let mut both = vec![id(alice), id(acme)];
     both.sort();
-    assert_eq!(entry(shared).named_by, both);
-    assert!(entry(shared).is_node_default);
-    assert_eq!(entry(only_alice).named_by, vec![id(alice)]);
+    assert_eq!(entry(configured).named_by, both);
     assert!(
-        !entry(only_alice).is_node_default,
-        "a witness only a ledger names is still listed"
+        entry(configured).is_node_default,
+        "node.json names this identity"
     );
-    assert!(entry(only_default).named_by.is_empty());
-    assert!(entry(only_default).is_node_default);
+    assert_eq!(
+        entry(configured)
+            .endpoints
+            .iter()
+            .map(|machine| machine.endpoint_id.as_str())
+            .collect::<Vec<_>>(),
+        vec![rendered(endpoint(3)).as_str()],
+        "the bootstrap endpoint node.json records beside the identity"
+    );
+    assert_eq!(
+        entry(configured).endpoints[0].binding,
+        mabel_node::Binding::Hinted,
+        "nothing this home holds confirms the machine yet"
+    );
+    assert!(
+        !entry(configured).stored,
+        "this home holds no copy of the witness identity's ledger"
+    );
 }
 
+/// A home whose ledgers name no witness and whose `node.json` configures none
+/// lists none: the rows come from what a chain names and what `node.json`
+/// names, and nothing else (proposal 006 section 8).
 #[tokio::test]
-async fn a_wallet_that_configured_nothing_lists_no_witness() {
-    let wallet = Wallet::plain().await;
+async fn a_home_that_configured_nothing_lists_no_witness() {
+    let wallet = Wallet::with_no_configured_witness().await;
     wallet.identity("alice");
     let listed = wallet.service.witnesses().await.expect("a witness list");
     assert!(listed.witnesses.is_empty(), "{listed:?}");
+}
+
+/// An id equal to an endpoint a stored ledger lists is refused before any dial,
+/// including the retired tag-11 list a chain written before proposal 006 carries
+/// (proposal 006 section 8).
+#[tokio::test]
+async fn an_endpoint_a_stored_ledger_names_is_not_a_witness_identity() {
+    let machine = endpoint(7);
+    let wallet = Wallet::plain().await;
+    let alice = wallet.identity("alice");
+    wallet.legacy_witnesses(alice, &[machine]).await;
+
+    let error = wallet
+        .service
+        .witness_holdings(
+            rendered(machine),
+            mabel_node::api::service::PageRequest {
+                offset: 0,
+                limit: 256,
+            },
+        )
+        .await
+        .expect_err("that id names a machine, not an identity");
+    assert_eq!(error.reason(), "endpoint_not_identity");
+    assert_eq!(error.code(), 2);
+    assert_eq!(error.status(), axum::http::StatusCode::NOT_FOUND);
+}
+
+/// A witness identity `node.json` names with no machine beside it is listed,
+/// with no machines: it is a witness this home knows and cannot reach yet.
+#[tokio::test]
+async fn a_configured_witness_with_no_bootstrap_endpoint_is_listed_with_no_machine() {
+    let wallet = Wallet::plain().await;
+    let listed = wallet.service.witnesses().await.expect("a witness list");
+    assert_eq!(listed.witnesses.len(), 1, "{listed:?}");
+    let entry = &listed.witnesses[0];
+    assert_eq!(entry.identity_id, id(common::witness_identity()));
+    assert!(entry.endpoints.is_empty());
+    assert!(entry.is_node_default);
+    assert!(!entry.stored);
 }
 
 // ---------------------------------------------------------------- resolve ----
@@ -354,9 +430,9 @@ async fn resolving_a_hostname_writes_no_verification_entry() {
 // -------------------------------------------------- the witness ledger list ----
 
 #[tokio::test]
-async fn the_witness_ledger_proxy_lists_what_that_witness_holds() {
+async fn the_witness_holdings_proxy_lists_what_that_witness_holds() {
     bounded!({
-        let witness = Served::start(WitnessCaps::default()).await;
+        let witness = Served::start(StorageCaps::default()).await;
         let wallet = Wallet::new(&[witness.endpoint_id], std::slice::from_ref(&witness.addr)).await;
         let alice = wallet.identity("alice");
         wallet.witnesses(alice).await;
@@ -372,8 +448,8 @@ async fn the_witness_ledger_proxy_lists_what_that_witness_holds() {
 
         let page = wallet
             .service
-            .witness_ledgers(
-                rendered(witness.endpoint_id),
+            .witness_holdings(
+                id(common::witness_identity()),
                 mabel_node::api::service::PageRequest {
                     offset: 0,
                     limit: 256,
@@ -382,6 +458,7 @@ async fn the_witness_ledger_proxy_lists_what_that_witness_holds() {
             .await
             .expect("the witness answers");
 
+        assert_eq!(page.identity_id, id(common::witness_identity()));
         assert_eq!(page.endpoint_id, rendered(witness.endpoint_id));
         assert_eq!(page.offset, 0);
         assert_eq!(page.limit, 256);
@@ -412,11 +489,14 @@ async fn the_witness_ledger_proxy_lists_what_that_witness_holds() {
 #[tokio::test]
 async fn a_witness_that_cannot_be_dialled_answers_witness_unreachable() {
     bounded!({
+        // The identity resolves to one machine, from the bootstrap endpoints
+        // `node.json` records beside it, and nothing binds that machine.
         let wallet = Wallet::new(&[endpoint(9)], &[]).await;
+        let witness = common::witness_identity();
         let error = wallet
             .service
-            .witness_ledgers(
-                rendered(endpoint(9)),
+            .witness_holdings(
+                id(witness),
                 mabel_node::api::service::PageRequest {
                     offset: 0,
                     limit: 256,
@@ -429,9 +509,14 @@ async fn a_witness_that_cannot_be_dialled_answers_witness_unreachable() {
         assert_eq!(
             error
                 .details()
-                .get("endpoint_id")
+                .get("identity_id")
                 .and_then(|id| id.as_str()),
-            Some(rendered(endpoint(9)).as_str())
+            Some(id(witness).as_str())
+        );
+        assert_eq!(
+            error.details().get("endpoints_tried"),
+            Some(&serde_json::json!([rendered(endpoint(9))])),
+            "the refusal names every machine that was dialled"
         );
     });
 }
@@ -441,7 +526,7 @@ async fn a_witness_that_cannot_be_dialled_answers_witness_unreachable() {
 #[tokio::test]
 async fn a_fetch_stores_the_ledger_and_answers_the_cli_document() {
     bounded!({
-        let witness = Served::start(WitnessCaps::default()).await;
+        let witness = Served::start(StorageCaps::default()).await;
         let owner = Wallet::new(&[witness.endpoint_id], std::slice::from_ref(&witness.addr)).await;
         let alice = owner.identity("alice");
         owner.witnesses(alice).await;
@@ -563,11 +648,13 @@ async fn a_fetch_from_a_witness_with_no_known_endpoint_is_refused() {
     assert_eq!(error.reason(), "unresolvable_witness");
     assert_eq!(error.code(), 2);
     assert_eq!(
-        error
-            .details()
-            .get("identity_id")
-            .and_then(|id| id.as_str()),
+        error.details().get("witness").and_then(|id| id.as_str()),
         Some(witness.as_str())
+    );
+    assert_eq!(
+        error.details().get("endpoints_tried"),
+        Some(&serde_json::json!([])),
+        "nothing was dialled: no machine is known for it"
     );
 }
 

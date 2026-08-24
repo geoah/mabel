@@ -53,6 +53,18 @@
           "value": "sfttwjzd"
         }
       }
+    },
+    {
+      "status": 403,
+      "body": {
+        "ok": false,
+        "code": 2,
+        "message": "request rejected: Host header must be 127.0.0.1:9080 or localhost:9080",
+        "details": {
+          "reason": "host_not_loopback",
+          "host": "127.0.0.1:9999"
+        }
+      }
     }
   ]
 }

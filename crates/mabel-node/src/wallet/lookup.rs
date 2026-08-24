@@ -24,6 +24,7 @@ use crate::api::documents::{
     LookupReverseEdge, LookupTrust, Provenance, ResolvedIdentity, VerificationStatus,
 };
 use crate::api::error::ServiceError;
+use crate::api::service::PageRequest;
 use crate::graph::{Generation, GraphNode, GraphSummary, MAX_PATHS};
 use crate::wallet::core::WalletCore;
 use crate::wallet::error::storage_error;
@@ -255,8 +256,17 @@ pub fn lookup_document(
     })
 }
 
+/// One page of `GET /api/identities/known`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct KnownPage {
+    /// The rows on this page, by ascending rendered id.
+    pub rows: Vec<KnownIdentity>,
+    /// Whether rows past this page exist.
+    pub more: bool,
+}
+
 /// The answer to `GET /api/identities/known`: every identity this home has a
-/// local record of and does not control, by ascending id.
+/// local record of and does not control, by ascending id, one page at a time.
 ///
 /// Three local sources merge into one row set, and a row may come from any
 /// one of them alone: a ledger under `ledgers/` this home did not root, a node
@@ -264,17 +274,21 @@ pub fn lookup_document(
 /// `contacts/`. Nothing here opens a socket or queries DNS, so a row says what
 /// this home already knew.
 ///
+/// The ids are merged and ordered first and only the ids on the page are folded:
+/// a home may hold up to ten thousand ledgers (proposal 006 section 8).
+///
 /// Every identity under `identities/` is left out. That is every identity this
-/// wallet can sign for, and those are the rows `GET /api/identities` serves.
+/// home can sign for, and those are the rows `GET /api/identities` serves.
 ///
 /// # Errors
 ///
-/// Returns the storage errors of listing the home and folding the ledgers it
-/// stores.
+/// Returns the storage errors of listing the home and folding the ledgers on
+/// this page.
 pub fn known_identities(
     core: &WalletCore,
     generation: Option<&Generation>,
-) -> Result<Vec<KnownIdentity>, ServiceError> {
+    page: PageRequest,
+) -> Result<KnownPage, ServiceError> {
     let home = core.home();
     let local: BTreeSet<IdentityId> = home
         .identities()
@@ -297,13 +311,22 @@ pub fn known_identities(
     }
     known.extend(core.contact_store().identities().map_err(storage_error)?);
 
+    // By the rendered id, not by the 32 bytes behind it: the base32 alphabet
+    // puts its digits before its letters, so the two orders differ, and the
+    // one a client can reproduce from the document is this one.
+    let mut ordered: Vec<(Id, IdentityId)> = known
+        .into_iter()
+        .filter(|identity| !local.contains(identity))
+        .map(|identity| (ids::identity(identity), identity))
+        .collect();
+    ordered.sort_by(|left, right| left.0.cmp(&right.0));
+    let offset = page.offset as usize;
+    let limit = page.limit as usize;
+    let more = ordered.len() > offset.saturating_add(limit);
+
     let names = Names::new(core, generation);
     let mut rows = Vec::new();
-    for identity in known {
-        if local.contains(&identity) {
-            continue;
-        }
-        let identity_id = ids::identity(identity);
+    for (identity_id, identity) in ordered.into_iter().skip(offset).take(limit) {
         let resolved = names.resolve(identity);
         let stored = core.holds(identity)?;
         let loaded = stored.then(|| core.load(identity)).transpose()?;
@@ -326,11 +349,7 @@ pub fn known_identities(
             head_seq: loaded.map(|loaded| loaded.head_seq),
         });
     }
-    // By the rendered id, not by the 32 bytes behind it: the base32 alphabet
-    // puts its digits before its letters, so the two orders differ, and the
-    // one a client can reproduce from the document is this one.
-    rows.sort_by(|left, right| left.identity_id.cmp(&right.identity_id));
-    Ok(rows)
+    Ok(KnownPage { rows, more })
 }
 
 /// Every identity a ledger in this home currently attests to.

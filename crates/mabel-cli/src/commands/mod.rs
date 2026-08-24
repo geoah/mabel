@@ -7,17 +7,16 @@ pub mod identity;
 pub mod membership;
 pub mod node;
 pub mod profile;
+pub mod serve;
 pub mod sync;
 pub mod trust;
 pub mod verify;
-pub mod wallet_serve;
 pub mod witness;
-pub mod witness_run;
 
 use crate::cli::{
     Cli, Command, ContactCommand, DevCommand, EndpointsCommand, GraphCommand, IdentityCommand,
-    MembershipCommand, NodeCommand, ProfileCommand, SyncCommand, TrustCommand, VerifyCommand,
-    WalletCommand, WitnessCommand,
+    MembershipCommand, NodeCommand, ProfileCommand, ServeOptions, SyncCommand, TrustCommand,
+    VerifyCommand, WalletCommand, WitnessCommand,
 };
 use crate::context::Context;
 use crate::error::Result;
@@ -154,13 +153,7 @@ fn dispatch(ctx: &Context, cli: &Cli) -> Result<Outcome> {
             WitnessCommand::SetDefault { witness, endpoints } => {
                 witness::set_default(ctx, witness, endpoints)
             }
-            WitnessCommand::Run {
-                http,
-                iroh_port,
-                peer,
-                ui_dir,
-                allow_host,
-            } => witness_run::run(ctx, *http, *iroh_port, peer, ui_dir.clone(), allow_host),
+            WitnessCommand::Run { options } => serve(ctx, options),
         },
         Command::Sync { command } => match command {
             SyncCommand::Push { identity, to, peer } => {
@@ -192,14 +185,9 @@ fn dispatch(ctx: &Context, cli: &Cli) -> Result<Outcome> {
                 peer,
             } => verify::trust(ctx, issuer, subject, from.as_deref(), peer),
         },
+        Command::Serve { options } => serve(ctx, options),
         Command::Wallet { command } => match command {
-            WalletCommand::Serve {
-                http,
-                iroh_port,
-                peer,
-                ui_dir,
-                allow_host,
-            } => wallet_serve::serve(ctx, *http, *iroh_port, peer, ui_dir.clone(), allow_host),
+            WalletCommand::Serve { options } => serve(ctx, options),
         },
         Command::Node { command } => match command {
             NodeCommand::Id => node::id(ctx),
@@ -209,4 +197,17 @@ fn dispatch(ctx: &Context, cli: &Cli) -> Result<Outcome> {
             DevCommand::Seed { peer, witness } => dev::seed(ctx, peer, witness),
         },
     }
+}
+
+/// `mabel serve` and its two hidden aliases, which take the same options and
+/// print the same document (proposal 006 section 8).
+fn serve(ctx: &Context, options: &ServeOptions) -> Result<Outcome> {
+    serve::serve(
+        ctx,
+        options.http,
+        options.iroh_port,
+        &options.peer,
+        options.ui_dir.clone(),
+        &options.allow_host,
+    )
 }

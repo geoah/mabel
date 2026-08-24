@@ -1,8 +1,13 @@
-//! Node home, storage and runtimes (proposal 001 sections 7, 8, 10).
+//! Node home, storage and the one runtime (proposal 001 sections 7, 8, 10,
+//! proposal 006 section 8).
+//!
+//! One [`NodeRuntime`] serves every node over one [`LedgerStorage`]: what a
+//! node can do is read from the identities it holds and from
+//! `node.json.witness_for`, never from a role.
 //!
 //! The storage layer is plain files and synchronous `std::fs`: no database,
-//! no index beyond a sorted directory listing, and no async traits. Callers
-//! inside a tokio runtime reach it through `spawn_blocking`.
+//! and no async traits. Callers inside a tokio runtime reach it through
+//! `spawn_blocking`.
 //!
 //! Event bytes are stored exactly as the signer or the peer produced them and
 //! are served back unmodified; nothing here decodes an event and re-encodes
@@ -24,15 +29,18 @@ mod config;
 pub mod contacts;
 mod endpoint;
 mod error;
+pub(crate) mod events;
 pub mod graph;
 mod home;
 pub mod keys;
 mod ledger;
 mod peers;
+mod runtime;
+mod storage;
+mod store;
 mod time;
 pub mod verification;
 pub mod wallet;
-pub mod witness;
 
 pub use atomic::{DATA_MODE, DIR_MODE, KEY_MODE};
 pub use bindings::{BINDINGS_DIR, Binding, Bindings, BoundEndpoint, Observation};
@@ -43,6 +51,7 @@ pub use config::{
 pub use contacts::{CONTACTS_DIR, ContactEntry, ContactStore};
 pub use endpoint::bind_endpoint;
 pub use error::{Result, StorageError};
+pub use events::fork_statement;
 pub use home::{
     ACTIVE_KEY_FILE, CONFIG_FILE, DEFAULT_HOME_NAME, DeclaredKind, HOME_ENV, HomeOptions,
     IDENTITY_META_FILE, IdentityMeta, NODE_KEY_FILE, NodeHome, PEERS_FILE, RESERVE_KEY_FILE,
@@ -53,4 +62,11 @@ pub use ledger::{
     SEQ_DIGITS, StoredEvent,
 };
 pub use peers::{HINT_MAX_AGE_MS, MAX_FAILURES, MAX_HINTS, PeerHint, Peers};
+pub use runtime::{NodeOptions, NodeRuntime};
+pub use storage::{
+    AdmissionPolicy, AdvertisementGap, LedgerReport, LedgerStorage, MAX_BYTES_PER_LEDGER,
+    MAX_EVENTS_PER_LEDGER, MAX_FORK_RECORDS, MAX_LEDGERS, PushResult, StorageCaps, StoredPage,
+    Totals, WitnessForEntry,
+};
+pub use store::NodeStore;
 pub use time::{now_ms, rfc3339_utc};
