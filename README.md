@@ -96,24 +96,42 @@ the build, and `KEEP_TOPOLOGY=1` to leave the containers up afterwards.
 
 ## Releases
 
-Every push to main publishes a GitHub prerelease tagged
-`v<version>-build.<run number>`, where `<version>` is the workspace version in
-`Cargo.toml`. It carries two tarballs, `x86_64-linux` and `aarch64-macos`, each
-holding the `mabel` binary with the UI compiled in, and it pushes the same
-commit's image to `ghcr.io/geoah/mabel` tagged with the release tag, the short
-commit sha and `latest`. Nobody reviews these builds: a prerelease is whatever
-main was at that commit.
+Every push to main publishes a release, and the version comes from the commits.
+The workflow reads the conventional commits made since the last `v<x>.<y>.<z>`
+tag and picks the next version from them: a `!` after the type, or a
+`BREAKING CHANGE:` footer, bumps the major; a `feat` bumps the minor; anything
+else, `fix` and `docs` and `chore` alike, bumps the patch. There is no "nothing
+to release" answer, so a docs-only push still ships a patch release with
+binaries.
 
-A real release is a tag pushed by hand, which runs the same jobs and publishes a
-full release instead of a prerelease:
+It then writes that version into every manifest that carries one (the workspace
+`Cargo.toml`, `app/src-tauri/Cargo.toml`, `app/src-tauri/tauri.conf.json`,
+`ui/package.json`, `tests/e2e/package.json` and the two cargo lockfiles and two
+npm lockfiles beside them), commits that as `chore(release): v<x>.<y>.<z>`
+authored by `github-actions[bot]`, and tags the commit. Every later job builds
+from the tag, so the tarball name, the binary's own `--version` and the image
+tag are the same version as the release.
+
+A release carries two tarballs, `x86_64-linux` and `aarch64-macos`, each holding
+the `mabel` binary with the UI compiled in. The same commit's image goes to
+`ghcr.io/geoah/mabel` tagged with the short commit sha, the release tag and
+`latest`. The release notes are the commits since the previous release, grouped
+by conventional-commit type.
+
+The release commit carries `[skip ci]` and is pushed with the workflow's own
+token, so it starts no further runs. To bump a version by hand, run
+`scripts/version.sh set <x.y.z>` and commit the result.
+
+Pushing a tag by hand releases exactly that version and computes nothing:
 
 ```sh
-git tag v0.1.0 && git push origin v0.1.0
+git tag v1.0.0 && git push origin v1.0.0
 ```
 
-The tag has to match the `Cargo.toml` version, so bump `[workspace.package]`
-first. The workflow stops before building when the two disagree, rather than
-attach `mabel-0.1.0-*.tar.gz` to a release called `v0.2.0`.
+The manifests have to say `1.0.0` already. The workflow runs
+`scripts/version.sh check 1.0.0` first and stops, naming every file that
+disagrees, rather than attach `mabel-0.9.0-*.tar.gz` to a release called
+`v1.0.0`.
 
 `.github/workflows/ci.yml` runs `cargo fmt`, clippy, the workspace tests and the
 UI checks on every push and pull request. The Playwright suite is not in CI: it
