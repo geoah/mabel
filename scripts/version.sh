@@ -10,7 +10,7 @@
 #
 # `next` bumps the last release tag by the conventional commits made since it:
 # a `!` after the type in any subject, or a `BREAKING CHANGE:` footer in any
-# body, bumps major; a `feat` subject bumps minor; anything else bumps patch.
+# body, bumps major (minor while the major is 0); a `feat` subject bumps minor; anything else bumps patch.
 # There is no "nothing to release" answer, so every push to main ships a
 # version.
 
@@ -160,6 +160,12 @@ cmd_next() {
   fi
 
   IFS=. read -r major minor patch <<<"${last#v}"
+  # Before 1.0.0 a breaking change bumps the minor, the semver custom for
+  # 0.x: going to 1.0.0 is a deliberate act, done by pushing the tag by
+  # hand, never a side effect of one bang commit.
+  if [ "$bump" = major ] && [ "$major" -eq 0 ]; then
+    bump='minor'
+  fi
   case $bump in
   major)
     major=$((major + 1))
