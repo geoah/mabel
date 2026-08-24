@@ -1,19 +1,19 @@
 import { describe, expect, it } from "vitest";
 
 import { createIdentity, fetchIdentity, setContact } from "@/api/client";
-import { clearDemoData, DEMO_STATE_KEY } from "@/lib/demo";
 import { ACME, ALICE, BOB, UNSTORED_LEDGER } from "@/mocks/fixtures";
+import { clearMockState, MOCK_STATE_KEY } from "@/mocks/persistence";
 import { getIdentity, listIdentities, restoreStore } from "@/mocks/store";
 
 /**
- * The demo keeps what a visitor did in localStorage, because a fetched record
- * that disappears on the next page load is a lie about the node. These are the
- * three states that matter: a saved snapshot is loaded, a snapshot from another
- * version is thrown away, and the reset control leaves nothing behind.
+ * The mock store keeps what a visitor did in localStorage, because a fetched
+ * record that disappears on the next page load is a lie about the node. These
+ * are the three states that matter: a saved snapshot is loaded, a snapshot from
+ * another version is thrown away, and the harness reset leaves nothing behind.
  */
 
 function saved(): string | null {
-  return globalThis.localStorage.getItem(DEMO_STATE_KEY);
+  return globalThis.localStorage.getItem(MOCK_STATE_KEY);
 }
 
 /** The ids this home controls, which is what the wallet list answers. */
@@ -21,7 +21,7 @@ function controlled(): string[] {
   return listIdentities().identities.map((identity) => identity.identity_id);
 }
 
-describe("the demo store across a page load", () => {
+describe("the mock store across a page load", () => {
   it("writes the seeded state under the versioned key", () => {
     const snapshot = saved();
 
@@ -61,7 +61,7 @@ describe("the demo store across a page load", () => {
     const created = await createIdentity({ alias: "dana", declared_kind: "person" });
     const snapshot = JSON.parse(saved() ?? "{}") as Record<string, unknown>;
     globalThis.localStorage.setItem(
-      DEMO_STATE_KEY,
+      MOCK_STATE_KEY,
       JSON.stringify({ ...snapshot, version: "0:not-this-build" }),
     );
 
@@ -72,17 +72,17 @@ describe("the demo store across a page load", () => {
   });
 
   it("reseeds when the saved state does not parse", () => {
-    globalThis.localStorage.setItem(DEMO_STATE_KEY, "{not json");
+    globalThis.localStorage.setItem(MOCK_STATE_KEY, "{not json");
 
     expect(restoreStore()).toBe(false);
 
     expect(controlled()).toEqual([ACME, ALICE]);
   });
 
-  it("reseeds after the reset control clears the key", async () => {
+  it("reseeds after the harness reset clears the key", async () => {
     await createIdentity({ alias: "dana", declared_kind: "person" });
 
-    clearDemoData();
+    clearMockState();
 
     expect(saved()).toBeNull();
     expect(restoreStore()).toBe(false);

@@ -60,7 +60,7 @@ describe("identity detail", () => {
 
   // Decision 017: a summary without the entries behind it says so, rather than
   // printing zero entries against a head position that is not zero.
-  it("seeds a coherent record for every identity the demo store holds", async () => {
+  it("seeds a coherent record for every identity the mock store holds", async () => {
     renderApp(`/identities/${ACME}`);
     await screen.findByTestId("ledger-events");
 

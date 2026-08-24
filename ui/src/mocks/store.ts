@@ -60,7 +60,6 @@ import type {
   WitnessNodeInfo,
   WitnessSummary,
 } from "@/api/types";
-import { DEMO_STATE_KEY } from "@/lib/demo";
 import type { HeldLedger } from "./fixtures";
 import {
   ACME,
@@ -86,6 +85,7 @@ import {
   witnessLedgers,
   witnessNode,
 } from "./fixtures";
+import { MOCK_STATE_KEY } from "./persistence";
 
 /** A rejected request: the HTTP status plus the error envelope body. */
 export class MockFailure extends Error {
@@ -226,14 +226,14 @@ function snapshot(): Snapshot {
 }
 
 /**
- * Writes what the visitor did. A demo whose fetched record disappears on the
+ * Writes what the visitor did. A harness whose fetched record disappears on the
  * next page load is telling a lie about the node, so every mutating route ends
  * here. A storage that throws (private mode, disabled cookies) means the session
  * still works and nothing is remembered.
  */
 export function persistStore(): void {
   try {
-    globalThis.localStorage?.setItem(DEMO_STATE_KEY, JSON.stringify(snapshot()));
+    globalThis.localStorage?.setItem(MOCK_STATE_KEY, JSON.stringify(snapshot()));
   } catch {
     // Nothing is remembered, and the session still works.
   }
@@ -242,7 +242,7 @@ export function persistStore(): void {
 /** What the last page load saved, or null when there is nothing usable. */
 function savedSnapshot(): Snapshot | null {
   try {
-    const raw = globalThis.localStorage?.getItem(DEMO_STATE_KEY) ?? null;
+    const raw = globalThis.localStorage?.getItem(MOCK_STATE_KEY) ?? null;
     if (raw === null) {
       return null;
     }
@@ -755,7 +755,7 @@ export function revokeTrust(
 
 // The membership routes (ticket 021). Every artifact crosses as base64 of an
 // opaque blob; the mock makes that blob a JSON object so an invitation minted
-// here can be accepted and admitted here, which is what the demo and the
+// here can be accepted and admitted here, which is what the harness and the
 // component tests drive. A real bundle is a length-prefixed event prefix.
 
 /** The invitation prefix the inviter hands over, carried inside the bundle. */
@@ -1223,7 +1223,7 @@ export const MISMATCHED_HOSTNAME = "mismatched.example";
 /**
  * GET /api/resolve/:hostname. No DNS is queried: the mock answers resolved for
  * a hostname a stored profile claims, and carries one hostname per other
- * verdict so each renders in dev and demo mode.
+ * verdict so each one renders in the harness and in a test.
  */
 export function resolveHostname(hostname: string): ResolveResponse {
   if (!/^[a-z0-9][a-z0-9.-]*$/.test(hostname)) {
@@ -1598,7 +1598,7 @@ export function replaceProfile(
 /**
  * POST /api/identities/:identity_id/verification. The real node queries
  * _mabel.<hostname> and waits; the mock records a fresh decisive result so the
- * verified and stale-verified states are both reachable in dev and demo mode.
+ * verified and stale-verified states are both reachable in the harness.
  */
 export function forceVerification(identityId: string): VerificationResponse {
   const identity = find(identityId);

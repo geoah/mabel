@@ -127,8 +127,8 @@ export const knownIdentityRows = knownIdentitiesFixture.response
   .identities as KnownIdentity[];
 /**
  * The row the contract pins for Bob: stored, trusted, one degree away. The mock
- * seeds his stored copy from these values, so the demo's known list reads the
- * way the frozen answer does.
+ * seeds his stored copy from these values, so the harness's known list reads
+ * the way the frozen answer does.
  */
 export const knownBob = knownIdentityRows.find((row) => row.identity_id === BOB)!;
 

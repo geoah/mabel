@@ -12,7 +12,6 @@ import {
   resolvedFrom,
   trustedSubjects,
 } from "@/components/identity";
-import { Button } from "@/components/ui/button";
 import {
   Collapsible,
   CollapsibleChevron,
@@ -20,7 +19,6 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { useResource } from "@/hooks/useResource";
-import { isDemoMode, resetDemoData } from "@/lib/demo";
 
 import { IdentityCreateForm } from "./IdentityCreateForm";
 import { KnownIdentities } from "./KnownIdentities";
@@ -100,21 +98,6 @@ export function WalletHome() {
           </Collapsible>
         </section>
         <KnownIdentities own={held} />
-        {/* The demo serves the frozen fixtures and remembers what a visitor did,
-            so it needs one way to put the fixtures back. */}
-        {isDemoMode() && (
-          <footer className="border-t pt-4">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              data-testid="demo-reset"
-              onClick={resetDemoData}
-            >
-              Reset demo data
-            </Button>
-          </footer>
-        )}
       </div>
     </IdentityPillScope>
   );

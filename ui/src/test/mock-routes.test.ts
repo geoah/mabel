@@ -37,8 +37,8 @@ import {
 import { MISMATCHED_HOSTNAME, UNREACHABLE_HOSTNAME } from "@/mocks/store";
 
 /**
- * Every wallet route driven through the client against the mock store, so dev
- * mode and demo mode answer the same documents the component tests assert.
+ * Every wallet route driven through the client against the mock store, so the
+ * harness answers the same documents the component tests assert.
  */
 
 async function rejection(run: () => Promise<unknown>): Promise<ApiError> {

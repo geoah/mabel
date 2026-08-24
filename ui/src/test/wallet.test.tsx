@@ -48,13 +48,14 @@ describe("the wallet page's shape", () => {
     expect(within(section).queryByTestId("known-identity-cards")).not.toBeInTheDocument();
   });
 
-  it("offers the demo reset in the footer, under a plain label", async () => {
+  it("offers no reset control: the page shows what the node holds", async () => {
     renderApp("/wallet");
     await screen.findByTestId("identity-cards");
 
-    const reset = screen.getByTestId("demo-reset");
-    expect(reset).toHaveTextContent("Reset demo data");
-    expect(reset.closest("footer")).not.toBeNull();
+    // The mock store's reset lives in ui/harness/, which nothing a user
+    // installs loads. A wallet cannot put a real node's ledgers back.
+    expect(screen.queryByTestId("mock-reset")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /reset/i })).not.toBeInTheDocument();
   });
 });
 

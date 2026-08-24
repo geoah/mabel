@@ -1,32 +1,38 @@
 #!/usr/bin/env node
-// Captures every route of the demo build at three widths and reports any page
-// that scrolls sideways. The images land in ui/screenshots/, which is ignored
-// by git: they exist to be looked at, not to be committed.
+// Captures every route at three widths and reports any page that scrolls
+// sideways. The images land in ui/screenshots/, which is ignored by git: they
+// exist to be looked at, not to be committed.
 //
-//   VITE_DEMO=1 npx vite build --outDir dist-demo
-//   npx vite preview --outDir dist-demo --port 4199 &
 //   npm run screenshots
 //
-// BASE_URL overrides the server, which defaults to http://localhost:4199.
+// It builds and serves the harness itself, from vite.harness.config.ts: the
+// wallet against the frozen fixtures through the mock service worker, into
+// ui/dist-harness/, which no binary and no release ever reads. `npm run build`
+// writes ui/dist/ from a different config and cannot reach a fixture.
+//
+// BASE_URL points the run at an already-running server instead, and then
+// nothing is built: use it to capture a real node's screens.
 
 import { mkdir, rm } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
 import { chromium } from "playwright";
+import { build, preview } from "vite";
 
-const BASE_URL = process.env.BASE_URL ?? "http://localhost:4199";
+const HARNESS_CONFIG = fileURLToPath(new URL("../vite.harness.config.ts", import.meta.url));
+const HARNESS_PORT = 4199;
 const OUT_DIR = fileURLToPath(new URL("../screenshots", import.meta.url));
 
-/** The ids the demo fixtures carry; the same ones the component tests use. */
+/** The ids the fixtures carry; the same ones the component tests use. */
 const ALICE = "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq";
 const BOB = "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq";
-/** The organization the demo fixtures found: identity-rooted, holding no key. */
+/** The organization the fixtures found: identity-rooted, holding no key. */
 const ACME = "2okqwhextnpkpmydrgrkk563vbehcklffwfzidxlh5dslawjmn6a";
 /** The foreign identity the lookup fixture answers for, and no witness holds. */
 const CAROL = "jqtnsb2me7mj5xsze4gavqklohqhdmkshfiz65khjmxtxjruqh2q";
 /** A record one witness holds and this home stores no copy of, so a fetch has work. */
 const UNSTORED_LEDGER = "cd".repeat(26);
-/** The two witness endpoints the demo knows: one answers, one does not. */
+/** The two witness endpoints the fixtures carry: one answers, one does not. */
 const WITNESS = "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq";
 const UNREACHABLE_WITNESS = "54rw3lmckcpqf4ofkvyx3i74agumvale2qmzdu76ubpita6sw5va";
 
@@ -272,16 +278,38 @@ function measureOverflow() {
   return { scrollWidth: root.scrollWidth, clientWidth: limit, offenders: offenders.slice(0, 6) };
 }
 
+/**
+ * Builds the harness and serves it, and answers where it is. Given a BASE_URL
+ * the caller already runs something, so nothing is built and nothing is served.
+ */
+async function serveHarness() {
+  if (process.env.BASE_URL) {
+    return { baseUrl: process.env.BASE_URL, close: async () => {} };
+  }
+  await build({ configFile: HARNESS_CONFIG, logLevel: "warn" });
+  const server = await preview({
+    configFile: HARNESS_CONFIG,
+    preview: { port: HARNESS_PORT, strictPort: true },
+    logLevel: "warn",
+  });
+  return {
+    baseUrl: `http://localhost:${HARNESS_PORT}`,
+    close: () => server.close(),
+  };
+}
+
 async function main() {
   await rm(OUT_DIR, { recursive: true, force: true });
   await mkdir(OUT_DIR, { recursive: true });
 
+  const harness = await serveHarness();
+  const BASE_URL = harness.baseUrl;
   const browser = await chromium.launch();
   const failures = [];
   try {
     for (const viewport of VIEWPORTS) {
       for (const screen of SCREENS) {
-        // One context per screen: the demo remembers what a visitor did in
+        // One context per screen: the mock store remembers what a visitor did in
         // localStorage, and a capture has to show the seeded state, not what the
         // capture before it left behind.
         const context = await browser.newContext({
@@ -322,6 +350,7 @@ async function main() {
     }
   } finally {
     await browser.close();
+    await harness.close();
   }
 
   if (failures.length > 0) {

@@ -1,0 +1,9 @@
+@import "../src/index.css";
+
+/*
+  Tailwind detects the classes to emit by scanning the Vite root, and this
+  build's root is ui/harness/. The screens it draws live in ui/src/, so the
+  harness names that directory: without this line the harness serves the app
+  with almost no stylesheet.
+*/
+@source "../src";

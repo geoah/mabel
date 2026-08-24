@@ -28,5 +28,5 @@
       "@contracts/*": ["../contracts/*"]
     }
   },
-  "include": ["src"]
+  "include": ["src", "harness"]
 }

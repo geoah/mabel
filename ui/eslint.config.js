@@ -7,9 +7,9 @@ export default tseslint.config(
   {
     ignores: [
       "dist",
-      "dist-demo",
+      "dist-harness",
       "screenshots",
-      "public/mockServiceWorker.js",
+      "harness/public/mockServiceWorker.js",
       "node_modules",
     ],
   },

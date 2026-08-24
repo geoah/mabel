@@ -1,5 +1,5 @@
 node_modules
 dist
 *.local
-dist-demo
+dist-harness
 screenshots

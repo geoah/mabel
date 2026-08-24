@@ -10,10 +10,11 @@
     "noUnusedParameters": true,
     "verbatimModuleSyntax": true,
     "isolatedModules": true,
+    "allowImportingTsExtensions": true,
     "skipLibCheck": true,
     "noEmit": true,
     "composite": true,
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.node.tsbuildinfo"
   },
-  "include": ["vite.config.ts"]
+  "include": ["vite.config.ts", "vite.harness.config.ts"]
 }
