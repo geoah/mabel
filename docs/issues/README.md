@@ -105,3 +105,41 @@ milestone 10 and are deliberately not ticketed here.
 - [032-topology-tooling-gaps.md](032-topology-tooling-gaps.md): `mabel node
   ticket`, settable node-wide witnesses, a second witness in compose,
   `peers.json` hints on push. Depends on none. Done.
+- [033-witness-set-and-endpoint-advertisement-payloads.md](033-witness-set-and-endpoint-advertisement-payloads.md):
+  payload tags 19 `WitnessSet` and 18 `EndpointAdvertisement`, the three fold
+  accessors, the builders with `build_witness_config` test-gated, the routes and
+  commands that write them, `witness_for` and the tag-19 admission clause,
+  golden and rejection vectors. Depends on none.
+- [034-admission-witness-for-and-bindings.md](034-admission-witness-for-and-bindings.md):
+  the four-clause admission rule over the pre-push and pushed state, the gated
+  legacy tag-11 clause, the advertisement invariant on `witness_for`,
+  `bindings/<identity_id>.json` and the verified predicate, the witness-ledger
+  fetch from another endpoint. Depends on 033.
+- [035-resolution-sources-and-dial-budget.md](035-resolution-sources-and-dial-budget.md):
+  the eight fetch sources, witness resolution as a non-recursive base operation,
+  the visited-identity set, the 16-endpoint dial budget with its per-class caps
+  and shared deadline, `peers.json` objects with cap, age-out and eviction, the
+  `node.json` bootstrap endpoints. Depends on 034.
+- [036-mabel-links-and-dns-endpoint-hints.md](036-mabel-links-and-dns-endpoint-hints.md):
+  the `mabel://` grammar in core with vectors, the decode-once rule, the
+  `mabel-endpoints=` TXT key with discard-whole overflow and the applicability
+  matrix, `GET /api/resolve?input=`, `mabel identity share` with QR and file
+  output. Depends on 033.
+- [037-one-router-and-one-store.md](037-one-router-and-one-store.md): `api::wallet`
+  and `api::witness` merged, the two runtimes merged, `WalletReadStore` deleted
+  for `node::LedgerStorage`, `/api/ledgers*` folded into the identity routes,
+  paging on `known`, the `holdings` segment, the `List` narrowing, `mabel serve`,
+  `role` recognised and ignored. Depends on 035, 036.
+- [038-fixtures-and-contracts.md](038-fixtures-and-contracts.md): the five
+  removed, four renamed, three new and seventeen changed fixtures of the section
+  9 table, the `contracts/README.md` rewrites, the payload table at ten rows.
+  Depends on 037.
+- [039-witnesses-as-identity-cards-in-the-ui.md](039-witnesses-as-identity-cards-in-the-ui.md):
+  `/witness` and `WitnessCard.tsx` removed, `/witnesses` drawing identity cards,
+  the machines row and its two sentences, the share and machines actions with
+  their consent text, the mock store and UI tests. Depends on 038.
+- [040-topology-and-stories.md](040-topology-and-stories.md): entrypoint witness
+  identity and advertisement, `MABEL_WITNESSES` as ids with endpoints, the third
+  published file, the compose overlays and zone files, four story rewrites and
+  two new stories for a link with no witness and an endpoint rotation. Depends
+  on 039.
