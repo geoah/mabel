@@ -204,9 +204,13 @@ pub struct PushRequest {
 pub struct FetchIdentity {
     /// The ledger to fetch, from the path. This home need not hold it.
     pub identity_id: Id,
-    /// One witness to ask, or every known witness in the crawler's source
-    /// order when absent.
+    /// One endpoint the caller named, asked as source 2 whether or not this
+    /// wallet has heard of it (proposal 006 section 5).
     pub from: Option<Id>,
+    /// One witness identity the caller named, resolved to endpoints through
+    /// proposal 006 section 5.1. Naming this and `from` at once is
+    /// `conflicting_source`; naming neither asks every known source in order.
+    pub from_witness: Option<Id>,
 }
 
 /// The wallet API's view of the node (proposal 001 section 10).

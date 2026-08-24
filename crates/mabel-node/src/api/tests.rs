@@ -824,6 +824,7 @@ async fn wallet_post_identity_fetch_matches_the_fixture() {
     assert_eq!(
         stub.call(),
         WalletCall::FetchIdentity(FetchIdentity {
+            from_witness: None,
             identity_id: id(ALICE),
             from: Some(id(WITNESS_ONE)),
         })
@@ -843,6 +844,7 @@ async fn a_fetch_without_a_source_leaves_the_witness_choice_to_the_service() {
     assert_eq!(
         stub.call(),
         WalletCall::FetchIdentity(FetchIdentity {
+            from_witness: None,
             identity_id: id(BOB),
             from: None,
         })

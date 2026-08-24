@@ -63,10 +63,12 @@ topology is for a laptop and for the test suite.
 Two things would otherwise reach out. Relays and discovery: every `node.json`
 here sets `relay: "disabled"`, so the Iroh endpoint uses no n0 relay, no DNS
 lookup and no pkarr publish, and a peer is reachable only at an address it was
-handed. Addresses: the witness publishes its `EndpointTicket` to the shared
-`witness-ticket` volume before it starts serving, and each wallet passes that
-ticket as `--peer` when it starts, which seeds the address into its lookup. A
-ticket is an address hint and never authorization (proposal 001 section 4).
+handed. Addresses: the witness publishes its `EndpointTicket`, its endpoint id and its
+witness identity id to the shared `witness-ticket` volume before it starts
+serving, and each wallet passes that ticket as `--peer` when it starts, which
+seeds the address into its lookup, and records the identity and the endpoint as
+one `node.json.witnesses` entry. A ticket is an address hint and never
+authorization (proposal 001 section 4).
 
 Startup order follows from that: the wallets declare
 `depends_on: witness: condition: service_healthy`, and their entrypoints also
@@ -139,9 +141,11 @@ resolver's healthcheck asks for it on every interval, and a rewritten zone
 that drops it makes the container unhealthy.
 
 The overlay also passes `MABEL_WITNESSES` through to both wallets, empty
-unless the environment sets it. A witness's endpoint id only exists once the
-witness has started, so a run that wants the node-wide witness brings the
-topology up in two phases:
+unless the environment sets it. Those endpoints are recorded against the first
+witness identity a waited-for prefix publishes, because `node.json.witnesses`
+names an identity and the machines that answer for it (proposal 006 section
+5.4). A witness's endpoint id only exists once the witness has started, so a run
+that wants the node-wide witness brings the topology up in two phases:
 
 ```sh
 docker compose -f docker/compose.yaml -f docker/compose.dns.yaml \
@@ -152,9 +156,9 @@ MABEL_WITNESSES="$witness_id" docker compose -f docker/compose.yaml \
   -f docker/compose.dns.yaml up -d --wait
 ```
 
-That is the crawler's third source (proposal 003 section 3): without it a
-wallet has nowhere to read a stranger's ledger from, and story 007's lookup
-finds no path to carol.
+That is source 4 of resolution (proposal 006 section 5): without it a wallet has
+nowhere to read a stranger's ledger from, and story 007's lookup finds no path
+to carol.
 
 ## Tickets
 

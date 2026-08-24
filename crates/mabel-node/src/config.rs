@@ -27,6 +27,44 @@ pub const DEFAULT_STORAGE_CAPACITY: u64 = 2 * 1024 * 1024 * 1024;
 /// Witness identities one home may witness for (proposal 006 section 4).
 pub const MAX_WITNESS_FOR: usize = 16;
 
+/// Characters an endpoint id renders as, which `iroh_base` spells in hex.
+///
+/// A base32 identity id renders as 52, so the two shapes are told apart by
+/// length alone and an old `node.json` is refused rather than misread
+/// (proposal 006 section 5.4).
+const ENDPOINT_ID_CHARS: usize = 64;
+
+/// What to run when `witnesses` holds the pre-proposal-006 shape.
+pub const WITNESS_MIGRATION_HINT: &str =
+    "mabel witness set-default --witness <mabel-id> --endpoints <endpoint,...>";
+
+/// One configured witness: the identity, and the raw endpoints that make it
+/// reachable before anything is fetched (proposal 006 section 5.4).
+///
+/// The endpoints are bootstrap records, not a cache. `peers.json` has an
+/// eviction rule and the one fact that makes a configured witness reachable at
+/// all cannot live somewhere a cap can evict it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WitnessEntry {
+    /// The witness identity.
+    pub identity: IdentityId,
+    /// Endpoints to dial for it, in the order they were written.
+    #[serde(default)]
+    pub endpoints: Vec<EndpointId>,
+}
+
+impl WitnessEntry {
+    /// An entry naming `identity` and the endpoints given for it.
+    #[must_use]
+    pub fn new(identity: IdentityId, endpoints: Vec<EndpointId>) -> Self {
+        Self {
+            identity,
+            endpoints,
+        }
+    }
+}
+
 /// What this node is (proposal 001 section 2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -69,9 +107,13 @@ pub struct NodeConfig {
     /// replacing it.
     #[serde(default)]
     pub allowed_hosts: Vec<String>,
-    /// Witness endpoints this node pushes to by default.
-    #[serde(default)]
-    pub witnesses: Vec<EndpointId>,
+    /// Witness identities this node asks for any ledger, with the bootstrap
+    /// endpoints that reach them (proposal 006 section 5.4).
+    ///
+    /// Source 4 of the resolution order: it needs no copy of anything, which is
+    /// why it is the workhorse for a ledger this home has never seen.
+    #[serde(default, deserialize_with = "witnesses")]
+    pub witnesses: Vec<WitnessEntry>,
     /// The witness identities this home witnesses for (proposal 006
     /// section 4).
     ///
@@ -136,6 +178,64 @@ fn witness_for<'de, D: serde::Deserializer<'de>>(
     Ok(entries)
 }
 
+/// Reads `witnesses`: `{identity, endpoints}` objects, with the migration of
+/// proposal 006 section 5.4 for the two older shapes.
+///
+/// A bare 52-character identity id loads as an entry with no bootstrap
+/// endpoints, which resolution can still reach through a local copy, a hint or
+/// DNS. A bare 64-character hex endpoint id is the pre-proposal-006 file and
+/// fails to load naming what to run instead, because reading an endpoint id as
+/// an identity id would silently configure a witness that is not one.
+fn witnesses<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Vec<WitnessEntry>, D::Error> {
+    use serde::de::Error;
+
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Raw {
+        Named(String),
+        Entry(WitnessEntry),
+    }
+
+    let raw = <Vec<Raw> as Deserialize>::deserialize(deserializer)?;
+    let mut entries: Vec<WitnessEntry> = Vec::with_capacity(raw.len());
+    for entry in raw {
+        let entry = match entry {
+            Raw::Entry(entry) => entry,
+            Raw::Named(named) if named.len() == ENDPOINT_ID_CHARS => {
+                return Err(D::Error::custom(format!(
+                    "node.json names the endpoint id {named} under witnesses, which proposal 006 \
+                     replaced with {{\"identity\", \"endpoints\"}} objects; run \
+                     {WITNESS_MIGRATION_HINT}"
+                )));
+            }
+            Raw::Named(named) => WitnessEntry::new(
+                named.parse::<IdentityId>().map_err(|error| {
+                    D::Error::custom(format!("witnesses names {named}: {error}"))
+                })?,
+                Vec::new(),
+            ),
+        };
+        if entries.iter().any(|seen| seen.identity == entry.identity) {
+            return Err(D::Error::custom(format!(
+                "witnesses names {} twice",
+                entry.identity
+            )));
+        }
+        for (index, endpoint) in entry.endpoints.iter().enumerate() {
+            if entry.endpoints[index + 1..].contains(endpoint) {
+                return Err(D::Error::custom(format!(
+                    "witness {} names the endpoint {endpoint} twice",
+                    entry.identity
+                )));
+            }
+        }
+        entries.push(entry);
+    }
+    Ok(entries)
+}
+
 fn default_storage_capacity() -> u64 {
     DEFAULT_STORAGE_CAPACITY
 }
@@ -175,6 +275,31 @@ impl NodeConfig {
         serde_json::from_slice(bytes)
     }
 
+    /// The bootstrap endpoints recorded beside `witness`, empty when this file
+    /// names no such witness.
+    #[must_use]
+    pub fn witness_endpoints(&self, witness: IdentityId) -> &[EndpointId] {
+        self.witnesses
+            .iter()
+            .find(|entry| entry.identity == witness)
+            .map_or(&[], |entry| entry.endpoints.as_slice())
+    }
+
+    /// Every bootstrap endpoint the configured witnesses name, in file order
+    /// and without a repeat.
+    #[must_use]
+    pub fn witness_bootstrap(&self) -> Vec<EndpointId> {
+        let mut endpoints: Vec<EndpointId> = Vec::new();
+        for entry in &self.witnesses {
+            for endpoint in &entry.endpoints {
+                if !endpoints.contains(endpoint) {
+                    endpoints.push(*endpoint);
+                }
+            }
+        }
+        endpoints
+    }
+
     /// Renders `node.json`, pretty-printed with a trailing newline.
     ///
     /// # Errors
@@ -192,8 +317,10 @@ impl NodeConfig {
 mod tests {
     use super::{
         DEFAULT_HTTP_BIND, DEFAULT_STORAGE_CAPACITY, MAX_WITNESS_FOR, NodeConfig, NodeRole,
-        RelayMode,
+        RelayMode, WitnessEntry,
     };
+
+    const ALICE: &str = "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq";
 
     #[test]
     fn an_empty_object_loads_every_default() {
@@ -251,7 +378,7 @@ mod tests {
             role: NodeRole::Witness,
             http_bind: "127.0.0.1:1234".parse().unwrap(),
             allowed_hosts: vec!["witness.tailnet.example".to_owned()],
-            witnesses: vec![key],
+            witnesses: vec![WitnessEntry::new(ALICE.parse().unwrap(), vec![key])],
             witness_for: vec![mabel_core::IdentityId::from_bytes([5u8; 32])],
             accept_legacy_witness_config: true,
             storage_capacity: 42,
@@ -291,6 +418,55 @@ mod tests {
     #[test]
     fn a_malformed_witness_endpoint_is_a_load_error() {
         assert!(NodeConfig::from_json(br#"{"witnesses": ["nope"]}"#).is_err());
+    }
+
+    /// `witnesses` names identities and the endpoints that reach them
+    /// (proposal 006 section 5.4).
+    #[test]
+    fn witnesses_are_identity_and_endpoint_objects() {
+        let key = iroh_base::SecretKey::from_bytes(&[3u8; 32]).public();
+        let config = NodeConfig::from_json(
+            format!(r#"{{"witnesses": [{{"identity": "{ALICE}", "endpoints": ["{key}"]}}]}}"#)
+                .as_bytes(),
+        )
+        .expect("an entry loads");
+        assert_eq!(
+            config.witnesses,
+            [WitnessEntry::new(ALICE.parse().unwrap(), vec![key])]
+        );
+        assert_eq!(config.witness_endpoints(ALICE.parse().unwrap()), [key]);
+        assert_eq!(config.witness_bootstrap(), [key]);
+
+        // No endpoints at all is legal: resolution can still reach the witness
+        // through a local copy, a hint or DNS.
+        let bare = NodeConfig::from_json(format!(r#"{{"witnesses": ["{ALICE}"]}}"#).as_bytes())
+            .expect("a bare identity id loads");
+        assert_eq!(
+            bare.witnesses,
+            [WitnessEntry::new(ALICE.parse().unwrap(), Vec::new())]
+        );
+
+        let error =
+            NodeConfig::from_json(format!(r#"{{"witnesses": ["{ALICE}", "{ALICE}"]}}"#).as_bytes())
+                .expect_err("a repeat is a load error");
+        assert!(error.to_string().contains("twice"), "{error}");
+    }
+
+    /// The pre-proposal-006 file held 64-character hex endpoint ids. It fails
+    /// to load and the message names the command that writes the new shape.
+    #[test]
+    fn an_old_witnesses_array_of_endpoint_ids_fails_to_load() {
+        let key = iroh_base::SecretKey::from_bytes(&[3u8; 32]).public();
+        let hex = key.to_string();
+        assert_eq!(hex.len(), 64, "an endpoint id renders as hex");
+        let error = NodeConfig::from_json(format!(r#"{{"witnesses": ["{hex}"]}}"#).as_bytes())
+            .expect_err("the old shape is refused");
+        let message = error.to_string();
+        assert!(message.contains(&hex), "{message}");
+        assert!(
+            message.contains("mabel witness set-default --witness <mabel-id>"),
+            "{message}"
+        );
     }
 
     /// `witness_for` names identity ids alone, at most 16, with no repeat

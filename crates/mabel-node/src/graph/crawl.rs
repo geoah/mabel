@@ -24,6 +24,7 @@ use crate::graph::fetcher::{FetchFuture, FetchOutcome, LedgerFetcher};
 use crate::graph::model::{
     DiscoveredVia, GraphEdge, GraphNode, GraphSummary, NodeStatus, RootDepth, TruncatedBy,
 };
+use crate::graph::resolve::Resolution;
 use crate::graph::store::Generation;
 use crate::now_ms;
 use crate::wallet::ids;
@@ -69,6 +70,9 @@ pub struct CrawlOptions {
     pub started_at_ms: u64,
     /// The generation name, minted from `started_at_ms` when absent.
     pub sync_id: Option<String>,
+    /// Endpoints the caller named for this run, which are source 2 (proposal
+    /// 006 section 5).
+    pub caller_hints: Vec<EndpointId>,
 }
 
 impl CrawlOptions {
@@ -83,6 +87,7 @@ impl CrawlOptions {
             budget: RUN_BUDGET,
             started_at_ms: now_ms(),
             sync_id: None,
+            caller_hints: Vec::new(),
         }
     }
 
@@ -137,13 +142,29 @@ pub fn mint_sync_id(started_at_ms: u64) -> String {
 /// Never fails: an unreachable ledger, a chain that does not verify and two
 /// sources that disagree are all recorded on the node and the walk carries
 /// on. What a caller checks is `summary.truncated` and the per-node status.
+///
+/// One [`Resolution`] carries the run's deadline, its 16-endpoint dial budget
+/// and its visited-identity set, so every fetch of this run shares them
+/// (proposal 006 section 5.2).
 pub async fn crawl(
     roots: &[IdentityId],
     options: &CrawlOptions,
     fetcher: &dyn LedgerFetcher,
 ) -> Generation {
+    let resolution =
+        Resolution::with_budget(options.budget).with_caller_hints(options.caller_hints.clone());
+    crawl_with(roots, options, fetcher, &resolution).await
+}
+
+/// [`crawl`] over a resolution the caller already holds, which is what a route
+/// that resolved a link's endpoint hints has.
+pub async fn crawl_with(
+    roots: &[IdentityId],
+    options: &CrawlOptions,
+    fetcher: &dyn LedgerFetcher,
+    resolution: &Resolution,
+) -> Generation {
     let depth_cap = options.bounded_depth();
-    let started = tokio::time::Instant::now();
     let root_set: BTreeSet<IdentityId> = roots.iter().copied().collect();
 
     let mut outcomes: BTreeMap<IdentityId, (u32, FetchOutcome)> = BTreeMap::new();
@@ -172,7 +193,7 @@ pub async fn crawl(
         let stop_after_level = hard_stop.is_some();
 
         for batch in level.chunks(options.in_flight.max(1)) {
-            if started.elapsed() >= options.budget {
+            if resolution.expired() {
                 hard_stop.get_or_insert(TruncatedBy::Time);
                 break 'levels;
             }
@@ -180,7 +201,7 @@ pub async fn crawl(
                 .iter()
                 .map(|ledger| {
                     let learned = hints.get(ledger).cloned().unwrap_or_default();
-                    fetcher.fetch_candidate(*ledger, learned)
+                    fetcher.fetch_candidate(*ledger, learned, resolution)
                 })
                 .collect();
             fetch_count += futures.len();

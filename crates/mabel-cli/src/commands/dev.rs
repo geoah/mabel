@@ -205,6 +205,7 @@ pub fn seed(ctx: &Context, tickets: &[String], named: &[String]) -> Result<Outco
     let witnesses = if endpoints.is_empty() {
         Vec::new()
     } else {
+        let configured = given.first().copied().unwrap_or(witness_identity);
         let mut naming = vec![witness_identity];
         naming.extend(given);
         for ledger in &ledgers {
@@ -213,7 +214,12 @@ pub fn seed(ctx: &Context, tickets: &[String], named: &[String]) -> Result<Outco
             }
         }
         let dialled: Vec<String> = endpoints.iter().map(ToString::to_string).collect();
-        witness::set_default(ctx, &dialled)?;
+        // The ticket's endpoints answer for the witness identity named on the
+        // command line when there is one, and for the seeded identity
+        // otherwise: a bootstrap record says which machine answers for which
+        // identity, and pairing the wrong two would configure a witness that
+        // does nothing (proposal 006 section 5.4).
+        witness::set_default(ctx, &configured.to_string(), &dialled)?;
         naming.iter().copied().map(ids::identity).collect()
     };
     let (pushed, graph) = if endpoints.is_empty() {

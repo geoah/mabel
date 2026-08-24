@@ -16,6 +16,7 @@ use mabel_core::{EventId, IdentityId, LedgerId};
 use crate::api::documents::DeclaredKind;
 use crate::graph::fetcher::{FetchFuture, FetchOutcome, LedgerFetcher, LedgerSummary, TrustEdge};
 use crate::graph::model::{Equivocation, EquivocationBranch, FetchSource};
+use crate::graph::resolve::Resolution;
 use crate::wallet::ids;
 
 /// A deterministic event id for the attestation from `issuer` to `subject`.
@@ -115,6 +116,7 @@ impl StubFetcher {
     ) -> Self {
         let branch = |(endpoint, event): (EndpointId, EventId)| EquivocationBranch {
             source: FetchSource::NodeWitness {
+                witness: ids::identity(stub_identity(0xEE)),
                 endpoint: ids::key(&endpoint),
             },
             event: ids::event(event),
@@ -176,7 +178,9 @@ fn summary(ledger: LedgerId, subjects: &[IdentityId]) -> LedgerSummary {
         email: None,
         head_seq: subjects.len() as u64,
         head_event: stub_head(ledger),
-        witnesses: Vec::new(),
+        endpoints: Vec::new(),
+        witness_identities: Vec::new(),
+        legacy_witnesses: Vec::new(),
         trust: subjects
             .iter()
             .enumerate()
@@ -190,7 +194,12 @@ fn summary(ledger: LedgerId, subjects: &[IdentityId]) -> LedgerSummary {
 }
 
 impl LedgerFetcher for StubFetcher {
-    fn fetch_candidate(&self, ledger: LedgerId, _sources: Vec<EndpointId>) -> FetchFuture<'_> {
+    fn fetch_candidate<'a>(
+        &'a self,
+        ledger: LedgerId,
+        _sources: Vec<EndpointId>,
+        _resolution: &'a Resolution,
+    ) -> FetchFuture<'a> {
         Box::pin(async move {
             if !self.delay.is_zero() {
                 tokio::time::sleep(self.delay).await;

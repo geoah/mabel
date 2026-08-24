@@ -1,16 +1,29 @@
 //! Reading one frontier ledger, from every source that might hold it
-//! (proposal 003 section 3).
+//! (proposal 006 section 5).
 //!
 //! The source order is normative and every applicable source is queried
 //! rather than the walk stopping at the first that answers, because a second
 //! answer is how equivocation is seen at all:
 //!
-//! 1. a local copy under `ledgers/`;
-//! 2. `peers.json` hints for that ledger id, plus any the crawl learned;
-//! 3. the node-wide witnesses in `node.json`;
-//! 4. the endpoints a verified copy names in its retired tag-11
-//!    `WitnessConfig`, reachable only once one of the first three produced a
-//!    copy.
+//! 1. `Local`: a copy under `ledgers/`;
+//! 2. `CallerHint`: an endpoint supplied with this request, from a `mabel://`
+//!    link, a `--peer` ticket or `--from`;
+//! 3. `PeerHint`: `peers.json` for this ledger, plus what this crawl learned;
+//! 4. `NodeWitness`: the endpoints of each identity in `node.json.witnesses`,
+//!    resolved by section 5.1, which needs no copy of anything;
+//! 5. `LedgerEndpoint`: the endpoints the ledger's own tag-18 advertisement
+//!    names, reachable only once another source produced a copy;
+//! 6. `WitnessIdentity`: the endpoints of each identity in the ledger's tag-19
+//!    `WitnessSet`, each resolved by section 5.1;
+//! 7. `LegacyWitnessHint`: the endpoints in the ledger's retired tag-11
+//!    `WitnessConfig`;
+//! 8. `DnsEndpoint`: the `mabel-endpoints=` records of a hostname, queried only
+//!    when sources 1 to 7 produced no reachable copy.
+//!
+//! One [`Resolution`] carries the dial budget, the deadline and the visited
+//! identity set for the whole top-level operation (section 5.2), so an endpoint
+//! three sources name costs one slot and 16 distinct endpoints is the whole
+//! operation's ration.
 //!
 //! Verification happens in memory, over the same [`WalletSync::candidate`]
 //! path a deliberate fetch uses, and the crawl keeps only the folded summary.
@@ -20,6 +33,7 @@
 
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::Arc;
 use std::time::Duration;
 
 use iroh::EndpointId;
@@ -27,9 +41,12 @@ use mabel_core::{EventId, IdentityId, LedgerId};
 
 use crate::api::documents::{DeclaredKind, Id};
 use crate::api::error::ServiceError;
-use crate::graph::model::{Equivocation, EquivocationBranch, FetchSource, NodeStatus};
+use crate::graph::model::{Equivocation, EquivocationBranch, FetchSource, NodeStatus, SourceClass};
+use crate::graph::resolve::Resolution;
+use crate::graph::store::GraphStore;
 use crate::home::NodeHome;
 use crate::now_ms;
+use crate::verification::{Resolver, endpoints_for_claim, query_name};
 use crate::wallet::ids;
 use crate::wallet::{LoadedLedger, WalletCore, WalletSync};
 
@@ -72,10 +89,16 @@ pub struct LedgerSummary {
     pub head_seq: u64,
     /// The event at that position.
     pub head_event: EventId,
+    /// The endpoints its own tag-18 `EndpointAdvertisement` names, which are
+    /// source 5.
+    pub endpoints: Vec<EndpointId>,
+    /// The identities its tag-19 `WitnessSet` names, which are source 6 once
+    /// each is resolved by proposal 006 section 5.1.
+    pub witness_identities: Vec<IdentityId>,
     /// The endpoints its retired tag-11 `WitnessConfig` names, which are
-    /// source 4. A tag-19 `WitnessSet` names identities and is resolved to
-    /// endpoints in ticket 035, so nothing here reads it yet.
-    pub witnesses: Vec<EndpointId>,
+    /// source 7. Never merged into [`LedgerSummary::endpoints`]: that field
+    /// never promised an identity.
+    pub legacy_witnesses: Vec<EndpointId>,
     /// Its current attestations, ascending by position. A revoked
     /// attestation is not an edge.
     pub trust: Vec<TrustEdge>,
@@ -110,7 +133,9 @@ impl LedgerSummary {
             email: profile.and_then(|profile| profile.email.clone()),
             head_seq: loaded.head_seq,
             head_event: loaded.head_event,
-            witnesses: loaded.state.witness_endpoints().to_vec(),
+            endpoints: loaded.state.endpoints().to_vec(),
+            witness_identities: loaded.state.witness_identities().to_vec(),
+            legacy_witnesses: loaded.state.witness_endpoints().to_vec(),
             trust,
         }
     }
@@ -213,12 +238,18 @@ impl FetchOutcome {
 ///
 /// One method, so the crawler's tests inject a stub and no unit test opens a
 /// socket. `sources` carries endpoints the crawl learned for this ledger,
-/// queried with the `peers.json` hints of step 2; the four ordered sources
+/// queried with the `peers.json` hints of source 3; the ordered sources
 /// themselves are the implementation's business, because only it knows the
-/// node home.
+/// node home. `resolution` is the operation's shared dial budget, deadline and
+/// visited set (proposal 006 sections 5.1 and 5.2).
 pub trait LedgerFetcher: Send + Sync {
     /// Reads `ledger`, verifying every candidate from nothing.
-    fn fetch_candidate(&self, ledger: LedgerId, sources: Vec<EndpointId>) -> FetchFuture<'_>;
+    fn fetch_candidate<'a>(
+        &'a self,
+        ledger: LedgerId,
+        sources: Vec<EndpointId>,
+        resolution: &'a Resolution,
+    ) -> FetchFuture<'a>;
 }
 
 /// One source the plan will ask, with the endpoint to dial.
@@ -248,13 +279,28 @@ impl PlannedSource {
             endpoint: Some(endpoint),
         }
     }
+
+    /// One endpoint of a witness identity, found as `kind`.
+    #[must_use]
+    pub fn of_witness(
+        witness: IdentityId,
+        endpoint: EndpointId,
+        kind: fn(Id, Id) -> FetchSource,
+    ) -> Self {
+        Self {
+            source: kind(ids::identity(witness), ids::key(&endpoint)),
+            endpoint: Some(endpoint),
+        }
+    }
 }
 
-/// Sources 1 to 3 for `ledger`, in order, with no endpoint asked twice.
+/// Sources 1 to 4 for `ledger`, in order, with no endpoint asked twice and
+/// every dial charged to `resolution`.
 ///
 /// `learned` is what the crawl picked up elsewhere and is queried with the
-/// `peers.json` hints. Source 4 comes from [`ledger_witness_sources`] once a
-/// copy has verified.
+/// `peers.json` hints of source 3. Sources 5 to 7 come from
+/// [`chain_named_sources`] once a copy has verified, and source 8 only when
+/// none did.
 ///
 /// # Errors
 ///
@@ -263,49 +309,109 @@ pub fn plan_sources(
     core: &WalletCore,
     ledger: LedgerId,
     learned: &[EndpointId],
+    resolution: &Resolution,
 ) -> Result<Vec<PlannedSource>, ServiceError> {
     let mut planned = Vec::new();
     if core.holds(ledger)? {
         planned.push(PlannedSource::local());
     }
+    // Source 2: a human just named these.
+    for endpoint in resolution.caller_hints() {
+        push_admitted(
+            &mut planned,
+            resolution,
+            PlannedSource::endpoint(*endpoint, |endpoint| FetchSource::CallerHint { endpoint }),
+        );
+    }
+    // Source 3.
     let peers = core.home().peers().map_err(crate::wallet::storage_error)?;
     for endpoint in peers.hints(ledger).iter().chain(learned) {
-        push_unique(
+        push_admitted(
             &mut planned,
+            resolution,
             PlannedSource::endpoint(*endpoint, |endpoint| FetchSource::PeerHint { endpoint }),
         );
     }
-    for endpoint in &core.config()?.witnesses {
-        push_unique(
-            &mut planned,
-            PlannedSource::endpoint(*endpoint, |endpoint| FetchSource::NodeWitness { endpoint }),
-        );
+    // Source 4: the workhorse for a ledger this home has never seen, and the
+    // class four of the sixteen slots are held back for.
+    for entry in &core.config()?.witnesses {
+        for endpoint in resolution.witness_endpoints(core, entry.identity)? {
+            push_admitted(
+                &mut planned,
+                resolution,
+                PlannedSource::of_witness(entry.identity, endpoint, |witness, endpoint| {
+                    FetchSource::NodeWitness { witness, endpoint }
+                }),
+            );
+        }
     }
     Ok(planned)
 }
 
-/// Source 4: the witnesses a verified copy names, minus everything already
-/// asked.
-#[must_use]
-pub fn ledger_witness_sources(
+/// Sources 5, 6 and 7 off a copy that verified, minus everything already asked.
+///
+/// The three are one budget class and three sources: an endpoint reached
+/// through the tag-11 list of source 7 is never merged into the tag-18
+/// advertisement of source 5, and never establishes a binding.
+///
+/// # Errors
+///
+/// Returns the errors of reading `node.json` and `peers.json` while resolving
+/// the identities the `WitnessSet` names.
+pub fn chain_named_sources(
+    core: &WalletCore,
     planned: &[PlannedSource],
-    witnesses: &[EndpointId],
-) -> Vec<PlannedSource> {
+    summary: &LedgerSummary,
+    resolution: &Resolution,
+) -> Result<Vec<PlannedSource>, ServiceError> {
     let mut extra: Vec<PlannedSource> = Vec::new();
-    for endpoint in witnesses {
-        let next = PlannedSource::endpoint(*endpoint, |endpoint| FetchSource::LedgerWitness {
-            endpoint,
-        });
+    let add = |extra: &mut Vec<PlannedSource>, next: PlannedSource| {
         if planned.iter().any(|asked| asked.endpoint == next.endpoint) {
-            continue;
+            return;
         }
-        push_unique(&mut extra, next);
+        push_admitted(extra, resolution, next);
+    };
+    // Source 5.
+    for endpoint in &summary.endpoints {
+        add(
+            &mut extra,
+            PlannedSource::endpoint(*endpoint, |endpoint| FetchSource::LedgerEndpoint {
+                endpoint,
+            }),
+        );
     }
-    extra
+    // Source 6, each identity resolved by section 5.1 and each resolved once.
+    for witness in &summary.witness_identities {
+        for endpoint in resolution.witness_endpoints(core, *witness)? {
+            add(
+                &mut extra,
+                PlannedSource::of_witness(*witness, endpoint, |witness, endpoint| {
+                    FetchSource::WitnessIdentity { witness, endpoint }
+                }),
+            );
+        }
+    }
+    // Source 7.
+    for endpoint in &summary.legacy_witnesses {
+        add(
+            &mut extra,
+            PlannedSource::endpoint(*endpoint, |endpoint| FetchSource::LegacyWitnessHint {
+                endpoint,
+            }),
+        );
+    }
+    Ok(extra)
 }
 
-fn push_unique(planned: &mut Vec<PlannedSource>, next: PlannedSource) {
+/// Adds `next` unless its endpoint was already planned or the dial budget
+/// refuses it.
+fn push_admitted(planned: &mut Vec<PlannedSource>, resolution: &Resolution, next: PlannedSource) {
     if planned.iter().any(|asked| asked.endpoint == next.endpoint) {
+        return;
+    }
+    if let Some(endpoint) = next.endpoint
+        && !resolution.admit(next.source.class(), endpoint)
+    {
         return;
     }
     planned.push(next);
@@ -313,13 +419,25 @@ fn push_unique(planned: &mut Vec<PlannedSource>, next: PlannedSource) {
 
 /// The [`LedgerFetcher`] the node runs: the source order over one home and
 /// one Iroh endpoint.
-#[derive(Debug)]
 pub struct NetLedgerFetcher {
     core: WalletCore,
     sync: WalletSync,
+    /// The resolver source 8 queries, absent when this home has none. Source 8
+    /// is skipped rather than failed then: a DNS hint is a recovery path, not a
+    /// requirement.
+    resolver: Option<Arc<dyn Resolver>>,
     /// Serializes the `peers.json` read-modify-write, so two fetches finishing
     /// together cannot drop one another's hint.
     hints: tokio::sync::Mutex<()>,
+}
+
+impl std::fmt::Debug for NetLedgerFetcher {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("NetLedgerFetcher")
+            .field("resolver", &self.resolver.is_some())
+            .finish_non_exhaustive()
+    }
 }
 
 impl NetLedgerFetcher {
@@ -333,39 +451,143 @@ impl NetLedgerFetcher {
         Self {
             core,
             sync: sync.with_timeout(PER_FETCH_TIMEOUT),
+            resolver: None,
             hints: tokio::sync::Mutex::new(()),
         }
     }
 
+    /// The same fetcher with the resolver source 8 queries.
+    #[must_use]
+    pub fn with_resolver(mut self, resolver: Arc<dyn Resolver>) -> Self {
+        self.resolver = Some(resolver);
+        self
+    }
+
     /// Reads `ledger` from every applicable source, in order.
-    async fn fetch(&self, ledger: LedgerId, learned: Vec<EndpointId>) -> FetchOutcome {
-        let mut planned = match plan_sources(&self.core, ledger, &learned) {
+    async fn fetch(
+        &self,
+        ledger: LedgerId,
+        learned: Vec<EndpointId>,
+        resolution: &Resolution,
+    ) -> FetchOutcome {
+        let mut planned = match plan_sources(&self.core, ledger, &learned, resolution) {
             Ok(planned) => planned,
             Err(error) => return FetchOutcome::invalid(ledger, Vec::new(), error.to_string()),
         };
         let mut tried: Vec<FetchSource> = Vec::new();
         let mut candidates: Vec<(FetchSource, LoadedLedger)> = Vec::new();
+        let mut failed: Vec<EndpointId> = Vec::new();
         let mut invalid: Option<String> = None;
         let mut index = 0;
         while index < planned.len() {
+            if resolution.expired() {
+                break;
+            }
             let next = planned[index].clone();
             index += 1;
             tried.push(next.source.clone());
-            match self.read(ledger, &next).await {
+            match self.read(ledger, &next, resolution).await {
                 Ok(Some(loaded)) => {
-                    // Source 4 exists only once a copy verified: the witness
-                    // set is a fact of the chain that was just folded.
-                    let named = ledger_witness_sources(&planned, loaded.state.witness_endpoints());
-                    planned.extend(named);
+                    // Sources 5 to 7 exist only once a copy verified: the
+                    // advertisement and the witness set are facts of the chain
+                    // that was just folded.
+                    let summary = LedgerSummary::of(&loaded);
+                    match chain_named_sources(&self.core, &planned, &summary, resolution) {
+                        Ok(named) => planned.extend(named),
+                        Err(error) => invalid = invalid.or(Some(error.to_string())),
+                    }
                     candidates.push((next.source, loaded));
                 }
-                Ok(None) => {}
+                Ok(None) => {
+                    if let Some(endpoint) = next.endpoint {
+                        failed.push(endpoint);
+                    }
+                }
                 Err(detail) => invalid = invalid.or(Some(detail)),
             }
         }
+        // Source 8 is queried only when sources 1 to 7 produced no reachable
+        // copy: a DNS query tells a third-party resolver which identity this
+        // wallet is looking for. The local copy is not a reachable copy, which
+        // is the recovery path a rotation needs: a wallet holding an old copy of
+        // a ledger whose every recorded endpoint is dead can still find its new
+        // machines through the zone it already claimed (proposal 006 section 6).
+        let reached = candidates
+            .iter()
+            .any(|(source, _)| source.endpoint().is_some());
+        if !reached && !resolution.expired() {
+            for next in self.dns_sources(ledger, resolution).await {
+                if resolution.expired() {
+                    break;
+                }
+                tried.push(next.source.clone());
+                match self.read(ledger, &next, resolution).await {
+                    Ok(Some(loaded)) => candidates.push((next.source, loaded)),
+                    Ok(None) => {
+                        if let Some(endpoint) = next.endpoint {
+                            failed.push(endpoint);
+                        }
+                    }
+                    Err(detail) => invalid = invalid.or(Some(detail)),
+                }
+            }
+        }
         let outcome = decide(ledger, tried, candidates, invalid);
-        self.record_hints(ledger, &outcome).await;
+        self.record_hints(ledger, &outcome, &failed).await;
         outcome
+    }
+
+    /// Source 8: the `mabel-endpoints=` records of a hostname this home already
+    /// holds for `ledger`, read under row 2 of the applicability matrix.
+    ///
+    /// The hostname comes from a stale local copy of the ledger or from the
+    /// stored crawl generation, never from a guess, and the records count only
+    /// when the same response carries `mabel=<ledger>` (proposal 006 section 6).
+    async fn dns_sources(&self, ledger: LedgerId, resolution: &Resolution) -> Vec<PlannedSource> {
+        let Some(resolver) = self.resolver.as_ref() else {
+            return Vec::new();
+        };
+        let Some(hostname) = self.claimed_hostname(ledger) else {
+            return Vec::new();
+        };
+        let Ok(records) = resolver.lookup_txt(&query_name(&hostname)).await else {
+            return Vec::new();
+        };
+        let mut planned = Vec::new();
+        for endpoint in endpoints_for_claim(&records, ledger) {
+            if !resolution.admit(SourceClass::Dns, endpoint) {
+                continue;
+            }
+            planned.push(PlannedSource {
+                source: FetchSource::DnsEndpoint {
+                    hostname: hostname.clone(),
+                    endpoint: ids::key(&endpoint),
+                },
+                endpoint: Some(endpoint),
+            });
+        }
+        planned
+    }
+
+    /// The hostname a stale local copy of `ledger` claims, or the one the
+    /// stored crawl generation recorded for it.
+    fn claimed_hostname(&self, ledger: LedgerId) -> Option<String> {
+        if let Ok(loaded) = self.core.load(ledger)
+            && !loaded.is_empty()
+            && let Some(hostname) = loaded
+                .state
+                .profile()
+                .and_then(|profile| profile.hostname.clone())
+        {
+            return Some(hostname);
+        }
+        let generation = GraphStore::in_home(self.core.home())
+            .current_generation()
+            .ok()
+            .flatten()?;
+        generation
+            .node(&ids::identity(ledger))
+            .and_then(|node| node.hostname.clone())
     }
 
     /// One source's answer: `Ok(None)` for an unreachable source, `Err` for
@@ -374,6 +596,7 @@ impl NetLedgerFetcher {
         &self,
         ledger: LedgerId,
         planned: &PlannedSource,
+        resolution: &Resolution,
     ) -> Result<Option<LoadedLedger>, String> {
         let Some(endpoint) = planned.endpoint else {
             let loaded = self.core.load(ledger).map_err(|error| error.to_string())?;
@@ -385,8 +608,9 @@ impl NetLedgerFetcher {
             }
             return Ok(Some(loaded));
         };
-        let served =
-            tokio::time::timeout(PER_FETCH_TIMEOUT, self.sync.candidate(endpoint, ledger)).await;
+        // No source outlives the operation's shared deadline.
+        let deadline = PER_FETCH_TIMEOUT.min(resolution.remaining());
+        let served = tokio::time::timeout(deadline, self.sync.candidate(endpoint, ledger)).await;
         match served {
             Ok(Ok(loaded)) => Ok(loaded),
             // Code 20 is a chain that does not verify; everything else is a
@@ -396,19 +620,47 @@ impl NetLedgerFetcher {
         }
     }
 
-    /// Writes the endpoint that served a verified copy back to `peers.json`,
-    /// so the next crawl asks it first.
-    async fn record_hints(&self, ledger: LedgerId, outcome: &FetchOutcome) {
-        let Some(endpoint) = outcome
+    /// Keeps `peers.json` honest about this ledger: the endpoint that served
+    /// the kept copy gets a success, and every endpoint that did not answer
+    /// gets a failure (proposal 006 section 5.3).
+    ///
+    /// A `CallerHint` endpoint is never written.
+    async fn record_hints(&self, ledger: LedgerId, outcome: &FetchOutcome, failed: &[EndpointId]) {
+        let served = outcome
             .source
             .as_ref()
+            .filter(|source| source.may_record_hint())
             .and_then(FetchSource::endpoint)
-            .and_then(|id| ids::parse_endpoint(id).ok())
-        else {
+            .and_then(|id| ids::parse_endpoint(id).ok());
+        let caller: Vec<EndpointId> = outcome
+            .sources_tried
+            .iter()
+            .filter(|source| !source.may_record_hint())
+            .filter_map(FetchSource::endpoint)
+            .filter_map(|id| ids::parse_endpoint(id).ok())
+            .collect();
+        let _guard = self.hints.lock().await;
+        let home = self.core.home();
+        let Ok(mut peers) = home.peers() else {
             return;
         };
-        let _guard = self.hints.lock().await;
-        record_hint(self.core.home(), ledger, endpoint);
+        let before = peers.clone();
+        for endpoint in failed {
+            if caller.contains(endpoint) {
+                continue;
+            }
+            peers.record_failure(ledger, *endpoint);
+        }
+        if let Some(endpoint) = served {
+            peers.record_success(ledger, endpoint, now_ms());
+        }
+        peers.prune(now_ms());
+        if peers == before {
+            return;
+        }
+        if let Err(error) = home.write_peers(&peers) {
+            tracing::warn!(%ledger, %error, "could not record a graph peer hint");
+        }
     }
 }
 
@@ -422,18 +674,21 @@ pub fn record_hint(home: &NodeHome, ledger: LedgerId, endpoint: EndpointId) {
     let Ok(mut peers) = home.peers() else {
         return;
     };
-    if peers.hints(ledger).contains(&endpoint) {
-        return;
-    }
-    peers.add_hint(ledger, endpoint);
+    peers.record_success(ledger, endpoint, now_ms());
+    peers.prune(now_ms());
     if let Err(error) = home.write_peers(&peers) {
         tracing::warn!(%ledger, %error, "could not record a graph peer hint");
     }
 }
 
 impl LedgerFetcher for NetLedgerFetcher {
-    fn fetch_candidate(&self, ledger: LedgerId, sources: Vec<EndpointId>) -> FetchFuture<'_> {
-        Box::pin(self.fetch(ledger, sources))
+    fn fetch_candidate<'a>(
+        &'a self,
+        ledger: LedgerId,
+        sources: Vec<EndpointId>,
+        resolution: &'a Resolution,
+    ) -> FetchFuture<'a> {
+        Box::pin(self.fetch(ledger, sources, resolution))
     }
 }
 

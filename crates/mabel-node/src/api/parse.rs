@@ -673,19 +673,31 @@ pub(super) fn push(bytes: &[u8]) -> Result<PushRequest, ServiceError> {
 struct FetchBody {
     #[serde(default)]
     from: Option<String>,
+    from_witness: Option<String>,
 }
 
 /// `POST /api/identities/{identity_id}/fetch`.
 ///
-/// An absent or `null` `from` means every known witness, in the crawler's
-/// source order (proposal 004).
+/// `from` is one endpoint and `from_witness` is one witness identity, resolved
+/// to endpoints by proposal 006 section 5.1. Neither means every known source in
+/// the order of section 5; both is `conflicting_source`, which the service
+/// refuses rather than the parser, because it is about the pair and not about
+/// either field's shape.
 pub(super) fn fetch_identity(identity_id: Id, bytes: &[u8]) -> Result<FetchIdentity, ServiceError> {
     let parsed: FetchBody = body(bytes)?;
     let from = match parsed.from.as_deref().map(str::trim) {
         None | Some("") => None,
         Some(raw) => Some(id_field(IdKind::Endpoint, "from", raw)?),
     };
-    Ok(FetchIdentity { identity_id, from })
+    let from_witness = match parsed.from_witness.as_deref().map(str::trim) {
+        None | Some("") => None,
+        Some(raw) => Some(id_field(IdKind::Identity, "from_witness", raw)?),
+    };
+    Ok(FetchIdentity {
+        identity_id,
+        from,
+        from_witness,
+    })
 }
 
 /// `?input=` on `GET /api/resolve`: one identity id, one hostname or one

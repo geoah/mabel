@@ -441,7 +441,14 @@ impl Shared {
         // pushes, and both homes record the machine that answers for it, which
         // is where a push dials.
         for (home, alias) in [(&alice_home, "alice"), (&bob_home, "bob")] {
-            home.json(&["witness", "set-default", &witness.endpoint]);
+            home.json(&[
+                "witness",
+                "set-default",
+                "--witness",
+                &witness.identity,
+                "--endpoints",
+                &witness.endpoint,
+            ]);
             home.json(&[
                 "witness",
                 "add",
@@ -926,7 +933,18 @@ fn two_witnesses_on_divergent_branches_exit_20_naming_both_sources() {
     let carol = home.create("carol");
     // Both machines keep Alice's chain for the same witness identity, and
     // `node.json` names both as where to dial.
-    home.json(&["witness", "set-default", &first.endpoint, &second.endpoint]);
+    // Two witness identities, one entry each: `set-default` replaces the entry
+    // for the identity it names and leaves the others alone.
+    for witness in [&first, &second] {
+        home.json(&[
+            "witness",
+            "set-default",
+            "--witness",
+            &witness.identity,
+            "--endpoints",
+            &witness.endpoint,
+        ]);
+    }
     for witness in [&first, &second] {
         home.json(&[
             "witness",

@@ -67,8 +67,7 @@ impl Wallet {
     /// Two facts, one call, because a push needs both: the chain says who may
     /// keep the ledger, which is what admits the push (proposal 006 section 4),
     /// and `node.json` says which machine to dial, which is the bootstrap raw
-    /// endpoint of section 5.4. Resolving a witness identity to its endpoints is
-    /// ticket 035.
+    /// endpoint of section 5.4, which resolution reads under section 5.1.
     async fn witnesses(&self, identity: IdentityId, endpoints: &[EndpointId]) {
         {
             let lock = self.core.append_lock(identity).await;
@@ -77,7 +76,10 @@ impl Wallet {
                 .expect("the witness set is appended");
         }
         let mut config = self.core.home().config().expect("node.json reads");
-        config.witnesses = endpoints.to_vec();
+        config.witnesses = vec![mabel_node::WitnessEntry::new(
+            witness_identity(),
+            endpoints.to_vec(),
+        )];
         self.core
             .home()
             .write_config(&config)

@@ -2,7 +2,8 @@
   "route": "/api/identities/:identity_id/fetch",
   "method": "POST",
   "request": {
-    "from": "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq"
+    "from": "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq",
+    "from_witness": null
   },
   "response": {
     "ok": true,
@@ -21,10 +22,22 @@
       "body": {
         "ok": false,
         "code": 2,
-        "message": "this wallet knows no witness 54rw3lmckcpqf4ofkvyx3i74agumvale2qmzdu76ubpita6sw5va",
+        "message": "from names an endpoint and from_witness names an identity: give one",
         "details": {
-          "reason": "unknown_witness",
-          "endpoint_id": "54rw3lmckcpqf4ofkvyx3i74agumvale2qmzdu76ubpita6sw5va"
+          "reason": "conflicting_source",
+          "parameter": "from_witness"
+        }
+      }
+    },
+    {
+      "status": 400,
+      "body": {
+        "ok": false,
+        "code": 2,
+        "message": "no endpoint is known for the witness jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq",
+        "details": {
+          "reason": "unresolvable_witness",
+          "identity_id": "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq"
         }
       }
     },

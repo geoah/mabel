@@ -297,8 +297,18 @@ pub struct NodeTicket {
 /// `mabel witness set-default --json`.
 #[derive(Debug, Serialize)]
 pub struct DefaultWitnesses {
-    /// The node-wide witness set `node.json` now holds.
-    pub witnesses: Vec<Id>,
+    /// The witness identities `node.json` now names, each with the bootstrap
+    /// endpoints recorded beside it (proposal 006 section 5.4).
+    pub witnesses: Vec<DefaultWitness>,
+}
+
+/// One entry of `node.json.witnesses`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct DefaultWitness {
+    /// The witness identity.
+    pub identity_id: Id,
+    /// The endpoints recorded beside it, in the order they were given.
+    pub endpoints: Vec<Id>,
 }
 
 /// Where a ledger's signing authority came from (proposal 002 section 2).

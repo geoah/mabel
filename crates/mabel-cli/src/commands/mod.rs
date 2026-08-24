@@ -151,7 +151,9 @@ fn dispatch(ctx: &Context, cli: &Cli) -> Result<Outcome> {
                 witness,
                 append,
             } => witness::add(ctx, identity, witness, append),
-            WitnessCommand::SetDefault { endpoints } => witness::set_default(ctx, endpoints),
+            WitnessCommand::SetDefault { witness, endpoints } => {
+                witness::set_default(ctx, witness, endpoints)
+            }
             WitnessCommand::Run {
                 http,
                 iroh_port,
@@ -167,8 +169,15 @@ fn dispatch(ctx: &Context, cli: &Cli) -> Result<Outcome> {
             SyncCommand::Fetch {
                 ledger_id,
                 from,
+                from_witness,
                 peer,
-            } => sync::fetch(ctx, ledger_id, from.as_deref(), peer),
+            } => sync::fetch(
+                ctx,
+                ledger_id,
+                from.as_deref(),
+                from_witness.as_deref(),
+                peer,
+            ),
         },
         Command::Verify { command } => match command {
             VerifyCommand::Ledger {

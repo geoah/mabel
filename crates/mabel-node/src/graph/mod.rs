@@ -39,6 +39,7 @@
 mod crawl;
 mod fetcher;
 mod model;
+mod resolve;
 mod store;
 mod stub;
 
@@ -47,17 +48,18 @@ mod tests;
 
 pub use crawl::{
     CrawlOptions, DEFAULT_DEPTH, IN_FLIGHT, MAX_DEPTH, MAX_FETCHES, MAX_NODES, MIN_DEPTH,
-    RUN_BUDGET, crawl, mint_sync_id,
+    RUN_BUDGET, crawl, crawl_with, mint_sync_id,
 };
 pub use fetcher::{
     FetchFuture, FetchOutcome, LedgerFetcher, LedgerSummary, NetLedgerFetcher, PER_FETCH_TIMEOUT,
-    PlannedSource, TrustEdge, ledger_witness_sources, plan_sources, record_hint,
+    PlannedSource, TrustEdge, chain_named_sources, plan_sources, record_hint,
 };
 pub use model::{
     DiscoveredVia, Equivocation, EquivocationBranch, FetchSource, GraphEdge, GraphNode, GraphPath,
     GraphSummary, NodeStatus, PathHop, ReverseEdge, ReverseEdges, RootDepth, STALE_AFTER_MS,
-    TruncatedBy, is_stale,
+    SourceClass, TruncatedBy, is_stale,
 };
+pub use resolve::{DialBudget, MAX_DIALS, RESOLVE_BUDGET, Resolution};
 pub use store::{
     CURRENT_FILE, CurrentPointer, GENERATIONS_DIR, GRAPH_DIR, Generation, GraphStore,
     KEPT_GENERATIONS, MAX_PATHS, NODES_DIR, SUMMARY_FILE,

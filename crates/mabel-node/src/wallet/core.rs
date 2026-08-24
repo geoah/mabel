@@ -46,6 +46,7 @@ use crate::api::error::ServiceError;
 use crate::api::service::EventPageRequest;
 use crate::config::NodeConfig;
 use crate::contacts::{ContactEntry, ContactStore};
+use crate::graph::{Resolution, SourceClass};
 use crate::home::{DeclaredKind, IdentityMeta, NodeHome};
 use crate::ledger::{LedgerMeta, LedgerStore, NewEvent};
 use crate::now_ms;
@@ -1219,25 +1220,58 @@ impl WalletCore {
         Ok(false)
     }
 
-    /// The endpoints a ledger is pushed to and verified against: the retired
-    /// tag-11 list its own chain records, plus the node-wide default of
-    /// `node.json`.
+    /// The endpoints a ledger is pushed to and verified against, resolved
+    /// through proposal 006 section 5.1 under one dial budget.
     ///
-    /// A tag-19 `WitnessSet` names identities, and turning an identity into
-    /// endpoints is resolution, which ticket 035 owns. Until then the endpoints
-    /// a push dials come from `node.json` and from `--to`.
+    /// The order is the source order of section 5 as it applies to a push: the
+    /// identities the ledger's own tag-19 `WitnessSet` names, each resolved to
+    /// endpoints (source 6); the retired tag-11 list its own chain records
+    /// (source 7); then the witness identities `node.json` configures, each
+    /// resolved the same way (source 4). At most
+    /// [`MAX_DIALS`](crate::graph::MAX_DIALS) distinct endpoints come back, with
+    /// four slots held for `node.json`.
     ///
     /// # Errors
     ///
-    /// Returns code 10 for a malformed `node.json`.
+    /// Returns code 10 for a malformed `node.json` and the errors of reading
+    /// `peers.json`.
     pub fn witnesses_of(&self, ledger: LedgerId) -> Result<Vec<EndpointId>, ServiceError> {
-        let mut witnesses = match self.load(ledger) {
-            Ok(loaded) => loaded.state.witness_endpoints().to_vec(),
-            Err(_) => Vec::new(),
-        };
-        for endpoint in self.config()?.witnesses {
-            if !witnesses.contains(&endpoint) {
+        self.witnesses_of_resolved(ledger, &Resolution::for_operation())
+    }
+
+    /// [`WalletCore::witnesses_of`] charged to a resolution the caller already
+    /// holds, so one push, fetch or route call spends one budget.
+    ///
+    /// # Errors
+    ///
+    /// As [`WalletCore::witnesses_of`].
+    pub fn witnesses_of_resolved(
+        &self,
+        ledger: LedgerId,
+        resolution: &Resolution,
+    ) -> Result<Vec<EndpointId>, ServiceError> {
+        let mut witnesses: Vec<EndpointId> = Vec::new();
+        let push = |endpoint: EndpointId, class: SourceClass, witnesses: &mut Vec<EndpointId>| {
+            if witnesses.contains(&endpoint) {
+                return;
+            }
+            if resolution.admit(class, endpoint) {
                 witnesses.push(endpoint);
+            }
+        };
+        if let Ok(loaded) = self.load(ledger) {
+            for witness in loaded.state.witness_identities() {
+                for endpoint in resolution.witness_endpoints(self, *witness)? {
+                    push(endpoint, SourceClass::ChainNamed, &mut witnesses);
+                }
+            }
+            for endpoint in loaded.state.witness_endpoints() {
+                push(*endpoint, SourceClass::ChainNamed, &mut witnesses);
+            }
+        }
+        for entry in &self.config()?.witnesses {
+            for endpoint in resolution.witness_endpoints(self, entry.identity)? {
+                push(endpoint, SourceClass::NodeWitness, &mut witnesses);
             }
         }
         Ok(witnesses)

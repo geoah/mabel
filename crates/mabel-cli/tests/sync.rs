@@ -378,7 +378,14 @@ impl Witness {
 fn wallet_with(witness: &Witness) -> (Home, String) {
     let home = Home::new("wallet");
     let alice = home.create("alice");
-    home.json(&["witness", "set-default", &witness.endpoint]);
+    home.json(&[
+        "witness",
+        "set-default",
+        "--witness",
+        &witness.identity,
+        "--endpoints",
+        &witness.endpoint,
+    ]);
     name_witness(&home, "alice", witness);
     (home, alice)
 }
@@ -534,7 +541,14 @@ fn a_second_machine_for_the_witness_identity_verifies_the_binding() {
     // Alice names the witness identity once and pushes to both its machines.
     let home = Home::new("wallet");
     home.create("alice");
-    home.json(&["witness", "set-default", &first_endpoint, &second_endpoint]);
+    home.json(&[
+        "witness",
+        "set-default",
+        "--witness",
+        &identity,
+        "--endpoints",
+        &format!("{first_endpoint},{second_endpoint}"),
+    ]);
     home.json(&[
         "witness",
         "add",
@@ -671,6 +685,114 @@ fn sync_fetch_stores_a_ledger_this_home_never_held() {
     witness.stop();
 }
 
+/// The push path and the fetch path both find the witness through `node.json`
+/// alone: the chain names a witness identity and `node.json` records the machine
+/// that answers for it (proposal 006 sections 5.1 and 5.4).
+///
+/// No `--from` and no link on either side.
+#[test]
+fn a_push_and_a_fetch_resolve_the_witness_from_node_json_alone() {
+    let witness = Witness::start();
+    let (publisher, alice) = wallet_with(&witness);
+    // The push reads its endpoints from resolution, not from a flag.
+    let pushed = publisher.json(&[
+        "sync",
+        "push",
+        "--identity",
+        "alice",
+        "--peer",
+        &witness.ticket,
+    ]);
+    let rows = pushed["results"].as_array().expect("an array");
+    assert!(
+        rows.iter().any(
+            |row| row["endpoint"] == *witness.endpoint.as_str() && row["status"] == *"accepted"
+        ),
+        "{pushed}"
+    );
+
+    // A home that holds nothing of alice, with the same one config entry and no
+    // hint anywhere.
+    let reader = Home::new("wallet");
+    reader.json(&[
+        "witness",
+        "set-default",
+        "--witness",
+        &witness.identity,
+        "--endpoints",
+        &witness.endpoint,
+    ]);
+    let document = reader.json(&["sync", "fetch", &alice, "--peer", &witness.ticket]);
+    assert_eq!(document["ledger_id"], Value::from(alice.as_str()));
+    assert_eq!(document["source"], Value::from(witness.endpoint.as_str()));
+    assert_eq!(document["stored"], Value::from(2));
+
+    witness.stop();
+}
+
+/// `--from-witness` names an identity and resolution turns it into endpoints;
+/// naming an endpoint too is `conflicting_source`.
+#[test]
+fn sync_fetch_from_a_witness_resolves_it_and_refuses_both_keys() {
+    let witness = Witness::start();
+    let (publisher, alice) = wallet_with(&witness);
+    publisher.json(&[
+        "sync",
+        "push",
+        "--identity",
+        "alice",
+        "--peer",
+        &witness.ticket,
+    ]);
+
+    let reader = Home::new("wallet");
+    reader.json(&[
+        "witness",
+        "set-default",
+        "--witness",
+        &witness.identity,
+        "--endpoints",
+        &witness.endpoint,
+    ]);
+    let document = reader.json(&[
+        "sync",
+        "fetch",
+        &alice,
+        "--from-witness",
+        &witness.identity,
+        "--peer",
+        &witness.ticket,
+    ]);
+    assert_eq!(document["source"], Value::from(witness.endpoint.as_str()));
+
+    let (code, error) = reader.failure(&[
+        "sync",
+        "fetch",
+        &alice,
+        "--from",
+        &witness.endpoint,
+        "--from-witness",
+        &witness.identity,
+    ]);
+    assert_eq!(code, 2);
+    assert_eq!(
+        error["details"]["reason"],
+        Value::from("conflicting_source")
+    );
+
+    // A witness this home can reach no endpoint for is refused by name.
+    let stranger = Home::new("wallet");
+    let (code, error) =
+        stranger.failure(&["sync", "fetch", &alice, "--from-witness", &witness.identity]);
+    assert_eq!(code, 2);
+    assert_eq!(
+        error["details"]["reason"],
+        Value::from("unresolvable_witness")
+    );
+
+    witness.stop();
+}
+
 /// A shared link is the only string a fetch needs: `mabel identity share`
 /// names the machine to ask, and `mabel sync fetch <link>` asks it with no
 /// `--from` (proposal 006 section 7).
@@ -749,13 +871,27 @@ fn an_admitted_controller_appends_to_the_shared_ledger_from_their_own_home() {
     // record the witness's machine in `node.json`, which is where a push reads
     // the endpoints to dial.
     let alice_home = Home::new("wallet");
-    alice_home.json(&["witness", "set-default", &witness.endpoint]);
+    alice_home.json(&[
+        "witness",
+        "set-default",
+        "--witness",
+        &witness.identity,
+        "--endpoints",
+        &witness.endpoint,
+    ]);
     alice_home.create("alice");
     let acme = alice_home.found("acme", "alice");
 
     // Bob lives in another home and shares no disk with alice.
     let bob_home = Home::new("wallet");
-    bob_home.json(&["witness", "set-default", &witness.endpoint]);
+    bob_home.json(&[
+        "witness",
+        "set-default",
+        "--witness",
+        &witness.identity,
+        "--endpoints",
+        &witness.endpoint,
+    ]);
     let bob = bob_home.create("bob");
     let descriptor = file("bob.descriptor");
     bob_home.export("bob", &descriptor);
@@ -975,11 +1111,25 @@ fn a_removed_controllers_append_is_refused_after_the_removal_lands() {
     let file = |name: &str| exchange.path().join(name);
 
     let alice_home = Home::new("wallet");
-    alice_home.json(&["witness", "set-default", &witness.endpoint]);
+    alice_home.json(&[
+        "witness",
+        "set-default",
+        "--witness",
+        &witness.identity,
+        "--endpoints",
+        &witness.endpoint,
+    ]);
     alice_home.create("alice");
     let acme = alice_home.found("acme", "alice");
     let bob_home = Home::new("wallet");
-    bob_home.json(&["witness", "set-default", &witness.endpoint]);
+    bob_home.json(&[
+        "witness",
+        "set-default",
+        "--witness",
+        &witness.identity,
+        "--endpoints",
+        &witness.endpoint,
+    ]);
     let bob = bob_home.create("bob");
     let descriptor = file("bob.descriptor");
     bob_home.export("bob", &descriptor);
@@ -1173,7 +1323,15 @@ fn a_peer_that_cannot_be_reached_exits_30_with_the_network_prefix() {
     home.create("alice");
     // Nothing answers at this endpoint, and `node.json` is where a push reads
     // the machines to dial.
-    home.json(&["witness", "set-default", NOWHERE]);
+    let nobody = home.create("nobody");
+    home.json(&[
+        "witness",
+        "set-default",
+        "--witness",
+        &nobody,
+        "--endpoints",
+        NOWHERE,
+    ]);
 
     let (code, document) = home.failure(&["sync", "push", "--identity", "alice"]);
     assert_eq!(code, 30);
@@ -1502,11 +1660,20 @@ fn dev_seed_with_a_witness_pushes_every_ledger_and_runs_one_crawl() {
     // One push per seeded ledger, every one accepted by the one witness.
     let pushed = document["pushed"].as_array().expect("an array");
     assert_eq!(pushed.len(), 5, "{document}");
+    // The seeded witness identity advertises this home's own machine, and this
+    // home is a CLI and not a server, so resolution finds that endpoint too and
+    // its row is unreachable. Exactly one endpoint accepts: the ticket's.
     for result in pushed {
         let rows = result["results"].as_array().expect("an array");
-        assert_eq!(rows.len(), 1, "{result}");
-        assert_eq!(rows[0]["endpoint"], Value::from(witness.endpoint.as_str()));
-        assert_eq!(rows[0]["status"], Value::from("accepted"), "{result}");
+        let accepted: Vec<&Value> = rows
+            .iter()
+            .filter(|row| row["status"] == *"accepted")
+            .collect();
+        assert_eq!(accepted.len(), 1, "{result}");
+        assert_eq!(
+            accepted[0]["endpoint"],
+            Value::from(witness.endpoint.as_str())
+        );
     }
 
     // Every seeded ledger names the witness identity, so the witness set landed
@@ -1530,11 +1697,18 @@ fn dev_seed_with_a_witness_pushes_every_ledger_and_runs_one_crawl() {
         .as_array()
         .expect("witnesses is an array")
         .iter()
-        .map(|value| {
-            let bytes = data_encoding::HEXLOWER
-                .decode(text(value).as_bytes())
-                .expect("a hex endpoint id");
-            data_encoding::BASE32_NOPAD.encode(&bytes).to_lowercase()
+        .flat_map(|entry| {
+            entry["endpoints"]
+                .as_array()
+                .expect("endpoints is an array")
+                .iter()
+                .map(|value| {
+                    let bytes = data_encoding::HEXLOWER
+                        .decode(text(value).as_bytes())
+                        .expect("a hex endpoint id");
+                    data_encoding::BASE32_NOPAD.encode(&bytes).to_lowercase()
+                })
+                .collect::<Vec<String>>()
         })
         .collect();
     assert_eq!(

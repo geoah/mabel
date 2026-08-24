@@ -449,9 +449,14 @@ pub enum WitnessCommand {
     /// `witness add` signs a ledger event, `witness set-default` edits this
     /// node's configuration and signs nothing.
     SetDefault {
-        /// Witness endpoint ids, base32 or hex. The set is replaced, not
-        /// added to.
-        #[arg(value_name = "ENDPOINT_ID", required = true, num_args = 1..)]
+        /// The witness identity, by alias, id or link. The set is replaced,
+        /// not added to.
+        #[arg(long, value_name = "MABEL_ID", required = true)]
+        witness: String,
+        /// Endpoint ids to record beside the identity, comma-separated or
+        /// repeated. These are the bootstrap addresses of proposal 006
+        /// section 5.4.
+        #[arg(long, value_name = "ENDPOINT", value_delimiter = ',')]
         endpoints: Vec<String>,
     },
     /// Serve this home as a witness until ctrl-c.
@@ -494,9 +499,14 @@ pub enum SyncCommand {
     Fetch {
         /// The ledger to fetch, by alias, id or link.
         ledger_id: String,
-        /// The endpoint to fetch from. Required unless a link named one.
+        /// The endpoint to fetch from. Required unless a link, a witness or a
+        /// configured default names one.
         #[arg(long, value_name = "ENDPOINT_ID")]
         from: Option<String>,
+        /// A witness identity to fetch from, resolved to endpoints through
+        /// proposal 006 section 5.1. Not with --from.
+        #[arg(long, value_name = "MABEL_ID")]
+        from_witness: Option<String>,
         /// Endpoint ticket to seed into address lookup. Repeatable.
         #[arg(long, value_name = "TICKET")]
         peer: Vec<String>,

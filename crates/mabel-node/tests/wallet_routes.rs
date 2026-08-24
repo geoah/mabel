@@ -39,7 +39,10 @@ impl Wallet {
         let config = NodeConfig {
             role: NodeRole::Wallet,
             relay: RelayMode::Disabled,
-            witnesses: witnesses.to_vec(),
+            witnesses: vec![mabel_node::WitnessEntry::new(
+                common::witness_identity(),
+                witnesses.to_vec(),
+            )],
             ..NodeConfig::default()
         };
         let home = NodeHome::create(dir.path(), &config, HomeOptions::default())
@@ -455,6 +458,7 @@ async fn a_fetch_stores_the_ledger_and_answers_the_cli_document() {
         let fetched = reader
             .service
             .fetch_identity(FetchIdentity {
+                from_witness: None,
                 identity_id: id(alice),
                 from: None,
             })
@@ -479,6 +483,7 @@ async fn a_fetch_stores_the_ledger_and_answers_the_cli_document() {
         let again = reader
             .service
             .fetch_identity(FetchIdentity {
+                from_witness: None,
                 identity_id: id(alice),
                 from: Some(rendered(witness.endpoint_id)),
             })
@@ -490,21 +495,28 @@ async fn a_fetch_stores_the_ledger_and_answers_the_cli_document() {
     });
 }
 
+/// `from` is a plain `CallerHint`: an endpoint this wallet has never heard of
+/// is asked anyway, because a human named it for this request (proposal 006
+/// section 5, source 2). The refusal is about the dial, not about the wallet's
+/// address book.
 #[tokio::test]
-async fn a_fetch_from_an_endpoint_this_wallet_knows_no_witness_at_is_refused() {
+async fn a_fetch_from_an_endpoint_this_wallet_knows_nothing_about_is_still_asked() {
     bounded!({
-        let wallet = Wallet::new(&[endpoint(4)], &[]).await;
+        // No configured witness, so the caller's endpoint is the only source
+        // and the refusal names it.
+        let wallet = Wallet::plain().await;
         let stranger = rendered(endpoint(77));
         let error = wallet
             .service
             .fetch_identity(FetchIdentity {
                 identity_id: rendered(endpoint(5)),
                 from: Some(stranger.clone()),
+                from_witness: None,
             })
             .await
-            .expect_err("this wallet knows no witness there");
-        assert_eq!(error.reason(), "unknown_witness");
-        assert_eq!(error.code(), 2);
+            .expect_err("nothing answers at that endpoint");
+        assert_eq!(error.reason(), "witness_unreachable");
+        assert_eq!(error.code(), 30);
         assert_eq!(
             error
                 .details()
@@ -515,12 +527,57 @@ async fn a_fetch_from_an_endpoint_this_wallet_knows_no_witness_at_is_refused() {
     });
 }
 
+/// `from` names an endpoint and `from_witness` names an identity. Both at once
+/// is `conflicting_source`, refused before anything is dialled.
+#[tokio::test]
+async fn a_fetch_naming_both_a_source_and_a_witness_is_refused() {
+    let wallet = Wallet::plain().await;
+    let error = wallet
+        .service
+        .fetch_identity(FetchIdentity {
+            identity_id: rendered(endpoint(5)),
+            from: Some(rendered(endpoint(77))),
+            from_witness: Some(mabel_node::wallet::ids::identity(common::witness_identity())),
+        })
+        .await
+        .expect_err("one source or the other");
+    assert_eq!(error.reason(), "conflicting_source");
+    assert_eq!(error.code(), 2);
+}
+
+/// A `from_witness` this home can reach no endpoint for is `unresolvable_witness`
+/// (proposal 006 section 5.1: witness resolution reads what this home holds).
+#[tokio::test]
+async fn a_fetch_from_a_witness_with_no_known_endpoint_is_refused() {
+    let wallet = Wallet::plain().await;
+    let witness = mabel_node::wallet::ids::identity(common::witness_identity());
+    let error = wallet
+        .service
+        .fetch_identity(FetchIdentity {
+            identity_id: rendered(endpoint(5)),
+            from: None,
+            from_witness: Some(witness.clone()),
+        })
+        .await
+        .expect_err("no endpoint is known for it");
+    assert_eq!(error.reason(), "unresolvable_witness");
+    assert_eq!(error.code(), 2);
+    assert_eq!(
+        error
+            .details()
+            .get("identity_id")
+            .and_then(|id| id.as_str()),
+        Some(witness.as_str())
+    );
+}
+
 #[tokio::test]
 async fn a_fetch_with_no_witness_to_ask_says_so_before_dialling() {
     let wallet = Wallet::plain().await;
     let error = wallet
         .service
         .fetch_identity(FetchIdentity {
+            from_witness: None,
             identity_id: rendered(endpoint(5)),
             from: None,
         })

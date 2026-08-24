@@ -596,9 +596,22 @@ reviewer can overrule them cheaply, before consumers are written.
   key is `unknown_query_parameter` (proposal 006 sections 6 and 7).
 - `POST /api/identities/:identity_id/fetch` answers the document
   `contracts/cli/sync-fetch.json` pins for `mabel sync fetch --json`, because
-  it is the same operation over the same wallet core. A `from` naming an
-  endpoint this wallet knows no witness at is refused with code 2 and reason
-  `unknown_witness`, before anything is dialled.
+  it is the same operation over the same wallet core. `from` names one endpoint
+  and is a plain `CallerHint`: an endpoint this wallet has never heard of is
+  dialled anyway, because a human named it for this request. `from_witness`
+  names one witness identity and is resolved to endpoints through proposal 006
+  section 5.1, with `unresolvable_witness` when this home can reach none of
+  them. Both keys at once is code 2 and reason `conflicting_source`, before
+  anything is dialled.
+- `node.json.witnesses` holds `{identity, endpoints}` objects (proposal 006
+  section 5.4). An array of 64-character hex endpoint ids is the
+  pre-proposal-006 shape and fails to load, naming
+  `mabel witness set-default --witness <mabel-id> --endpoints <endpoint,...>`;
+  a bare 52-character identity id loads as an entry with no bootstrap
+  endpoints. `peers.json` holds
+  `{endpoint, first_seen_ms, last_success_ms, failures}` objects, at most 8 per
+  ledger, and a bare endpoint id still loads as a hint with no timestamps
+  (section 5.3).
 - Proposal 005 amends the payload-table freeze a second time: the
   `profile_update` row gains `email`, and every fixture that renders a profile
   object, a `ResolvedIdentity` or a `previous` profile carries the key with an

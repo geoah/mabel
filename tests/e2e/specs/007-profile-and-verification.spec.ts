@@ -1035,7 +1035,7 @@ test("step 12: the search box takes a hostname and opens the identity it names",
   // The wallet's one search box resolves a hostname through the node and
   // navigates to the id the TXT record names (proposal 004). It verifies
   // nothing: the identity's own advisory verdict is what the page draws.
-  const resolved = await apiGet(ALICE_URL, "/api/resolve/alice.example");
+  const resolved = await apiGet(ALICE_URL, "/api/resolve?input=alice.example");
   expect(resolved.body.status).toBe("resolved");
   expect(resolved.body.identity_id).toBe(aliceId);
 
@@ -1059,7 +1059,7 @@ test("step 12: the search box takes a hostname and opens the identity it names",
   await expect(status).toContainText("names no identity");
   await expect(alicePage).toHaveURL(`${ALICE_URL}/wallet`);
 
-  const missing = await apiGet(ALICE_URL, "/api/resolve/nobody.example");
+  const missing = await apiGet(ALICE_URL, "/api/resolve?input=nobody.example");
   expect(missing.body.status).toBe("no_record");
   expect(missing.body.identity_id).toBeNull();
 });

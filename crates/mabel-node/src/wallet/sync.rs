@@ -136,6 +136,25 @@ impl WalletSync {
         ledger: LedgerId,
         witnesses: &[EndpointId],
     ) -> Result<Pushed, ServiceError> {
+        self.push_from(core, ledger, witnesses, &[]).await
+    }
+
+    /// [`WalletSync::push`] told which of `witnesses` the caller named.
+    ///
+    /// A `CallerHint` endpoint is never written to `peers.json` (proposal 006
+    /// section 5.3): an endpoint that arrived on a command line served the
+    /// operation it came with and nothing more, whatever it accepted.
+    ///
+    /// # Errors
+    ///
+    /// As [`WalletSync::push`].
+    pub async fn push_from(
+        &self,
+        core: &WalletCore,
+        ledger: LedgerId,
+        witnesses: &[EndpointId],
+        caller: &[EndpointId],
+    ) -> Result<Pushed, ServiceError> {
         if witnesses.is_empty() {
             return Err(ServiceError::usage(
                 "no_witness_configured",
@@ -150,7 +169,7 @@ impl WalletSync {
         for witness in witnesses {
             results.push(self.push_one(*witness, ledger, &loaded.events).await);
         }
-        record_hints(core, ledger, witnesses, &results);
+        record_hints(core, ledger, witnesses, caller, &results);
         // What the pusher can check for itself: whether the machines it dialled
         // are machines a witness identity's own ledger names (proposal 006
         // section 4.2). It never refuses a push and never fails one.
@@ -270,6 +289,9 @@ impl WalletSync {
                 endpoints: candidate.state.endpoints().to_vec(),
                 source: *source,
                 observed_ms: crate::now_ms(),
+                // Every source here is a `peers.json` hint or an endpoint that
+                // accepted this push, never a ledger's retired tag-11 list.
+                may_bind: true,
             };
             if let Err(error) = bindings::record(core.home(), &observation) {
                 warn!("the bindings of {witness} could not be written: {error}");
@@ -548,12 +570,14 @@ impl WalletSync {
     }
 }
 
-/// Writes the endpoints that accepted a push back into `peers.json`.
+/// Writes the endpoints that accepted a push back into `peers.json`, and marks
+/// a failure against the ones that did not.
 ///
 /// An endpoint that accepted a push holds this ledger, so it is where to look
-/// for it next time: `peers.json` hints are second in the crawler's source
-/// order (proposal 003 section 3). A hint is an address book entry and never
-/// authorization; what a hinted peer serves is still verified from nothing.
+/// for it next time: `peers.json` hints are source 3 (proposal 006 section 5).
+/// A hint is an address book entry and never authorization; what a hinted peer
+/// serves is still verified from nothing. An endpoint the caller named is left
+/// out of the file entirely (section 5.3).
 ///
 /// This runs after the push has already happened, so a `peers.json` that
 /// cannot be written is logged and the push still reports what it did. The
@@ -562,14 +586,9 @@ fn record_hints(
     core: &WalletCore,
     ledger: LedgerId,
     witnesses: &[EndpointId],
+    caller: &[EndpointId],
     results: &[PushResult],
 ) {
-    let accepted = witnesses
-        .iter()
-        .zip(results)
-        .filter(|(_, result)| matches!(result.status, PushStatus::Accepted))
-        .map(|(witness, _)| *witness);
-
     let home = core.home();
     let mut peers = match home.peers() {
         Ok(peers) => peers,
@@ -578,11 +597,24 @@ fn record_hints(
             return;
         }
     };
-    let before = peers.hints(ledger).len();
-    for endpoint in accepted {
-        peers.add_hint(ledger, endpoint);
+    let before = peers.clone();
+    let now = crate::now_ms();
+    for (witness, result) in witnesses.iter().zip(results) {
+        if caller.contains(witness) {
+            continue;
+        }
+        match result.status {
+            PushStatus::Accepted => peers.record_success(ledger, *witness, now),
+            // A rejection is an answer about the ledger, not about the machine:
+            // only an endpoint that could not be reached counts as a failure.
+            PushStatus::Unreachable => {
+                peers.record_failure(ledger, *witness);
+            }
+            PushStatus::Rejected => {}
+        }
     }
-    if peers.hints(ledger).len() == before {
+    peers.prune(now);
+    if peers == before {
         return;
     }
     if let Err(error) = home.write_peers(&peers) {

@@ -8,12 +8,14 @@ use mabel_core::IdentityId;
 use crate::api::documents::{DeclaredKind, Id};
 use crate::graph::crawl::{CrawlOptions, crawl, mint_sync_id};
 use crate::graph::fetcher::{
-    FetchOutcome, LedgerSummary, PlannedSource, TrustEdge, decide, ledger_witness_sources,
+    FetchOutcome, LedgerSummary, PlannedSource, TrustEdge, chain_named_sources, decide,
     plan_sources, record_hint,
 };
 use crate::graph::model::{
-    FetchSource, GraphEdge, GraphNode, GraphSummary, NodeStatus, STALE_AFTER_MS, TruncatedBy,
+    FetchSource, GraphEdge, GraphNode, GraphSummary, NodeStatus, STALE_AFTER_MS, SourceClass,
+    TruncatedBy,
 };
+use crate::graph::resolve::{MAX_DIALS, Resolution};
 use crate::graph::store::{Generation, GraphStore, KEPT_GENERATIONS};
 use crate::graph::stub::{STUB_FETCHED_AT_MS, StubFetcher, stub_attestation, stub_identity};
 use crate::wallet::{LoadedLedger, WalletCore, ids};
@@ -47,6 +49,23 @@ fn small_graph() -> StubFetcher {
         .trusting(node(5), &[node(7), node(2)])
         .trusting(node(2), &[])
         .trusting(node(7), &[])
+}
+
+/// A folded summary naming nothing, which a source-order test then fills in.
+fn summary_of(ledger: IdentityId) -> LedgerSummary {
+    LedgerSummary {
+        ledger,
+        declared_kind: DeclaredKind::Person,
+        display_name: None,
+        hostname: None,
+        email: None,
+        head_seq: 0,
+        head_event: crate::graph::stub::stub_head(ledger),
+        endpoints: Vec::new(),
+        witness_identities: Vec::new(),
+        legacy_witnesses: Vec::new(),
+        trust: Vec::new(),
+    }
 }
 
 fn subjects(node: &GraphNode) -> Vec<Id> {
@@ -623,26 +642,32 @@ fn wallet_home() -> (tempfile::TempDir, WalletCore) {
 }
 
 #[test]
-fn the_four_sources_are_planned_in_the_order_the_proposal_gives() {
+fn the_eight_sources_are_planned_in_the_order_the_proposal_gives() {
     let (_dir, core) = wallet_home();
     let held = core
         .create_identity("ada", DeclaredKind::Person, None, None, None)
         .expect("a local identity");
     let ledger = ids::parse_identity(&held.identity.identity_id).unwrap();
 
+    let called = iroh_base::SecretKey::from_bytes(&[20u8; 32]).public();
     let hint = iroh_base::SecretKey::from_bytes(&[21u8; 32]).public();
     let witness = iroh_base::SecretKey::from_bytes(&[22u8; 32]).public();
     let learned = iroh_base::SecretKey::from_bytes(&[23u8; 32]).public();
-    let named = iroh_base::SecretKey::from_bytes(&[24u8; 32]).public();
+    let advertised = iroh_base::SecretKey::from_bytes(&[24u8; 32]).public();
+    let named = iroh_base::SecretKey::from_bytes(&[25u8; 32]).public();
+    let legacy = iroh_base::SecretKey::from_bytes(&[26u8; 32]).public();
 
     let mut peers = core.home().peers().unwrap();
     peers.add_hint(ledger, hint);
+    // The witness identity of source 6 is reachable through its own hint.
+    peers.add_hint(node(9), named);
     core.home().write_peers(&peers).unwrap();
     let mut config = core.home().config().unwrap();
-    config.witnesses = vec![witness];
+    config.witnesses = vec![crate::config::WitnessEntry::new(node(8), vec![witness])];
     core.home().write_config(&config).unwrap();
 
-    let planned = plan_sources(&core, ledger, &[learned]).unwrap();
+    let resolution = Resolution::for_operation().with_caller_hints(vec![called]);
+    let planned = plan_sources(&core, ledger, &[learned], &resolution).unwrap();
     assert_eq!(
         planned
             .iter()
@@ -650,6 +675,9 @@ fn the_four_sources_are_planned_in_the_order_the_proposal_gives() {
             .collect::<Vec<_>>(),
         vec![
             FetchSource::Local,
+            FetchSource::CallerHint {
+                endpoint: ids::key(&called)
+            },
             FetchSource::PeerHint {
                 endpoint: ids::key(&hint)
             },
@@ -657,32 +685,191 @@ fn the_four_sources_are_planned_in_the_order_the_proposal_gives() {
                 endpoint: ids::key(&learned)
             },
             FetchSource::NodeWitness {
+                witness: id(8),
                 endpoint: ids::key(&witness)
             },
         ],
-        "local copy, then hints, then the node's witnesses"
+        "local copy, then the caller, then hints, then the node's witnesses"
     );
     assert_eq!(planned.iter().filter(|s| s.endpoint.is_none()).count(), 1);
-
-    // Source 4 is reachable only once a copy verified, and never repeats an
-    // endpoint that has already been asked.
-    let fourth = ledger_witness_sources(&planned, &[witness, named]);
     assert_eq!(
-        fourth,
-        vec![PlannedSource {
-            source: FetchSource::LedgerWitness {
-                endpoint: ids::key(&named)
-            },
-            endpoint: Some(named),
-        }]
+        planned
+            .iter()
+            .map(|source| source.source.order())
+            .collect::<Vec<u8>>(),
+        vec![1, 2, 3, 3, 4]
     );
-    assert_eq!(fourth[0].source.order(), 4);
+
+    // Sources 5, 6 and 7 are reachable only once a copy verified, and never
+    // repeat an endpoint that has already been asked.
+    let summary = LedgerSummary {
+        endpoints: vec![advertised, witness],
+        witness_identities: vec![node(9)],
+        legacy_witnesses: vec![legacy],
+        ..summary_of(ledger)
+    };
+    let chain_named = chain_named_sources(&core, &planned, &summary, &resolution).unwrap();
+    assert_eq!(
+        chain_named,
+        vec![
+            PlannedSource {
+                source: FetchSource::LedgerEndpoint {
+                    endpoint: ids::key(&advertised)
+                },
+                endpoint: Some(advertised),
+            },
+            PlannedSource {
+                source: FetchSource::WitnessIdentity {
+                    witness: id(9),
+                    endpoint: ids::key(&named)
+                },
+                endpoint: Some(named),
+            },
+            PlannedSource {
+                source: FetchSource::LegacyWitnessHint {
+                    endpoint: ids::key(&legacy)
+                },
+                endpoint: Some(legacy),
+            },
+        ],
+        "the endpoint already asked as a node witness is not asked again"
+    );
+    assert_eq!(
+        chain_named
+            .iter()
+            .map(|source| source.source.order())
+            .collect::<Vec<u8>>(),
+        vec![5, 6, 7]
+    );
+    for planned in &chain_named {
+        assert_eq!(planned.source.class(), SourceClass::ChainNamed);
+    }
+    assert!(
+        !chain_named[2].source.may_bind(),
+        "a tag-11 endpoint never establishes a binding"
+    );
+    // Eight named endpoints, one of them asked twice, cost seven slots.
+    assert_eq!(resolution.dialled(), 7);
+}
+
+/// An endpoint several sources name costs one slot, and 16 distinct endpoints
+/// is the whole operation's ration (proposal 006 section 5.2).
+#[test]
+fn one_operation_stops_at_sixteen_distinct_endpoints() {
+    let (_dir, core) = wallet_home();
+    let hints: Vec<iroh_base::PublicKey> = (0..8)
+        .map(|seed| iroh_base::SecretKey::from_bytes(&[100 + seed; 32]).public())
+        .collect();
+    let mut peers = core.home().peers().unwrap();
+    for endpoint in &hints {
+        peers.add_hint(node(1), *endpoint);
+    }
+    core.home().write_peers(&peers).unwrap();
+
+    let resolution = Resolution::for_operation().with_caller_hints(hints[..4].to_vec());
+    let planned = plan_sources(&core, node(1), &[], &resolution).unwrap();
+    // The first four endpoints are named twice and cost four slots, not eight.
+    assert_eq!(resolution.dialled(), 8);
+    assert_eq!(planned.len(), 8);
+    assert_eq!(resolution.spent(SourceClass::CallerHint), 4);
+    assert_eq!(resolution.spent(SourceClass::PeerHint), 4);
+
+    // A chain naming 16 witnesses spends the chain-named cap and no more, so
+    // four dials are still there for `node.json.witnesses`.
+    let witnesses: Vec<iroh_base::PublicKey> = (0..16)
+        .map(|seed| iroh_base::SecretKey::from_bytes(&[150 + seed; 32]).public())
+        .collect();
+    let summary = LedgerSummary {
+        endpoints: witnesses.clone(),
+        ..summary_of(node(1))
+    };
+    let chain_named = chain_named_sources(&core, &planned, &summary, &resolution).unwrap();
+    assert_eq!(
+        chain_named.len(),
+        4,
+        "12 of the 16 are spent, 4 are reserved"
+    );
+    assert_eq!(resolution.dialled(), 12);
+    for slot in 0..4u8 {
+        assert!(
+            resolution.admit(
+                SourceClass::NodeWitness,
+                iroh_base::SecretKey::from_bytes(&[200 + slot; 32]).public()
+            ),
+            "reserved slot {slot}"
+        );
+    }
+    assert_eq!(resolution.dialled(), MAX_DIALS);
+    assert!(resolution.exhausted());
+}
+
+/// A ledger naming itself in its own `WitnessSet` terminates, and a witness
+/// named both in `node.json` and in the chain is resolved once (proposal 006
+/// section 5.1).
+#[test]
+fn the_visited_set_terminates_self_reference_and_duplicate_defaults() {
+    let (_dir, core) = wallet_home();
+    let witness = iroh_base::SecretKey::from_bytes(&[30u8; 32]).public();
+    let mut config = core.home().config().unwrap();
+    config.witnesses = vec![crate::config::WitnessEntry::new(node(7), vec![witness])];
+    core.home().write_config(&config).unwrap();
+
+    let resolution = Resolution::for_operation();
+    let planned = plan_sources(&core, node(1), &[], &resolution).unwrap();
+    assert_eq!(resolution.resolutions(), 1);
+
+    // The chain names the same witness the node configures, plus itself.
+    let summary = LedgerSummary {
+        witness_identities: vec![node(7), node(1)],
+        ..summary_of(node(1))
+    };
+    let chain_named = chain_named_sources(&core, &planned, &summary, &resolution).unwrap();
+    assert!(
+        chain_named.is_empty(),
+        "the configured witness is already asked and the self-reference names nothing: {chain_named:?}"
+    );
+    assert_eq!(
+        resolution.resolutions(),
+        2,
+        "the configured witness is resolved once, the self-reference once"
+    );
+    assert_eq!(resolution.dialled(), 1);
+
+    // Resolving either again runs nothing new.
+    assert_eq!(
+        resolution.witness_endpoints(&core, node(7)).unwrap(),
+        [witness]
+    );
+    assert_eq!(resolution.resolutions(), 2);
+}
+
+/// The endpoints `node.json` records beside a witness id are what make it
+/// reachable before anything is fetched (proposal 006 section 5.4).
+#[test]
+fn a_witness_resolves_through_its_bootstrap_endpoints() {
+    let (_dir, core) = wallet_home();
+    let bootstrap = iroh_base::SecretKey::from_bytes(&[40u8; 32]).public();
+    let hinted = iroh_base::SecretKey::from_bytes(&[41u8; 32]).public();
+    let called = iroh_base::SecretKey::from_bytes(&[42u8; 32]).public();
+    let mut config = core.home().config().unwrap();
+    config.witnesses = vec![crate::config::WitnessEntry::new(node(7), vec![bootstrap])];
+    core.home().write_config(&config).unwrap();
+    let mut peers = core.home().peers().unwrap();
+    peers.add_hint(node(7), hinted);
+    core.home().write_peers(&peers).unwrap();
+
+    let resolution = Resolution::for_operation().with_caller_hints(vec![called]);
+    assert_eq!(
+        resolution.witness_endpoints(&core, node(7)).unwrap(),
+        [called, hinted, bootstrap],
+        "the caller first, then the hint, then the bootstrap record"
+    );
 }
 
 #[test]
 fn a_ledger_this_home_does_not_hold_has_no_local_source() {
     let (_dir, core) = wallet_home();
-    let planned = plan_sources(&core, node(1), &[]).unwrap();
+    let planned = plan_sources(&core, node(1), &[], &Resolution::for_operation()).unwrap();
     assert!(planned.is_empty(), "nothing to ask and nothing to invent");
 }
 
@@ -696,7 +883,9 @@ fn an_outcome_carries_its_summary_or_its_status() {
         email: Some("ada@ada.example".to_owned()),
         head_seq: 3,
         head_event: crate::graph::stub::stub_head(node(1)),
-        witnesses: Vec::new(),
+        endpoints: Vec::new(),
+        witness_identities: Vec::new(),
+        legacy_witnesses: Vec::new(),
         trust: vec![TrustEdge {
             subject: node(2),
             attestation_event: stub_attestation(node(1), node(2)),
@@ -730,7 +919,9 @@ async fn the_profile_a_ledger_publishes_lands_on_its_node() {
             email: Some("hello@acme.example".to_owned()),
             head_seq: 7,
             head_event: crate::graph::stub::stub_head(node(2)),
-            witnesses: Vec::new(),
+            endpoints: Vec::new(),
+            witness_identities: Vec::new(),
+            legacy_witnesses: Vec::new(),
             trust: Vec::new(),
         },
         FetchSource::Local,
@@ -768,7 +959,7 @@ fn a_source_that_served_a_verified_copy_is_written_back_to_peers_json() {
     );
     assert!(core.home().peers().unwrap().hints(node(2)).is_empty());
 
-    let planned = plan_sources(&core, node(1), &[]).unwrap();
+    let planned = plan_sources(&core, node(1), &[], &Resolution::for_operation()).unwrap();
     assert_eq!(
         planned.first().map(|source| source.source.clone()),
         Some(FetchSource::PeerHint {
@@ -787,6 +978,7 @@ fn two_sources_that_diverge_record_both_branches_and_keep_the_first() {
         endpoint: ids::key(&iroh_base::SecretKey::from_bytes(&[41u8; 32]).public()),
     };
     let witness = FetchSource::NodeWitness {
+        witness: id(8),
         endpoint: ids::key(&iroh_base::SecretKey::from_bytes(&[42u8; 32]).public()),
     };
 

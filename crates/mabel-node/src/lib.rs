@@ -37,7 +37,8 @@ pub mod witness;
 pub use atomic::{DATA_MODE, DIR_MODE, KEY_MODE};
 pub use bindings::{BINDINGS_DIR, Binding, Bindings, BoundEndpoint, Observation};
 pub use config::{
-    DEFAULT_HTTP_BIND, DEFAULT_HTTP_PORT, DEFAULT_STORAGE_CAPACITY, NodeConfig, NodeRole, RelayMode,
+    DEFAULT_HTTP_BIND, DEFAULT_HTTP_PORT, DEFAULT_STORAGE_CAPACITY, MAX_WITNESS_FOR, NodeConfig,
+    NodeRole, RelayMode, WITNESS_MIGRATION_HINT, WitnessEntry,
 };
 pub use contacts::{CONTACTS_DIR, ContactEntry, ContactStore};
 pub use endpoint::bind_endpoint;
@@ -51,5 +52,5 @@ pub use ledger::{
     EVENT_EXT, FORK_EXT, ForkFile, HEAD_FILE, Head, LedgerMeta, LedgerStore, META_FILE, NewEvent,
     SEQ_DIGITS, StoredEvent,
 };
-pub use peers::Peers;
+pub use peers::{HINT_MAX_AGE_MS, MAX_FAILURES, MAX_HINTS, PeerHint, Peers};
 pub use time::{now_ms, rfc3339_utc};

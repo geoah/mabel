@@ -1,13 +1,32 @@
 {
-  "command": "mabel witness set-default --json",
+  "command": "mabel witness set-default --witness <mabel-id> [--endpoints <endpoint,...>] --json",
   "cases": [
     {
       "case": "set",
-      "command": "mabel witness set-default 54rw3lmckcpqf4ofkvyx3i74agumvale2qmzdu76ubpita6sw5va --json",
+      "command": "mabel witness set-default --witness sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq --endpoints 54rw3lmckcpqf4ofkvyx3i74agumvale2qmzdu76ubpita6sw5va --json",
       "exit_code": 0,
       "document": {
         "ok": true,
-        "witnesses": ["54rw3lmckcpqf4ofkvyx3i74agumvale2qmzdu76ubpita6sw5va"]
+        "witnesses": [
+          {
+            "identity_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+            "endpoints": ["54rw3lmckcpqf4ofkvyx3i74agumvale2qmzdu76ubpita6sw5va"]
+          }
+        ]
+      }
+    },
+    {
+      "case": "unresolvable",
+      "command": "mabel witness set-default --witness jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq --json",
+      "exit_code": 2,
+      "document": {
+        "ok": false,
+        "code": 2,
+        "message": "no endpoint is known for the witness jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq: pass --endpoints, or fetch its ledger first",
+        "details": {
+          "reason": "unresolvable_witness",
+          "identity_id": "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq"
+        }
       }
     }
   ]

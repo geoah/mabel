@@ -22,27 +22,117 @@ pub const fn is_stale(at_ms: u64, now_ms: u64) -> bool {
     now_ms.saturating_sub(at_ms) > STALE_AFTER_MS
 }
 
-/// Where a copy of a ledger came from, in the order proposal 003 section 3
-/// queries them.
+/// Which class of the dial budget a source spends from (proposal 006 section
+/// 5.2).
+///
+/// Sources 5, 6 and 7 share one class because a chain full of witnesses cannot
+/// be allowed to starve source 4, and they stay three separate sources because
+/// their provenance differs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum SourceClass {
+    /// A local read, which dials nothing.
+    Local,
+    /// Source 2.
+    CallerHint,
+    /// Source 3.
+    PeerHint,
+    /// Source 4, the class with reserved slots.
+    NodeWitness,
+    /// Sources 5, 6 and 7 together.
+    ChainNamed,
+    /// Source 8.
+    Dns,
+}
+
+impl SourceClass {
+    /// Endpoints of this class one operation may dial (proposal 006 section
+    /// 5.2), and [`usize::MAX`] for the class that dials nothing.
+    #[must_use]
+    pub const fn cap(self) -> usize {
+        match self {
+            Self::Local => usize::MAX,
+            Self::CallerHint | Self::PeerHint | Self::Dns => 4,
+            Self::NodeWitness | Self::ChainNamed => 8,
+        }
+    }
+
+    /// Slots of the 16 that only this class may take.
+    ///
+    /// Four for [`SourceClass::NodeWitness`] and none for anything else: a
+    /// ledger naming 16 witnesses would otherwise spend the whole budget before
+    /// the node's own configured witnesses, which are the endpoints most likely
+    /// to answer, get a single dial.
+    #[must_use]
+    pub const fn reserved(self) -> usize {
+        match self {
+            Self::NodeWitness => 4,
+            _ => 0,
+        }
+    }
+}
+
+/// Where a copy of a ledger came from, in the order proposal 006 section 5
+/// queries them: cheapest first, then most authoritative, then most leaky.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum FetchSource {
-    /// A copy already under `ledgers/` in this node home.
+    /// Source 1: a copy already under `ledgers/` in this node home.
     Local,
-    /// An endpoint `peers.json` records for this ledger, or one the crawl
-    /// learned while walking.
+    /// Source 2: an endpoint supplied with this request, from a `mabel://`
+    /// link, a `--peer` ticket or `--from`. A human just named it.
+    ///
+    /// Never written to `peers.json`: an endpoint that arrived in a link or on
+    /// a command line served the operation it came with and nothing more
+    /// (proposal 006 section 5.3).
+    CallerHint {
+        /// The endpoint that was asked.
+        endpoint: Id,
+    },
+    /// Source 3: an endpoint `peers.json` records for this ledger, or one the
+    /// crawl learned while walking.
     PeerHint {
         /// The endpoint that was asked.
         endpoint: Id,
     },
-    /// A witness `node.json` configures for this node.
+    /// Source 4: an endpoint of a witness identity `node.json` configures,
+    /// resolved by proposal 006 section 5.1.
     NodeWitness {
+        /// The witness identity the endpoint answers for.
+        witness: Id,
         /// The endpoint that was asked.
         endpoint: Id,
     },
-    /// A witness named by the ledger's own verified `WitnessConfig`, which is
-    /// reachable only after another source produced a copy.
-    LedgerWitness {
+    /// Source 5: an endpoint the ledger's own tag-18 `EndpointAdvertisement`
+    /// names, reachable only once another source produced a copy.
+    LedgerEndpoint {
+        /// The endpoint that was asked.
+        endpoint: Id,
+    },
+    /// Source 6: an endpoint of an identity the ledger's tag-19 `WitnessSet`
+    /// names, resolved by proposal 006 section 5.1. Also needs a copy.
+    WitnessIdentity {
+        /// The witness identity the endpoint answers for.
+        witness: Id,
+        /// The endpoint that was asked.
+        endpoint: Id,
+    },
+    /// Source 7: an endpoint in the ledger's retired tag-11 `WitnessConfig`.
+    ///
+    /// A list of raw endpoints written before proposal 006 existed, under a
+    /// field that never promised an identity. An endpoint reached this way is
+    /// never merged into a tag-18 advertisement, never establishes a binding
+    /// under section 4.2 and never reports as `verified`. It counts against the
+    /// chain-named budget so that a chain full of legacy hints cannot starve
+    /// source 4.
+    LegacyWitnessHint {
+        /// The endpoint that was asked.
+        endpoint: Id,
+    },
+    /// Source 8: an endpoint a hostname's `mabel-endpoints=` records name,
+    /// queried only when sources 1 to 7 produced no reachable copy.
+    DnsEndpoint {
+        /// The hostname that was queried.
+        hostname: String,
         /// The endpoint that was asked.
         endpoint: Id,
     },
@@ -54,22 +144,78 @@ impl FetchSource {
     pub const fn endpoint(&self) -> Option<&Id> {
         match self {
             Self::Local => None,
-            Self::PeerHint { endpoint }
-            | Self::NodeWitness { endpoint }
-            | Self::LedgerWitness { endpoint } => Some(endpoint),
+            Self::CallerHint { endpoint }
+            | Self::PeerHint { endpoint }
+            | Self::NodeWitness { endpoint, .. }
+            | Self::LedgerEndpoint { endpoint }
+            | Self::WitnessIdentity { endpoint, .. }
+            | Self::LegacyWitnessHint { endpoint }
+            | Self::DnsEndpoint { endpoint, .. } => Some(endpoint),
         }
     }
 
-    /// Its position in the source order: 1 local, 2 hint, 3 node witness, 4
-    /// ledger witness.
+    /// The witness identity this source answers for, absent for the five
+    /// sources that name no identity.
+    #[must_use]
+    pub const fn witness(&self) -> Option<&Id> {
+        match self {
+            Self::NodeWitness { witness, .. } | Self::WitnessIdentity { witness, .. } => {
+                Some(witness)
+            }
+            _ => None,
+        }
+    }
+
+    /// Its position in the source order, 1 through 8.
     #[must_use]
     pub const fn order(&self) -> u8 {
         match self {
             Self::Local => 1,
-            Self::PeerHint { .. } => 2,
-            Self::NodeWitness { .. } => 3,
-            Self::LedgerWitness { .. } => 4,
+            Self::CallerHint { .. } => 2,
+            Self::PeerHint { .. } => 3,
+            Self::NodeWitness { .. } => 4,
+            Self::LedgerEndpoint { .. } => 5,
+            Self::WitnessIdentity { .. } => 6,
+            Self::LegacyWitnessHint { .. } => 7,
+            Self::DnsEndpoint { .. } => 8,
         }
+    }
+
+    /// The budget class this source spends from.
+    #[must_use]
+    pub const fn class(&self) -> SourceClass {
+        match self {
+            Self::Local => SourceClass::Local,
+            Self::CallerHint { .. } => SourceClass::CallerHint,
+            Self::PeerHint { .. } => SourceClass::PeerHint,
+            Self::NodeWitness { .. } => SourceClass::NodeWitness,
+            Self::LedgerEndpoint { .. }
+            | Self::WitnessIdentity { .. }
+            | Self::LegacyWitnessHint { .. } => SourceClass::ChainNamed,
+            Self::DnsEndpoint { .. } => SourceClass::Dns,
+        }
+    }
+
+    /// Whether a copy this source served may establish an endpoint binding
+    /// (proposal 006 section 4.2).
+    ///
+    /// False for source 7 alone. The tag-11 list never promised an identity, so
+    /// an endpoint reached through it stays `hinted` however clean the chain it
+    /// served folds.
+    #[must_use]
+    pub const fn may_bind(&self) -> bool {
+        !matches!(self, Self::LegacyWitnessHint { .. })
+    }
+
+    /// Whether this endpoint may be written back to `peers.json` (proposal 006
+    /// section 5.3).
+    ///
+    /// False for source 2 alone: writing a caller's endpoint back would let
+    /// anyone whose link reaches a paste into the search box install a durable
+    /// dial target for an identity they do not control.
+    #[must_use]
+    pub const fn may_record_hint(&self) -> bool {
+        !matches!(self, Self::Local | Self::CallerHint { .. })
     }
 }
 

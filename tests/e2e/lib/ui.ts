@@ -127,7 +127,7 @@ export async function openIdentity(page: Page, base: string, identityId: string)
 /**
  * Opens any identity's page through the one search box on the wallet home. An
  * identity id navigates without asking the node anything; a hostname is
- * resolved through `GET /api/resolve/<hostname>` first.
+ * resolved through `GET /api/resolve?input=<hostname>` first.
  */
 export async function searchIdentity(
   page: Page,

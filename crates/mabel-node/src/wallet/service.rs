@@ -32,7 +32,8 @@ use crate::api::service::{
 };
 use crate::config::RelayMode;
 use crate::graph::{
-    CrawlOptions, GraphStore, LedgerFetcher, NetLedgerFetcher, crawl, plan_sources,
+    CrawlOptions, GraphStore, LedgerFetcher, NetLedgerFetcher, Resolution, SourceClass, crawl,
+    plan_sources,
 };
 use crate::now_ms;
 use crate::verification::{
@@ -155,7 +156,7 @@ impl WalletService for WalletApiService {
                 endpoint_id: ids::key(&core.endpoint_id()?),
                 http_bind,
                 relay,
-                witnesses: config.witnesses.iter().map(ids::key).collect(),
+                witnesses: config.witness_bootstrap().iter().map(ids::key).collect(),
                 storage_capacity: config.storage_capacity,
                 storage_used: core.storage_used()?,
                 identity_count: core.identities()?.len() as u64,
@@ -290,26 +291,54 @@ impl WalletService for WalletApiService {
     /// Fetches one ledger from a witness and stores it, exactly as `mabel sync
     /// fetch` does (proposal 004).
     ///
-    /// With no `from`, every known witness is asked in the crawler's source
-    /// order until one serves a chain that verifies. A source that could not
-    /// answer is skipped; anything else stops the walk, because a chain that
-    /// does not verify is an answer about the ledger, not about the source.
+    /// `from` is a plain `CallerHint`: a human named that endpoint for this
+    /// request, so it is asked whether or not this wallet has heard of it
+    /// (proposal 006 section 5, source 2). `from_witness` names a witness
+    /// identity instead and is resolved to endpoints through section 5.1.
+    /// Naming both is `conflicting_source`.
+    ///
+    /// With neither, every known source is asked in the order of section 5
+    /// until one serves a chain that verifies. A source that could not answer is
+    /// skipped; anything else stops the walk, because a chain that does not
+    /// verify is an answer about the ledger, not about the source.
     fn fetch_identity(&self, request: FetchIdentity) -> ServiceFuture<'_, FetchedLedger> {
         Box::pin(async move {
             let ledger = ids::parse_ledger(&request.identity_id)?;
-            let core = self.core.clone();
-            let known = spawn(move || fetch_sources(&core, ledger)).await?;
-            let asked = match &request.from {
-                Some(from) if !known.contains(from) => {
-                    return Err(ServiceError::usage(
-                        "unknown_witness",
-                        format!("this wallet knows no witness {from}"),
-                    )
-                    .with_detail("endpoint_id", from.as_str()));
-                }
-                Some(from) => vec![from.clone()],
-                None => known,
+            if request.from.is_some() && request.from_witness.is_some() {
+                return Err(ServiceError::usage(
+                    "conflicting_source",
+                    "from names an endpoint and from_witness names an identity: give one",
+                )
+                .with_detail("parameter", "from_witness"));
+            }
+            let caller: Vec<EndpointId> = match &request.from {
+                Some(from) => vec![ids::parse_endpoint(from)?],
+                None => Vec::new(),
             };
+            let from_witness = request
+                .from_witness
+                .as_ref()
+                .map(ids::parse_identity)
+                .transpose()?;
+            let core = self.core.clone();
+            let asked = spawn(move || {
+                let resolution = Resolution::for_operation().with_caller_hints(caller);
+                match from_witness {
+                    Some(witness) => {
+                        let endpoints = resolution.witness_endpoints(&core, witness)?;
+                        if endpoints.is_empty() {
+                            return Err(ServiceError::usage(
+                                "unresolvable_witness",
+                                format!("no endpoint is known for the witness {witness}"),
+                            )
+                            .with_detail("identity_id", witness.to_string()));
+                        }
+                        Ok(endpoints.iter().map(ids::key).collect())
+                    }
+                    None => fetch_sources(&core, ledger, &resolution),
+                }
+            })
+            .await?;
             if asked.is_empty() {
                 return Err(ServiceError::usage(
                     "no_witness_configured",
@@ -411,10 +440,12 @@ impl WalletService for WalletApiService {
             .await?;
 
             let fetcher = self.fetcher.clone().unwrap_or_else(|| {
-                Arc::new(NetLedgerFetcher::new(
-                    (*self.core).clone(),
-                    self.sync.clone(),
-                ))
+                Arc::new(
+                    NetLedgerFetcher::new((*self.core).clone(), self.sync.clone())
+                        // Source 8 needs a resolver, and this service already
+                        // holds the one the hostname checks use.
+                        .with_resolver(self.resolver.clone()),
+                )
             });
             let generation = crawl(&roots, &CrawlOptions::new(), fetcher.as_ref()).await;
 
@@ -550,11 +581,20 @@ impl WalletService for WalletApiService {
     fn push(&self, request: PushRequest) -> ServiceFuture<'_, Pushed> {
         Box::pin(async move {
             let identity = ids::parse_identity(&request.identity_id)?;
-            let witnesses = match &request.to {
-                Some(to) => vec![ids::parse_endpoint(to)?],
-                None => self.witnesses_of(identity).await?,
+            // `to` is an endpoint a caller named for this request, so it is
+            // dialled and never written to `peers.json` (proposal 006 section
+            // 5.3).
+            let (witnesses, caller) = match &request.to {
+                Some(to) => {
+                    let to = vec![ids::parse_endpoint(to)?];
+                    (to.clone(), to)
+                }
+                None => (self.witnesses_of(identity).await?, Vec::new()),
             };
-            let pushed = self.sync.push(&self.core, identity, &witnesses).await?;
+            let pushed = self
+                .sync
+                .push_from(&self.core, identity, &witnesses, &caller)
+                .await?;
             if pushed
                 .results
                 .iter()
@@ -805,8 +845,9 @@ impl Resolver for UnavailableResolver {
 /// ledgers that name it (proposal 004).
 ///
 /// Two sources: the retired tag-11 `WitnessConfig` of every ledger under
-/// `ledgers/`, and the node-wide defaults of `node.json`. An endpoint only
-/// `node.json` names has an empty `named_by`.
+/// `ledgers/`, and the bootstrap endpoints `node.json` records beside each
+/// configured witness identity. An endpoint only `node.json` names has an empty
+/// `named_by`.
 ///
 /// A tag-19 `WitnessSet` names identities, not endpoints, so nothing here reads
 /// it: turning a witness identity into the endpoints that answer for it is
@@ -822,7 +863,7 @@ fn known_witnesses(core: &WalletCore) -> Result<Vec<WitnessEntry>, ServiceError>
         }
     }
     let mut defaults: BTreeSet<Id> = BTreeSet::new();
-    for endpoint in core.config()?.witnesses {
+    for endpoint in core.config()?.witness_bootstrap() {
         let endpoint = ids::key(&endpoint);
         named.entry(endpoint.clone()).or_default();
         defaults.insert(endpoint);
@@ -837,21 +878,32 @@ fn known_witnesses(core: &WalletCore) -> Result<Vec<WitnessEntry>, ServiceError>
         .collect())
 }
 
-/// The endpoints a fetch of `ledger` may ask, in the crawler's source order
-/// (proposal 003 section 3): the `peers.json` hints for this ledger, then the
-/// node-wide witnesses, then every other witness this wallet knows.
+/// The endpoints a fetch of `ledger` may ask, in the source order of proposal
+/// 006 section 5: the caller's endpoints, the `peers.json` hints for this
+/// ledger, the endpoints of every witness identity `node.json` configures, then
+/// every other witness endpoint this wallet knows.
 ///
-/// The crawl's local copy is not a source here: a fetch is about getting the
-/// chain from somewhere else.
-fn fetch_sources(core: &WalletCore, ledger: LedgerId) -> Result<Vec<Id>, ServiceError> {
+/// The local copy is not a source here: a fetch is about getting the chain from
+/// somewhere else. Every endpoint is charged to `resolution`, so one route call
+/// dials at most 16.
+fn fetch_sources(
+    core: &WalletCore,
+    ledger: LedgerId,
+    resolution: &Resolution,
+) -> Result<Vec<Id>, ServiceError> {
     let mut sources: Vec<Id> = Vec::new();
-    for planned in plan_sources(core, ledger, &[])? {
+    for planned in plan_sources(core, ledger, &[], resolution)? {
         if let Some(endpoint) = planned.endpoint {
             push_source(&mut sources, ids::key(&endpoint));
         }
     }
     for witness in known_witnesses(core)? {
-        push_source(&mut sources, witness.endpoint_id);
+        let Ok(endpoint) = ids::parse_endpoint(&witness.endpoint_id) else {
+            continue;
+        };
+        if resolution.admit(SourceClass::ChainNamed, endpoint) {
+            push_source(&mut sources, witness.endpoint_id);
+        }
     }
     Ok(sources)
 }

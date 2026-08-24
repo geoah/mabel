@@ -8,16 +8,17 @@
 #   MABEL_HTTP_BIND        node.json http_bind, default 0.0.0.0:9080
 #   MABEL_RELAY            node.json relay, disabled (default) or n0
 #   MABEL_STORAGE_CAPACITY node.json storage_capacity in bytes
-#   MABEL_WITNESSES        node.json witnesses, endpoint ids separated by
-#                          spaces or commas: the machines this node pushes to
-#                          for any ledger, whatever a ledger's own chain names
+#   MABEL_WITNESSES        extra endpoint ids, separated by spaces or commas,
+#                          recorded against the first witness identity a waited
+#                          for prefix publishes: node.json names an identity and
+#                          the machines that answer for it (proposal 006 5.4)
 #   MABEL_WITNESS_ALIAS    local alias of the identity a witness home witnesses
 #                          for, minted on first start, default witness
 #   MABEL_IROH_PORT        UDP port this node's Iroh endpoint binds, 9070
 #   MABEL_ADVERTISE_IP     IP the published ticket names, default this
 #                          container's address on the compose network
-#   MABEL_PUBLISH_TICKET   path prefix to write <prefix>.ticket and
-#                          <prefix>.id to, for the witness
+#   MABEL_PUBLISH_TICKET   path prefix to write <prefix>.ticket, <prefix>.id
+#                          and <prefix>.identity to, for the witness
 #   MABEL_WAIT_FOR_TICKET  path prefixes to read <prefix>.ticket from,
 #                          separated by spaces or commas; each ticket is
 #                          appended to the command as --peer
@@ -145,14 +146,23 @@ if [ -n "$publish" ]; then
     ticket="$(mabel node ticket --addr "$address:$iroh_port")"
     write_atomically "$publish.id" "$endpoint_id"
     write_atomically "$publish.ticket" "$ticket"
+    # The witness identity goes with the machine that answers for it: a wallet
+    # configures `{identity, endpoints}` and cannot invent the identity half
+    # from an endpoint id (proposal 006 section 5.4).
+    if [ -n "$witness_identity" ]; then
+        write_atomically "$publish.identity" "$witness_identity"
+    fi
     log "published $publish.ticket for $address:$iroh_port"
 fi
 
-# The endpoints this node pushes to: what `MABEL_WITNESSES` names, plus the
-# machine behind each ticket waited for below. A push reads them from
-# `node.json`, so a wallet that only has a ticket would have nothing to dial.
-push_to="${MABEL_WITNESSES:-}"
-push_to="${push_to//,/ }"
+# The extra endpoints to record, and the identity each waited-for prefix names.
+# A push reads `node.json`, so a wallet that only has a ticket would have
+# nothing to dial.
+extra="${MABEL_WITNESSES:-}"
+extra="${extra//,/ }"
+# One line per witness: "<identity> <endpoint>...".
+configured=""
+first_identity=""
 
 # Each prefix is waited for in turn and seeded as one --peer, so a wallet in
 # the two-witnesses overlay starts knowing where both witnesses are.
@@ -168,18 +178,39 @@ for prefix in ${wait_for//,/ }; do
     done
     log "seeding peer ticket from $prefix.ticket"
     set -- "$@" --peer "$(cat "$prefix.ticket")"
-    if [ -f "$prefix.id" ]; then
-        push_to="$push_to $(cat "$prefix.id")"
+    if [ -f "$prefix.id" ] && [ -f "$prefix.identity" ]; then
+        prefix_identity="$(cat "$prefix.identity")"
+        configured="$configured$prefix_identity $(cat "$prefix.id")
+"
+        if [ -z "$first_identity" ]; then
+            first_identity="$prefix_identity"
+        fi
+    elif [ -f "$prefix.id" ]; then
+        log "$prefix publishes no .identity, so it cannot be a configured witness"
     fi
 done
 
-# `witness set-default` validates every id and rewrites node.json's witness
-# set, so a typo fails the container instead of being stored.
-if [ -n "${push_to// /}" ]; then
-    # shellcheck disable=SC2086
-    mabel witness set-default $push_to >/dev/null
-    log "pushing to $push_to"
+# `witness set-default` validates every id and rewrites this identity's entry in
+# node.json, so a typo fails the container instead of being stored. Each call
+# names one identity and the machines that answer for it; other entries are left
+# alone, which is how a wallet ends up configured for two witnesses.
+if [ -n "${extra// /}" ]; then
+    if [ -n "$first_identity" ]; then
+        configured="$(printf '%s' "$configured" |
+            awk -v id="$first_identity" -v extra="$extra" \
+                '{ if ($1 == id) { print $0, extra; found = 1 } else print }
+                 END { if (!found && id != "") print id, extra }')
+"
+    else
+        log "MABEL_WITNESSES names endpoints and no witness identity is known: skipping"
+    fi
 fi
+while read -r identity endpoints; do
+    [ -n "$identity" ] || continue
+    # shellcheck disable=SC2086
+    mabel witness set-default --witness "$identity" --endpoints "${endpoints// /,}" >/dev/null
+    log "pushing to $identity through $endpoints"
+done <<<"$configured"
 
 log "running mabel $*"
 exec mabel "$@"

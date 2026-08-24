@@ -1233,14 +1233,22 @@ fn a_malformed_ticket_address_exits_2() {
 }
 
 #[test]
-fn witness_set_default_replaces_the_node_wide_set() {
+fn witness_set_default_names_one_identity_and_its_endpoints() {
     let home = Home::new();
+    let witness = home.create("witness");
     let endpoint = home.endpoint();
     // A second home is the simplest source of another real endpoint id: an
     // arbitrary 32 bytes is not a valid one.
-    let other = &Home::new().endpoint();
+    let other = Home::new().endpoint();
 
-    let document = home.json(&["witness", "set-default", &endpoint, other]);
+    let document = home.json(&[
+        "witness",
+        "set-default",
+        "--witness",
+        &witness,
+        "--endpoints",
+        &format!("{endpoint},{other}"),
+    ]);
     assert_shape(
         &document,
         &fixture("witness-set-default", "set"),
@@ -1248,32 +1256,86 @@ fn witness_set_default_replaces_the_node_wide_set() {
     );
     assert_eq!(
         document["witnesses"],
-        serde_json::json!([endpoint.clone(), other])
+        serde_json::json!([{
+            "identity_id": witness.clone(),
+            "endpoints": [endpoint.clone(), other.clone()],
+        }])
     );
-    assert_eq!(config_witnesses(&home).len(), 2);
+    assert_eq!(config_witnesses(&home), [witness.as_str()]);
+    assert_eq!(config_endpoints(&home).len(), 2);
 
     // The set is replaced, not added to, and a repeat is dropped.
-    let document = home.json(&["witness", "set-default", other, other]);
-    assert_eq!(document["witnesses"], serde_json::json!([other]));
-    assert_eq!(config_witnesses(&home).len(), 1);
+    let document = home.json(&[
+        "witness",
+        "set-default",
+        "--witness",
+        &witness,
+        "--endpoints",
+        &format!("{other},{other}"),
+    ]);
+    assert_eq!(
+        document["witnesses"][0]["endpoints"],
+        serde_json::json!([other])
+    );
+    assert_eq!(config_endpoints(&home).len(), 1);
 
-    let (code, stdout, _) = home.run(&["witness", "set-default", other]);
+    let (code, stdout, _) = home.run(&[
+        "witness",
+        "set-default",
+        "--witness",
+        &witness,
+        "--endpoints",
+        &other,
+    ]);
     assert_eq!(code, 0);
-    assert!(stdout.contains("1 default witness"), "{stdout}");
-    assert!(stdout.contains(other), "{stdout}");
+    assert!(stdout.contains("default witness"), "{stdout}");
+    assert!(stdout.contains(&other), "{stdout}");
+}
+
+/// A configured witness with no reachable endpoint is a config entry that does
+/// nothing, so the command refuses it (proposal 006 section 5.4).
+#[test]
+fn witness_set_default_refuses_an_unreachable_witness() {
+    let home = Home::new();
+    let unknown = base32(&[9u8; 32]);
+    let (code, document) = home.failure(&["witness", "set-default", "--witness", &unknown]);
+    assert_eq!(code, 2);
+    assert_eq!(
+        document["details"]["reason"],
+        Value::from("unresolvable_witness")
+    );
+    assert_eq!(document["details"]["identity_id"], Value::from(unknown));
+    assert!(config_witnesses(&home).is_empty());
 }
 
 #[test]
 fn a_malformed_default_witness_exits_2_and_leaves_node_json_alone() {
     let home = Home::new();
-    home.json(&["witness", "set-default", &home.endpoint()]);
-    let (code, document) = home.failure(&["witness", "set-default", "not-an-endpoint"]);
+    let witness = home.create("witness");
+    let endpoint = home.endpoint();
+    home.json(&[
+        "witness",
+        "set-default",
+        "--witness",
+        &witness,
+        "--endpoints",
+        &endpoint,
+    ]);
+    let (code, document) = home.failure(&[
+        "witness",
+        "set-default",
+        "--witness",
+        &witness,
+        "--endpoints",
+        "not-an-endpoint",
+    ]);
     assert_eq!(code, 2);
     assert_eq!(
         document["details"]["reason"],
         Value::from("malformed_endpoint_id")
     );
-    assert_eq!(config_witnesses(&home).len(), 1);
+    assert_eq!(config_witnesses(&home), [witness]);
+    assert_eq!(config_endpoints(&home), [endpoint]);
 }
 
 /// 32 bytes as every document spells an id.
@@ -1283,16 +1345,42 @@ fn base32(value: &[u8]) -> String {
         .to_ascii_lowercase()
 }
 
-/// `node.json.witnesses`, which `iroh_base` spells as hex.
+/// The witness identities `node.json.witnesses` names, as documents spell ids.
 fn config_witnesses(home: &Home) -> Vec<String> {
-    let bytes = std::fs::read(home.path().join("node.json")).expect("node.json is there");
-    let config: Value = serde_json::from_slice(&bytes).expect("node.json is JSON");
-    config["witnesses"]
+    node_json(home)["witnesses"]
         .as_array()
         .expect("witnesses is an array")
         .iter()
-        .map(text)
+        .map(|entry| text(&entry["identity"]))
         .collect()
+}
+
+/// The bootstrap endpoints `node.json.witnesses` records, rendered as documents
+/// spell them: the file holds the hex `iroh_base` writes.
+fn config_endpoints(home: &Home) -> Vec<String> {
+    node_json(home)["witnesses"]
+        .as_array()
+        .expect("witnesses is an array")
+        .iter()
+        .flat_map(|entry| {
+            entry["endpoints"]
+                .as_array()
+                .expect("endpoints is an array")
+                .iter()
+                .map(|endpoint| {
+                    let bytes = data_encoding::HEXLOWER
+                        .decode(text(endpoint).as_bytes())
+                        .expect("an endpoint id is hex");
+                    base32(&bytes)
+                })
+                .collect::<Vec<String>>()
+        })
+        .collect()
+}
+
+fn node_json(home: &Home) -> Value {
+    let bytes = std::fs::read(home.path().join("node.json")).expect("node.json is there");
+    serde_json::from_slice(&bytes).expect("node.json is JSON")
 }
 
 #[test]

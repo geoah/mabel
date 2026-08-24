@@ -138,13 +138,24 @@ pub struct Observation {
     pub source: EndpointId,
     /// When it was served.
     pub observed_ms: u64,
+    /// Whether the source's provenance may establish a binding at all.
+    ///
+    /// False for an endpoint reached through a ledger's retired tag-11
+    /// `WitnessConfig` (proposal 006 section 5, source 7): that field never
+    /// promised an identity, so a chain it served neither creates, refreshes nor
+    /// clears a binding however clean it folds.
+    pub may_bind: bool,
 }
 
 impl Observation {
     /// The endpoints this observation may verify: every advertised endpoint
-    /// except the one that served the evidence (condition 4).
+    /// except the one that served the evidence (condition 4), and none at all
+    /// when the provenance may not bind.
     #[must_use]
     pub fn vouched(&self) -> Vec<EndpointId> {
+        if !self.may_bind {
+            return Vec::new();
+        }
         self.endpoints
             .iter()
             .copied()
@@ -189,6 +200,11 @@ impl Recorded {
 /// file.
 #[must_use]
 pub fn apply(existing: Option<&Bindings>, observation: &Observation) -> Recorded {
+    if !observation.may_bind {
+        // Source 7 evidence changes nothing, including on equivocation: which
+        // chain is this identity's is not a question a tag-11 list may answer.
+        return Recorded::Nothing;
+    }
     let vouched = observation.vouched();
     let entry = |endpoint: EndpointId| BoundEndpoint {
         endpoint,
@@ -339,7 +355,28 @@ mod tests {
             endpoints: endpoints.iter().copied().map(endpoint).collect(),
             source: endpoint(source),
             observed_ms: 1_700_000_000_000 + head_seq,
+            may_bind: true,
         }
+    }
+
+    /// A chain reached through a ledger's retired tag-11 list establishes no
+    /// binding, whatever it advertises (proposal 006 section 5, source 7).
+    #[test]
+    fn a_legacy_witness_hint_never_binds() {
+        let observation = Observation {
+            may_bind: false,
+            ..observed(4, 9, &[1, 2], 3)
+        };
+        assert!(observation.vouched().is_empty());
+        assert_eq!(apply(None, &observation), Recorded::Nothing);
+        let existing = apply(None, &observed(4, 9, &[1, 2], 3));
+        let existing = existing.bindings().cloned().expect("a record");
+        assert_eq!(
+            apply(Some(&existing), &observation),
+            Recorded::Nothing,
+            "it neither refreshes nor clears what a tag-18 source established"
+        );
+        assert_eq!(existing.binding(endpoint(1)), Binding::Verified);
     }
 
     /// Condition 4: a chain served only by the endpoint it vouches for leaves

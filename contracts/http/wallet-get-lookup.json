@@ -85,6 +85,7 @@
                 {
                   "source": {
                     "kind": "node_witness",
+                    "witness": "vh4bkkokjt7jfmtazivnk5ykplavgpx5kcxvglfncbrlvowfaz6q",
                     "endpoint": "5yy7qpeiu4jbtjx47g7obwu3yitcaweplik2mfcvknie36letzoa"
                   },
                   "event": "cw6iyjks6lcphp4b7cq43mnmirpdgdlmqwyigcefkroekjphkwwa"
@@ -141,6 +142,7 @@
         {
           "source": {
             "kind": "node_witness",
+            "witness": "vh4bkkokjt7jfmtazivnk5ykplavgpx5kcxvglfncbrlvowfaz6q",
             "endpoint": "5yy7qpeiu4jbtjx47g7obwu3yitcaweplik2mfcvknie36letzoa"
           },
           "event": "cw6iyjks6lcphp4b7cq43mnmirpdgdlmqwyigcefkroekjphkwwa"
