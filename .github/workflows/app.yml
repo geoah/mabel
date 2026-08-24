@@ -7,6 +7,12 @@
 # Nothing else in the repository depends on this workflow, and it depends on
 # nothing else: it builds ui/dist itself, because mabel-node embeds that
 # directory at compile time.
+#
+# Signing is conditional. With no Apple secrets set the workflow builds exactly
+# what it built before, unsigned, and says so in the log. With the secrets set
+# the macOS build is signed and notarized, and the iOS job can additionally
+# produce a signed App Store archive. app/README.md lists every secret and where
+# it comes from.
 name: app
 
 on:
@@ -71,13 +77,52 @@ jobs:
   macos:
     name: macOS app
     runs-on: macos-latest
-    timeout-minutes: 60
+    # Notarization is a round trip to Apple's notary service, which usually
+    # answers in minutes but has no promised time.
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
 
       - name: Short sha
         id: sha
         run: echo "short=$(git rev-parse --short=7 HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Check for the Apple signing secrets
+        # A secret that is not set arrives as an empty string, and tauri reads
+        # these variables with `var_os`, for which an empty string is still a
+        # value. So the signing variables are set on the signing build step
+        # only, never on the job, and this step decides which build step runs.
+        #
+        # It is all six secrets or none. Signing without notarizing is not a
+        # useful state, because Gatekeeper refuses a signed but un-notarized
+        # download just as it refuses an unsigned one. The step prints secret
+        # names, never secret values.
+        id: signing
+        env:
+          CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          API_KEY: ${{ secrets.APPLE_API_KEY }}
+          API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY_CONTENT }}
+        run: |
+          set -eu
+          missing=""
+          [ -n "${CERTIFICATE:-}" ] || missing="$missing APPLE_CERTIFICATE"
+          [ -n "${CERTIFICATE_PASSWORD:-}" ] || missing="$missing APPLE_CERTIFICATE_PASSWORD"
+          [ -n "${SIGNING_IDENTITY:-}" ] || missing="$missing APPLE_SIGNING_IDENTITY"
+          [ -n "${API_ISSUER:-}" ] || missing="$missing APPLE_API_ISSUER"
+          [ -n "${API_KEY:-}" ] || missing="$missing APPLE_API_KEY"
+          [ -n "${API_KEY_CONTENT:-}" ] || missing="$missing APPLE_API_KEY_CONTENT"
+          if [ -z "$missing" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            echo "Signing and notarizing: every Apple secret is set."
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Building unsigned because no signing secrets" \
+              "are set. Missing:$missing. Gatekeeper refuses an unsigned" \
+              "download."
+          fi
 
       - uses: actions/setup-node@v4
         with:
@@ -122,20 +167,114 @@ jobs:
         # IconType". `tauri icon` writes the full set from the source PNG.
         run: cargo tauri icon icons/app-icon.png
         working-directory: app/src-tauri
-      - name: Build the app and the dmg
+
+      - name: Write the notarization API key
+        # tauri reads the key from a file named by APPLE_API_KEY_PATH; it has no
+        # variable for the key contents. So the .p8 is written to the runner's
+        # temp directory, which is outside the workspace and so cannot end up in
+        # an artifact, with a mode that only the runner user can read.
+        if: steps.signing.outputs.enabled == 'true'
+        env:
+          API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY_CONTENT }}
+        run: |
+          set -eu
+          umask 077
+          printf '%s\n' "$API_KEY_CONTENT" > "$RUNNER_TEMP/apple-api-key.p8"
+
+      - name: Build the app and the dmg, unsigned
         # Native arm64. A universal binary needs
         # `rustup target add x86_64-apple-darwin aarch64-apple-darwin` and
         # `--target universal-apple-darwin`.
+        if: steps.signing.outputs.enabled != 'true'
         run: cargo tauri build
         working-directory: app/src-tauri
 
+      - name: Build the app and the dmg, signed and notarized
+        # Same command and same artifacts as the unsigned step; the environment
+        # is the whole difference. `cargo tauri build` does the signing itself:
+        # tauri-bundler imports the base64 .p12 from APPLE_CERTIFICATE into a
+        # keychain it creates and deletes on its own, signs the .app with
+        # APPLE_SIGNING_IDENTITY under the hardened runtime, then submits the
+        # .app to notarytool with the App Store Connect key and staples the
+        # ticket to it. No `security`, `notarytool` or `stapler` call belongs
+        # here.
+        #
+        # APPLE_ID and APPLE_PASSWORD are deliberately absent: tauri prefers
+        # them over the API key when they are set, and then demands
+        # APPLE_TEAM_ID as well.
+        if: steps.signing.outputs.enabled == 'true'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_PATH: ${{ runner.temp }}/apple-api-key.p8
+        run: cargo tauri build
+        working-directory: app/src-tauri
+
+      - name: Notarize and staple the dmg
+        # tauri signs the dmg but does not notarize it, so macOS warns when the
+        # disk image is opened even though the .app inside it carries a ticket.
+        # This is the gap the bundler leaves, and the only place this workflow
+        # calls notarytool directly.
+        if: steps.signing.outputs.enabled == 'true'
+        env:
+          API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          API_KEY: ${{ secrets.APPLE_API_KEY }}
+        run: |
+          set -eu
+          dmg=""
+          for candidate in app/src-tauri/target/release/bundle/dmg/*.dmg; do
+            dmg="$candidate"
+          done
+          test -f "$dmg"
+          xcrun notarytool submit "$dmg" \
+            --key-id "$API_KEY" \
+            --key "$RUNNER_TEMP/apple-api-key.p8" \
+            --issuer "$API_ISSUER" \
+            --wait \
+            --timeout 45m
+          xcrun stapler staple "$dmg"
+
+      - name: Verify the signature and the notarization ticket
+        # What a user's Gatekeeper will check, checked here instead. `stapler
+        # validate` is the step that proves notarization actually happened
+        # rather than that the command merely ran.
+        if: steps.signing.outputs.enabled == 'true'
+        run: |
+          set -eu
+          bundle=""
+          for candidate in app/src-tauri/target/release/bundle/macos/*.app; do
+            bundle="$candidate"
+          done
+          test -d "$bundle"
+          codesign --verify --deep --strict --verbose=2 "$bundle"
+          xcrun stapler validate "$bundle"
+          dmg=""
+          for candidate in app/src-tauri/target/release/bundle/dmg/*.dmg; do
+            dmg="$candidate"
+          done
+          test -f "$dmg"
+          codesign --verify --strict --verbose=2 "$dmg"
+          xcrun stapler validate "$dmg"
+
+      - name: Remove the notarization API key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/apple-api-key.p8"
+
       - name: Zip the .app
         # upload-artifact drops the executable bit, which would leave an .app
-        # that cannot be launched. ditto keeps the bundle intact.
+        # that cannot be launched. ditto keeps the bundle intact, including the
+        # stapled notarization ticket when there is one.
         run: |
-          set -eux
+          set -eu
           cd app/src-tauri/target/release/bundle/macos
-          bundle=$(ls -d ./*.app | head -1)
+          bundle=""
+          for candidate in ./*.app; do
+            bundle="$candidate"
+          done
+          test -d "$bundle"
           ditto -c -k --sequesterRsrc --keepParent "$bundle" mabel-macos.zip
 
       - uses: actions/upload-artifact@v4
@@ -149,7 +288,9 @@ jobs:
   ios:
     name: iOS simulator app
     runs-on: macos-latest
-    timeout-minutes: 60
+    # The simulator build alone fits well inside 60; the signed archive and its
+    # App Store export are what need the rest.
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
 
@@ -225,7 +366,7 @@ jobs:
         # The archive holds the simulator bundle. ditto keeps the executable bit
         # that upload-artifact would drop.
         run: |
-          set -eux
+          set -eu
           cd app/src-tauri
           app=$(find gen/apple/build -name "*.app" -type d -print | head -1)
           test -n "$app"
@@ -236,3 +377,156 @@ jobs:
           name: mabel-app-${{ steps.sha.outputs.short }}-ios-simulator
           if-no-files-found: error
           path: app/src-tauri/mabel-ios-simulator.zip
+
+      # Everything below is the signed distribution path. It runs after the
+      # simulator artifact is already uploaded, so a signing failure can never
+      # cost the build that CI has always produced.
+
+      - name: Check the iOS distribution switch and secrets
+        # Two switches, both repository variables, because a variable can be
+        # read where a secret cannot and because the two acts differ in what
+        # they cost. IOS_DISTRIBUTION_READY builds a signed archive, which
+        # registers the bundle identifier and may create a distribution
+        # certificate on the Apple account. IOS_TESTFLIGHT_UPLOAD sends the
+        # result to App Store Connect, which consumes a build number and is
+        # visible to testers.
+        #
+        # With the switch on and a secret missing this fails rather than falls
+        # back: someone asked for a signed build and did not get one.
+        id: distribution
+        env:
+          READY: ${{ vars.IOS_DISTRIBUTION_READY }}
+          TESTFLIGHT: ${{ vars.IOS_TESTFLIGHT_UPLOAD }}
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          API_KEY: ${{ secrets.APPLE_API_KEY }}
+          API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY_CONTENT }}
+        run: |
+          set -eu
+          enabled=false
+          testflight=false
+          if [ "${READY:-}" != "true" ]; then
+            echo "::notice::Skipping the signed iOS build: the" \
+              "IOS_DISTRIBUTION_READY variable is not set to true. The" \
+              "simulator artifact above is the only iOS output."
+          else
+            missing=""
+            [ -n "${TEAM_ID:-}" ] || missing="$missing APPLE_TEAM_ID"
+            [ -n "${API_ISSUER:-}" ] || missing="$missing APPLE_API_ISSUER"
+            [ -n "${API_KEY:-}" ] || missing="$missing APPLE_API_KEY"
+            [ -n "${API_KEY_CONTENT:-}" ] || missing="$missing APPLE_API_KEY_CONTENT"
+            if [ -n "$missing" ]; then
+              echo "::error::IOS_DISTRIBUTION_READY is true but these" \
+                "secrets are not set:$missing"
+              exit 1
+            fi
+            enabled=true
+            if [ "${TESTFLIGHT:-}" = "true" ]; then
+              testflight=true
+              echo "Building a signed archive and uploading it to TestFlight."
+            else
+              echo "Building a signed archive. IOS_TESTFLIGHT_UPLOAD is not" \
+                "true, so the ipa is uploaded as a workflow artifact only."
+            fi
+          fi
+          {
+            echo "enabled=$enabled"
+            echo "testflight=$testflight"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Write the App Store Connect API key
+        if: steps.distribution.outputs.enabled == 'true'
+        env:
+          API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY_CONTENT }}
+        run: |
+          set -eu
+          umask 077
+          printf '%s\n' "$API_KEY_CONTENT" > "$RUNNER_TEMP/apple-api-key.p8"
+
+      - name: Regenerate the Xcode project with the signing team
+        # The project generated above carries no development team, because the
+        # simulator does not need one. cargo-mobile2 writes the team into the
+        # project from APPLE_DEVELOPMENT_TEAM, so the project is regenerated
+        # with it set rather than patched afterwards.
+        if: steps.distribution.outputs.enabled == 'true'
+        env:
+          APPLE_DEVELOPMENT_TEAM: ${{ secrets.APPLE_TEAM_ID }}
+        run: cargo tauri ios init --ci --skip-targets-install
+        working-directory: app/src-tauri
+
+      - name: Build the signed App Store archive and the ipa
+        # Cloud signing, so this needs no certificate and no provisioning
+        # profile in a secret. Given APPLE_API_KEY, APPLE_API_ISSUER and
+        # APPLE_API_KEY_PATH, the tauri CLI archives without signing and then
+        # runs `xcodebuild -exportArchive` with `-allowProvisioningUpdates` and
+        # the App Store Connect key, which is where Xcode fetches or creates the
+        # distribution certificate and the profile.
+        #
+        # The build number is the run number, because App Store Connect refuses
+        # a build whose CFBundleVersion it has already seen.
+        if: steps.distribution.outputs.enabled == 'true'
+        env:
+          APPLE_DEVELOPMENT_TEAM: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_PATH: ${{ runner.temp }}/apple-api-key.p8
+        run: |
+          cargo tauri ios build \
+            --target aarch64 \
+            --export-method app-store-connect \
+            --build-number "$GITHUB_RUN_NUMBER"
+        working-directory: app/src-tauri
+
+      - name: Find the ipa
+        if: steps.distribution.outputs.enabled == 'true'
+        id: ipa
+        run: |
+          set -eu
+          ipa=$(find app/src-tauri/gen/apple/build -type f -name "*.ipa" -print | head -1)
+          test -n "$ipa"
+          echo "path=$ipa" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        if: steps.distribution.outputs.enabled == 'true'
+        with:
+          name: mabel-app-${{ steps.sha.outputs.short }}-ios-ipa
+          if-no-files-found: error
+          path: ${{ steps.ipa.outputs.path }}
+
+      - name: Upload the ipa to TestFlight
+        # fastlane is preinstalled on the macOS runner image, so this installs
+        # nothing. It is used in place of `xcrun altool --upload-app`, which
+        # Apple deprecated in favour of `--upload-package`; that flag wants the
+        # App Store Connect numeric Apple ID and the ASC public ID, which
+        # nobody has until the app record exists. pilot reads both from the API
+        # key instead.
+        #
+        # jq builds the key file so the multi-line .p8 is escaped as JSON
+        # without ever passing through the log.
+        if: steps.distribution.outputs.testflight == 'true'
+        env:
+          API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          API_KEY: ${{ secrets.APPLE_API_KEY }}
+          API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY_CONTENT }}
+          IPA_PATH: ${{ steps.ipa.outputs.path }}
+          FASTLANE_SKIP_UPDATE_CHECK: "1"
+          FASTLANE_DISABLE_COLORS: "1"
+        run: |
+          set -eu
+          umask 077
+          jq -n \
+            --arg key_id "$API_KEY" \
+            --arg issuer_id "$API_ISSUER" \
+            --arg key "$API_KEY_CONTENT" \
+            '{key_id: $key_id, issuer_id: $issuer_id, key: $key, in_house: false}' \
+            > "$RUNNER_TEMP/asc-api-key.json"
+          fastlane pilot upload \
+            --api_key_path "$RUNNER_TEMP/asc-api-key.json" \
+            --ipa "$IPA_PATH" \
+            --app_identifier io.github.geoah.mabel \
+            --skip_submission true \
+            --skip_waiting_for_build_processing true
+
+      - name: Remove the App Store Connect API key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/apple-api-key.p8" "$RUNNER_TEMP/asc-api-key.json"
