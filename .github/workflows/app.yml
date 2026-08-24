@@ -112,6 +112,12 @@ jobs:
       - name: Install the tauri CLI
         # Builds from source, which takes a few minutes on a cold cache.
         run: cargo install tauri-cli --version ${{ env.TAURI_CLI_VERSION }} --locked
+      - name: Generate the icon set
+        # The checked-in icons are bare PNGs; the macOS bundler needs the
+        # derived set (icon.icns included) or it fails with "No matching
+        # IconType". `tauri icon` writes the full set from the source PNG.
+        run: cargo tauri icon icons/app-icon.png
+        working-directory: app/src-tauri
       - name: Build the app and the dmg
         # Native arm64. A universal binary needs
         # `rustup target add x86_64-apple-darwin aarch64-apple-darwin` and
@@ -180,6 +186,12 @@ jobs:
 
       - name: Install the tauri CLI
         run: cargo install tauri-cli --version ${{ env.TAURI_CLI_VERSION }} --locked
+
+      - name: Generate the icon set
+        # Same reason as the macOS job: the generated project expects the
+        # derived icon set, not the bare source PNGs.
+        run: cargo tauri icon icons/app-icon.png
+        working-directory: app/src-tauri
 
       - name: Generate the Xcode project
         # app/src-tauri/gen is not committed: cargo-mobile2 writes absolute paths
