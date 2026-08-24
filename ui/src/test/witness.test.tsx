@@ -1,4 +1,5 @@
 import { screen, within } from "@testing-library/react";
+import { HttpResponse, http } from "msw";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import {
@@ -60,6 +61,52 @@ describe("the witness node's debug route", () => {
     expect(
       screen.queryByTestId(`identity-card-fork-count-${ACME}`),
     ).not.toBeInTheDocument();
+  });
+
+  // No page control means the screen owes the reader every record, so it
+  // follows the route's `more` instead of drawing the first page as the whole.
+  it("reads past the first page of records, with no control to do it", async () => {
+    const asked: string[] = [];
+    server.events.on("request:start", ({ request }) => {
+      const url = new URL(request.url);
+      if (url.pathname === "/api/ledgers") {
+        asked.push(url.search);
+      }
+    });
+    const second = "d".repeat(52);
+    server.use(
+      http.get("/api/ledgers", ({ request }) => {
+        const offset = Number(new URL(request.url).searchParams.get("offset") ?? "0");
+        return HttpResponse.json({
+          ok: true,
+          offset,
+          limit: 1,
+          more: offset === 0,
+          entries: [
+            {
+              ledger_id: offset === 0 ? ALICE : second,
+              declared_kind: "person",
+              head_seq: 0,
+              head_event: "e".repeat(52),
+              event_count: 1,
+              first_seen_ms: 1_700_000_000_000,
+              updated_ms: 1_700_000_000_000,
+              fork_count: 0,
+              forks_truncated: false,
+              source_endpoint: "f".repeat(52),
+            },
+          ],
+        });
+      }),
+    );
+
+    renderApp("/witness");
+    await screen.findByTestId("identity-cards");
+
+    expect(await screen.findByTestId(`identity-card-${second}`)).toBeInTheDocument();
+    expect(asked).toHaveLength(2);
+    expect(screen.queryByTestId("witness-ledger-list-capped")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("witness-ledger-next")).not.toBeInTheDocument();
   });
 
   it("offers no paging controls and no operator table", async () => {

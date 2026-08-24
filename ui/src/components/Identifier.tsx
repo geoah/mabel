@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router";
 
+import { COPY_FAILED, copyText } from "@/lib/clipboard";
 import { cn } from "@/lib/utils";
 
 /** Characters kept visible at each end of a truncated identifier. */
@@ -57,44 +58,46 @@ function CheckIcon() {
 }
 
 /**
- * Copies the identifier and reports it. The confirmation is held until the
- * button loses focus or the pointer leaves, so no timer fires after a render.
+ * Copies the identifier and reports it, including when it could not: a copy
+ * nobody can see failing is worse than no copy button. The confirmation is held
+ * until the button loses focus or the pointer leaves, so no timer fires after a
+ * render.
  */
 function CopyButton({ value }: { value: string }) {
-  const [copied, setCopied] = useState(false);
-
-  async function copy() {
-    try {
-      await navigator.clipboard?.writeText(value);
-    } catch {
-      // No clipboard permission and no clipboard: report nothing.
-      return;
-    }
-    setCopied(true);
-  }
+  const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
+  const copied = state === "copied";
+  const label = state === "failed" ? COPY_FAILED : copied ? "copied" : "copy";
 
   return (
-    <button
-      type="button"
-      aria-label={copied ? "copied" : "copy"}
-      title={copied ? "copied" : "copy"}
-      data-copied={copied}
-      // A copy button inside a clickable card copies and nothing else.
-      onClick={(event) => {
-        event.stopPropagation();
-        void copy();
-      }}
-      onBlur={() => setCopied(false)}
-      onPointerLeave={() => setCopied(false)}
-      className={cn(
-        "inline-flex size-10 shrink-0 items-center justify-center rounded-md md:size-6",
-        "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-        copied ? "text-foreground" : "text-muted-foreground hover:text-foreground",
-        "hover:bg-accent",
+    <>
+      <button
+        type="button"
+        aria-label={label}
+        title={label}
+        data-copied={copied}
+        data-copy-failed={state === "failed"}
+        // A copy button inside a clickable card copies and nothing else.
+        onClick={(event) => {
+          event.stopPropagation();
+          void copyText(value).then((ok) => setState(ok ? "copied" : "failed"));
+        }}
+        onBlur={() => setState("idle")}
+        onPointerLeave={() => setState("idle")}
+        className={cn(
+          "inline-flex size-10 shrink-0 items-center justify-center rounded-md md:size-6",
+          "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+          copied ? "text-foreground" : "text-muted-foreground hover:text-foreground",
+          "hover:bg-accent",
+        )}
+      >
+        {copied ? <CheckIcon /> : <ClipboardIcon />}
+      </button>
+      {state === "failed" && (
+        <span data-testid="copy-failed" className="text-xs text-destructive">
+          {COPY_FAILED}
+        </span>
       )}
-    >
-      {copied ? <CheckIcon /> : <ClipboardIcon />}
-    </button>
+    </>
   );
 }
 

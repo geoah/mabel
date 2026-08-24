@@ -105,8 +105,12 @@ export function useSharedName(name: string | null): boolean {
   return name !== null && duplicates.has(name);
 }
 
-/** verified with a stale marker is its own rendered state, never a plain check. */
-export type VerificationState = VerificationStatus | "stale-verified";
+/**
+ * verified with a stale marker is its own rendered state, never a plain check,
+ * and so is a decisive verdict whose latest re-check failed: the node keeps that
+ * failure in verification.unreachable beside the older result.
+ */
+export type VerificationState = VerificationStatus | "stale-verified" | "recheck-failed";
 
 interface Mark {
   glyph: string;
@@ -125,6 +129,11 @@ const MARKS: Record<Exclude<VerificationState, "unclaimed">, Mark> = {
     tone: "text-muted-foreground",
     sentence: "HOSTNAME matched more than a day ago, and has not been checked since",
   },
+  "recheck-failed": {
+    glyph: "?",
+    tone: "text-muted-foreground",
+    sentence: "the last check of HOSTNAME failed, so this verdict is the one before it",
+  },
   mismatched: {
     glyph: "⚠",
     tone: "text-destructive",
@@ -142,7 +151,17 @@ const MARKS: Record<Exclude<VerificationState, "unclaimed">, Mark> = {
   },
 };
 
-export function verificationState(status: VerificationStatus, stale: boolean): VerificationState {
+export function verificationState(
+  status: VerificationStatus,
+  stale: boolean,
+  /** True when the node kept a failed re-check beside this verdict. */
+  recheckFailed = false,
+): VerificationState {
+  // A verdict whose latest check failed is not a clean mark, whichever way the
+  // older check went: the reader is looking at the answer before the failure.
+  if (recheckFailed && (status === "verified" || status === "mismatched")) {
+    return "recheck-failed";
+  }
   return status === "verified" && stale ? "stale-verified" : status;
 }
 
@@ -155,17 +174,20 @@ export function VerificationMark({
   status,
   hostname,
   stale = false,
+  recheckFailed = false,
   testId,
 }: {
   status: VerificationStatus;
   hostname: string | null;
   stale?: boolean;
+  /** True when the node kept a failed re-check beside this verdict. */
+  recheckFailed?: boolean;
   testId?: string;
 }) {
   if (status === "unclaimed" || hostname === null) {
     return null;
   }
-  const state = verificationState(status, stale);
+  const state = verificationState(status, stale, recheckFailed);
   const mark = MARKS[state as Exclude<VerificationState, "unclaimed">];
   return (
     <span
@@ -178,6 +200,7 @@ export function VerificationMark({
       <span className="sr-only">{state}</span>
       <span className="font-mono">{hostname}</span>
       {state === "stale-verified" && <span className="italic">may be out of date</span>}
+      {state === "recheck-failed" && <span className="italic">last check failed</span>}
     </span>
   );
 }

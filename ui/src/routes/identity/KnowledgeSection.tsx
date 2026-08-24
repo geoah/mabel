@@ -206,8 +206,15 @@ function EntryList({
  * the crawl holds. Every identity here is an identity card, so a name on a path
  * reads exactly as it does in the wallet.
  */
-export function KnowledgeSection({ response }: { response: LookupResponse }) {
-  const sync = useGraphSync();
+export function KnowledgeSection({
+  response,
+  onSynced,
+}: {
+  response: LookupResponse;
+  /** Reloads the lookup this section drew, once a sync has replaced the crawl. */
+  onSynced: () => void;
+}) {
+  const sync = useGraphSync(onSynced);
   // The paths already carry the equivocation of every node they reach, so the
   // heading only warns about one no hop is going to show.
   const onAPath = response.paths.some((path) =>

@@ -1,6 +1,6 @@
 import { type FormEvent, useState } from "react";
 
-import { type ApiError, setIdentityWitnesses } from "@/api/client";
+import { type ApiError, getIdentity, setIdentityWitnesses } from "@/api/client";
 import type { Identity } from "@/api/types";
 import { ErrorEnvelopeView } from "@/components/ErrorEnvelopeView";
 import { InlineField, InlineForm } from "@/components/InlineForm";
@@ -8,6 +8,9 @@ import { WitnessCard } from "@/components/WitnessCard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { asApiError } from "@/hooks/useResource";
+
+/** What a reader is told when the id they typed is already in the set. */
+export const WITNESS_ALREADY_NAMED = "This witness already keeps a copy of this record.";
 
 /**
  * Who keeps a copy of this identity's record. The route replaces the whole set,
@@ -23,16 +26,29 @@ export function WitnessConfigPanel({
   const [endpoint, setEndpoint] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<ApiError | null>(null);
+  const [duplicate, setDuplicate] = useState(false);
   const [headSeq, setHeadSeq] = useState<number | null>(null);
+  const wanted = endpoint.trim();
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     setPending(true);
     setError(null);
+    setDuplicate(false);
     setHeadSeq(null);
     try {
+      // The route replaces the whole set, so the set this send is built on has
+      // to be the one the node holds now: the identity document this panel was
+      // rendered from may be seconds old, and a witness added meanwhile would be
+      // dropped by a stale base. Reading it here narrows that window to this
+      // request pair rather than to however long the panel has been open.
+      const current = (await getIdentity(identity.identity_id)).identity.witnesses;
+      if (current.includes(wanted)) {
+        setDuplicate(true);
+        return;
+      }
       const response = await setIdentityWitnesses(identity.identity_id, {
-        witnesses: [...identity.witnesses, endpoint.trim()],
+        witnesses: [...current, wanted],
       });
       setHeadSeq(response.head_seq);
       setEndpoint("");
@@ -72,10 +88,19 @@ export function WitnessConfigPanel({
             className="font-mono text-xs"
           />
         </InlineField>
-        <Button type="submit" data-testid="witness-add-submit" disabled={pending}>
+        <Button
+          type="submit"
+          data-testid="witness-add-submit"
+          disabled={pending || wanted === ""}
+        >
           {pending ? "adding" : "Add witness"}
         </Button>
       </InlineForm>
+      {duplicate && (
+        <p data-testid="witness-add-duplicate" className="text-sm">
+          {WITNESS_ALREADY_NAMED}
+        </p>
+      )}
       {headSeq !== null && (
         <p data-testid="witness-add-head-seq" className="text-xs">
           Saved at position {headSeq}.

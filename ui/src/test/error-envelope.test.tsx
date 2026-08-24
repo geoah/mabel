@@ -3,6 +3,7 @@ import { http } from "msw";
 import { describe, expect, it } from "vitest";
 
 import { ApiError } from "@/api/client";
+import type { PushResult } from "@/api/types";
 import { ErrorEnvelopeView } from "@/components/ErrorEnvelopeView";
 import { ACME, ALICE, cliErrorCases, errors } from "@/mocks/fixtures";
 import { server } from "@/mocks/server";
@@ -50,6 +51,20 @@ describe("error envelope", () => {
       "all_witnesses_failed",
     );
     expect(within(envelope).getByTestId("error-status")).toHaveTextContent("status 502");
+
+    // The envelope carries what every witness said, and a send that reached
+    // nobody is the case a reader needs that table for most.
+    const results = errors.allWitnessesFailed.body.details.results as PushResult[];
+    expect(results.length).toBeGreaterThan(0);
+    expect(screen.getByTestId("sync-push-results")).toBeInTheDocument();
+    for (const result of results) {
+      expect(screen.getByTestId(`push-status-${result.endpoint}`)).toHaveTextContent(
+        result.status,
+      );
+      expect(screen.getByTestId(`push-message-${result.endpoint}`)).toHaveTextContent(
+        "Network error:",
+      );
+    }
   });
 
   it("renders the code 50 envelope when a witness reports a later head", async () => {

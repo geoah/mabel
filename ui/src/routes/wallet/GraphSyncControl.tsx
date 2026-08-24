@@ -33,7 +33,15 @@ interface GraphSync {
  * it. Synchronizing is never automatic: there is no timer anywhere (proposal
  * 003 section 3).
  */
-export function useGraphSync(): GraphSync {
+export function useGraphSync(
+  /**
+   * Called once a sync has replaced the crawl. Every answer a screen already
+   * read came from the old generation, so the screen that asked for the sync
+   * reloads what it drew: a fresh crawl behind a stale answer is the staleness
+   * banner all over again.
+   */
+  onSynced?: () => void,
+): GraphSync {
   const loaded = useResource(getGraph, []);
   const [consented, giveConsent] = useConsent(GRAPH_CONSENT_KEY);
   const [asking, setAsking] = useState(false);
@@ -46,6 +54,7 @@ export function useGraphSync(): GraphSync {
     setError(null);
     try {
       setSynced((await syncGraph()).graph);
+      onSynced?.();
     } catch (thrown) {
       setError(asApiError(thrown));
     } finally {
@@ -188,6 +197,13 @@ export function GraphStalenessBanner({
         {lastSyncMs === null ? "never" : describeAge(lastSyncMs)}. Look again for a fresher answer.
       </span>
       <GraphSyncButton sync={sync} testId={`${testId}-sync`} />
+      {/* A sync started here asks for the same consent as one started from the
+          card, so the panel travels with the button rather than the card. */}
+      {(sync.asking || sync.error !== null) && (
+        <div className="w-full">
+          <GraphSyncNotices sync={sync} />
+        </div>
+      )}
     </div>
   );
 }

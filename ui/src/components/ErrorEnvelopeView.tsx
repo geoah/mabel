@@ -16,6 +16,15 @@ const CODE_MEANING: Record<number, string> = {
   70: "This version of mabel cannot do that.",
 };
 
+/**
+ * The reasons whose own sentence beats their code class. node_unreachable is
+ * minted in the client when fetch never got an answer: the request was not
+ * refused and not misunderstood, so neither code sentence fits it.
+ */
+const REASON_MEANING: Record<string, string> = {
+  node_unreachable: "The node did not answer. Is it running?",
+};
+
 function renderDetail(value: unknown): string {
   if (value === null) {
     return "null";
@@ -46,7 +55,9 @@ export function ErrorEnvelopeView({ error, testId = "error-envelope" }: {
         {error.message}
       </p>
       <p data-testid="error-code-meaning" className="mt-1 text-xs">
-        {CODE_MEANING[error.code] ?? "The node reported a kind of failure this build does not recognise."}
+        {REASON_MEANING[error.reason] ??
+          CODE_MEANING[error.code] ??
+          "The node reported a kind of failure this build does not recognise."}
       </p>
       {detailKeys.length > 0 && (
         <dl

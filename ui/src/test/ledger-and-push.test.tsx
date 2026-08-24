@@ -135,4 +135,85 @@ describe("identity detail", () => {
       `Saved at position ${alice.head_seq + 1}.`,
     );
   });
+
+  it("offers no add until an endpoint is typed, and trims what is", async () => {
+    const bodies: unknown[] = [];
+    server.events.on("request:start", async ({ request }) => {
+      if (request.method === "POST" && request.url.endsWith("/witnesses")) {
+        bodies.push(await request.clone().json());
+      }
+    });
+    const endpoint = "b".repeat(52);
+    const { user } = renderApp(`/identities/${ALICE}`);
+    await screen.findByTestId("identity-actions");
+    await openAction(user, "action-witnesses");
+    await screen.findByTestId("witness-list");
+
+    expect(screen.getByTestId("witness-add-submit")).toBeDisabled();
+
+    await user.type(screen.getByTestId("witness-add-endpoint"), "   ");
+
+    // Whitespace is not an endpoint id.
+    expect(screen.getByTestId("witness-add-submit")).toBeDisabled();
+
+    await user.type(screen.getByTestId("witness-add-endpoint"), `${endpoint} `);
+    await user.click(screen.getByTestId("witness-add-submit"));
+
+    await screen.findByTestId("witness-add-head-seq");
+    expect(bodies).toEqual([{ witnesses: [...alice.witnesses, endpoint] }]);
+  });
+
+  it("refuses an endpoint already in the set, and sends nothing", async () => {
+    const posted: string[] = [];
+    server.events.on("request:start", ({ request }) => {
+      if (request.method === "POST") {
+        posted.push(new URL(request.url).pathname);
+      }
+    });
+    const { user } = renderApp(`/identities/${ALICE}`);
+    await screen.findByTestId("identity-actions");
+    await openAction(user, "action-witnesses");
+    await screen.findByTestId("witness-list");
+
+    await user.type(screen.getByTestId("witness-add-endpoint"), alice.witnesses[0]);
+    await user.click(screen.getByTestId("witness-add-submit"));
+
+    expect(await screen.findByTestId("witness-add-duplicate")).toHaveTextContent(
+      "This witness already keeps a copy of this record.",
+    );
+    expect(posted).toEqual([]);
+  });
+
+  // The route replaces the whole set, so a set read when the panel opened can
+  // drop a witness added in the meantime.
+  it("builds the new set on the identity document as it is at the moment of the send", async () => {
+    const bodies: unknown[] = [];
+    server.events.on("request:start", async ({ request }) => {
+      if (request.method === "POST" && request.url.endsWith("/witnesses")) {
+        bodies.push(await request.clone().json());
+      }
+    });
+    const added = "c".repeat(52);
+    const endpoint = "b".repeat(52);
+    const { user } = renderApp(`/identities/${ALICE}`);
+    await screen.findByTestId("identity-actions");
+    await openAction(user, "action-witnesses");
+    await screen.findByTestId("witness-list");
+
+    // Somewhere else, another witness joins the set after this panel drew it.
+    server.use(
+      http.get(`/api/identities/${ALICE}`, () =>
+        HttpResponse.json({
+          ok: true,
+          identity: { ...alice, witnesses: [...alice.witnesses, added] },
+        }),
+      ),
+    );
+
+    await user.type(screen.getByTestId("witness-add-endpoint"), endpoint);
+    await user.click(screen.getByTestId("witness-add-submit"));
+
+    await screen.findByTestId("witness-add-head-seq");
+    expect(bodies).toEqual([{ witnesses: [...alice.witnesses, added, endpoint] }]);
+  });
 });

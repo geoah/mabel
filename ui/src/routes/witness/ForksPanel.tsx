@@ -4,10 +4,13 @@ import { ErrorEnvelopeView } from "@/components/ErrorEnvelopeView";
 import { Field, FieldGrid } from "@/components/Field";
 import { Identifier } from "@/components/Identifier";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { useResource } from "@/hooks/useResource";
+import { usePagedList } from "@/hooks/usePagedList";
 import { formatTimestamp } from "@/lib/time";
 
 import { FORK_EVIDENCE_NOTE } from "./notes";
+
+/** How many conflict records this panel draws before it says it stopped. */
+const FORK_CAP = 256;
 
 /** One of the two entries at the conflicting position, with every field it carries. */
 function ForkEventPane({
@@ -91,9 +94,20 @@ function ForkRecordView({ record }: { record: ForkRecord }) {
  * renders nothing at all.
  */
 export function ForksPanel({ ledgerId }: { ledgerId: string }) {
-  const page = useResource(() => listForks({ ledger_id: ledgerId, limit: 64 }), [ledgerId]);
+  // /api/forks pages, and a record with more conflicts than one page is exactly
+  // the record whose conflicts a reader came for: the panel reads them all, to a
+  // cap, and says so when the cap cut the list short.
+  const page = usePagedList(
+    (offset, limit) =>
+      listForks({ ledger_id: ledgerId, offset, limit }).then((response) => ({
+        items: response.entries,
+        more: response.more,
+      })),
+    [ledgerId],
+    { pageSize: 64, cap: FORK_CAP },
+  );
 
-  if (page.error === null && (page.data === null || page.data.entries.length === 0)) {
+  if (page.error === null && page.items.length === 0) {
     return null;
   }
 
@@ -105,7 +119,12 @@ export function ForksPanel({ ledgerId }: { ledgerId: string }) {
       </CardHeader>
       <CardContent className="space-y-3">
         {page.error && <ErrorEnvelopeView error={page.error} testId="witness-forks-error" />}
-        {page.data?.entries.map((record) => (
+        {page.capped && (
+          <p data-testid="witness-forks-capped" className="text-sm">
+            Showing the first {page.items.length} conflicts. This record has more.
+          </p>
+        )}
+        {page.items.map((record) => (
           <ForkRecordView key={`${record.ledger_id}-${record.seq}`} record={record} />
         ))}
       </CardContent>

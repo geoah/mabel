@@ -1,6 +1,7 @@
 import { NavLink, Navigate, Route, Routes, useParams } from "react-router";
 
-import { getNode } from "@/api/client";
+import { apiBaseUrl, getNode } from "@/api/client";
+import { ErrorEnvelopeView } from "@/components/ErrorEnvelopeView";
 import {
   NavigationMenu,
   NavigationMenuItem,
@@ -39,12 +40,29 @@ function RedirectToIdentity() {
   return <Navigate to={`/identities/${identityId}`} replace />;
 }
 
+/**
+ * The front door, once the node has said which role it serves. Redirecting
+ * before the answer arrives sends a witness operator to the wallet, which is a
+ * screen their node does not serve, so `/` waits.
+ */
+function RoleHome({ role, blocked }: { role: "wallet" | "witness" | null; blocked: boolean }) {
+  if (role !== null) {
+    return <Navigate to={role === "witness" ? "/witness" : "/wallet"} replace />;
+  }
+  // The shell above already says which node it could not reach, so a failed
+  // question is not answered twice here.
+  return blocked ? null : <p data-testid="app-role-loading">loading</p>;
+}
+
 export function App() {
   // A node has one role. The witness binary serves this same bundle, and its
   // debug route is the only screen there: it holds no identities to list.
   const node = useResource(getNode, []);
   const witness = node.data?.role === "witness";
   const links = witness ? WITNESS_LINKS : WALLET_LINKS;
+  // Null until the node answers: a wallet is what this build shows by default,
+  // never what it assumes while the question is still open.
+  const role = node.data === null ? null : witness ? "witness" : "wallet";
 
   return (
     // One readable column at every width, and margins rather than a second
@@ -95,8 +113,25 @@ export function App() {
           </NavigationMenuList>
         </NavigationMenu>
       </header>
+      {/*
+        The node document is what every screen here stands on: which role this
+        node serves, and whether it is answering at all. A failure to read it is
+        said once, in the shell, naming the address it asked.
+      */}
+      {node.error && (
+        <div data-testid="shell-node-error" className="mb-4 space-y-2">
+          <p data-testid="shell-node-error-sentence" className="text-sm">
+            This page could not read the node at{" "}
+            <span data-testid="shell-node-error-base-url" className="font-mono break-all">
+              {apiBaseUrl()}
+            </span>
+            . Nothing below is up to date.
+          </p>
+          <ErrorEnvelopeView error={node.error} testId="shell-node-error-envelope" />
+        </div>
+      )}
       <Routes>
-        <Route path="/" element={<Navigate to={witness ? "/witness" : "/wallet"} replace />} />
+        <Route path="/" element={<RoleHome role={role} blocked={node.error !== null} />} />
         <Route path="/wallet" element={<WalletHome />} />
         <Route path="/identities/:identityId" element={<IdentityPage />} />
         <Route path="/witnesses" element={<WitnessesPage />} />

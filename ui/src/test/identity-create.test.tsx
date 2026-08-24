@@ -187,6 +187,16 @@ describe("identity create", () => {
     expect(within(envelope).getByTestId("error-detail-field")).toHaveTextContent("alias");
   });
 
+  // The node answers code 70 for agent and service, so the form offers neither:
+  // a menu entry that always fails is not a choice.
+  it("offers only the two kinds the node mints", async () => {
+    await openCreateForm();
+
+    const options = [...screen.getByTestId("identity-create-declared-kind").querySelectorAll("option")];
+    expect(options.map((option) => option.value)).toEqual(["person", "organization"]);
+    expect(options.map((option) => option.textContent)).toEqual(["person", "organization"]);
+  });
+
   it("renders the code 70 envelope when the node cannot mint the declared kind", async () => {
     server.use(
       http.post("/api/identities", () =>
@@ -198,7 +208,6 @@ describe("identity create", () => {
 
     const { user } = await openCreateForm();
     await user.type(screen.getByTestId("identity-create-alias"), "robot");
-    await user.selectOptions(screen.getByTestId("identity-create-declared-kind"), "agent");
     await user.click(screen.getByTestId("identity-create-submit"));
 
     const envelope = await screen.findByTestId("identity-create-error");

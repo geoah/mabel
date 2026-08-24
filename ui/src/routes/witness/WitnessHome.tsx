@@ -7,9 +7,12 @@ import {
   IdentityCardList,
 } from "@/components/identity";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { useResource } from "@/hooks/useResource";
+import { usePagedList } from "@/hooks/usePagedList";
 
 import { WITNESS_HOLDINGS_NOTE, WITNESS_READ_ONLY_NOTE } from "./notes";
+
+/** How many records this screen reads before it says it stopped. */
+const LEDGER_CAP = 1024;
 
 /**
  * The witness node's own route: what this one witness holds, as the same
@@ -18,8 +21,18 @@ import { WITNESS_HOLDINGS_NOTE, WITNESS_READ_ONLY_NOTE } from "./notes";
  * id and no card wears a pill.
  */
 export function WitnessHome() {
-  const page = useResource(() => listLedgers({ limit: 256 }), []);
-  const entries: IdentityCardEntry[] = (page.data?.entries ?? []).map((entry) => ({
+  // One list, read to its end: the route pages, and this screen offers no page
+  // control, so it follows `more` up to a cap and says when the cap stopped it.
+  const page = usePagedList(
+    (offset, limit) =>
+      listLedgers({ offset, limit }).then((response) => ({
+        items: response.entries,
+        more: response.more,
+      })),
+    [],
+    { cap: LEDGER_CAP },
+  );
+  const entries: IdentityCardEntry[] = page.items.map((entry) => ({
     facts: factsFromResolved(bareIdentity(entry.ledger_id), {
       declaredKind: entry.declared_kind,
       to: `/witness/ledgers/${entry.ledger_id}`,
@@ -55,7 +68,12 @@ export function WitnessHome() {
         {page.error && (
           <ErrorEnvelopeView error={page.error} testId="witness-ledger-list-error" />
         )}
-        {page.data && (
+        {page.capped && (
+          <p data-testid="witness-ledger-list-capped" className="text-sm">
+            Showing the first {page.items.length} records. This witness holds more.
+          </p>
+        )}
+        {page.loaded && (
           <IdentityCardList
             entries={entries}
             testId="identity-cards"

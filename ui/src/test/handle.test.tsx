@@ -1,11 +1,14 @@
 import { screen, waitFor } from "@testing-library/react";
+import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
 
 import { HOSTNAME_CONSENT_KEY } from "@/lib/preferences";
-import { ACME, ALICE } from "@/mocks/fixtures";
+import { ACME, ALICE, seedIdentities } from "@/mocks/fixtures";
 import { server } from "@/mocks/server";
 
 import { openAction, renderApp } from "./render";
+
+const alice = seedIdentities.find((identity) => identity.identity_id === ALICE)!;
 
 /**
  * The handle is the name a person types instead of a 52-character id. Setting
@@ -104,6 +107,47 @@ describe("the handle action", () => {
     await waitFor(() =>
       expect(screen.getByTestId("verification-mark")).toHaveTextContent("alice.example"),
     );
+  });
+
+  // The node keeps a failed re-check beside the last decisive verdict, and a
+  // verdict whose latest check failed is not a clean mark.
+  it("says the last check failed, with the time of it, over a verified handle", async () => {
+    const verifiedAt = 1_700_000_790_000;
+    const failedAt = verifiedAt + 90_000;
+    server.use(
+      http.get(`/api/identities/${ALICE}`, () =>
+        HttpResponse.json({
+          ok: true,
+          identity: {
+            ...alice,
+            verification: {
+              hostname: "alice.example",
+              status: "verified",
+              checked_at_ms: failedAt,
+              last_verified_at_ms: verifiedAt,
+              stale: false,
+              detail: null,
+              unreachable: { checked_at_ms: failedAt, detail: "no answer from the resolver" },
+            },
+          },
+        }),
+      ),
+    );
+
+    const { user } = renderApp(`/identities/${ALICE}`);
+    await openAction(user, "action-handle");
+
+    const mark = screen.getByTestId("verification-mark");
+    expect(mark).toHaveAttribute("data-verification", "recheck-failed");
+    expect(mark).toHaveTextContent("last check failed");
+    expect(screen.getByTestId("verification-unreachable")).toHaveTextContent("last check failed");
+    expect(screen.getByTestId("verification-unreachable-detail")).toHaveTextContent(
+      "no answer from the resolver",
+    );
+    // Both times are on the page: when it last matched, and when the latest
+    // check failed.
+    expect(screen.getByTestId("verification-last-verified-at-ms")).toBeInTheDocument();
+    expect(screen.getByTestId("verification-unreachable-checked-at-ms")).toBeInTheDocument();
   });
 
   it("refuses a check on an identity that claims no handle", async () => {

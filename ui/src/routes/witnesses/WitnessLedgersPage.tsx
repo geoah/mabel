@@ -15,7 +15,11 @@ import { Identifier } from "@/components/Identifier";
 import { Alert } from "@/components/ui/alert";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { degreesOf, named, useResolvedNames } from "@/hooks/useResolvedNames";
+import { usePagedList } from "@/hooks/usePagedList";
 import { useResource } from "@/hooks/useResource";
+
+/** How many of a witness's records this screen reads before it says so. */
+const LEDGER_CAP = 1024;
 
 /**
  * A witness this node cannot reach right now. It is a fact about the network,
@@ -45,14 +49,24 @@ function Unreachable({ endpointId, message }: { endpointId: string; message: str
  */
 export function WitnessLedgersPage() {
   const { endpointId = "" } = useParams();
-  const page = useResource(() => listWitnessLedgers(endpointId), [endpointId]);
+  // The route pages, so the screen reads its pages: a witness holding more than
+  // one page of records used to render the first page as the whole answer.
+  const page = usePagedList(
+    (offset, limit) =>
+      listWitnessLedgers(endpointId, { offset, limit }).then((response) => ({
+        items: response.ledgers,
+        more: response.more,
+      })),
+    [endpointId],
+    { cap: LEDGER_CAP },
+  );
   const identities = useResource(listIdentities, []);
   const held = identities.data?.identities ?? [];
   const from = held[0]?.identity_id ?? null;
-  const ledgerIds = (page.data?.ledgers ?? []).map((ledger) => ledger.ledger_id);
+  const ledgerIds = page.items.map((ledger) => ledger.ledger_id);
   const names = useResolvedNames(ledgerIds, from);
 
-  const entries: IdentityCardEntry[] = (page.data?.ledgers ?? []).map((ledger) => ({
+  const entries: IdentityCardEntry[] = page.items.map((ledger) => ({
     facts: factsFromResolved(named(names, ledger.ledger_id), {
       declaredKind: ledger.declared_kind,
       to: `/identities/${ledger.ledger_id}`,
@@ -111,7 +125,12 @@ export function WitnessLedgersPage() {
             {page.error && !unreachable && (
               <ErrorEnvelopeView error={page.error} testId="witness-ledgers-error" />
             )}
-            {page.data && (
+            {page.capped && (
+              <p data-testid="witness-ledgers-capped" className="text-sm">
+                Showing the first {page.items.length} records. This witness holds more.
+              </p>
+            )}
+            {page.loaded && (
               <IdentityCardList
                 entries={entries}
                 testId="identity-cards"

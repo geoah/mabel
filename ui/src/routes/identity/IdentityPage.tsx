@@ -88,8 +88,9 @@ export function IdentityPage() {
   const from = localIdentities[0]?.identity_id ?? null;
   const listed = localIdentities.some((entry) => entry.identity_id === identityId);
   const held = identity.data?.identity ?? null;
-  const declaredControl = held?.controlled_by;
-  const canSign = declaredControl === undefined ? listed : declaredControl !== null;
+  // GET /api/identities lists exactly the ledgers this home can sign for, which
+  // is the only answer the identity document gives about control.
+  const canSign = listed;
 
   const knowledge = useResource<LookupResponse | null>(
     () =>
@@ -179,7 +180,7 @@ export function IdentityPage() {
         {!canSign && (
           <>
             <ContactSection identityId={identityId} />
-            {answer && <KnowledgeSection response={answer} />}
+            {answer && <KnowledgeSection response={answer} onSynced={knowledge.reload} />}
             {from === null && !identity.loading && (
               <p data-testid="lookup-no-root" className="text-sm">
                 Your wallet holds no identity of its own to answer from.

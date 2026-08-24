@@ -1,21 +1,43 @@
 import { Link, useParams } from "react-router";
 
 import { getLedger, getLedgerEvents } from "@/api/client";
+import type { LedgerSummary } from "@/api/types";
 import { DeclaredKindValue } from "@/components/DeclaredKind";
 import { ErrorEnvelopeView } from "@/components/ErrorEnvelopeView";
 import { EventLines } from "@/components/EventLines";
 import { Identifier } from "@/components/Identifier";
 import { KeyValue, KeyValueTable } from "@/components/KeyValue";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { usePagedList } from "@/hooks/usePagedList";
 import { useResource } from "@/hooks/useResource";
 import { formatTimestamp } from "@/lib/time";
 
 import { ForksPanel } from "./ForksPanel";
 import { WITNESS_HOLDINGS_NOTE, WITNESS_READ_ONLY_NOTE } from "./notes";
 
-/** The record this witness stored for one identity, one line per entry. */
-function WitnessLedgerEvents({ ledgerId }: { ledgerId: string }) {
-  const page = useResource(() => getLedgerEvents(ledgerId, { limit: 512 }), [ledgerId]);
+/** How many entries this screen reads before it says it stopped. */
+const EVENT_CAP = 4096;
+
+/** How many entries one request asks for. */
+const EVENT_PAGE = 512;
+
+/**
+ * The record this witness stored for one identity, one line per entry. This
+ * screen draws the whole chain rather than pages of it, so it follows the
+ * route's `more` to the end, up to a cap.
+ */
+function WitnessLedgerEvents({ entry }: { entry: LedgerSummary }) {
+  const page = usePagedList(
+    // A stored chain runs from seq 0 without gaps and `?since=` is inclusive, so
+    // the number of entries already read is the next `since`.
+    (since, limit) =>
+      getLedgerEvents(entry.ledger_id, { since, limit }).then((response) => ({
+        items: response.events,
+        more: response.more,
+      })),
+    [entry.ledger_id],
+    { pageSize: EVENT_PAGE, cap: EVENT_CAP },
+  );
 
   return (
     <Card data-testid="ledger-panel">
@@ -28,13 +50,18 @@ function WitnessLedgerEvents({ ledgerId }: { ledgerId: string }) {
       <CardContent className="space-y-3">
         {page.loading && <p data-testid="ledger-loading">loading</p>}
         {page.error && <ErrorEnvelopeView error={page.error} testId="ledger-error" />}
-        {page.data && (
+        {page.capped && (
+          <p data-testid="ledger-capped" className="text-sm">
+            Showing the first {page.items.length} entries. This record has more.
+          </p>
+        )}
+        {page.loaded && (
           <>
-            <EventLines events={page.data.events} />
+            <EventLines events={page.items} />
             <p className="text-xs text-muted-foreground">
-              <span data-testid="ledger-event-count">{page.data.event_count}</span>{" "}
-              {page.data.event_count === 1 ? "entry" : "entries"} on this record, the newest at
-              position <span data-testid="ledger-head-seq">{page.data.head_seq}</span>.
+              <span data-testid="ledger-event-count">{entry.event_count}</span>{" "}
+              {entry.event_count === 1 ? "entry" : "entries"} on this record, the newest at position{" "}
+              <span data-testid="ledger-head-seq">{entry.head_seq}</span>.
             </p>
           </>
         )}
@@ -133,7 +160,7 @@ export function WitnessLedgerDetail() {
               </p>
             </CardContent>
           </Card>
-          <WitnessLedgerEvents ledgerId={ledger.data.entry.ledger_id} />
+          <WitnessLedgerEvents entry={ledger.data.entry} />
           <ForksPanel ledgerId={ledger.data.entry.ledger_id} />
         </>
       )}

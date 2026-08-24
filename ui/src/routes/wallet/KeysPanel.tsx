@@ -6,6 +6,7 @@ import { ErrorEnvelopeView } from "@/components/ErrorEnvelopeView";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { useResource } from "@/hooks/useResource";
+import { COPY_FAILED, copyText } from "@/lib/clipboard";
 
 /**
  * The file a person walks away with. It is plain text on purpose: it has to be
@@ -46,17 +47,13 @@ function SecretKey({
   value: string;
   testId: string;
 }) {
-  const [copied, setCopied] = useState(false);
+  const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
 
   async function copy() {
-    try {
-      await navigator.clipboard?.writeText(value);
-    } catch {
-      // No clipboard and no permission: the box beside the button still holds
-      // the whole value, so nothing is lost by reporting nothing.
-      return;
-    }
-    setCopied(true);
+    // The box above the button holds the whole value either way, so a failed
+    // copy is worth one sentence: it tells the reader to select it by hand
+    // instead of walking away with nothing.
+    setState((await copyText(value)) ? "copied" : "failed");
   }
 
   return (
@@ -75,11 +72,16 @@ function SecretKey({
         variant="outline"
         size="sm"
         data-testid={`${testId}-copy`}
-        onBlur={() => setCopied(false)}
+        onBlur={() => setState("idle")}
         onClick={() => void copy()}
       >
-        {copied ? "Copied" : "Copy"}
+        {state === "copied" ? "Copied" : "Copy"}
       </Button>
+      {state === "failed" && (
+        <p data-testid={`${testId}-copy-failed`} className="text-xs text-destructive">
+          {COPY_FAILED}
+        </p>
+      )}
     </div>
   );
 }

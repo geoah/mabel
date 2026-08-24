@@ -12,15 +12,18 @@ import { asApiError } from "@/hooks/useResource";
 /** A 52-character lowercase base32 Mabel ID and nothing else. */
 const IDENTITY_ID = /^[a-z2-7]{52}$/i;
 
+/** The three answers that name no identity, which are the three this page draws. */
+type NamelessStatus = Exclude<ResolveStatus, "resolved">;
+
 /**
  * What a TXT lookup answered, worded so a reader knows it is about DNS and not
- * about the identity. The lookup navigates; it verifies nothing.
+ * about the identity. The lookup navigates; it verifies nothing. A resolved
+ * answer carries the id, so it opens that page instead of reading a sentence.
  */
-const STATUS_SENTENCE: Record<ResolveStatus, string> = {
+const STATUS_SENTENCE: Record<NamelessStatus, string> = {
   no_record: "names no identity",
   mismatched_records: "answered, and nothing it said is a Mabel ID",
   unreachable: "gave no answer",
-  resolved: "answered without naming an identity",
 };
 
 /**
@@ -33,7 +36,7 @@ export function WalletSearch() {
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
   const [pending, setPending] = useState(false);
-  const [status, setStatus] = useState<{ hostname: string; status: ResolveStatus } | null>(null);
+  const [status, setStatus] = useState<{ hostname: string; status: NamelessStatus } | null>(null);
   const [error, setError] = useState<ApiError | null>(null);
 
   async function submit(event: FormEvent) {
@@ -51,11 +54,15 @@ export function WalletSearch() {
     setPending(true);
     try {
       const answer = await resolveHostname(wanted);
-      if (answer.status === "resolved" && answer.identity_id !== null) {
+      if (answer.identity_id !== null) {
         void navigate(`/identities/${answer.identity_id}`);
         return;
       }
-      setStatus({ hostname: answer.hostname, status: answer.status });
+      // Only a resolved answer carries an id (contracts/README.md, "Resolve"),
+      // so what is left here is one of the three that names none.
+      if (answer.status !== "resolved") {
+        setStatus({ hostname: answer.hostname, status: answer.status });
+      }
     } catch (thrown) {
       setError(asApiError(thrown));
     } finally {

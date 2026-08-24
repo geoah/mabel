@@ -52,6 +52,7 @@ export function VerificationPanel({
               status={verification.status}
               hostname={verification.hostname}
               stale={verification.stale}
+              recheckFailed={verification.unreachable !== null}
               testId="verification-mark"
             />
           )}
@@ -61,6 +62,34 @@ export function VerificationPanel({
             ? "never"
             : formatTimestamp(verification.checked_at_ms)}
         </KeyValue>
+        {/* A failed re-check the node kept beside a decisive verdict. The verdict
+            above is the older answer, so both times are on the page: when it
+            last got one, and when the latest attempt failed. */}
+        {verification.unreachable !== null && (
+          <KeyValue label="latest check" testId="verification-unreachable">
+            last check failed{" "}
+            <span data-testid="verification-unreachable-checked-at-ms">
+              {formatTimestamp(verification.unreachable.checked_at_ms)}
+            </span>
+            {verification.unreachable.detail !== null && (
+              <>
+                {": "}
+                <span
+                  data-testid="verification-unreachable-detail"
+                  className="font-mono text-xs break-all"
+                >
+                  {verification.unreachable.detail}
+                </span>
+              </>
+            )}
+          </KeyValue>
+        )}
+        {verification.last_verified_at_ms !== null &&
+          verification.last_verified_at_ms !== verification.checked_at_ms && (
+            <KeyValue label="last matched" testId="verification-last-verified-at-ms">
+              {formatTimestamp(verification.last_verified_at_ms)}
+            </KeyValue>
+          )}
         <KeyValue label="what DNS answered" testId="verification-detail">
           {verification.detail === null ? (
             "nothing yet"

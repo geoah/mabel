@@ -78,8 +78,30 @@ function url(path: string): string {
   return new URL(`${API_BASE}${path}`, globalThis.location.origin).toString();
 }
 
+/** The base every request goes to, for the screens that name it to a reader. */
+export function apiBaseUrl(): string {
+  return url("");
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url(path), init);
+  let response: Response;
+  try {
+    response = await fetch(url(path), init);
+  } catch (thrown) {
+    // fetch rejects with a TypeError when the request never got an answer: the
+    // node is not running, or not listening where this page thinks it is. That
+    // is not a refusal, and it gets its own reason rather than the code 2
+    // envelope a refused request carries.
+    throw new ApiError(
+      {
+        ok: false,
+        code: 30,
+        message: `${url(path)}: ${thrown instanceof Error ? thrown.message : String(thrown)}`,
+        details: { reason: "node_unreachable", url: url(path) },
+      },
+      0,
+    );
+  }
   let body: unknown;
   try {
     body = await response.json();

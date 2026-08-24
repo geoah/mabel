@@ -214,6 +214,28 @@ describe("how you know them", () => {
     expect(screen.getByTestId("lookup-hop-0-0-stale")).toHaveTextContent("may be out of date");
   });
 
+  it("asks the lookup again once a sync started from the banner has finished", async () => {
+    serveLookup(staleAnswer());
+    const asked: string[] = [];
+    server.events.on("request:start", ({ request }) => {
+      const url = new URL(request.url);
+      if (url.pathname === `/api/lookup/${CAROL}`) {
+        asked.push(url.search);
+      }
+    });
+    const { user } = renderApp(`/identities/${CAROL}`);
+    await screen.findByTestId("lookup-graph-stale");
+    await waitFor(() => expect(asked.length).toBe(1));
+
+    await user.click(screen.getByTestId("lookup-graph-stale-sync"));
+    // The button here asks for the same consent the witnesses card does.
+    await user.click(await screen.findByTestId("graph-sync-consent-confirm"));
+
+    // A fresh crawl behind the answer on screen is the stale banner again, so
+    // the section that asked for the sync reloads what it drew.
+    await waitFor(() => expect(asked.length).toBe(2));
+  });
+
   it("says what it has not seen, rather than implying nobody trusts them", async () => {
     serveLookup({ ...seedLookup, trust: [] });
     const { user } = renderApp(`/identities/${CAROL}`);

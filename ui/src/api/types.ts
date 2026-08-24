@@ -284,12 +284,6 @@ export interface Identity {
   contact: Contact | null;
   active_key?: string;
   reserve_commit?: string;
-  /**
-   * The local identity whose key may sign for this ledger, null when this home
-   * holds none. A node that does not serve the field leaves it absent, and the
-   * identity page falls back to whether GET /api/identities lists the ledger.
-   */
-  controlled_by?: string | null;
 }
 
 /** Which source a resolved name came from, in the order section 4 fixes. */

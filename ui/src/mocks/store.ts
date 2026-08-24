@@ -387,7 +387,6 @@ function storedBob(held: HeldLedger[]): { identity: Identity; events: LedgerEven
         unreachable: null,
       },
       contact: { ...seedContact },
-      controlled_by: null,
     },
   };
 }
@@ -1310,7 +1309,6 @@ export function fetchIdentity(
     profile: null,
     verification: { ...UNCLAIMED },
     contact: state.contacts.get(identityId) ?? null,
-    controlled_by: null,
   };
   state.fetched.set(identityId, stored);
   state.events.set(identityId, events);

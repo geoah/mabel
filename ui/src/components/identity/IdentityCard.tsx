@@ -236,6 +236,7 @@ function RecordRows({
             status={record.verification.status}
             hostname={record.verification.hostname}
             stale={record.verification.stale}
+            recheckFailed={record.verification.unreachable !== null}
             testId={testIds("hostname-verification")}
           />
         )}

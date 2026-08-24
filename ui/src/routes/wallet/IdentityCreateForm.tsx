@@ -14,7 +14,12 @@ import { asApiError } from "@/hooks/useResource";
 
 import { KeysPanel } from "./KeysPanel";
 
-const KINDS: DeclaredKind[] = ["person", "organization", "agent", "service"];
+/**
+ * The kinds this node mints. `agent` and `service` are declared kinds a document
+ * may carry and the create route refuses with code 70, so the form does not
+ * offer them: a menu entry that always fails is not a choice.
+ */
+const KINDS: DeclaredKind[] = ["person", "organization"];
 
 function trimmedOrUndefined(value: string): string | undefined {
   const trimmed = value.trim();

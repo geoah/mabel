@@ -1,4 +1,5 @@
 import { screen, within } from "@testing-library/react";
+import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
 
 import { ACME, ALICE, REACHABLE_WITNESS, UNREACHABLE_WITNESS } from "@/mocks/fixtures";
@@ -74,6 +75,39 @@ describe("the witness card list", () => {
     expect(screen.getByTestId(`identity-card-name-${ALICE}-name`)).toHaveTextContent(
       "Alice Ashworth",
     );
+  });
+
+  // The route pages, and this screen has no page control: it reads the pages.
+  it("reads past the first page of what a witness holds", async () => {
+    const second = "d".repeat(52);
+    server.use(
+      http.get("/api/witnesses/:endpointId/ledgers", ({ params, request }) => {
+        const offset = Number(new URL(request.url).searchParams.get("offset") ?? "0");
+        const ledger = (ledgerId: string) => ({
+          ledger_id: ledgerId,
+          declared_kind: "person",
+          head_seq: 0,
+          head_event: "e".repeat(52),
+          event_count: 1,
+          fork_count: 0,
+        });
+        return HttpResponse.json({
+          ok: true,
+          endpoint_id: String(params.endpointId),
+          offset,
+          limit: 1,
+          more: offset === 0,
+          ledgers: [ledger(offset === 0 ? ALICE : second)],
+        });
+      }),
+    );
+
+    renderApp(`/witnesses/${REACHABLE_WITNESS}`);
+    await screen.findByTestId("identity-cards");
+
+    expect(await screen.findByTestId(`identity-card-${second}`)).toBeInTheDocument();
+    expect(screen.getByTestId(`identity-card-${ALICE}`)).toBeInTheDocument();
+    expect(screen.queryByTestId("witness-ledgers-capped")).not.toBeInTheDocument();
   });
 
   it("states an unreachable witness as a fact about the connection", async () => {

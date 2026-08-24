@@ -1,9 +1,11 @@
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
+import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
 
 import { GRAPH_CONSENT_KEY } from "@/lib/preferences";
 import { ALICE } from "@/mocks/fixtures";
 import { server } from "@/mocks/server";
+import { setNodeRole } from "@/mocks/store";
 
 import { openAction, renderApp } from "./render";
 
@@ -90,6 +92,49 @@ describe("navigation", () => {
     renderApp("/wallet/verify");
 
     expect(await screen.findByTestId("route-not-found")).toBeInTheDocument();
+  });
+});
+
+describe("the front door", () => {
+  it("waits for the node document rather than assuming a wallet", async () => {
+    renderApp("/");
+
+    // The node has not answered yet, so no screen has been chosen.
+    expect(screen.getByTestId("app-role-loading")).toBeInTheDocument();
+    expect(screen.queryByTestId("identity-cards")).not.toBeInTheDocument();
+
+    await screen.findByTestId("identity-cards");
+    expect(screen.queryByTestId("app-role-loading")).not.toBeInTheDocument();
+  });
+
+  it("sends a witness node to its own records, not to a wallet it does not serve", async () => {
+    setNodeRole("witness");
+    renderApp("/");
+
+    await screen.findByTestId("witness-ledger-list");
+    expect(screen.getByTestId("nav-witness")).toHaveTextContent("Records");
+    expect(screen.queryByTestId("nav-wallet")).not.toBeInTheDocument();
+  });
+
+  it("names the address it tried when the node does not answer", async () => {
+    server.use(http.get("/api/node", () => HttpResponse.error()));
+
+    renderApp("/");
+
+    const block = await screen.findByTestId("shell-node-error");
+    expect(within(block).getByTestId("shell-node-error-sentence")).toHaveTextContent(
+      "This page could not read the node at",
+    );
+    expect(within(block).getByTestId("shell-node-error-base-url")).toHaveTextContent("/api");
+    // A request that never got an answer is not a refusal: it carries its own
+    // reason and its own sentence, and status 0 because there was no response.
+    expect(within(block).getByTestId("error-reason")).toHaveTextContent("node_unreachable");
+    expect(within(block).getByTestId("error-status")).toHaveTextContent("status 0");
+    expect(within(block).getByTestId("error-code-meaning")).toHaveTextContent(
+      "The node did not answer. Is it running?",
+    );
+    // Nothing was chosen for the reader, and nothing pretends to be loading.
+    expect(screen.queryByTestId("app-role-loading")).not.toBeInTheDocument();
   });
 });
 
