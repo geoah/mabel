@@ -401,9 +401,20 @@ jobs:
   # The image builds the UI in its own stage, so this job needs no node setup.
   # protoc comes from protoc-bin-vendored in mabel-proto's build.rs, so there is
   # no system protoc to install here or in the binary jobs.
+  # One leg per platform, each on its native runner: a Rust release build
+  # under qemu costs 20 to 40 extra minutes, and the arm64 runners are free
+  # on a public repository. Each leg pushes by digest only; the docker-merge
+  # job below stitches the digests into the one tagged index.
   docker:
     needs: version
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            platform: linux/amd64
+          - runner: ubuntu-24.04-arm
+            platform: linux/arm64
+    runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
       packages: write
@@ -411,15 +422,21 @@ jobs:
       TAG: ${{ needs.version.outputs.tag }}
       VERSION: ${{ needs.version.outputs.version }}
       SHA: ${{ needs.version.outputs.sha }}
-      SHORT_SHA: ${{ needs.version.outputs.short_sha }}
       SOURCE: ${{ github.server_url }}/${{ github.repository }}
     steps:
       - uses: actions/checkout@v4
         with:
           ref: refs/tags/${{ env.TAG }}
 
+      # The artifact name and the cache scope cannot carry a slash.
+      - name: Name the platform pair
+        run: |
+          platform="${{ matrix.platform }}"
+          echo "PLATFORM_PAIR=${platform//\//-}" >> "$GITHUB_ENV"
+
       # The Dockerfile uses BuildKit cache mounts and this exports the layer
       # cache to the Actions cache, so a per-commit build reuses dependencies.
+      # The scope is per platform so the two legs do not evict each other.
       - uses: docker/setup-buildx-action@v3
 
       # GITHUB_TOKEN with packages:write is the only credential ghcr needs.
@@ -429,25 +446,104 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: docker/build-push-action@v6
+      # No tags here: the leg pushes an untagged image by digest, and the
+      # labels ride on each platform's manifest as before.
+      - id: build
+        uses: docker/build-push-action@v6
         with:
           context: .
           file: docker/Dockerfile
           target: runtime
-          push: true
-          tags: |
-            ${{ env.IMAGE }}:${{ env.SHORT_SHA }}
-            ${{ env.IMAGE }}:${{ env.TAG }}
-            ${{ env.IMAGE }}:latest
+          platforms: ${{ matrix.platform }}
           labels: |
             org.opencontainers.image.revision=${{ env.SHA }}
             org.opencontainers.image.version=${{ env.VERSION }}
             org.opencontainers.image.source=${{ env.SOURCE }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=docker-${{ env.PLATFORM_PAIR }}
+          cache-to: type=gha,mode=max,scope=docker-${{ env.PLATFORM_PAIR }}
+
+      # The digest travels to the merge job as an empty file named by the
+      # digest, which is the shape a matrix can hand to one consumer.
+      - name: Export the digest
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: digest-${{ env.PLATFORM_PAIR }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  # Stitches the two per-platform digests into one manifest index and tags
+  # it. The per-manifest labels do not surface on an index, so the same three
+  # values are set again as index annotations.
+  docker-merge:
+    needs: [version, docker]
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    env:
+      TAG: ${{ needs.version.outputs.tag }}
+      VERSION: ${{ needs.version.outputs.version }}
+      SHA: ${{ needs.version.outputs.sha }}
+      SHORT_SHA: ${{ needs.version.outputs.short_sha }}
+      SOURCE: ${{ github.server_url }}/${{ github.repository }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests
+          pattern: digest-*
+          merge-multiple: true
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create and push the index
+        working-directory: /tmp/digests
+        run: |
+          set -euo pipefail
+          # Two digests, one per leg; anything else means a leg went missing
+          # and the index would quietly ship fewer platforms than the last
+          # release did.
+          refs=()
+          for digest in *; do
+            refs+=("$IMAGE@sha256:$digest")
+          done
+          if [ "${#refs[@]}" -ne 2 ]; then
+            echo "expected 2 digests, found ${#refs[@]}: ${refs[*]}" >&2
+            exit 1
+          fi
+          docker buildx imagetools create \
+            --annotation "index:org.opencontainers.image.revision=$SHA" \
+            --annotation "index:org.opencontainers.image.version=$VERSION" \
+            --annotation "index:org.opencontainers.image.source=$SOURCE" \
+            -t "$IMAGE:$SHORT_SHA" -t "$IMAGE:$TAG" -t "$IMAGE:latest" \
+            "${refs[@]}"
+
+      # The check the change is for: the tag must answer as an index that
+      # names both platforms.
+      - name: Inspect the index
+        run: |
+          set -euo pipefail
+          docker buildx imagetools inspect "$IMAGE:$TAG"
+          for platform in linux/amd64 linux/arm64; do
+            docker buildx imagetools inspect "$IMAGE:$TAG" \
+              --format '{{range .Manifest.Manifests}}{{.Platform.OS}}/{{.Platform.Architecture}}{{"\n"}}{{end}}' \
+              | grep -qx "$platform" || { echo "missing $platform" >&2; exit 1; }
+          done
 
   release:
-    needs: [version, binaries, macos-app, docker]
+    needs: [version, binaries, macos-app, docker-merge]
     runs-on: ubuntu-latest
     permissions:
       contents: write
