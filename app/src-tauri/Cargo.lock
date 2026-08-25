@@ -104,6 +104,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d3fb67a6e08acf24fdeccbac2cb6ac4305825bd1f117462e0e6f2f193345ad56"
 
 [[package]]
+name = "async-compression"
+version = "0.4.43"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3976abdc8fe7d1133d43d304afd42abdf5bc3e1319d263d223bde07b5efc4be8"
+dependencies = [
+ "compression-codecs",
+ "compression-core",
+ "pin-project-lite",
+ "tokio",
+]
+
+[[package]]
 name = "async-trait"
 version = "0.1.92"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -568,6 +580,24 @@ dependencies = [
  "bytes",
  "memchr",
 ]
+
+[[package]]
+name = "compression-codecs"
+version = "0.4.38"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ce2548391e9c1929c21bf6aa2680af86fe4c1b33e6cea9ac1cfeec0bd11218cf"
+dependencies = [
+ "brotli",
+ "compression-core",
+ "flate2",
+ "memchr",
+]
+
+[[package]]
+name = "compression-core"
+version = "0.4.32"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cc14f565cf027a105f7a44ccf9e5b424348421a1d8952a8fc9d499d313107789"
 
 [[package]]
 name = "const-oid"
@@ -2815,7 +2845,7 @@ checksum = "112b39cec0b298b6c1999fee3e31427f74f676e4cb9879ed1a121b43661a4154"
 
 [[package]]
 name = "mabel-app"
-version = "0.14.1"
+version = "0.15.0"
 dependencies = [
  "anyhow",
  "mabel-node",
@@ -2829,7 +2859,7 @@ dependencies = [
 
 [[package]]
 name = "mabel-core"
-version = "0.14.1"
+version = "0.15.0"
 dependencies = [
  "blake3",
  "data-encoding",
@@ -2841,7 +2871,7 @@ dependencies = [
 
 [[package]]
 name = "mabel-net"
-version = "0.14.1"
+version = "0.15.0"
 dependencies = [
  "iroh",
  "iroh-base",
@@ -2854,7 +2884,7 @@ dependencies = [
 
 [[package]]
 name = "mabel-node"
-version = "0.14.1"
+version = "0.15.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -2870,14 +2900,16 @@ dependencies = [
  "rust-embed",
  "serde",
  "serde_json",
+ "sha2 0.11.0",
  "thiserror 2.0.20",
  "tokio",
+ "tower-http",
  "tracing",
 ]
 
 [[package]]
 name = "mabel-proto"
-version = "0.14.1"
+version = "0.15.0"
 dependencies = [
  "prost",
  "prost-build",
@@ -5830,12 +5862,16 @@ version = "0.6.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4cfcf7e2740e6fc6d4d688b4ef00650406bb94adf4731e43c096c3a19fe40840"
 dependencies = [
+ "async-compression",
  "bitflags 2.13.1",
  "bytes",
+ "futures-core",
  "futures-util",
  "http",
  "http-body",
  "pin-project-lite",
+ "tokio",
+ "tokio-util",
  "tower",
  "tower-layer",
  "tower-service",
