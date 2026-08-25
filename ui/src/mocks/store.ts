@@ -113,6 +113,9 @@ function failWith(status: number, body: ErrorEnvelope): never {
   throw new MockFailure(status, body);
 }
 
+/** When the mock's checked handles were last looked up. */
+const BOB_CHECKED_AT_MS = 1_700_000_600_000;
+
 /** status unclaimed with every other key null: the profile names no hostname. */
 const UNCLAIMED: Verification = {
   hostname: null,
@@ -425,14 +428,15 @@ function storedBob(held: HeldLedger[]): { identity: Identity; events: LedgerEven
         event: served.entry.head_event,
         seq: served.entry.head_seq,
       },
-      // He claims a handle and this home has not checked it, which is the
-      // unverified state rather than a missing one.
+      // He claims a handle and this home has checked it: the lookup found no
+      // mabel= record, which is unverified. A handle nobody looked up reads
+      // unchecked instead (issue 042).
       verification: {
         hostname: knownBob.hostname,
         status: knownBob.verification_status,
-        checked_at_ms: null,
+        checked_at_ms: BOB_CHECKED_AT_MS,
         last_verified_at_ms: null,
-        stale: true,
+        stale: false,
         detail: null,
         unreachable: null,
       },
@@ -1667,8 +1671,8 @@ function signingPrincipal(identity: Identity): { identity: string; key: string }
 
 /**
  * The verdict after a profile replacement. An entry is bound to the hostname it
- * verified, so a changed claim starts again at unverified and never inherits
- * the old result (proposal 003 section 2).
+ * verified, so a changed claim starts again with no verdict at all and never
+ * inherits the old result (proposal 003 section 2).
  */
 function verdictAfterReplacement(current: Verification, hostname: string | null): Verification {
   if (hostname === null) {
@@ -1679,11 +1683,11 @@ function verdictAfterReplacement(current: Verification, hostname: string | null)
   }
   return {
     hostname,
-    status: "unverified",
+    status: "unchecked",
     checked_at_ms: null,
     last_verified_at_ms: null,
-    stale: true,
-    detail: null,
+    stale: false,
+    detail: `${hostname} has not been checked on this node`,
     unreachable: null,
   };
 }

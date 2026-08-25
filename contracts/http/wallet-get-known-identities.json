@@ -33,6 +33,19 @@
         "trusted": true,
         "degrees": 1,
         "head_seq": 2
+      },
+      {
+        "identity_id": "ovfp3btcnjyhwmyw3ldk3wmt2ppb5w5c5adyzcavswmyq7xkg7fq",
+        "display_name": "The Keeper",
+        "alias": null,
+        "email": null,
+        "hostname": "keeper.example",
+        "verification_status": "unchecked",
+        "declared_kind": "service",
+        "stored": true,
+        "trusted": false,
+        "degrees": null,
+        "head_seq": 4
       }
     ]
   },

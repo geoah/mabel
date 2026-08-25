@@ -47,7 +47,8 @@ use crate::graph::{
 use crate::now_ms;
 use crate::storage::LedgerStorage;
 use crate::verification::{
-    HickoryResolver, ResolveFuture, Resolver, TxtRecord, caller_zone, query_name, verify_hostname,
+    HickoryResolver, ResolveFuture, Resolver, TxtRecord, VerificationStatus, caller_zone,
+    query_name, verify_hostname,
 };
 use crate::wallet::core::{AppendLock, WalletCore, no_local_signer, verification_document};
 use crate::wallet::error::{no_source_available, storage_error};
@@ -237,7 +238,14 @@ impl NodeService for NodeApiService {
     }
 
     /// Answers from the cache immediately and starts at most one background
-    /// re-check when the entry is stale (proposal 003 section 2).
+    /// re-check when this node already holds a verdict and that verdict has
+    /// gone stale (proposal 003 section 2).
+    ///
+    /// A hostname this node has never checked starts no lookup. Reading a
+    /// stranger's card is not asking to query their zone, and a wallet that
+    /// looked up every hostname it saw would announce, to every zone it met,
+    /// which strangers its owner was reading (decision 018). The check is a
+    /// button, and `POST /api/identities/{id}/verification` is that button.
     ///
     /// Resolver trouble never fails this route: the document already carries
     /// what the cache knows, and the refresh is a side effect.
@@ -247,6 +255,7 @@ impl NodeService for NodeApiService {
             let core = self.core.clone();
             let document = spawn(move || core.identity(identity)).await?;
             if document.verification.stale
+                && document.verification.status != VerificationStatus::Unchecked
                 && let Some(hostname) = document.verification.hostname.clone()
             {
                 self.refresh_in_background(identity, hostname);

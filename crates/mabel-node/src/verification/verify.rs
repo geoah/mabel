@@ -38,9 +38,10 @@ pub const MAX_CNAME_LINKS: usize = 4;
 
 /// What the wallet knows about a claimed hostname (proposal 003 section 2).
 ///
-/// Every status is advisory. `Unclaimed` never comes out of a lookup: it is
-/// what the identity document reports when the profile names no hostname, and
-/// it lives here so one enum spells the vocabulary.
+/// Every status is advisory. Two of them never come out of a lookup and say
+/// why no lookup stands behind them: `Unclaimed` is a profile that names no
+/// hostname, and `Unchecked` is a hostname this node has never looked up. They
+/// live here so one enum spells the vocabulary.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum VerificationStatus {
@@ -55,6 +56,12 @@ pub enum VerificationStatus {
     Unreachable,
     /// The profile names no hostname, so nothing was queried.
     Unclaimed,
+    /// The profile names a hostname and this node has never looked it up.
+    ///
+    /// Absence of a verdict, not a verdict. No route turns this into a lookup
+    /// on its own: a check is something a person asks for (decision 018), and
+    /// a list of strangers must not query DNS once per row.
+    Unchecked,
 }
 
 impl VerificationStatus {
@@ -67,6 +74,7 @@ impl VerificationStatus {
             Self::Mismatched => "mismatched",
             Self::Unreachable => "unreachable",
             Self::Unclaimed => "unclaimed",
+            Self::Unchecked => "unchecked",
         }
     }
 
@@ -770,6 +778,7 @@ mod tests {
             (VerificationStatus::Mismatched, "mismatched"),
             (VerificationStatus::Unreachable, "unreachable"),
             (VerificationStatus::Unclaimed, "unclaimed"),
+            (VerificationStatus::Unchecked, "unchecked"),
         ] {
             assert_eq!(status.as_str(), spelling);
             assert_eq!(status.to_string(), spelling);
@@ -777,11 +786,18 @@ mod tests {
                 serde_json::to_string(&status).unwrap(),
                 format!("\"{spelling}\"")
             );
+            assert_eq!(
+                serde_json::from_str::<VerificationStatus>(&format!("\"{spelling}\"")).unwrap(),
+                status
+            );
         }
         assert!(VerificationStatus::Verified.is_decisive());
         assert!(VerificationStatus::Mismatched.is_decisive());
         assert!(!VerificationStatus::Unverified.is_decisive());
         assert!(!VerificationStatus::Unreachable.is_decisive());
+        // Absence of a verdict is never decisive: a forced check overwrites it.
+        assert!(!VerificationStatus::Unchecked.is_decisive());
+        assert!(!VerificationStatus::Unclaimed.is_decisive());
     }
 
     // ------------------------------------------- mabel-endpoints= records ----
@@ -921,7 +937,7 @@ mod tests {
     }
 
     /// A zone with an endpoints record and no `mabel=` record is still
-    /// `unverified`: the endpoints record never touches the five statuses.
+    /// `unverified`: the endpoints record never touches the verdict.
     #[tokio::test]
     async fn an_endpoints_record_alone_leaves_the_claim_unverified() {
         let resolver = StubResolver::new().with_records(NAME, vec![hint(&[0x11, 0x12])]);

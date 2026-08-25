@@ -24,6 +24,8 @@ iroh-base.workspace = true
 # crate calls it directly rather than through an extractor.
 percent-encoding = "2.3.2"
 rust-embed.workspace = true
+sha2.workspace = true
+tower-http.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

@@ -80,12 +80,15 @@ mod ui;
 use std::sync::Arc;
 
 use axum::extract::Query as AxumQuery;
+use axum::extract::Request;
 use axum::extract::rejection::QueryRejection;
-use axum::http::{Method, Uri};
+use axum::http::{HeaderMap, HeaderValue, Method, Uri, header};
 use axum::middleware;
+use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use axum::{Json, Router};
 use serde::Serialize;
+use tower_http::compression::CompressionLayer;
 
 pub use bind::{DEFAULT_HTTP_BIND, DEFAULT_HTTP_PORT, HttpBind, non_loopback_warning};
 pub use documents::Id;
@@ -167,21 +170,53 @@ impl ApiOptions {
 /// Every node serves this, whether it signs, witnesses or both: no route is
 /// gated on what the home holds (proposal 006 section 8).
 pub fn node_router(service: Arc<dyn NodeService>, options: &ApiOptions) -> Router {
-    assemble(Router::new().nest("/api", routes::router(service)), options)
+    // The compression layer is scoped to these routes and no others. Over the
+    // UI it would re-encode a file that shipped no precompressed sibling and
+    // leave `api::ui`'s validator, which is the hash of the bytes that module
+    // chose, on bytes the layer produced instead (issue 043).
+    let api = routes::router(service).layer(CompressionLayer::new());
+    assemble(Router::new().nest("/api", api), options)
 }
 
 fn assemble(router: Router, options: &ApiOptions) -> Router {
     let ui = options.ui.clone();
     router
         .method_not_allowed_fallback(method_not_allowed)
-        .fallback(move |method: Method, uri: Uri| {
-            let ui = ui.clone();
-            async move { fallback(ui, &method, &uri).await }
-        })
+        .fallback(
+            move |method: Method, uri: Uri, request_headers: HeaderMap| {
+                let ui = ui.clone();
+                async move { fallback(ui, &method, &uri, &request_headers).await }
+            },
+        )
+        // Outside the compression layer, so it sees the finished response, and
+        // inside the loopback layer, so a rejection envelope is byte for byte
+        // what it was before either of these existed.
+        .layer(middleware::from_fn(no_store_on_the_api))
         .layer(middleware::from_fn_with_state(
             options.loopback_rules(),
             loopback::enforce,
         ))
+}
+
+/// `Cache-Control: no-store` on every `/api` answer.
+///
+/// A wallet document is one person's address book read over a connection an
+/// operator may have put a reverse proxy in front of (decision 018). Without a
+/// caching rule an intermediary may serve one from its heuristics, which shows
+/// a reader an identity as it was rather than as it is. The UI bundle sets its
+/// own rules and is left alone.
+async fn no_store_on_the_api(request: Request, next: Next) -> Response {
+    let is_api = {
+        let path = request.uri().path();
+        path == "/api" || path.starts_with("/api/")
+    };
+    let mut response = next.run(request).await;
+    if is_api {
+        response
+            .headers_mut()
+            .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    }
+    response
 }
 
 async fn method_not_allowed(method: Method, uri: Uri) -> Response {
@@ -190,7 +225,12 @@ async fn method_not_allowed(method: Method, uri: Uri) -> Response {
 
 /// Anything no route claims: a 404 envelope under `/api`, the UI bundle
 /// everywhere else.
-async fn fallback(ui: UiSource, method: &Method, uri: &Uri) -> Response {
+async fn fallback(
+    ui: UiSource,
+    method: &Method,
+    uri: &Uri,
+    request_headers: &HeaderMap,
+) -> Response {
     let path = uri.path();
     if path == "/api" || path.starts_with("/api/") {
         return parse::unknown_route(method.as_str(), path).into_response();
@@ -198,7 +238,7 @@ async fn fallback(ui: UiSource, method: &Method, uri: &Uri) -> Response {
     if !matches!(*method, Method::GET | Method::HEAD) {
         return parse::method_not_allowed(method.as_str(), path).into_response();
     }
-    match ui::serve(&ui, path).await {
+    match ui::serve(&ui, path, request_headers).await {
         Ok(response) => response,
         Err(error) => error.into_response(),
     }

@@ -185,11 +185,11 @@ fn profile_replace_matches_the_fixture_and_lands_on_the_identity_document() {
         shown["profile"]["signing_principal"]["identity"],
         Value::from(alice)
     );
-    // Cache-only: nothing has checked the claim, and the document says so
-    // rather than reporting a lookup that never ran.
-    assert_eq!(shown["verification"]["status"], Value::from("unverified"));
+    // Cache-only: nothing has checked the claim, and the document says so in
+    // its own word rather than reporting a lookup that never ran.
+    assert_eq!(shown["verification"]["status"], Value::from("unchecked"));
     assert_eq!(shown["verification"]["checked_at_ms"], Value::Null);
-    assert_eq!(shown["verification"]["stale"], Value::Bool(true));
+    assert_eq!(shown["verification"]["stale"], Value::Bool(false));
     assert_eq!(shown["contact"], Value::Null);
 }
 

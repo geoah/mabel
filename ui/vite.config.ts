@@ -3,11 +3,13 @@ import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 
+import { precompress } from "./precompress";
+
 const src = fileURLToPath(new URL("./src", import.meta.url));
 const contracts = fileURLToPath(new URL("../contracts", import.meta.url));
 
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [react(), tailwindcss(), precompress()],
   resolve: {
     alias: {
       "@": src,

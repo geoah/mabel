@@ -142,7 +142,12 @@ const MARKS: Record<Exclude<VerificationState, "unclaimed">, Mark> = {
   unverified: {
     glyph: "○",
     tone: "text-muted-foreground",
-    sentence: "HOSTNAME names no identity, or your wallet has not checked yet",
+    sentence: "HOSTNAME names no identity in its DNS records",
+  },
+  unchecked: {
+    glyph: "○",
+    tone: "text-muted-foreground",
+    sentence: "HOSTNAME has not been checked from this wallet yet",
   },
   unreachable: {
     glyph: "?",

@@ -36,6 +36,7 @@ describe("the identity page's top section", () => {
     ["verified", true, "stale-verified"],
     ["mismatched", false, "mismatched"],
     ["unverified", false, "unverified"],
+    ["unchecked", false, "unchecked"],
     ["unreachable", false, "unreachable"],
   ])("marks the hostname row for %s (stale %s)", (status, stale, state) => {
     overview(withVerification(status as VerificationStatus, stale as boolean));

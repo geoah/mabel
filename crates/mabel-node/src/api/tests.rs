@@ -246,11 +246,20 @@ async fn wallet_get_known_identities_matches_the_fixture() {
         .iter()
         .map(|row| row["identity_id"].as_str().expect("an id"))
         .collect();
-    assert_eq!(ids, vec![CAROL, BOB]);
+    assert_eq!(ids, vec![CAROL, BOB, WITNESS_ONE]);
     let mut sorted = ids.clone();
     sorted.sort_unstable();
     assert_eq!(ids, sorted);
     assert!(!ids.contains(&ALICE) && !ids.contains(&ACME));
+
+    // Absence of a verdict and a verdict of "no record" are separate words, so
+    // one row can tell a reader which of the two it is looking at (issue 042).
+    assert_eq!(identities[1]["hostname"], json!("bob.example"));
+    assert_eq!(identities[1]["verification_status"], json!("unverified"));
+    assert_eq!(identities[2]["hostname"], json!("keeper.example"));
+    assert_eq!(identities[2]["verification_status"], json!("unchecked"));
+    assert_eq!(identities[0]["hostname"], Value::Null);
+    assert_eq!(identities[0]["verification_status"], json!("unclaimed"));
 
     // A stored row carries the two fields only a stored copy answers; an
     // unstored one nulls both and still reports its distance.

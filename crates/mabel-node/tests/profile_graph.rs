@@ -285,11 +285,11 @@ async fn a_replaced_profile_shows_up_in_the_identity_document() {
     // Any current controller may rename a ledger, so the profile records who
     // signed it (proposal 003 section 1).
     assert_eq!(profile.signing_principal.identity, id(alice));
-    // Never checked, so the verdict says so with a null timestamp rather than
-    // claiming a lookup that did not happen.
-    assert_eq!(after.verification.status, VerificationStatus::Unverified);
+    // Never checked, so the verdict says so in its own word rather than
+    // borrowing the one for a lookup that found no record.
+    assert_eq!(after.verification.status, VerificationStatus::Unchecked);
     assert_eq!(after.verification.checked_at_ms, None);
-    assert!(after.verification.stale);
+    assert!(!after.verification.stale);
 }
 
 #[tokio::test]
@@ -475,7 +475,7 @@ async fn a_matching_txt_record_verifies_and_a_renamed_claim_drops_the_verdict() 
         document.verification.hostname.as_deref(),
         Some("carol.example")
     );
-    assert_eq!(document.verification.status, VerificationStatus::Unverified);
+    assert_eq!(document.verification.status, VerificationStatus::Unchecked);
     assert_eq!(document.verification.checked_at_ms, None);
 }
 
@@ -511,13 +511,62 @@ async fn listing_identities_never_queries_the_resolver() {
     assert_eq!(identities.len(), 1);
     assert_eq!(
         identities[0].verification.status,
-        VerificationStatus::Unverified
+        VerificationStatus::Unchecked
     );
     assert_eq!(identities[0].verification.checked_at_ms, None);
     assert!(
         wallet.resolver.queries().is_empty(),
         "the list route is cache-only: no row may trigger a lookup"
     );
+}
+
+/// Reading one identity whose hostname this node has never checked queries
+/// nothing (decision 018, issue 042).
+///
+/// The route used to call a never-checked hostname stale and start a
+/// background lookup, so opening a stranger's card told that stranger's zone
+/// that somebody here was reading it.
+#[tokio::test]
+async fn reading_an_unchecked_hostname_never_starts_a_lookup() {
+    let wallet = Wallet::plain().await;
+    let alice = wallet.identity("alice");
+    wallet
+        .service
+        .replace_profile(ReplaceProfile {
+            identity_id: id(alice),
+            display_name: None,
+            hostname: Some("alice.example".to_owned()),
+            email: None,
+        })
+        .await
+        .expect("the claim lands");
+
+    let document = wallet
+        .service
+        .identity(id(alice))
+        .await
+        .expect("the identity answers");
+    assert_eq!(document.verification.status, VerificationStatus::Unchecked);
+    assert!(!document.verification.stale);
+
+    // The background refresh is spawned, not awaited, so a lookup this route
+    // started would land after the answer. Give one a chance to run.
+    tokio::task::yield_now().await;
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    assert!(
+        wallet.resolver.queries().is_empty(),
+        "a hostname nobody asked about is a hostname nobody looks up"
+    );
+
+    // The button still works, and its verdict is what the document reads back.
+    let checked = wallet
+        .service
+        .check_verification(id(alice))
+        .await
+        .expect("the forced check runs");
+    assert_eq!(checked.verification.status, VerificationStatus::Unverified);
+    assert!(checked.verification.checked_at_ms.is_some());
+    assert!(!wallet.resolver.queries().is_empty());
 }
 
 // --------------------------------------------------------------- contacts ----

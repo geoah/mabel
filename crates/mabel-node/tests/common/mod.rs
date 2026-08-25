@@ -18,7 +18,7 @@ use iroh_base::{EndpointId, SecretKey};
 use mabel_core::proto::DeclaredKind;
 use mabel_core::sign::{
     BuiltEvent, Position, Root, build_endpoint_advertisement, build_inception,
-    build_trust_attestation, build_trust_revocation, build_witness_set,
+    build_profile_update, build_trust_attestation, build_trust_revocation, build_witness_set,
 };
 use mabel_core::{EventId, IdentityId, LedgerId};
 use mabel_net::store::Provenance;
@@ -311,6 +311,25 @@ impl Chain {
             .expect("the advertisement builds")
     }
 
+    /// A profile update for the next position, not added to the chain.
+    #[must_use]
+    pub fn profile_update(
+        &self,
+        display_name: Option<&str>,
+        hostname: Option<&str>,
+        email: Option<&str>,
+    ) -> BuiltEvent {
+        build_profile_update(
+            &self.signer,
+            &self.at(),
+            display_name,
+            hostname,
+            email,
+            self.now(),
+        )
+        .expect("the profile update builds")
+    }
+
     /// A retired tag-11 `WitnessConfig` for the next position, not added to the
     /// chain.
     ///
@@ -369,6 +388,23 @@ impl Chain {
     /// Adds a tag-11 `WitnessConfig` naming `endpoints`.
     pub fn add_witness_config(&mut self, endpoints: &[EndpointId]) -> EventId {
         let built = self.witness_config(endpoints);
+        self.add(built)
+    }
+
+    /// Adds a profile update carrying `display_name`, `hostname` and `email`.
+    pub fn add_profile_update(
+        &mut self,
+        display_name: Option<&str>,
+        hostname: Option<&str>,
+        email: Option<&str>,
+    ) -> EventId {
+        let built = self.profile_update(display_name, hostname, email);
+        self.add(built)
+    }
+
+    /// Adds an endpoint advertisement naming `endpoints`.
+    pub fn add_advertisement(&mut self, endpoints: &[EndpointId]) -> EventId {
+        let built = self.advertisement(endpoints);
         self.add(built)
     }
 

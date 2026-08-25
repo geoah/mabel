@@ -131,11 +131,12 @@ describe("the handle action", () => {
     expect(bodies).toEqual([
       { display_name: "Acme Corporation", hostname: "acme.example", email: null },
     ]);
-    // A claim this node has not checked reads unverified, never a plain check.
+    // A claim this node has not checked reads unchecked, never a plain check
+    // and never the word for a lookup that found nothing (issue 042).
     await waitFor(() =>
       expect(screen.getByTestId("verification-mark")).toHaveAttribute(
         "data-verification",
-        "unverified",
+        "unchecked",
       ),
     );
   });
@@ -207,6 +208,58 @@ describe("the handle action", () => {
     // check failed.
     expect(screen.getByTestId("verification-last-verified-at-ms")).toBeInTheDocument();
     expect(screen.getByTestId("verification-unreachable-checked-at-ms")).toBeInTheDocument();
+  });
+
+  // A handle nobody looked up and a handle whose DNS names nobody are two
+  // different things to tell a reader, and the node spells them with two
+  // statuses (issue 042).
+  it("says a handle has not been checked yet, and offers the check", async () => {
+    server.use(
+      http.get(`/api/identities/${ALICE}`, () =>
+        HttpResponse.json({
+          ok: true,
+          identity: {
+            ...alice,
+            verification: {
+              hostname: "alice.example",
+              status: "unchecked",
+              checked_at_ms: null,
+              last_verified_at_ms: null,
+              stale: false,
+              detail: "alice.example has not been checked on this node",
+              unreachable: null,
+            },
+          },
+        }),
+      ),
+    );
+
+    const { user } = renderApp(`/identities/${ALICE}`);
+    await openAction(user, "action-handle");
+
+    const mark = screen.getByTestId("verification-mark");
+    expect(mark).toHaveAttribute("data-verification", "unchecked");
+    expect(mark).toHaveTextContent("alice.example");
+    expect(mark).toHaveAttribute(
+      "title",
+      "unchecked: alice.example has not been checked from this wallet yet",
+    );
+    expect(screen.getByTestId("verification-unchecked")).toHaveTextContent(
+      "This handle has not been checked from this wallet yet.",
+    );
+    // The one control that runs a check is right there, and nothing ran one on
+    // its own to get here.
+    expect(screen.getByTestId("verification-check")).toBeEnabled();
+
+    await user.click(screen.getByTestId("verification-check"));
+
+    await waitFor(() =>
+      expect(screen.getByTestId("verification-mark")).toHaveAttribute(
+        "data-verification",
+        "verified",
+      ),
+    );
+    expect(screen.queryByTestId("verification-unchecked")).not.toBeInTheDocument();
   });
 
   it("refuses a check on an identity that claims no handle", async () => {

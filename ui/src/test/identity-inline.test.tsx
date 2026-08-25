@@ -167,6 +167,7 @@ describe("IdentityInline", () => {
     ["verified", true, "stale-verified"],
     ["mismatched", false, "mismatched"],
     ["unverified", false, "unverified"],
+    ["unchecked", false, "unchecked"],
     ["unreachable", false, "unreachable"],
   ])("renders %s (stale %s) as the %s mark, never without the hostname", (status, stale, state) => {
     host(

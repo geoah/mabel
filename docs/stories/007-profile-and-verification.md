@@ -254,9 +254,15 @@ docker/compose.dns.yaml`, run from the repository root.
   `unreachable` and does not overwrite a decisive result: the earlier
   `verified` entry keeps its `checked_at_ms` and the document reports both.
 - Changing the hostname invalidates the old verdict: after a profile replace
-  naming a different hostname, `verification.status` is `unverified` with
-  `checked_at_ms: null` until a new check runs, because the cache entry is
-  bound to the hostname it verified.
+  naming a different hostname, `verification.status` is `unchecked` with
+  `checked_at_ms: null` and `stale: false` until a new check runs, because the
+  cache entry is bound to the hostname it verified. `unchecked` is the absence
+  of a verdict and `unverified` is a lookup that found no `mabel=` record; a
+  row carries the status alone, so the two are separate words (issue 042).
+- Reading an identity never starts a lookup. `GET
+  /api/identities/:identity_id` on a hostname this node has never checked
+  answers `unchecked` and queries nothing, so opening a stranger's card does
+  not tell that stranger's zone somebody here is reading it (decision 018).
 - `GET /api/identities` never triggers a DNS lookup: with the resolver stopped,
   listing every identity still answers from cache with the same
   `checked_at_ms` values.
@@ -265,8 +271,9 @@ docker/compose.dns.yaml`, run from the repository root.
   is the state the row draws: a check with the hostname for a fresh
   `verified`, a check with a stale marker (`stale-verified`) for one older
   than 24 hours, a warning glyph for `mismatched`, dimmed text for
-  `unverified` and `unreachable`, and, for `unclaimed`, no mark at all and the
-  row reading `none`. A stale verified row also says `may be out of date`.
+  `unverified`, `unchecked` and `unreachable`, and, for `unclaimed`, no mark at
+  all and the row reading `none`. An `unchecked` handle also says, on the
+  handle screen, that it has not been checked from this wallet yet. A stale verified row also says `may be out of date`.
   Proposal 005 removed the DNS advisory sentence outright, so
   `identity-detail-verification-note` is absent from the page. Verification
   gates nothing: the ledger and every verification report read the same with

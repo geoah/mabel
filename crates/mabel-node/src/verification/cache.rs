@@ -136,11 +136,15 @@ pub fn merge(
 /// Whether the single-identity GET should start one background refresh
 /// (proposal 003 section 2).
 ///
-/// A claim with no entry and an entry over 24 hours old both refresh; nothing
-/// else does, and no timer refreshes anything.
+/// Only an entry this node already holds, gone over 24 hours old, refreshes.
+/// A claim with no entry does not: the first sight of a stranger's hostname
+/// must not query their zone, because reading a card is not asking to be
+/// announced to the name on it (decision 018, issue 042). A check is something
+/// a person asks for, and the forced check is where they ask. No timer
+/// refreshes anything either.
 #[must_use]
 pub fn should_refresh(entry: Option<&VerificationEntry>, now_ms: u64) -> bool {
-    entry.is_none_or(|entry| entry.is_stale(now_ms))
+    entry.is_some_and(|entry| entry.is_stale(now_ms))
 }
 
 /// The verification cache directory, one file per identity.
@@ -400,9 +404,13 @@ mod tests {
     }
 
     #[test]
-    fn a_missing_or_stale_entry_refreshes_and_a_fresh_one_does_not() {
+    fn only_a_stale_entry_refreshes_and_a_missing_one_never_does() {
         let entry = verified(0);
-        assert!(should_refresh(None, 0));
+        // A hostname this node has never checked stays unchecked until a
+        // person asks. Refreshing here would query a stranger's zone on the
+        // first sight of their card (decision 018, issue 042).
+        assert!(!should_refresh(None, 0));
+        assert!(!should_refresh(None, 25 * HOUR));
         assert!(!should_refresh(Some(&entry), 23 * HOUR));
         assert!(should_refresh(Some(&entry), 25 * HOUR));
     }

@@ -149,3 +149,11 @@ milestone 10 and are deliberately not ticketed here.
   the one noun for advertised machines, a vendored `Tabs` used by the two
   filtered lists, identity card polish, and a named witness from `dev seed` and
   the compose entrypoint. Depends on 040.
+- [042-known-identity-document-nulls.md](042-known-identity-document-nulls.md):
+  the `unchecked` verification status, no DNS lookup on first sight of a
+  handle, and regression tests pinning the folded projection of a ledger stored
+  over the sync push path. Depends on 041.
+- [043-http-caching-and-compression.md](043-http-caching-and-compression.md):
+  immutable hashed assets, `no-cache` and an `ETag` on the html, build-time
+  brotli and gzip siblings served by `Accept-Encoding`, and `no-store` on every
+  API answer. Depends on 041.

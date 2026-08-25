@@ -541,8 +541,11 @@ test("step 7: bob.example mismatches, nobody.example is unverified, carol is unc
   const rebound = await verification(BOB_URL, bobId);
   expect(rebound.hostname).toBe("nobody.example");
   expect(rebound.status).not.toBe("verified");
-  expect(rebound.status).toBe("unverified");
+  // No verdict at all, which is its own word: `unverified` is a lookup that
+  // found no mabel= record, and no lookup has run against this claim.
+  expect(rebound.status).toBe("unchecked");
   expect(rebound.checked_at_ms).toBeNull();
+  expect(rebound.stale).toBe(false);
   expect(rebound.detail).toBe("nobody.example has not been checked on this node");
 
   const unverified = await forceCheck(BOB_URL, bobId);

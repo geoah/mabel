@@ -307,7 +307,7 @@ document field is still `hostname`, so `identity-detail-hostname` and
 - [006-stale-append.md](006-stale-append.md): a shared-ledger append that lost
   the race, the exit-50 recovery, and the retry that lands.
 - [007-profile-and-verification.md](007-profile-and-verification.md): display
-  names, the five DNS verification states, private contact notes, how you know a
+  names, the six DNS verification states, private contact notes, how you know a
   stranger on a foreign identity page, the identities this wallet knows of,
   opening an identity by hostname, and browsing what a witness holds. The one
   story that also needs

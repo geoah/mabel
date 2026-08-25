@@ -51,10 +51,10 @@
             },
             "verification": {
               "hostname": "alice.example",
-              "status": "unverified",
+              "status": "unchecked",
               "checked_at_ms": null,
               "last_verified_at_ms": null,
-              "stale": true,
+              "stale": false,
               "detail": "alice.example has not been checked on this node",
               "unreachable": null
             },
@@ -113,10 +113,10 @@
             },
             "verification": {
               "hostname": "bob.example",
-              "status": "unverified",
+              "status": "unchecked",
               "checked_at_ms": null,
               "last_verified_at_ms": null,
-              "stale": true,
+              "stale": false,
               "detail": "bob.example has not been checked on this node",
               "unreachable": null
             },
@@ -327,10 +327,10 @@
             },
             "verification": {
               "hostname": "alice.example",
-              "status": "unverified",
+              "status": "unchecked",
               "checked_at_ms": null,
               "last_verified_at_ms": null,
-              "stale": true,
+              "stale": false,
               "detail": "alice.example has not been checked on this node",
               "unreachable": null
             },
@@ -392,10 +392,10 @@
             },
             "verification": {
               "hostname": "bob.example",
-              "status": "unverified",
+              "status": "unchecked",
               "checked_at_ms": null,
               "last_verified_at_ms": null,
-              "stale": true,
+              "stale": false,
               "detail": "bob.example has not been checked on this node",
               "unreachable": null
             },
@@ -668,7 +668,7 @@
               "email": "alice@alice.example",
               "alias": "alice",
               "hostname": "alice.example",
-              "verification_status": "unverified",
+              "verification_status": "unchecked",
               "provenance": "profile"
             },
             {
@@ -677,7 +677,7 @@
               "email": "bob@bob.example",
               "alias": "bob",
               "hostname": "bob.example",
-              "verification_status": "unverified",
+              "verification_status": "unchecked",
               "provenance": "profile"
             },
             {

@@ -117,6 +117,11 @@ impl<'a> Names<'a> {
     }
 
     /// The cached verdict on a claimed hostname, cache-only.
+    ///
+    /// A hostname with no cache entry reads `unchecked`, never `unverified`: a
+    /// row carries the status string alone, so absence has to be its own word
+    /// or a stranger nobody looked up reads as a stranger whose DNS records
+    /// name nobody (issue 042).
     fn status(&self, identity: IdentityId, hostname: Option<&str>) -> VerificationStatus {
         let Some(hostname) = hostname else {
             return VerificationStatus::Unclaimed;
@@ -126,7 +131,7 @@ impl<'a> Names<'a> {
             .read_bound(identity, hostname)
             .ok()
             .flatten()
-            .map_or(VerificationStatus::Unverified, |entry| entry.status)
+            .map_or(VerificationStatus::Unchecked, |entry| entry.status)
     }
 
     fn node(&self, identity_id: &Id) -> Option<&'a GraphNode> {

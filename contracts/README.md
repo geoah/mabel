@@ -311,12 +311,26 @@ ledger's own identity: any current controller may rename the ledger.
 `verification` is the advisory DNS verdict of proposal 003 section 2, always
 present: `hostname`, `status`, `checked_at_ms`, `last_verified_at_ms`,
 `stale`, `detail`, `unreachable`. `status` is one of `verified`,
-`mismatched`, `unverified`, `unreachable` and `unclaimed`, and is `unclaimed`
-with every other key `null` when the profile names no hostname. A hostname
-this node has never checked reads `unverified` with `checked_at_ms: null` and
-`stale: true`. `unreachable` is `{checked_at_ms, detail}` for a failed
-re-check kept beside a decisive result, `null` otherwise. The verdict never
-gates ledger validity (decision 015).
+`mismatched`, `unverified`, `unreachable`, `unclaimed` and `unchecked`.
+
+Four of the six report a lookup and carry a `checked_at_ms`. Two report that
+no lookup stands behind the document, and they are separate words because a
+row carries the status and nothing else: `unclaimed` is a profile that names
+no hostname, every other key `null`, and `unchecked` is a hostname this node
+has never looked up, with `checked_at_ms: null`, `stale: false` and a `detail`
+saying so. `unverified` is a verdict, a lookup that found no `mabel=` record
+at the label.
+
+No route turns `unchecked` into a lookup. Reading an identity is not asking to
+query its zone, and a page of strangers must not send one DNS query per row
+(decision 018), so `POST /api/identities/:identity_id/verification` is the one
+thing that runs a check.
+
+`stale` is `true` for a verdict over 24 hours old and `false` when there is no
+verdict, which is what the background re-check on `GET
+/api/identities/:identity_id` runs on. `unreachable` is `{checked_at_ms,
+detail}` for a failed re-check kept beside a decisive result, `null`
+otherwise. The verdict never gates ledger validity (decision 015).
 
 `contact` is the local private note of proposal 003 section 1, `{nickname,
 note, updated_at_ms}` or `null`. It lives in `contacts/<identity_id>.json`,
@@ -646,10 +660,11 @@ reviewer can overrule them cheaply, before consumers are written.
   proposal 003 section 5 does not list. Section 2 requires the document to
   report a failed re-check beside the decisive result it could not refresh,
   and this is where it goes.
-- A claimed hostname this node has never checked reads `status: "unverified"`
-  with `checked_at_ms: null`. The five statuses are frozen and none of them
-  means "not checked yet"; the null timestamp is what says so, and the UI
-  renders `unverified` dimmed either way.
+- A claimed hostname this node has never checked reads `status: "unchecked"`,
+  a sixth status added by issue 042. The null `checked_at_ms` used to be the
+  only thing saying so, which `ResolvedIdentity` and `KnownIdentity` cannot
+  carry: they hold the status string alone, so a stranger nobody looked up and
+  a stranger whose DNS names nobody read the same word.
 - `GET /api/lookup/:identity_id` defaults `from` to the lowest local identity
   id. Proposal 003 section 3 defaults it to the identity selected in the
   wallet, which is a browser fact the node does not hold; a client that cares

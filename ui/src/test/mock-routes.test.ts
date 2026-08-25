@@ -294,7 +294,7 @@ describe("profile and verification", () => {
     expect(identity.identity.verification.status).toBe("unclaimed");
   });
 
-  it("starts a changed hostname at unverified, then verifies it on a forced check", async () => {
+  it("starts a changed hostname at unchecked, then verifies it on a forced check", async () => {
     await replaceProfile(ALICE, {
       display_name: "Alice Ashworth",
       hostname: "ashworth.example",
@@ -302,8 +302,11 @@ describe("profile and verification", () => {
     });
 
     const before = await getIdentity(ALICE);
-    expect(before.identity.verification.status).toBe("unverified");
+    // No verdict at all, which is a different answer from a lookup that found
+    // no mabel= record (issue 042).
+    expect(before.identity.verification.status).toBe("unchecked");
     expect(before.identity.verification.checked_at_ms).toBeNull();
+    expect(before.identity.verification.stale).toBe(false);
 
     const checked = await forceVerification(ALICE);
 

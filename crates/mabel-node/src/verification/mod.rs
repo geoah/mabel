@@ -7,10 +7,14 @@
 //! alone, since a witness holds no user context and a crawling resolver is a
 //! signal a witness should not emit.
 //!
-//! Nothing here dials out on a timer. Ticket 026 wires the routes: the
-//! single-identity GET answers from cache and may start one background
-//! refresh when [`should_refresh`] says so, the list route is cache-only, and
-//! the forced check waits.
+//! Nothing here dials out on a timer, and nothing dials out on first sight of
+//! a hostname. Ticket 026 wires the routes: the single-identity GET answers
+//! from cache and may re-check a verdict this node already holds and has let
+//! go stale, which is what [`should_refresh`] answers; a hostname with no
+//! entry is never refreshed, because reading a stranger's card is not asking
+//! to be announced to the name on it (decision 018, issue 042). The list route
+//! is cache-only, and the forced check is the one place a lookup is asked for
+//! and waited on.
 //!
 //! ```no_run
 //! use mabel_node::verification::{HickoryResolver, VerificationStore, verify_hostname};

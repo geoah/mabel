@@ -219,16 +219,17 @@ export interface Profile extends ProfileFields {
 }
 
 /**
- * The five advisory DNS verdicts of proposal 003 section 2. unclaimed means the
- * profile names no hostname; unverified also covers a hostname this node has
- * never checked, which reads checked_at_ms: null.
+ * The six advisory DNS verdicts of proposal 003 section 2. Four report a
+ * lookup. Two report that no lookup ran: unclaimed is a profile naming no
+ * handle, unchecked is a handle this node has never looked up (issue 042).
  */
 export type VerificationStatus =
   | "verified"
   | "mismatched"
   | "unverified"
   | "unreachable"
-  | "unclaimed";
+  | "unclaimed"
+  | "unchecked";
 
 /** A failed re-check kept beside a decisive result, so both timestamps show. */
 export interface UnreachableRecheck {

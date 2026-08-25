@@ -398,6 +398,12 @@ pub struct FailedCheck {
 /// Always present on an identity document. It never gates ledger validity
 /// (decision 015), and `status` is `unclaimed` with every other key `null`
 /// when the profile names no hostname.
+///
+/// Two statuses say that no lookup stands behind the document, and they are
+/// told apart rather than merged: `unclaimed` for a profile naming no
+/// hostname, `unchecked` for a hostname this node has never looked up.
+/// `unverified` is a verdict, a check that found no `mabel=` record, and it
+/// always carries a `checked_at_ms` (issue 042).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Verification {
@@ -409,7 +415,9 @@ pub struct Verification {
     pub checked_at_ms: Option<u64>,
     /// When this hostname last verified, kept across later verdicts.
     pub last_verified_at_ms: Option<u64>,
-    /// Whether the result is over 24 hours old, or was never taken.
+    /// Whether the verdict is over 24 hours old. `false` when there is no
+    /// verdict at all: nothing has gone stale on a hostname nobody checked,
+    /// and a stale verdict is what a background re-check runs on.
     pub stale: bool,
     /// One sentence naming what was queried and what came back.
     pub detail: Option<String>,
@@ -432,15 +440,21 @@ impl Verification {
         }
     }
 
-    /// The verdict for a hostname this node has never checked.
+    /// The verdict for a hostname this node has never checked, which is the
+    /// absence of a verdict and says so (issue 042).
+    ///
+    /// `stale` is `false`: a hostname nobody looked up has no result to go out
+    /// of date, and the identity route re-checks a stale verdict in the
+    /// background, which is a lookup nobody asked for on a stranger's
+    /// hostname.
     #[must_use]
     pub fn unchecked(hostname: &str) -> Self {
         Self {
             hostname: Some(hostname.to_owned()),
-            status: VerificationStatus::Unverified,
+            status: VerificationStatus::Unchecked,
             checked_at_ms: None,
             last_verified_at_ms: None,
-            stale: true,
+            stale: false,
             detail: Some(format!("{hostname} has not been checked on this node")),
             unreachable: None,
         }

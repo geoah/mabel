@@ -57,6 +57,14 @@ export function VerificationPanel({
             />
           )}
         </KeyValue>
+        {/* Nothing has looked this handle up from here. The button below is
+            the only thing that does, so the sentence sits next to it rather
+            than leaving a reader to read "never" as a failed check. */}
+        {verification.status === "unchecked" && (
+          <KeyValue label="what we know" testId="verification-unchecked">
+            This handle has not been checked from this wallet yet.
+          </KeyValue>
+        )}
         <KeyValue label="last checked" testId="verification-checked-at-ms">
           {verification.checked_at_ms === null
             ? "never"

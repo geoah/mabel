@@ -15,6 +15,7 @@ use std::time::Duration;
 
 use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode, header};
+use axum::response::Response;
 use common::{
     Chain, Home, from_endpoint, home, home_witnessing_for_nobody, rendered, secret, subject,
     witness_identity,
@@ -24,6 +25,7 @@ use mabel_node::api::documents::Id;
 use mabel_node::api::service::{EventPageRequest, ForkQuery, NodeService, PageRequest};
 use mabel_node::api::stub::Fixture;
 use mabel_node::api::{ApiOptions, DEFAULT_HTTP_BIND, UiSource, node_router};
+use mabel_node::verification::VerificationStatus;
 use mabel_node::wallet::{NodeApiService, WalletCore, WalletSync};
 use mabel_node::{DEFAULT_STORAGE_CAPACITY, LedgerStorage, RelayMode, StorageCaps};
 use serde::Serialize;
@@ -392,6 +394,147 @@ async fn one_stored_ledger_reads_through_the_identity_route() {
     assert!(page.more);
 }
 
+/// A ledger this home stored over the sync push path and never crawled reads
+/// its folded profile and its advertised endpoints from the identity route
+/// (issue 042).
+///
+/// Nothing here runs a crawl, so the document has one source: the stored chain.
+#[tokio::test]
+async fn a_pushed_ledger_projects_its_profile_and_endpoints_without_a_crawl() {
+    let home = home();
+    let storage = home.storage(StorageCaps::default());
+
+    // Waddles as the report describes it: seq 0 inception, seq 1 endpoint
+    // advertisement, seq 2 profile update.
+    let mut waddles = Chain::new(41);
+    waddles.add_witness();
+    let advertised = secret(70).public();
+    waddles.add_advertisement(&[advertised]);
+    waddles.add_profile_update(
+        Some("Waddles"),
+        Some("waddles.mabel.reamde.dev"),
+        Some("waddles@mabel.reamde.dev"),
+    );
+    storage
+        .push(waddles.ledger, &waddles.all(), from_endpoint(4))
+        .expect("the chain names this witness");
+
+    let service = Arc::new(service(&home, Arc::clone(&storage)).await);
+    let id = Id::parse(&waddles.ledger.to_string()).expect("a ledger id renders as an id");
+
+    let document = service
+        .identity(id.clone())
+        .await
+        .expect("the ledger is held");
+    assert_eq!(document.head_seq, 3);
+    let profile = document
+        .profile
+        .as_ref()
+        .expect("a stored chain carrying a profile update folds to a profile");
+    assert_eq!(profile.display_name.as_deref(), Some("Waddles"));
+    assert_eq!(
+        profile.hostname.as_deref(),
+        Some("waddles.mabel.reamde.dev")
+    );
+    assert_eq!(profile.email.as_deref(), Some("waddles@mabel.reamde.dev"));
+    assert_eq!(
+        document
+            .endpoints
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>(),
+        vec![rendered(&advertised)],
+        "the advertisement at seq 1 is what the endpoints come from"
+    );
+
+    let page = service
+        .known_identities(PageRequest {
+            offset: 0,
+            limit: 100,
+        })
+        .await
+        .expect("the list answers");
+    let row = page
+        .identities
+        .iter()
+        .find(|row| row.identity_id == id)
+        .expect("a stored ledger this home cannot sign for is known");
+    assert_eq!(row.display_name.as_deref(), Some("Waddles"));
+    assert_eq!(row.hostname.as_deref(), Some("waddles.mabel.reamde.dev"));
+    assert_eq!(row.email.as_deref(), Some("waddles@mabel.reamde.dev"));
+    assert_eq!(row.head_seq, Some(3));
+    assert!(row.stored);
+
+    // No verdict, and the document says which kind of nothing that is: this
+    // node never looked the hostname up. `unverified` would be a lookup that
+    // found no record, which is a different thing to tell a reader.
+    assert_eq!(document.verification.status, VerificationStatus::Unchecked);
+    assert_eq!(
+        document.verification.hostname.as_deref(),
+        Some("waddles.mabel.reamde.dev")
+    );
+    assert_eq!(document.verification.checked_at_ms, None);
+    assert!(
+        !document.verification.stale,
+        "a hostname nobody checked has no result to go out of date"
+    );
+    assert_eq!(row.verification_status, VerificationStatus::Unchecked);
+}
+
+/// A verdict this node cached shows up in the identity document and in the
+/// `known` row, both from the one cache (issue 042).
+#[tokio::test]
+async fn a_cached_verdict_reaches_the_document_and_the_known_row() {
+    let home = home();
+    let storage = home.storage(StorageCaps::default());
+
+    let mut waddles = Chain::new(42);
+    waddles.add_witness();
+    waddles.add_profile_update(Some("Waddles"), Some("waddles.example"), None);
+    storage
+        .push(waddles.ledger, &waddles.all(), from_endpoint(4))
+        .expect("the chain names this witness");
+
+    let service = Arc::new(service(&home, Arc::clone(&storage)).await);
+    let id = Id::parse(&waddles.ledger.to_string()).expect("a ledger id renders as an id");
+
+    // The one place a verdict comes from: a check somebody asked for.
+    let outcome = mabel_node::verification::VerificationOutcome {
+        hostname: "waddles.example".to_owned(),
+        status: VerificationStatus::Verified,
+        detail: "_mabel.waddles.example. answers mabel=waddles".to_owned(),
+    };
+    let core = WalletCore::new(home.home.clone());
+    core.verification_store()
+        .record(waddles.ledger, &outcome, mabel_node::now_ms())
+        .expect("the cache writes");
+
+    let document = service
+        .identity(id.clone())
+        .await
+        .expect("the ledger is held");
+    assert_eq!(document.verification.status, VerificationStatus::Verified);
+    assert!(document.verification.checked_at_ms.is_some());
+    assert_eq!(
+        document.verification.hostname.as_deref(),
+        Some("waddles.example")
+    );
+
+    let page = service
+        .known_identities(PageRequest {
+            offset: 0,
+            limit: 100,
+        })
+        .await
+        .expect("the list answers");
+    let row = page
+        .identities
+        .iter()
+        .find(|row| row.identity_id == id)
+        .expect("the stored ledger is known");
+    assert_eq!(row.verification_status, VerificationStatus::Verified);
+}
+
 /// `unknown_ledger` is the one spelling for a ledger this home does not hold:
 /// `ledger_not_held` died with the witness routes (proposal 006 section 8).
 #[tokio::test]
@@ -615,4 +758,343 @@ async fn send(router: axum::Router, uri: &str) -> (StatusCode, Value) {
         )
     });
     (status, body)
+}
+
+// ------------------------------------------------ caching and compression ----
+
+/// A router serving a real-shaped bundle from a directory, which is what CI
+/// has: `cargo test` runs with an empty embed because `ui/dist` is built by
+/// npm and is not checked in.
+fn ui_router(directory: &std::path::Path, service: Arc<dyn NodeService>) -> axum::Router {
+    node_router(
+        service,
+        &ApiOptions::default().with_ui(UiSource::Directory(directory.to_path_buf())),
+    )
+}
+
+fn ui_bundle() -> tempfile::TempDir {
+    let directory = tempfile::tempdir().expect("a temp dir");
+    let assets = directory.path().join("assets");
+    std::fs::create_dir(&assets).expect("the assets directory");
+    std::fs::write(
+        directory.path().join("index.html"),
+        "<!doctype html><script src=\"/assets/index-BM2eU1h0.js\"></script>",
+    )
+    .expect("the html");
+    std::fs::write(
+        assets.join("index-BM2eU1h0.js"),
+        "export const original = 1;",
+    )
+    .expect("the asset");
+    std::fs::write(assets.join("index-BM2eU1h0.js.br"), b"brotli bytes")
+        .expect("the brotli sibling");
+    std::fs::write(assets.join("index-BM2eU1h0.js.gz"), b"gzip bytes").expect("the gzip sibling");
+    // A stylesheet with no precompressed sibling, to prove nothing compresses
+    // it on the way out (issue 043).
+    std::fs::write(
+        assets.join("index-B3z3N0jy.css"),
+        ":root{--x:1}".repeat(200),
+    )
+    .expect("the stylesheet");
+    directory
+}
+
+/// A GET carrying `Host` and whatever else the case needs.
+async fn get(router: axum::Router, uri: &str, extra: &[(header::HeaderName, &str)]) -> Response {
+    let mut request = Request::builder()
+        .method("GET")
+        .uri(uri)
+        .header(header::HOST, HOST);
+    for (name, value) in extra {
+        request = request.header(name, *value);
+    }
+    router
+        .oneshot(request.body(Body::empty()).expect("a request"))
+        .await
+        .expect("the router is infallible")
+}
+
+fn header_of(response: &Response, name: header::HeaderName) -> String {
+    response
+        .headers()
+        .get(name)
+        .map(|value| value.to_str().expect("a text header").to_owned())
+        .unwrap_or_default()
+}
+
+/// The header matrix of issue 043, through the whole router: a hashed asset is
+/// immutable, the html revalidates, and an API document is never stored.
+#[tokio::test]
+async fn the_router_sets_the_caching_rule_each_path_needs() {
+    let fixed = Fixed::new().await;
+    let directory = ui_bundle();
+    let router = ui_router(
+        directory.path(),
+        fixed.service.clone() as Arc<dyn NodeService>,
+    );
+
+    let response = get(router.clone(), "/assets/index-BM2eU1h0.js", &[]).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        header_of(&response, header::CACHE_CONTROL),
+        "public, max-age=31536000, immutable"
+    );
+    assert_eq!(header_of(&response, header::VARY), "Accept-Encoding");
+
+    for path in ["/", "/wallet", "/witnesses"] {
+        let response = get(router.clone(), path, &[]).await;
+        assert_eq!(response.status(), StatusCode::OK, "{path}");
+        assert_eq!(
+            header_of(&response, header::CACHE_CONTROL),
+            "no-cache",
+            "{path}"
+        );
+        assert!(!header_of(&response, header::ETAG).is_empty(), "{path}");
+    }
+
+    // A wallet document is one person's address book. No intermediary keeps a
+    // copy of it, and no heuristic gets to decide that for us.
+    for path in ["/api/node", "/api/identities/known", "/api/nonexistent"] {
+        let response = get(router.clone(), path, &[]).await;
+        assert_eq!(
+            header_of(&response, header::CACHE_CONTROL),
+            "no-store",
+            "{path}"
+        );
+    }
+}
+
+/// The 304 round trip that turns a repeat page load into headers alone.
+#[tokio::test]
+async fn the_html_answers_304_to_the_etag_it_handed_out() {
+    let fixed = Fixed::new().await;
+    let directory = ui_bundle();
+    let router = ui_router(
+        directory.path(),
+        fixed.service.clone() as Arc<dyn NodeService>,
+    );
+
+    let first = get(router.clone(), "/wallet", &[]).await;
+    assert_eq!(first.status(), StatusCode::OK);
+    let etag = header_of(&first, header::ETAG);
+    let served = to_bytes(first.into_body(), 1 << 20).await.expect("a body");
+    assert!(!served.is_empty());
+
+    let second = get(router, "/wallet", &[(header::IF_NONE_MATCH, etag.as_str())]).await;
+    assert_eq!(second.status(), StatusCode::NOT_MODIFIED);
+    assert_eq!(header_of(&second, header::ETAG), etag);
+    assert_eq!(header_of(&second, header::CACHE_CONTROL), "no-cache");
+    let body = to_bytes(second.into_body(), 1 << 20).await.expect("a body");
+    assert!(body.is_empty(), "a 304 carries no body");
+}
+
+/// Encoding negotiation through the router, the client that offers nothing
+/// included: it gets the file, not a compressed one it cannot read.
+#[tokio::test]
+async fn the_router_negotiates_the_encoding_and_always_answers_something_readable() {
+    let fixed = Fixed::new().await;
+    let directory = ui_bundle();
+    let router = ui_router(
+        directory.path(),
+        fixed.service.clone() as Arc<dyn NodeService>,
+    );
+    let path = "/assets/index-BM2eU1h0.js";
+
+    for (accept, encoding, bytes) in [
+        ("br", "br", "brotli bytes"),
+        ("gzip", "gzip", "gzip bytes"),
+        ("br, gzip", "br", "brotli bytes"),
+    ] {
+        let response = get(router.clone(), path, &[(header::ACCEPT_ENCODING, accept)]).await;
+        assert_eq!(
+            header_of(&response, header::CONTENT_ENCODING),
+            encoding,
+            "{accept}"
+        );
+        assert_eq!(header_of(&response, header::VARY), "Accept-Encoding");
+        let body = to_bytes(response.into_body(), 1 << 20)
+            .await
+            .expect("a body");
+        assert_eq!(String::from_utf8_lossy(&body), bytes, "{accept}");
+    }
+
+    let response = get(router, path, &[]).await;
+    assert_eq!(header_of(&response, header::CONTENT_ENCODING), "");
+    let body = to_bytes(response.into_body(), 1 << 20)
+        .await
+        .expect("a body");
+    assert_eq!(String::from_utf8_lossy(&body), "export const original = 1;");
+}
+
+/// The loopback rules run outside everything added here, so a refusal is the
+/// same 403 envelope it always was: uncompressed, and with no caching rule
+/// borrowed from the route it never reached (decision 018).
+#[tokio::test]
+async fn a_refused_host_answers_the_same_envelope_as_before() {
+    let fixed = Fixed::new().await;
+    let directory = ui_bundle();
+    let router = ui_router(
+        directory.path(),
+        fixed.service.clone() as Arc<dyn NodeService>,
+    );
+
+    for path in ["/api/node", "/wallet", "/assets/index-BM2eU1h0.js"] {
+        let request = Request::builder()
+            .method("GET")
+            .uri(path)
+            .header(header::HOST, "wallet.example")
+            .header(header::ACCEPT_ENCODING, "br, gzip")
+            .body(Body::empty())
+            .expect("a request");
+        let response = router
+            .clone()
+            .oneshot(request)
+            .await
+            .expect("the router is infallible");
+        assert_eq!(response.status(), StatusCode::FORBIDDEN, "{path}");
+        assert_eq!(header_of(&response, header::CONTENT_ENCODING), "", "{path}");
+        assert_eq!(header_of(&response, header::CACHE_CONTROL), "", "{path}");
+        let bytes = to_bytes(response.into_body(), 1 << 20)
+            .await
+            .expect("a body");
+        let body: Value = serde_json::from_slice(&bytes).expect("a JSON envelope");
+        assert_eq!(body["ok"], json!(false), "{path}");
+        assert_eq!(
+            body["details"]["reason"],
+            json!("host_not_loopback"),
+            "{path}"
+        );
+    }
+}
+
+/// Nothing added here reads `Host`, so the deployed reverse proxy and
+/// `--allow-host` see exactly what loopback sees.
+#[tokio::test]
+async fn no_answer_varies_on_host() {
+    let fixed = Fixed::new().await;
+    let directory = ui_bundle();
+    let router = node_router(
+        fixed.service.clone() as Arc<dyn NodeService>,
+        &ApiOptions::default()
+            .with_ui(UiSource::Directory(directory.path().to_path_buf()))
+            .with_allowed_hosts(&["wallet.example".to_owned()]),
+    );
+
+    let mut answers = Vec::new();
+    for host in [HOST, "localhost:9080", "wallet.example"] {
+        let request = Request::builder()
+            .method("GET")
+            .uri("/assets/index-BM2eU1h0.js")
+            .header(header::HOST, host)
+            .header(header::ACCEPT_ENCODING, "br")
+            .body(Body::empty())
+            .expect("a request");
+        let response = router
+            .clone()
+            .oneshot(request)
+            .await
+            .expect("the router is infallible");
+        assert_eq!(response.status(), StatusCode::OK, "{host}");
+        // `Vary` names the one thing that does change the answer.
+        assert_eq!(
+            header_of(&response, header::VARY),
+            "Accept-Encoding",
+            "{host}"
+        );
+        answers.push((
+            header_of(&response, header::ETAG),
+            header_of(&response, header::CACHE_CONTROL),
+            header_of(&response, header::CONTENT_ENCODING),
+        ));
+    }
+    assert!(
+        answers.windows(2).all(|pair| pair[0] == pair[1]),
+        "{answers:?}"
+    );
+}
+
+/// A static file with no stored sibling is never compressed on the way out.
+///
+/// A response-compression layer over these routes would encode it and leave
+/// `api::ui`'s validator, the hash of the bytes that module chose, sitting on
+/// bytes the layer produced. The layer is scoped to the JSON routes for
+/// exactly that reason (issue 043).
+#[tokio::test]
+async fn a_static_file_with_no_sibling_is_never_compressed_at_request_time() {
+    let fixed = Fixed::new().await;
+    let directory = ui_bundle();
+    let router = ui_router(
+        directory.path(),
+        fixed.service.clone() as Arc<dyn NodeService>,
+    );
+    let css = "/assets/index-B3z3N0jy.css";
+    let stored =
+        std::fs::read(directory.path().join("assets/index-B3z3N0jy.css")).expect("the stylesheet");
+
+    // Big enough that any compressor would have taken it, and highly
+    // repetitive, so a layer would have shrunk it a long way.
+    assert!(stored.len() > 2000);
+    for accept in ["br", "gzip", "br, gzip, deflate, zstd"] {
+        let response = get(router.clone(), css, &[(header::ACCEPT_ENCODING, accept)]).await;
+        assert_eq!(response.status(), StatusCode::OK, "{accept}");
+        assert_eq!(
+            header_of(&response, header::CONTENT_ENCODING),
+            "",
+            "{accept}: nothing may encode a file this module did not precompress"
+        );
+        let etag = header_of(&response, header::ETAG);
+        let body = to_bytes(response.into_body(), 1 << 20)
+            .await
+            .expect("a body");
+        assert_eq!(body.as_ref(), stored.as_slice(), "{accept}");
+
+        // The validator belongs to the bytes that arrived, so sending it back
+        // is a 304 rather than a mismatch against something else.
+        let again = get(
+            router.clone(),
+            css,
+            &[
+                (header::ACCEPT_ENCODING, accept),
+                (header::IF_NONE_MATCH, etag.as_str()),
+            ],
+        )
+        .await;
+        assert_eq!(again.status(), StatusCode::NOT_MODIFIED, "{accept}");
+    }
+}
+
+/// The JSON routes are where compression does run.
+#[tokio::test]
+async fn the_api_still_compresses_its_documents() {
+    let fixed = Fixed::new().await;
+    let directory = ui_bundle();
+    let router = ui_router(
+        directory.path(),
+        fixed.service.clone() as Arc<dyn NodeService>,
+    );
+
+    let plain = get(router.clone(), "/api/identities/known", &[]).await;
+    assert_eq!(header_of(&plain, header::CONTENT_ENCODING), "");
+    assert_eq!(header_of(&plain, header::CACHE_CONTROL), "no-store");
+    let plain_len = to_bytes(plain.into_body(), 1 << 20)
+        .await
+        .expect("a body")
+        .len();
+
+    let encoded = get(
+        router,
+        "/api/identities/known",
+        &[(header::ACCEPT_ENCODING, "br")],
+    )
+    .await;
+    assert_eq!(header_of(&encoded, header::CONTENT_ENCODING), "br");
+    assert_eq!(header_of(&encoded, header::CACHE_CONTROL), "no-store");
+    let encoded_len = to_bytes(encoded.into_body(), 1 << 20)
+        .await
+        .expect("a body")
+        .len();
+    assert!(
+        encoded_len < plain_len,
+        "brotli {encoded_len} should beat {plain_len}"
+    );
 }
