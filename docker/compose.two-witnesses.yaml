@@ -8,13 +8,16 @@
 #
 # witness-two is the same image and the same entrypoint as witness, on
 # 127.0.0.1:9083 and UDP 9073, publishing its ticket to the shared volume as
-# /shared/witness-two.ticket and its endpoint id as /shared/witness-two.id.
-# Alice and bob wait for both tickets and start with both seeded as --peer, so
-# a story can push one ledger at either witness with no --peer of its own.
+# /shared/witness-two.ticket, its machine id as /shared/witness-two.id and its
+# own Mabel id as /shared/witness-two.identity. Alice and bob wait for both
+# tickets, start with both seeded as --peer and record both witness identities
+# in node.json, so a story can push one ledger at either witness with no --peer
+# of its own.
 #
-# The two witnesses share nothing but the ticket volume: each has its own home,
-# so a ledger pushed to one is unknown to the other until something pushes it
-# there, which is what story 004's fork needs.
+# The two witnesses are two witness identities, not two machines answering for
+# one: each mints its own and shares nothing but the ticket volume, so a ledger
+# pushed to one is unknown to the other until something pushes it there, which
+# is what story 004's fork needs.
 
 services:
   witness-two:

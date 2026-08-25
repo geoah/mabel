@@ -22,8 +22,9 @@ and stories 001 to 006 keep running on their own.
   `http://127.0.0.1:9082`.
 - carol: a third identity in bob's home, trusted by bob and unknown to alice
   except through the crawl.
-- witness: compose service `witness`, the only place alice can read bob's and
-  carol's ledgers from.
+- the witness: compose service `witness`, the only place alice can read bob's
+  and carol's records from. `witness_identity` is the Mabel id a record names;
+  `witness_id` is the machine that answers for it.
 - resolver: compose service `resolver` in `docker/compose.dns.yaml`, serving
   TXT records for `example` names to the wallets at `172.29.0.53` and
   refusing every other name. Nothing reaches the public internet.
@@ -37,33 +38,45 @@ docker/compose.dns.yaml`, run from the repository root.
    home, name the witness on her ledger and push it, and have bob attest her:
    ```sh
    dc exec -T bob mabel identity create --alias carol --kind person
-   dc exec -T bob mabel witness add --identity carol --endpoint "$witness_id"
+   dc exec -T bob mabel witness add --identity carol --witness "$witness_identity"
    dc exec -T bob sh -c 'mabel sync push --identity carol \
      --peer "$(cat /shared/witness.ticket)"'
    dc exec -T bob mabel trust add --issuer bob --subject "$carol_id"
    dc exec -T bob sh -c 'mabel sync push --identity bob \
      --peer "$(cat /shared/witness.ticket)"'
    ```
-   The witness add is not optional: a witness refuses a ledger whose chain does
-   not name it, so without it carol's push answers `NOT_ADMITTED` and the crawl
-   has nothing to read. The trust chain is alice trusts bob, bob trusts carol.
+   The witness add is not optional: a witness admits a ledger only when the
+   pushed chain names an identity it witnesses for, so without it carol's push
+   answers `NOT_ADMITTED` and the crawl has nothing to read. The trust chain is alice trusts bob, bob trusts carol.
 2. Wire the resolver and the crawl sources. Both come from the overlay, and
-   the bring-up runs in two phases because a witness's endpoint id only exists
-   once the witness has started:
+   the bring-up runs in two phases because neither half of a witness exists
+   until the witness has started: it mints its identity and advertises this
+   container on it on its first start.
    ```sh
    dc up -d --wait witness resolver
+   witness_identity="$(dc exec -T witness cat /shared/witness.identity)"
    witness_id="$(dc exec -T witness cat /shared/witness.id)"
-   MABEL_WITNESSES="$witness_id" dc up -d --wait
+   MABEL_WITNESSES="$witness_identity=$witness_id" dc up -d --wait
    ```
    The overlay reads `MABEL_WITNESSES` from the environment for both wallets,
-   the entrypoint runs `mabel witness set-default` with it, and that is the
+   one `<mabel id>=<endpoint id>` entry per witness, and the entrypoint runs
+   `mabel witness set-default` with both halves: `node.json` names an identity
+   and the machines that answer for it (proposal 006 section 5.4). That is the
    node-wide witness the crawler's third source asks (proposal 003 section 3).
-   `GET /api/node` on alice answers `witnesses: ["<witness_id>"]`.
 3. Publish the TXT records on the test resolver, by writing the zone file into
    the resolver's zone volume with the ids this run minted:
-   - `_mabel.alice.example. IN TXT "mabel=<alice_id>"`
+   - `_mabel.alice.example. IN TXT "mabel=<alice_id>"`, and beside it
+     `_mabel.alice.example. IN TXT "mabel-endpoints=<alice's machine>,<witness_id>"`,
+     the machines that answer for whatever identity that label claims (proposal
+     006 section 6). The record is split across two character-strings, which a
+     reader joins with no separator before it parses anything.
    - `_mabel.bob.example. IN TXT "mabel=<carol_id>"`, a record that names the
-     wrong identity on purpose
+     wrong identity on purpose, with no machines beside it
+   - `_mabel.many-machines.example.`, kept from
+     `docker/dns/zones/example.zone`: a `mabel=` record and five machines split
+     across two character-strings, because `mabel-endpoints=` plus four ids is
+     227 of the 255 bytes a character-string holds. No container answers at any
+     of the five, which is the point: what the label proves is the parsing rule.
    - nothing at `_mabel.nobody.example.`
 
    The SOA serial has to rise or CoreDNS keeps serving what it loaded, and the
@@ -145,26 +158,44 @@ docker/compose.dns.yaml`, run from the repository root.
     id, resolves it through the node and navigates to what the TXT record
     names:
     ```sh
-    curl -fsS http://127.0.0.1:9081/api/resolve/alice.example
-    curl -fsS http://127.0.0.1:9081/api/resolve/nobody.example
+    curl -fsS 'http://127.0.0.1:9081/api/resolve?input=alice.example'
+    curl -fsS 'http://127.0.0.1:9081/api/resolve?input=nobody.example'
     ```
     Type `alice.example` into `wallet-search-input` and click
-    `wallet-search-submit`: the wallet lands on alice's own page. Type
-    `nobody.example` and the wallet stays where it is and says what the lookup
-    answered. Resolving is navigation, never verification: the page still draws
-    alice's own advisory verdict.
-13. Browse the witness. Click `nav-witnesses` and read the witness card, which
-    names the identities whose chains chose this witness rather than counting
-    them. Click `witness-card-link-<witness_id>` for what that witness holds: the
-    page is headed `This witness`, `witness-chosen-by` is where the count went,
-    and one flat card list has three ways to narrow it, `witness-holdings-all`,
+    `wallet-search-submit`: the wallet lands on alice's own page, carrying the
+    machines her label named on the query string. Type `nobody.example` and the
+    wallet stays where it is and says what the lookup answered. Resolving is
+    navigation, never verification: the page still draws alice's own advisory
+    verdict.
+12a. Read a label whole, and resolve a link. The same route takes three kinds of
+    input, and the browser parses none of them (proposal 006 section 7):
+    ```sh
+    curl -fsS 'http://127.0.0.1:9081/api/resolve?input=many-machines.example'
+    curl -fsS 'http://127.0.0.1:9081/api/resolve?input=bob.example'
+    link="$(dc exec -T bob mabel identity share carol --endpoints "$witness_id" --json | jq -r .link)"
+    curl -fsS "http://127.0.0.1:9081/api/resolve?input=$link"
+    ```
+    Paste that link into `wallet-search-input`: the wallet lands on carol's page
+    with the link's machines on the query string, `identity-fetch-link-note`
+    says what asking them does, and nothing is fetched until the button is
+    pressed.
+13. Browse the witness. Click `nav-witnesses`. A witness is an identity, so
+    `witness-cards` draws the identity card every other screen draws, with
+    `witness-default-<witness_identity>` reading `this node uses it by default`
+    and one `machine` row per machine that answers for it inside the card's
+    record. Click `identity-card-link-<witness_identity>`: its page is the
+    identity page, and what it keeps for other people is a section of it,
+    `witness-holdings`, asked live over the sync protocol. `witness-chosen-by`
+    and `witness-node-default` are the two facts the card used to carry, and one
+    flat card list has three ways to narrow it, `witness-holdings-all`,
     `witness-holdings-ours` and `witness-holdings-trusted`. Put it back on `All`
-    and click carol's card. Her ledger is not in this home, so the page offers
+    and click carol's card. Her record is not in this home, so the page offers
     one action: click `identity-fetch-button`, and the same page then renders as
-    a stored ledger.
+    a stored record.
     ```sh
     curl -fsS http://127.0.0.1:9081/api/witnesses
-    curl -fsS 'http://127.0.0.1:9081/api/witnesses/'"$witness_id"'/ledgers?offset=0&limit=256'
+    curl -fsS 'http://127.0.0.1:9081/api/witnesses/'"$witness_identity"'/holdings?offset=0&limit=256'
+    curl -fsS 'http://127.0.0.1:9081/api/witnesses/'"$witness_id"'/holdings'
     curl -fsS http://127.0.0.1:9081/api/identities/known
     dc exec -T alice ls /data/ledgers
     ```
@@ -183,8 +214,8 @@ docker/compose.dns.yaml`, run from the repository root.
 ## Verified outcomes
 
 - Step 1: carol's push is accepted, and `GET
-  http://127.0.0.1:9080/api/ledgers/<carol_id>` answers `entry.head_seq: 1`
-  with `witnesses` naming the witness. Bob's ledger carries an unrevoked
+  http://127.0.0.1:9080/api/identities/<carol_id>` answers `identity.head_seq: 1`
+  with `identity.witnesses` naming the witness identity. Bob's ledger carries an unrevoked
   attestation for carol.
 - Step 4 appends one `ProfileUpdate` (payload tag 17) to alice's ledger.
   `GET /api/identities/<alice_id>` answers `profile.display_name == "Alice
@@ -292,7 +323,11 @@ docker/compose.dns.yaml`, run from the repository root.
   named `Update local info`, holding one `contact-save` reading `Save` that
   writes the nickname and the note together.
 - Step 10 on the wallet home: `GET /api/identities/known` answers exactly
-  `bob_id` and `carol_id`, sorted by the rendered id. Bob reads `trusted: true`,
+  `bob_id`, `carol_id` and `witness_identity`, sorted by the rendered id. The
+  witness is a row by the same rule as the others: naming it on a chain meant
+  resolving it first, and this home kept the copy it read, so it reads
+  `stored: true` and `declared_kind: "service"`. Pressing `known-trusted-only`
+  drops it, because holding a record is not a reason to trust its subject. Bob reads `trusted: true`,
   `degrees: 1`, `stored: false`, `head_seq: null` and `alias: "Bob at the print
   shop"`, the nickname step 9 set; carol reads `trusted: false`, `degrees: 2` and
   `stored: false`. `known-identity-cards` draws one card each,
@@ -307,30 +342,51 @@ docker/compose.dns.yaml`, run from the repository root.
   `lookup-degrees` inside it reads `No connection found`. It is never stated as
   "no relationship". No distance means nothing to say in a pill either, so
   `lookup-verdict-pill` and `lookup-paths` are both absent.
-- Step 12: `GET /api/resolve/alice.example` answers `status: "resolved"` with
-  `identity_id == alice_id`, and the search box lands on
-  `/identities/<alice_id>`, which carries `identity-detail-resolved-pill`
-  reading `your identity` and `identity-detail-hostname-verification` with
-  `data-verification` `verified`. `GET /api/resolve/nobody.example` answers
-  `status: "no_record"` with `identity_id: null`, and the search box stays on
-  `/wallet` with `wallet-search-status` carrying `data-status` `no_record` and
-  reading `_mabel.nobody.example.` and `names no identity`.
-- Step 13: `GET /api/witnesses` answers one witness, `endpoint_id ==
-  witness_id`, `named_by == [alice_id]` (alice's is the only ledger this home
-  holds, and its chain names that witness) and `is_node_default: true` (the
-  overlay set it). The card names who chose it rather than counting them:
-  `witness-card-named-by-<witness_id>` holds one inline identity per chain, here
-  `witness-card-chose-<witness_id>-<alice_id>` whose name reads `Alice Example`,
-  and the words `chosen by` appear nowhere on it.
-  `witness-card-default-<witness_id>` reads `this node uses it by default`, and
-  the identifiers on the card are the endpoint id and `alice_id`.
-- Step 13's drill-in is headed `This witness`, its only `h1`, and draws no back
-  link: `witness-ledgers-back` is absent, because the nav is the way back. The
-  count that used to sit on the card is `witness-chosen-by`, reading `Chosen by 1
-  of your identities. This node uses it by default.`
-- Step 13's drill-in renders what the witness holds as the identity card list:
-  three cards, `alice_id`, `bob_id` and `carol_id`, in the order `GET
-  /api/witnesses/<witness_id>/ledgers` answers, which reports `more: false`.
+- Step 12: `GET /api/resolve?input=alice.example` answers `input_kind:
+  "hostname"`, `status: "resolved"`, `identity_id == alice_id` and `endpoints`
+  holding alice's machine and the witness's, sorted. The search box lands on
+  `/identities/<alice_id>?machines=<those two>`, which carries
+  `identity-detail-resolved-pill` reading `your identity` and
+  `identity-detail-hostname-verification` with `data-verification` `verified`.
+  `GET /api/resolve?input=nobody.example` answers `status: "no_record"` with
+  `identity_id: null`, and the search box stays on `/wallet` with
+  `wallet-search-status` carrying `data-status` `no_record` and reading
+  `_mabel.nobody.example.` and `names no identity`.
+- Step 12a: `?input=many-machines.example` answers `status: "resolved"` with
+  that label's claimed id and all five machines, sorted by their rendered form,
+  which is only possible if the two character-strings were joined first.
+  `?input=bob.example` answers `status: "resolved"` with `endpoints: []`: a
+  label with no `mabel-endpoints=` record names no machine, which is an answer
+  and not a failure. `?input=<the link>` answers `input_kind: "link"`,
+  `identity_id == carol_id`, `endpoints == [witness_id]`, `status: null` and
+  `hostname: null`, because a link queries nothing. Pasting it navigates to
+  `/identities/<carol_id>?machines=<witness_id>` and writes nothing:
+  `/data/ledgers` still holds `alice_id` and `witness_identity` alone.
+- Step 13: `GET /api/witnesses` answers one witness, `identity_id ==
+  witness_identity`, `named_by == [alice_id]` (alice's is the only record this
+  home signs for, and its chain names that witness) and `is_node_default: true`
+  (the overlay set it). Its `endpoints` holds one entry, `{endpoint_id:
+  <witness_id>, binding: "hinted"}`: the only chain this home ever read for the
+  witness was served by that same machine, and an endpoint that served its own
+  evidence proves nothing (proposal 006 section 4.2).
+- Step 13's card is the identity card: `witness-cards` holds exactly
+  `identity-card-<witness_identity>`,
+  `witness-default-<witness_identity>` reads `this node uses it by default`,
+  and opening the card with `identity-card-expand-<witness_identity>` draws one
+  `machine` row, `identity-card-machine-<witness_id>-<witness_identity>`, whose
+  sentence `identity-card-machine-<witness_id>-note-<witness_identity>` reads
+  `No record we have confirms that this machine answers for it.`
+- Step 13's page is the identity page, and the section on it reads
+  `witness-chosen-by` `1 of your identities` and `witness-node-default` `yes,
+  for the identities that chose no witness of their own`.
+- Step 13's section renders what the witness holds as the identity card list:
+  four cards, `alice_id`, `bob_id`, `carol_id` and `witness_identity`, because
+  a witness serves its own record like any other, in the order `GET
+  /api/witnesses/<witness_identity>/holdings` answers, which reports `more:
+  false`. A machine id at that path is refused by name: `GET
+  /api/witnesses/<witness_id>/holdings` answers 404 with `details.reason ==
+  "endpoint_not_identity"` and the message `<witness_id> is a machine this home
+  knows, not a witness identity`.
   Carol's card reads `identity-card-declared-kind-<carol_id>` `person` and
   `identity-card-entries-<carol_id>` `2 entries`: how much of a record this
   witness holds is what the listing is about, and round 5 of proposal 005 took
@@ -345,12 +401,12 @@ docker/compose.dns.yaml`, run from the repository root.
   restores the three cards in their original order.
 - Step 13's fetch is the only thing that writes. Before it, carol's card leads
   to a page carrying `identity-fetch` and `dc exec -T alice ls /data/ledgers`
-  holds `alice_id` alone: browsing a witness stores nothing. After
+  holds no `carol_id`: browsing a witness stores nothing. After
   `identity-fetch-button`, the same page draws `ledger-panel`,
   `identity-detail-event-count` reads `2`, `identity-detail-unheld` is gone
   because the record is stored now, `GET /api/identities/<carol_id>` answers
   `head_seq: 1`, `identity-fetch` is gone, and
-  `/data/ledgers` holds `alice_id` and `carol_id`. Storing a ledger is not
+  `/data/ledgers` holds `alice_id`, `witness_identity` and `carol_id`. Storing a ledger is not
   controlling it: no key in this home signs for carol, so the fetch wrote no
   `identities/<carol_id>` link, `GET /api/identities` still lists `alice_id`
   alone, and the page carries no `identity-actions` and a
@@ -360,8 +416,10 @@ docker/compose.dns.yaml`, run from the repository root.
   lookup running during a sync reads the previous generation whole, never a
   half-written one.
 - The crawl writes no stranger's ledger: after step 10, and until step 13
-  fetches one on purpose, alice's `ledgers/` holds only `alice_id`. A crawl
-  keeps what it reads in a generation, never as a replica.
+  fetches one on purpose, alice's `ledgers/` holds `alice_id` and
+  `witness_identity` and nothing else. A crawl keeps what it reads in a
+  generation, never as a replica; the witness's record is there because naming a
+  witness resolved it.
 - Step 14 appends one `ProfileUpdate` to bob's ledger and changes nothing else
   about it: `GET /api/identities/<bob_id>` answers `profile.hostname ==
   "bob.example"`, `profile.display_name` unchanged, and `profile.seq` equal to

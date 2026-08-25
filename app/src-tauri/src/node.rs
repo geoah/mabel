@@ -1,13 +1,13 @@
 //! The wallet node, running inside the app process.
 //!
-//! This is the same code path as `mabel wallet serve`: it opens or creates a
+//! This is the same code path as `mabel serve`: it opens or creates a
 //! node home, binds the Iroh endpoint and the loopback HTTP listener through
-//! [`WalletRuntime`], and serves the JSON API plus the UI bundle that
+//! [`NodeRuntime`], and serves the JSON API plus the UI bundle that
 //! `mabel-node` compiled in from `ui/dist`. The app then points its webview at
 //! [`RunningNode::wallet_url`].
 //!
 //! The listener always takes an ephemeral port on `127.0.0.1`, so two copies of
-//! the app, or the app and a `mabel wallet serve` on the default port 9080,
+//! the app, or the app and a `mabel serve` on the default port 9080,
 //! never fight over one port. The API's loopback rules require `Host` to be
 //! `127.0.0.1:<port>` or `localhost:<port>`, which a webview loading
 //! `http://127.0.0.1:<port>/wallet` sends by itself.
@@ -19,8 +19,8 @@ use std::net::{Ipv4Addr, SocketAddr};
 use std::path::{Path, PathBuf};
 
 use mabel_node::api::UiSource;
-use mabel_node::wallet::{WalletOptions, WalletRuntime};
-use mabel_node::{HomeOptions, NodeConfig, NodeHome, NodeRole, RelayMode};
+use mabel_node::{HomeOptions, NodeConfig, NodeHome, RelayMode};
+use mabel_node::{NodeOptions as RuntimeOptions, NodeRuntime};
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 use tracing::{info, warn};
@@ -154,21 +154,21 @@ pub async fn start(options: NodeOptions) -> anyhow::Result<RunningNode> {
     let home = tokio::task::spawn_blocking(move || {
         let config = NodeConfig {
             relay,
-            ..NodeConfig::for_role(NodeRole::Wallet)
+            ..NodeConfig::default()
         };
         NodeHome::open_or_create(root, &config, HomeOptions::default())
     })
     .await??;
     let root = home.root().to_path_buf();
 
-    let runtime = WalletRuntime::start(
+    let runtime = NodeRuntime::start(
         home,
-        WalletOptions {
+        RuntimeOptions {
             http_bind: Some(SocketAddr::from((Ipv4Addr::LOCALHOST, 0))),
             iroh_port: None,
             peers: Vec::new(),
             ui,
-            ..WalletOptions::default()
+            ..RuntimeOptions::default()
         },
     )
     .await?;
@@ -241,7 +241,11 @@ mod tests {
         let host = node.address().to_string();
         let answer = get(node.address(), "/api/node", &host).await;
         assert!(answer.starts_with("HTTP/1.1 200"), "{answer}");
-        assert!(answer.contains("\"role\":\"wallet\""), "{answer}");
+        assert!(
+            !answer.contains("\"role\""),
+            "no document names a role: {answer}"
+        );
+        assert!(answer.contains("\"identity_count\""), "{answer}");
         assert!(answer.contains("storage_capacity"), "{answer}");
         assert!(
             answer.contains(node.endpoint_id()),

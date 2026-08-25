@@ -15,11 +15,13 @@
 # network.
 #
 # Both wallets also read `MABEL_WITNESSES` from the environment, empty by
-# default. A witness endpoint id only exists once the witness has started, so
-# story 007 brings the witness up first, reads /shared/witness.id and re-runs
-# `up` with MABEL_WITNESSES set. That is the node-wide witness the crawler's
-# source order needs (proposal 003 section 3 step 3): without it a wallet has
-# nowhere to read a stranger's ledger from.
+# default. One entry, `<mabel id>=<endpoint id>`: a witness is an identity and
+# the endpoint is the machine that answers for it (proposal 006 section 5.4).
+# Neither half exists until the witness has started, so story 007 brings the
+# witness up first, reads /shared/witness.identity and /shared/witness.id and
+# re-runs `up` with MABEL_WITNESSES set. That is the node-wide witness the
+# crawler's source order needs (proposal 003 section 3 step 3): without it a
+# wallet has nowhere to read a stranger's ledger from.
 
 services:
   resolver:

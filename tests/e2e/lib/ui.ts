@@ -126,40 +126,52 @@ export async function openIdentity(page: Page, base: string, identityId: string)
 
 /**
  * Opens any identity's page through the one search box on the wallet home. An
- * identity id navigates without asking the node anything; a hostname is
- * resolved through `GET /api/resolve?input=<hostname>` first.
+ * identity id navigates without asking the node anything; a handle or a
+ * `mabel://` link is resolved through `GET /api/resolve?input=<input>` first,
+ * because the browser parses no link of its own (proposal 006 section 7).
+ *
+ * A link that names machines leaves them on the query string, so the fetch on
+ * the identity page can dial them; `machines` is what a caller expects there.
  */
 export async function searchIdentity(
   page: Page,
   base: string,
   query: string,
   expectedId: string,
+  machines: string[] = [],
 ): Promise<void> {
   await page.goto(`${base}/wallet`);
   await expect(page.getByTestId("wallet-search")).toBeVisible();
   await page.getByTestId("wallet-search-input").fill(query);
   await page.getByTestId("wallet-search-submit").click();
-  await expect(page).toHaveURL(`${base}/identities/${expectedId}`);
+  const suffix = machines.length === 0 ? "" : `?machines=${machines.join(",")}`;
+  await expect(page).toHaveURL(`${base}/identities/${expectedId}${suffix}`);
 }
 
-/** Story 001 step 6: name one witness on this identity's chain. */
+/**
+ * Story 001 step 6: name one witness on this identity's chain.
+ *
+ * A witness is an identity, so the box takes its Mabel ID and the row it adds
+ * is the inline identity every other screen draws, linking to that identity's
+ * own page (proposal 006 section 1).
+ */
 export async function addWitness(
   page: Page,
-  witnessEndpointId: string,
+  witnessIdentity: string,
   expectedHeadSeq: number,
 ): Promise<void> {
   await openAction(page, "action-witnesses");
-  await page.getByTestId("witness-add-endpoint").fill(witnessEndpointId);
+  await page.getByTestId("witness-add-identity").fill(witnessIdentity);
   await page.getByTestId("witness-add-submit").click();
   await expect(page.getByTestId("witness-add-head-seq")).toHaveText(
     `Saved at position ${expectedHeadSeq}.`,
   );
-  // The chosen witness is the same card the witnesses screen draws, linking to
-  // the same page, with the endpoint id written out whole: an endpoint id is the
-  // only name a witness has, so it is never truncated.
-  const row = page.getByTestId(`witness-row-${witnessEndpointId}`);
+  const row = page.getByTestId(`witness-row-${witnessIdentity}`);
   await expect(row).toBeVisible();
-  await expect(page.getByTestId(`witness-row-link-${witnessEndpointId}`)).toBeVisible();
+  // A witness this home knows no name for is reachable by its id alone, so the
+  // id carries the link, written out whole: a Mabel ID is the only thing that
+  // tells two identities apart.
+  await expect(page.getByTestId(`witness-row-${witnessIdentity}-link`)).toBeVisible();
   await expect(row.locator("[data-value]")).toHaveAttribute("data-truncated", "false");
 }
 
@@ -233,12 +245,17 @@ export function trustCard(page: Page, subject: string): Locator {
 }
 
 /**
- * The ids of the identity cards on the screen now, in the order they are drawn.
+ * The ids of the identity cards in one list, in the order they are drawn.
  * `identity-card-link-<id>` is the one testid a card carries exactly once.
+ *
+ * The list is named, because a screen draws several: the wallet home holds the
+ * identities this home signs for under `identity-cards` and the ones it only
+ * knows of under `known-identity-cards`.
  */
-export async function cardIds(page: Page): Promise<string[]> {
-  await expect(page.getByTestId("identity-cards")).toBeVisible();
-  const testIds = await page
+export async function cardIds(page: Page, list = "identity-cards"): Promise<string[]> {
+  const cards = page.getByTestId(list);
+  await expect(cards).toBeVisible();
+  const testIds = await cards
     .locator('[data-testid^="identity-card-link-"]')
     .evaluateAll((elements) =>
       elements.map((element) => element.getAttribute("data-testid") ?? ""),

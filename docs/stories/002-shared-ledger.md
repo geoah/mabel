@@ -15,8 +15,9 @@ signed.
   `http://127.0.0.1:9081`. Founder and controller of the shared ledger.
 - bob: wallet node, compose service `bob`, API and UI on
   `http://127.0.0.1:9082`. The invitee, who signs his own acceptance.
-- witness: witness node, compose service `witness`, API and UI on
-  `http://127.0.0.1:9080`.
+- the witness: a node that keeps other people's records, compose service
+  `witness`, API and UI on `http://127.0.0.1:9080`. `witness_identity` is the
+  Mabel id a record names; `witness_id` is the machine that answers for it.
 
 `dc` stands for `docker compose -f docker/compose.yaml`, run from the
 repository root. Bob's wallet UI has membership forms in the Actions section of
@@ -27,10 +28,24 @@ those forms render.
 
 ## Story
 
-1. Run story 001 steps 1 to 7. Alice and bob each hold one person identity,
-   both name the witness and both are pushed. `alice_id`, `bob_id`,
-   `witness_id` and `/tmp/bob.descriptor` inside alice's container are the
-   values that story left behind.
+1. Run story 001 steps 1 to 7, then export the two descriptors an invitation
+   embeds. A link says where to reach an identity; a descriptor carries its
+   inception byte for byte, which is what an invitation needs (proposal 002
+   section 8), so this story exports its own:
+   ```sh
+   dc exec -T bob mabel identity export bob --out /tmp/bob.descriptor
+   docker cp mabel-bob:/tmp/bob.descriptor /tmp/bob.descriptor
+   docker cp /tmp/bob.descriptor mabel-alice:/tmp/bob.descriptor
+   dc exec -T alice mabel identity export alice --out /tmp/alice.descriptor
+   docker cp mabel-alice:/tmp/alice.descriptor /tmp/alice.descriptor
+   docker cp /tmp/alice.descriptor mabel-bob:/tmp/alice.descriptor
+   ```
+   Each export prints `exported <id> to <path> (N bytes)` and a second line
+   `declared kind person, raw root, 0 witnesses`. The count is the raw endpoints
+   the retired tag-11 list holds, and these chains hold none: a descriptor
+   carries machines to dial, and a witness set names identities, which is not
+   the same thing (proposal 006 section 1). Alice and bob each hold one person
+   identity, both name the witness identity and both are pushed.
 2. In alice's UI at `http://127.0.0.1:9081/wallet`, click
    `identity-create-summary` to unfold the create form, type `mabel-demo-co`
    into `identity-create-alias`, select `organization` in
@@ -115,9 +130,11 @@ those forms render.
       --peer "$(cat /shared/witness.ticket)" --json'
     ```
 13. Name the witness on the shared ledger's own chain, in alice's UI: click
-    `action-witnesses-summary`, paste `$witness_id` into `witness-add-endpoint`,
-    click `witness-add-submit` (`witness-add-head-seq` reads `Saved at position
-    4.`), then click `action-push-summary` and `sync-push-submit`.
+    `action-witnesses-summary`, paste `$witness_identity` into
+    `witness-add-identity`, click `witness-add-submit` (`witness-add-head-seq`
+    reads `Saved at position 4.`), then click `action-push-summary` and
+    `sync-push-submit`. The event names the witness identity; the push dials the
+    machine that answers for it.
 14. Verify who signed, from alice's home. Verification is a CLI concern
     (proposal 004): the wallet UI has no verify screen, so this is the whole of
     the step, run once for the text form and once with `--json`:
@@ -231,6 +248,12 @@ story text above.
   shared `expectHeadSeq` helper: round 5 of proposal 005 removed
   `identity-detail-head-seq`, and `identity-detail-event-count` is what the
   screen says instead.
+- Bob controls the shared ledger, so every CLI append to it asks the witness
+  where it ends before it signs (proposal 001 section 5). `node.json` records
+  which identity witnesses and which machines answer for it, never how to route
+  to one, so those commands carry `--peer "$(cat /shared/witness.ticket)"`; the
+  UI needs none, because the node process was seeded with that ticket at
+  startup. The spec adds it to the replayed admission for that reason.
 - Step 14 lost its UI half with the verify tab (proposal 004). What the report
   screen asserted, the statement, the signing principal and the two standing
   sentences, is now asserted on the CLI text form line by line and on the

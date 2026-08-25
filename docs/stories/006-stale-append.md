@@ -30,10 +30,15 @@ machines; two admitted controllers acting from their own homes is ticket 031.
 
 1. Run story 002 steps 1 to 8. The shared ledger `org_id` is at seq 2 with two
    controllers, alice and bob, and alice's home holds only alice's key.
-2. Name the witness on the shared ledger and push it, so the ledger has
-   somewhere to be asked about:
+   `witness_identity` and `witness_id` are the two ids story 001 step 1 read.
+2. Name the witness identity on the shared ledger and push it, so the ledger
+   has somewhere to be asked about. Bob controls this ledger too, so the append
+   asks the witness where it ends before it signs, and a CLI process needs the
+   ticket to reach one: `node.json` records which machines answer for a witness,
+   never how to route to one (proposal 006 section 5.4).
    ```sh
-   dc exec -T alice mabel witness add --identity mabel-demo-co --endpoint "$witness_id"
+   dc exec -T alice sh -c 'mabel witness add --identity mabel-demo-co \
+     --witness '"$witness_identity"' --peer "$(cat /shared/witness.ticket)"'
    dc exec -T alice sh -c 'mabel sync push --identity mabel-demo-co \
      --peer "$(cat /shared/witness.ticket)"'
    ```
@@ -46,10 +51,10 @@ machines; two admitted controllers acting from their own homes is ticket 031.
      -c 'cp -a /data/. /copy/ && rm -f /copy/node.json /copy/node.key'
    docker run -d --name mabel-alice-two --network mabel_mabel \
      --volume mabel-alice-second:/data --volume mabel_witness-ticket:/shared:ro \
-     --env MABEL_ROLE=wallet --env MABEL_RELAY=disabled \
+     --env MABEL_RELAY=disabled \
      --env MABEL_HTTP_BIND=0.0.0.0:9084 --env MABEL_IROH_PORT=9074 \
      --publish 9084:9084 \
-     mabel:dev wallet serve --http 0.0.0.0:9084 --iroh-port 9074
+     mabel:dev serve --http 0.0.0.0:9084 --iroh-port 9074
    until curl -fsS http://127.0.0.1:9084/api/node >/dev/null; do sleep 1; done
    ```
    `docker run -d` returns before the entrypoint has written `node.json`, so
@@ -125,13 +130,14 @@ machines; two admitted controllers acting from their own homes is ticket 031.
   someone as a controller`, `chose who keeps a copy` and `said it trusts
   someone`, which is the whole of a closed line beside its position. Opening
   each one shows the same five as raw kinds, `inception`,
-  `membership_invitation`, `membership_acceptance`, `witness_config` and
-  `trust_attestation`. In the open entry at position 4 the identifier inside
+  `membership_invitation`, `membership_acceptance`, `witness_set` and
+  `trust_attestation`. The kind is `witness_set`, tag 19, because a witness set
+  names identities; tag 11 `witness_config` is readable forever and never
+  written again (proposal 006 section 1). In the open entry at position 4 the identifier inside
   `event-id-4` carries the second machine's event id and `event-payload-4` reads
   `{"subject":"<alice_id>"}`.
-- No fork was created: `GET http://127.0.0.1:9080/api/forks` answers `entries:
-  []` and `GET http://127.0.0.1:9080/api/ledgers/<org_id>` answers
-  `entry.fork_count: 0`. The losing event was discarded before it was ever
+- No fork was created: `GET http://127.0.0.1:9080/api/forks?ledger_id=<org_id>`
+  answers `entries: []`. The losing event was discarded before it was ever
   pushed, which is the difference between this story and story 004.
 - Step 7's ledger has no footer at all: five entries at eight a page is one
   page, and round 5 of proposal 005 draws the pagination bar only over more than
@@ -150,8 +156,9 @@ machines; two admitted controllers acting from their own homes is ticket 031.
   seq 5`, then `signed by principal <alice_id> (<alice active key>)`. The
   second machine reads the witness's seq-5 copy: `--from` pins the source, so
   the report is about the witness's chain, not this container's own.
-- The witness agrees: `GET http://127.0.0.1:9080/api/ledgers/<org_id>` answers
-  `entry.head_seq: 5` and `entry.event_count: 6`.
+- The witness agrees: `GET http://127.0.0.1:9080/api/identities/<org_id>`
+  answers `identity.head_seq: 5` and `identity.event_count: 6`. A witness
+  serves the identity routes every node serves; `/api/ledgers` is gone.
 
 ## Deviations
 

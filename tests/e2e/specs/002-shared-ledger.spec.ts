@@ -27,6 +27,7 @@ let alicePage: Page;
 let bobPage: Page;
 
 let witnessId = "";
+let witnessIdentity = "";
 let aliceId = "";
 let bobId = "";
 let aliceKey = "";
@@ -42,6 +43,7 @@ test.beforeAll(async ({ browser }) => {
 test("steps 1 to 8: the shared ledger, invited, admitted, read back", async () => {
   const state = await story002Steps1to8(alicePage, bobPage);
   witnessId = state.witnessId;
+  witnessIdentity = state.witnessIdentity;
   aliceId = state.aliceId;
   bobId = state.bobId;
   orgId = state.orgId;
@@ -182,17 +184,15 @@ test("step 10: a controller role on a raw root warns before it signs", async () 
 });
 
 test("replaying step 7 exits 50: the acceptance was already admitted", async () => {
+  // Bob controls this ledger too, so the append asks the witness where it ends
+  // before it signs. `node.json` records which machine answers for the witness
+  // and never how to route to one, so a CLI process needs the ticket
+  // (proposal 006 section 5.4).
   const replay = expectExit(
-    mabel("alice", [
-      "membership",
-      "admit",
-      "--ledger",
-      "mabel-demo-co",
-      "--by",
+    dcSh(
       "alice",
-      "/tmp/acceptance.file",
-      "--json",
-    ]),
+      'mabel membership admit --ledger mabel-demo-co --by alice /tmp/acceptance.file --peer "$(cat /shared/witness.ticket)" --json',
+    ),
     50,
   );
   const document = json(replay);
@@ -233,7 +233,9 @@ test("step 12: a witness the chain does not name refuses the push", async () => 
 
 test("step 13: the shared ledger names the witness and is accepted", async () => {
   await openIdentity(alicePage, ALICE_URL, orgId);
-  await addWitness(alicePage, witnessId, 4);
+  // The set names the witness identity; the push dials the machine that
+  // answers for it (proposal 006 sections 1 and 5).
+  await addWitness(alicePage, witnessIdentity, 4);
   await push(alicePage, witnessId, { stored: 5 });
 });
 

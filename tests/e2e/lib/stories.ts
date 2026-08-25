@@ -7,7 +7,6 @@ import {
   BOB_URL,
   carry,
   COMPOSE_FILE,
-  dcExec,
   dcSh,
   docker,
   json,
@@ -15,15 +14,25 @@ import {
   mustRun,
   readFileBase64,
   resetTopology,
+  resetTopologyWithTwoWitnesses,
   stdoutLines,
-  until,
   waitForNode,
-  witnessId as readWitnessId,
+  witnessOf,
   WITNESS_TWO_URL,
+  WITNESS_URL,
   writeFileBase64,
   type RunResult,
+  type Witness,
 } from "./docker";
-import { addWitness, createIdentity, identifier, idSpan, openIdentity, push } from "./ui";
+import {
+  addWitness,
+  createIdentity,
+  identifier,
+  idSpan,
+  openIdentity,
+  push,
+  searchIdentity,
+} from "./ui";
 
 export const BASE32_ID = /^[a-z2-7]{52}$/;
 
@@ -56,15 +65,20 @@ export function expectExit(result: RunResult, status: number): RunResult {
 }
 
 export interface MeetState {
+  /** The witness identity a ledger names, and the machine that answers for it. */
+  witness: Witness;
+  /** The machine that answers for the witness, which is what a push dials. */
   witnessId: string;
+  /** The witness's Mabel id, which is what a `WitnessSet` records. */
+  witnessIdentity: string;
   aliceId: string;
   bobId: string;
 }
 
 /** The default topology of story 001 step 1: `dc down -v && dc up -d --wait`. */
-function resetAndReadWitness(): string {
+function resetAndReadWitness(): Witness {
   resetTopology();
-  return readWitnessId();
+  return witnessOf();
 }
 
 /**
@@ -76,17 +90,37 @@ export async function story001Steps1to7(
   alicePage: Page,
   bobPage: Page,
   /**
-   * Brings the topology up from nothing and answers with the witness's
-   * endpoint id. Story 007 passes its own, because it needs the test resolver
-   * overlay and the node-wide witness the wallets start with.
+   * Brings the topology up from nothing and answers with the witness's two ids.
+   * Story 007 passes its own, because it needs the test resolver overlay and
+   * the node-wide witness the wallets start with.
    */
-  reset: () => string = resetAndReadWitness,
+  reset: () => Witness = resetAndReadWitness,
 ): Promise<MeetState> {
-  const state: MeetState = { witnessId: "", aliceId: "", bobId: "" };
+  const state: MeetState = {
+    witness: { identity: "", endpointId: "" },
+    witnessId: "",
+    witnessIdentity: "",
+    aliceId: "",
+    bobId: "",
+  };
 
   await test.step("001 step 1: the topology from nothing", async () => {
-    state.witnessId = reset();
+    state.witness = reset();
+    state.witnessId = state.witness.endpointId;
+    state.witnessIdentity = state.witness.identity;
     expect(state.witnessId).toMatch(BASE32_ID);
+    // A witness is an identity, minted by the container on its first start and
+    // published beside the ticket (proposal 006 section 1).
+    expect(state.witnessIdentity).toMatch(BASE32_ID);
+    expect(state.witnessIdentity).not.toBe(state.witnessId);
+
+    // The witness home witnesses for that identity and advertises this machine
+    // on its record, which is what admits a push naming it (section 4).
+    const witness = await apiGet(WITNESS_URL, "/api/node");
+    expect(witness.body.witness_for).toEqual([
+      { identity: state.witnessIdentity, advertised: true, reason: null },
+    ]);
+    expect(witness.body.endpoint_id).toBe(state.witnessId);
   });
 
   await test.step("001 steps 2 to 4: an identity in each wallet UI", async () => {
@@ -95,22 +129,22 @@ export async function story001Steps1to7(
       [bobPage, BOB_URL],
     ] as const) {
       await page.goto(`${url}/wallet`);
-      // The nav is three entries and no fourth, which is what says this node
-      // serves a wallet; the role itself is a fact of the node document.
+      // Three entries on every node and no fourth: one home, whatever else the
+      // node does (proposal 006 section 8). There is no witness tab.
       await expect(page.getByTestId("nav-wallet")).toBeVisible();
       await expect(page.getByTestId("nav-witnesses")).toBeVisible();
       await expect(page.getByTestId("nav-node")).toBeVisible();
+      await expect(page.getByTestId("nav-witness")).toHaveCount(0);
       await expect(page.locator('header [data-testid^="nav-"]')).toHaveCount(3);
       // Round 6 of proposal 005 made this page three flat sections under three
       // headings: the box that opens an identity, the identities this wallet
       // signs for, and the ones it knows of and does not control. The box takes
-      // a handle as well as a Mabel ID, and its label says so.
+      // a handle and a link as well as a Mabel ID, and its label says so.
       await expect(page.getByTestId("wallet-search")).toBeVisible();
-      await expect(page.getByTestId("wallet-search")).toContainText("Mabel ID or handle");
-      // The box says what to type into it, in the two forms it takes.
+      await expect(page.getByTestId("wallet-search")).toContainText("Mabel ID, handle or link");
       await expect(page.getByTestId("wallet-search-input")).toHaveAttribute(
         "placeholder",
-        "alice.example or paste a Mabel ID",
+        "alice.example, or paste a Mabel ID or a link",
       );
       await expect(page.getByTestId("identity-list-empty")).toHaveText(
         "You have no identities yet. Create one below.",
@@ -122,8 +156,12 @@ export async function story001Steps1to7(
       await expect(page.getByTestId("known-identities-empty")).toHaveText(
         "Your wallet knows of no other identity yet.",
       );
+      // No document names a role: what a node can do is read from what it
+      // holds, which here is no key and nobody's records.
       const node = await apiGet(url, "/api/node");
-      expect(node.body.role).toBe("wallet");
+      expect(node.body).not.toHaveProperty("role");
+      expect(node.body.identity_count).toBe(0);
+      expect(node.body.witness_for).toEqual([]);
     }
 
     const alice = await createIdentity(alicePage, { alias: "alice", kind: "person" });
@@ -137,21 +175,38 @@ export async function story001Steps1to7(
     state.bobId = bob.identityId;
   });
 
-  await test.step("001 step 5: descriptors exchanged out of band", async () => {
-    exportDescriptor("bob", "bob", state.bobId, "/tmp/bob.descriptor");
-    carry("mabel-bob", "/tmp/bob.descriptor", "mabel-alice", "/tmp/bob.descriptor");
-    exportDescriptor("alice", "alice", state.aliceId, "/tmp/alice.descriptor");
-    carry("mabel-alice", "/tmp/alice.descriptor", "mabel-bob", "/tmp/alice.descriptor");
+  await test.step("001 step 5: links exchanged out of band", async () => {
+    // `identity share` builds the link this identity hands over: its Mabel ID
+    // and the machines that answer for it. Neither has advertised one yet, so
+    // `auto` names the machine this home runs on (proposal 006 section 7).
+    const aliceNode = expectExit(mabel("alice", ["node", "id"]), 0).stdout.trim();
+    const bobNode = expectExit(mabel("bob", ["node", "id"]), 0).stdout.trim();
+    const aliceLink = shareLink("alice", "alice", state.aliceId, aliceNode);
+    const bobLink = shareLink("bob", "bob", state.bobId, bobNode);
+
+    // The wallet parses no link of its own: the box hands it to the node, which
+    // owns the grammar, and navigates to the identity the node named.
+    await searchIdentity(alicePage, ALICE_URL, bobLink, state.bobId, [bobNode]);
+    // Alice holds no copy of bob's record, so the page offers to fetch it and
+    // says first what using the link does.
+    await expect(alicePage.getByTestId("identity-fetch")).toBeVisible();
+    await expect(alicePage.getByTestId("identity-fetch-link-note")).toHaveText(
+      "This link names the machines to ask for this record. Asking them tells those machines this home's network address and which identity it is looking for.",
+    );
+    await searchIdentity(bobPage, BOB_URL, aliceLink, state.aliceId, [aliceNode]);
+    await expect(bobPage.getByTestId("identity-fetch")).toBeVisible();
   });
 
   await test.step("001 step 6: both name the witness", async () => {
     await openIdentity(alicePage, ALICE_URL, state.aliceId);
-    await addWitness(alicePage, state.witnessId, 1);
+    await addWitness(alicePage, state.witnessIdentity, 1);
     await openIdentity(bobPage, BOB_URL, state.bobId);
-    await addWitness(bobPage, state.witnessId, 1);
+    await addWitness(bobPage, state.witnessIdentity, 1);
 
+    // The set on the chain names the witness identity, not the machine: a
+    // witness that moves machines keeps this event standing (section 1).
     const identity = await apiGet(ALICE_URL, `/api/identities/${state.aliceId}`);
-    expect(identity.body.identity.witnesses).toEqual([state.witnessId]);
+    expect(identity.body.identity.witnesses).toEqual([state.witnessIdentity]);
     expect(identity.body.identity.head_seq).toBe(1);
     expect(identity.body.identity.event_count).toBe(2);
   });
@@ -162,6 +217,26 @@ export async function story001Steps1to7(
   });
 
   return state;
+}
+
+/**
+ * `mabel identity share`, with the two facts story 001 step 5 reads: the link
+ * names this identity and the machine this home runs on.
+ */
+function shareLink(
+  service: string,
+  alias: string,
+  identityId: string,
+  endpointId: string,
+): string {
+  const document = json(
+    expectExit(mabel(service, ["identity", "share", alias, "--json"]), 0),
+  );
+  expect(document.identity_id).toBe(identityId);
+  expect(document.endpoints).toEqual([endpointId]);
+  expect(document.endpoints_from).toBe("node");
+  expect(document.link).toBe(`mabel://${identityId}?endpoints=${endpointId}`);
+  return document.link;
 }
 
 /**
@@ -182,32 +257,36 @@ export async function expectHeadSeq(
 }
 
 /**
- * The `/node` page, which round 4 of proposal 005 added and round 5 cut to six
- * short rows: what this node is, the Iroh ID other nodes dial it by, how it is
- * reachable, what it holds, the space it uses and which build is running. Where
- * the API listens left the page with them. Everything here is `GET /api/node`,
- * so the document is what each row is read against.
+ * The `/node` page: what this node is dialled by, how it is reachable, what it
+ * signs for, whose records it keeps, what it holds and which build is running.
+ * Every row is `GET /api/node`, so the document is what each is read against.
  *
- * Stories 001 and 005 both read it, one per role: a wallet counts the
- * identities it holds, a witness counts the records it keeps for others.
+ * There is no role row and no role field. What a node can do is read from what
+ * it holds (proposal 006 section 8), so a caller says what it expects the node
+ * to hold and the page is checked against that.
  */
 export async function readNodePage(
   page: Page,
   base: string,
-  expected: { role: "wallet" | "witness"; endpointId: string },
+  expected: {
+    endpointId: string;
+    /** The witness identities `node.json.witness_for` names, in order. */
+    witnessFor?: string[];
+  },
 ): Promise<void> {
+  const witnessFor = expected.witnessFor ?? [];
   await page.getByTestId("nav-node").click();
   await expect(page).toHaveURL(`${base}/node`);
   await expect(page.getByTestId("node-page")).toBeVisible();
 
   const node = await apiGet(base, "/api/node");
-  expect(node.body.role).toBe(expected.role);
+  expect(node.body).not.toHaveProperty("role");
   expect(node.body.endpoint_id).toBe(expected.endpointId);
   expect(node.body.relay).toBe("disabled");
+  expect(node.body.witness_for.map((entry: any) => entry.identity)).toEqual(witnessFor);
 
-  // The role is the one word the document carries, under the label `role`.
-  await expect(page.getByTestId("node-role")).toHaveText(expected.role);
-  await expect(page.getByTestId("node-role-row").locator("dt")).toHaveText("role");
+  // No screen names a role, so nothing on this page says one.
+  await expect(page.getByTestId("node-role")).toHaveCount(0);
   // Where the API listens is not a fact about the node's place in the network,
   // so round 5 dropped the row; the document still carries it.
   await expect(page.getByTestId("node-http-bind")).toHaveCount(0);
@@ -225,44 +304,87 @@ export async function readNodePage(
     /^[\d.]+ (bytes|kB|MB|GB) of 2\.1 GB$/,
   );
 
-  // A count is a bare number: the row's own label is the noun.
-  if (expected.role === "wallet") {
-    await expect(page.getByTestId("node-identity-count")).toHaveText(
-      String(node.body.identity_count),
-    );
-    await expect(page.getByTestId("node-identity-count-row").locator("dt")).toHaveText(
-      "identities",
-    );
-    await expect(page.getByTestId("node-ledger-count")).toHaveCount(0);
-    await expect(page.getByTestId("node-fork-count")).toHaveCount(0);
+  // Every node draws the same four counts: a count is a bare number, and the
+  // row's own label is the noun.
+  await expect(page.getByTestId("node-identity-count")).toHaveText(
+    String(node.body.identity_count),
+  );
+  await expect(page.getByTestId("node-identity-count-row").locator("dt")).toHaveText("identities");
+  await expect(page.getByTestId("node-ledger-count")).toHaveText(String(node.body.ledger_count));
+  await expect(page.getByTestId("node-ledger-count-row").locator("dt")).toHaveText("records");
+  await expect(page.getByTestId("node-fork-count")).toHaveText(String(node.body.fork_count));
+  await expect(page.getByTestId("node-fork-count-row").locator("dt")).toHaveText("conflicts");
+
+  // Who this node accepts records for, which is what makes it a witness. A
+  // node that keeps nobody's records says so in one word.
+  await expect(page.getByTestId("node-witness-for-row").locator("dt")).toHaveText(
+    "keeps records for",
+  );
+  if (witnessFor.length === 0) {
+    await expect(page.getByTestId("node-witness-for")).toHaveText("none");
   } else {
-    await expect(page.getByTestId("node-ledger-count")).toHaveText(String(node.body.ledger_count));
-    await expect(page.getByTestId("node-ledger-count-row").locator("dt")).toHaveText("records");
-    await expect(page.getByTestId("node-fork-count")).toHaveText(String(node.body.fork_count));
-    await expect(page.getByTestId("node-fork-count-row").locator("dt")).toHaveText("conflicts");
-    await expect(page.getByTestId("node-identity-count")).toHaveCount(0);
+    for (const identity of witnessFor) {
+      await expect(page.getByTestId(`node-witness-for-${identity}`)).toBeVisible();
+      await expect(page.getByTestId(`node-witness-for-${identity}-link`)).toHaveAttribute(
+        "href",
+        `/identities/${identity}`,
+      );
+    }
   }
 
-  // The witnesses this node uses by default are a card list of their own, and a
-  // node that uses none says so rather than drawing an empty list.
-  const witnesses: string[] = node.body.witnesses;
+  // A home holding no key of its own is not broken and not a different
+  // program: it signs for nothing and keeps records for other people.
+  if (node.body.identity_count === 0) {
+    const records = `${node.body.ledger_count} ${node.body.ledger_count === 1 ? "record" : "records"}`;
+    const keeps =
+      witnessFor.length === 0
+        ? `It keeps ${records}.`
+        : `It keeps ${records} and accepts new entries for ${
+            witnessFor.length === 1 ? "one identity" : `${witnessFor.length} identities`
+          }.`;
+    await expect(page.getByTestId("node-no-keys")).toHaveText(
+      `This home holds no keys, so it signs for nothing and adds nothing to any record. ${keeps}`,
+    );
+  } else {
+    await expect(page.getByTestId("node-no-keys")).toHaveCount(0);
+  }
+
+  // The witnesses this node uses by default are a card list of their own, one
+  // identity card each, and a node that uses none says so.
+  const defaults: string[] = (await apiGet(base, "/api/witnesses")).body.witnesses
+    .filter((witness: any) => witness.is_node_default)
+    .map((witness: any) => witness.identity_id);
   await expect(page.getByTestId("node-witnesses")).toBeVisible();
   await expect(page.getByTestId("node-witnesses")).toContainText("Witnesses it uses by default");
-  if (witnesses.length === 0) {
+  if (defaults.length === 0) {
     await expect(page.getByTestId("node-witnesses-empty")).toHaveText("none");
     await expect(page.getByTestId("node-witness-cards")).toHaveCount(0);
   } else {
     await expect(page.getByTestId("node-witnesses-empty")).toHaveCount(0);
-    for (const endpointId of witnesses) {
-      await expect(page.getByTestId(`node-witness-link-${endpointId}`)).toBeVisible();
+    for (const identity of defaults) {
+      await expect(page.getByTestId(`identity-card-link-${identity}`)).toHaveAttribute(
+        "href",
+        `/identities/${identity}`,
+      );
       await expect(
-        page.getByTestId(`node-witness-${endpointId}`).locator("[data-value]"),
+        page.getByTestId(`identity-card-${identity}`).locator("[data-value]").first(),
       ).toHaveAttribute("data-truncated", "false");
     }
   }
 }
 
-/** `mabel identity export`, with the two lines story 001 step 5 quotes. */
+/**
+ * `mabel identity export`, with the two lines story 002 step 1 quotes.
+ *
+ * A link says where to reach an identity; a descriptor carries its inception
+ * byte for byte, which is what an invitation embeds (proposal 002 section 8).
+ * Story 002 is the story that needs the second one.
+ *
+ * The witness count is the raw endpoints the retired tag-11 list holds, and
+ * these chains hold none: a descriptor carries endpoints to dial, and a tag-19
+ * witness set names identities, which is not the same thing (proposal 006
+ * section 1).
+ */
 function exportDescriptor(
   service: string,
   alias: string,
@@ -289,6 +411,13 @@ export async function story002Steps1to8(
 ): Promise<SharedLedgerState> {
   const meet = await story001Steps1to7(alicePage, bobPage);
   const state: SharedLedgerState = { ...meet, orgId: "" };
+
+  await test.step("002 step 1: the descriptors an invitation embeds", async () => {
+    exportDescriptor("bob", "bob", state.bobId, "/tmp/bob.descriptor");
+    carry("mabel-bob", "/tmp/bob.descriptor", "mabel-alice", "/tmp/bob.descriptor");
+    exportDescriptor("alice", "alice", state.aliceId, "/tmp/alice.descriptor");
+    carry("mabel-alice", "/tmp/alice.descriptor", "mabel-bob", "/tmp/alice.descriptor");
+  });
 
   await test.step("002 step 2: alice founds the shared ledger", async () => {
     await alicePage.goto(`${ALICE_URL}/wallet`);
@@ -430,8 +559,15 @@ export async function story002Steps1to8(
 }
 
 export interface ForkState {
+  /** Witness one: the identity alice's chain names, and its machine. */
+  witness: Witness;
   witnessId: string;
+  witnessIdentity: string;
+  witnessTicket: string;
+  /** Witness two: a second witness identity, on a second machine. */
+  witnessTwo: Witness;
   witnessTwoId: string;
+  witnessTwoIdentity: string;
   witnessTwoTicket: string;
   aliceId: string;
   carolId: string;
@@ -441,14 +577,19 @@ export interface ForkState {
 }
 
 /**
- * Story 004 steps 1 to 7: two witnesses, alice's home on two machines, one
- * branch to each witness and the second branch offered to witness one. Story
- * 005 opens with it and tears down what it leaves running.
+ * Story 004 steps 1 to 7: two witness identities, alice's home on two machines,
+ * one branch to each witness and the second branch offered to witness one.
+ * Story 005 opens with it and tears down what it leaves running.
  */
 export async function story004Steps1to7(): Promise<ForkState> {
   const state: ForkState = {
+    witness: { identity: "", endpointId: "" },
     witnessId: "",
+    witnessIdentity: "",
+    witnessTicket: "",
+    witnessTwo: { identity: "", endpointId: "" },
     witnessTwoId: "",
+    witnessTwoIdentity: "",
     witnessTwoTicket: "",
     aliceId: "",
     carolId: "",
@@ -457,37 +598,58 @@ export async function story004Steps1to7(): Promise<ForkState> {
     conflictingEvent: "",
   };
 
-  await test.step("004 step 1: the topology from nothing", async () => {
-    resetTopology();
-    state.witnessId = readWitnessId();
-    expect(state.witnessId).toMatch(BASE32_ID);
-  });
-
-  await test.step("004 step 2: a second witness on the same bridge", async () => {
-    startWitnessTwo();
-    await until(
-      "/shared/witness-two.ticket",
-      () => dcExec("alice", ["test", "-f", "/shared/witness-two.ticket"]).status === 0,
-    );
-    await waitForNode(WITNESS_TWO_URL);
-    state.witnessTwoId = expectExit(dcExec("alice", ["cat", "/shared/witness-two.id"]), 0).stdout.trim();
+  await test.step("004 steps 1 and 2: two witnesses from nothing", async () => {
+    // The second witness is a compose service, not a hand-wired `docker run`:
+    // one overlay starts it, waits for it and wires both wallets to both
+    // witnesses (ticket 032).
+    resetTopologyWithTwoWitnesses();
+    state.witness = witnessOf("witness");
+    state.witnessId = state.witness.endpointId;
+    state.witnessIdentity = state.witness.identity;
+    state.witnessTwo = witnessOf("witness-two");
+    state.witnessTwoId = state.witnessTwo.endpointId;
+    state.witnessTwoIdentity = state.witnessTwo.identity;
+    state.witnessTicket = expectExit(dcSh("alice", "cat /shared/witness.ticket"), 0).stdout.trim();
     state.witnessTwoTicket = expectExit(
-      dcExec("alice", ["cat", "/shared/witness-two.ticket"]),
+      dcSh("alice", "cat /shared/witness-two.ticket"),
       0,
     ).stdout.trim();
-    expect(state.witnessTwoId).toMatch(BASE32_ID);
+    for (const id of [
+      state.witnessId,
+      state.witnessIdentity,
+      state.witnessTwoId,
+      state.witnessTwoIdentity,
+    ]) {
+      expect(id).toMatch(BASE32_ID);
+    }
+    // Two witnesses are two identities, not two machines answering for one:
+    // each home minted its own and witnesses for that one alone.
+    expect(state.witnessTwoIdentity).not.toBe(state.witnessIdentity);
+    await waitForNode(WITNESS_TWO_URL);
+    const second = await apiGet(WITNESS_TWO_URL, "/api/node");
+    expect(second.body.witness_for).toEqual([
+      { identity: state.witnessTwoIdentity, advertised: true, reason: null },
+    ]);
   });
 
   await test.step("004 step 3: one identity, two subjects, both witnesses", async () => {
     state.aliceId = createIdentityCli("alice", "alice");
     state.carolId = createIdentityCli("alice", "carol");
     state.daveId = createIdentityCli("alice", "dave");
-    for (const endpoint of [state.witnessId, state.witnessTwoId]) {
+    // The set on the chain names both witness identities. Alice's home reaches
+    // each of them through the machine its entrypoint recorded in node.json.
+    for (const witness of [state.witnessIdentity, state.witnessTwoIdentity]) {
       expectExit(
-        mabel("alice", ["witness", "add", "--identity", "alice", "--endpoint", endpoint]),
+        mabel("alice", ["witness", "add", "--identity", "alice", "--witness", witness]),
         0,
       );
     }
+    const witnesses = json(
+      expectExit(mabel("alice", ["identity", "show", "alice", "--json"]), 0),
+    ).witnesses;
+    expect([...witnesses].sort(compareIds)).toEqual(
+      [state.witnessIdentity, state.witnessTwoIdentity].sort(compareIds),
+    );
     expectExit(
       dcSh(
         "alice",
@@ -601,41 +763,6 @@ export function createIdentityCli(
   return json(result).identity_id;
 }
 
-/** Story 004 step 2's `docker run` for witness two. */
-export function startWitnessTwo(): void {
-  mustRun("docker", [
-    "run",
-    "-d",
-    "--name",
-    "mabel-witness-two",
-    "--network",
-    "mabel_mabel",
-    "--volume",
-    "mabel_witness-ticket:/shared",
-    "--env",
-    "MABEL_ROLE=witness",
-    "--env",
-    "MABEL_RELAY=disabled",
-    "--env",
-    "MABEL_HTTP_BIND=0.0.0.0:9083",
-    "--env",
-    "MABEL_IROH_PORT=9073",
-    "--env",
-    "MABEL_PUBLISH_TICKET=/shared/witness-two",
-    "--publish",
-    "9083:9083",
-    "--publish",
-    "9073:9073/udp",
-    "mabel:dev",
-    "witness",
-    "run",
-    "--http",
-    "0.0.0.0:9083",
-    "--iroh-port",
-    "9073",
-  ]);
-}
-
 /**
  * Story 004 step 4 and story 006 step 3: alice's home copied to a second
  * machine without node.json and node.key, served on 9084. `docker run -d`
@@ -670,8 +797,6 @@ export async function startAliceTwo(): Promise<void> {
     "--volume",
     "mabel_witness-ticket:/shared:ro",
     "--env",
-    "MABEL_ROLE=wallet",
-    "--env",
     "MABEL_RELAY=disabled",
     "--env",
     "MABEL_HTTP_BIND=0.0.0.0:9084",
@@ -680,7 +805,8 @@ export async function startAliceTwo(): Promise<void> {
     "--publish",
     "9084:9084",
     "mabel:dev",
-    "wallet",
+    // One command serves every home (proposal 006 section 8). The two hidden
+    // aliases exist so an old command line still runs; nothing here uses one.
     "serve",
     "--http",
     "0.0.0.0:9084",

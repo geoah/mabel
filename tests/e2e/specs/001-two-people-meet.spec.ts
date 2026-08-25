@@ -45,6 +45,7 @@ let alicePage: Page;
 let bobPage: Page;
 
 let witnessId = "";
+let witnessIdentity = "";
 let aliceId = "";
 let bobId = "";
 let aliceKey = "";
@@ -60,6 +61,7 @@ test.beforeAll(async ({ browser }) => {
 test("steps 1 to 7: two identities, one witness, both pushed", async () => {
   const state = await story001Steps1to7(alicePage, bobPage);
   witnessId = state.witnessId;
+  witnessIdentity = state.witnessIdentity;
   aliceId = state.aliceId;
   bobId = state.bobId;
   const identity = await apiGet(ALICE_URL, `/api/identities/${aliceId}`);
@@ -125,17 +127,30 @@ test("step 10: both push again and the witness holds two ledgers", async () => {
   await push(alicePage, witnessId, { stored: 1 });
   await push(bobPage, witnessId, { stored: 1 });
 
-  const ledgers = await apiGet(WITNESS_URL, "/api/ledgers?offset=0&limit=256");
-  expect(ledgers.body.entries).toHaveLength(2);
-  expect(ledgers.body.entries.map((entry: any) => entry.ledger_id).sort()).toEqual(
+  // A witness's holdings are the records it stores and cannot sign for, which
+  // is the route every node answers: `/api/ledgers` is gone and the witness
+  // needs no route of its own (proposal 006 section 8).
+  const known = await apiGet(WITNESS_URL, "/api/identities/known?offset=0&limit=256");
+  expect(known.body.more).toBe(false);
+  // `known` sorts by the rendered id, which orders the digits before the
+  // letters, where `GET /api/identities` sorts by the bytes they encode.
+  expect(known.body.identities.map((row: any) => row.identity_id)).toEqual(
     [aliceId, bobId].sort(),
   );
-  for (const entry of ledgers.body.entries) {
-    expect(entry.declared_kind).toBe("person");
-    expect(entry.head_seq).toBe(2);
-    expect(entry.event_count).toBe(3);
-    expect(entry.fork_count).toBe(0);
+  for (const row of known.body.identities) {
+    expect(row.declared_kind).toBe("person");
+    expect(row.head_seq).toBe(2);
+    expect(row.stored).toBe(true);
   }
+  // How many entries each record holds is a fact of the record, on the identity
+  // route; a conflict is a fact of the store, on /api/forks.
+  for (const id of [aliceId, bobId]) {
+    const identity = await apiGet(WITNESS_URL, `/api/identities/${id}`);
+    expect(identity.body.identity.event_count).toBe(3);
+    expect(identity.body.identity.witnesses).toEqual([witnessIdentity]);
+  }
+  const forks = await apiGet(WITNESS_URL, "/api/forks");
+  expect(forks.body.entries).toEqual([]);
 });
 
 test("steps 11 and 12: a stranger verifies from an empty home", async () => {
@@ -254,9 +269,10 @@ test("steps 13 and 14: the subject nobody can read", async () => {
   expect(lines[5]).toBe(VERIFIED_MEANS);
 
   // The witness holds no copy of the subject, which is what step 14 reported.
-  const carolLedger = await apiGet(WITNESS_URL, `/api/ledgers/${carolId}`);
+  // One node, one spelling: a record no home holds is `unknown_ledger`.
+  const carolLedger = await apiGet(WITNESS_URL, `/api/identities/${carolId}`);
   expect(carolLedger.status).toBe(404);
-  expect(carolLedger.body.details.reason).toBe("ledger_not_held");
+  expect(carolLedger.body.details.reason).toBe("unknown_ledger");
 });
 
 test("the wallet home draws one card per identity, and the card is the page", async () => {
@@ -315,11 +331,12 @@ test("the wallet home draws one card per identity, and the card is the page", as
   // "who can act for it" row at all when the answer is the identity itself.
   await expect(alicePage.getByTestId(`identity-card-principals-${aliceId}`)).toHaveCount(0);
 
-  // Alice and carol are both identities this wallet signs for, so the wallet
-  // knows of nobody else: every known row is an identity it does not control.
-  await expect(alicePage.getByTestId("known-identities-empty")).toHaveText(
-    "Your wallet knows of no other identity yet.",
-  );
+  // The one identity this wallet knows of and does not control is the witness:
+  // naming it on a chain meant resolving it first, and this home kept the copy
+  // it read. Alice and carol are identities it signs for, so neither is a row
+  // here, and bob is nowhere: opening his link read nothing into this home.
+  expect(await cardIds(alicePage, "known-identity-cards")).toEqual([witnessIdentity]);
+  await expect(alicePage.getByTestId(`identity-card-unheld-${witnessIdentity}`)).toHaveCount(0);
 });
 
 test("the identifier a spec reads is the whole value", async () => {
@@ -404,8 +421,36 @@ test("step 16: a new identity that publishes a name and an email from birth", as
 test("step 17: the node page names this node and what it holds", async () => {
   // The third nav entry, added by round 4 of proposal 005. The endpoint id it
   // draws is the one `mabel node id` prints, which is what another node dials.
+  // Alice's home keeps nobody else's records, so the row says so in one word.
   const endpointId = expectExit(mabel("alice", ["node", "id"]), 0).stdout.trim();
   expect(endpointId).toMatch(BASE32_ID);
   await alicePage.goto(`${ALICE_URL}/wallet`);
-  await readNodePage(alicePage, ALICE_URL, { role: "wallet", endpointId });
+  await readNodePage(alicePage, ALICE_URL, { endpointId });
+});
+
+test("the witnesses screen draws the witness as the identity it is", async () => {
+  // A witness is an identity, so its card is the identity card every other
+  // screen draws and its page is the identity page (proposal 006 section 8).
+  await alicePage.goto(`${ALICE_URL}/wallet`);
+  await alicePage.getByTestId("nav-witnesses").click();
+  await expect(alicePage).toHaveURL(`${ALICE_URL}/witnesses`);
+  await expect(alicePage.getByTestId("witness-cards")).toBeVisible();
+  expect(await cardIds(alicePage, "witness-cards")).toEqual([witnessIdentity]);
+  await expect(alicePage.getByTestId(`witness-default-${witnessIdentity}`)).toHaveText(
+    "this node uses it by default",
+  );
+  // The machine that answers for it is a row of its record, which is the half
+  // of the card the collapsed one folds away.
+  await expandCard(alicePage, witnessIdentity);
+  const machineRow = `identity-card-machine-${witnessId}-${witnessIdentity}`;
+  await expect(alicePage.getByTestId(`${machineRow}-row`).locator("dt")).toHaveText("machine");
+  expect(await identifier(alicePage, machineRow)).toBe(witnessId);
+
+  // `/witnesses/<id>` is not a page of its own any more: it redirects to the
+  // identity page, so a saved link still opens something.
+  await alicePage.goto(`${ALICE_URL}/witnesses/${witnessIdentity}`);
+  await expect(alicePage).toHaveURL(`${ALICE_URL}/identities/${witnessIdentity}`);
+  // /witness is gone outright: one home on every node.
+  await alicePage.goto(`${ALICE_URL}/witness`);
+  await expect(alicePage.getByTestId("route-not-found")).toBeVisible();
 });

@@ -1,21 +1,24 @@
 # 001: two people meet
 
 - Status: implemented
-- Surfaces: wallet UI (alice and bob), CLI, wallet HTTP API, witness HTTP API
+- Surfaces: wallet UI (alice and bob), CLI, the node HTTP API
 - Test: `tests/e2e/specs/001-two-people-meet.spec.ts`
 
-Two strangers create identities in two wallet UIs, exchange descriptors out of
-band, name the same witness, push, and each attests trust in the other. A third
-party with an empty home reads the result from the witness alone.
+Two strangers create identities in two wallet UIs, exchange `mabel://` links out
+of band, name the same witness identity, push, and each attests trust in the
+other. A third party with an empty home reads the result from the machine that
+answers for the witness.
 
 ## Actors
 
-- alice: wallet node, compose service `alice`, API and UI on
+- alice: a node holding one key, compose service `alice`, API and UI on
   `http://127.0.0.1:9081`.
-- bob: wallet node, compose service `bob`, API and UI on
-  `http://127.0.0.1:9082`.
-- witness: witness node, compose service `witness`, API and UI on
-  `http://127.0.0.1:9080`.
+- bob: the same, compose service `bob`, on `http://127.0.0.1:9082`.
+- the witness: a node that keeps other people's records, compose service
+  `witness`, API and UI on `http://127.0.0.1:9080`. It is not a different
+  program: it mints a witness identity on its first start, publishes the machine
+  that answers for it on that identity's own record, and lists the identity in
+  `node.json.witness_for` (proposal 006 sections 1, 2 and 4).
 - a stranger: one throwaway container with an empty home, holding no identity
   and no key but the node key it makes on the spot.
 
@@ -27,19 +30,26 @@ repository root.
 ## Story
 
 1. Bring the topology up from nothing: `dc down -v && dc up -d --wait`. All
-   three services report healthy. Read the witness endpoint id,
-   `witness_id="$(dc exec -T witness cat /shared/witness.id)"`, a 52-character
-   lowercase base32 string.
+   three services report healthy. Read the witness's two ids, both 52-character
+   lowercase base32 strings and both published by the entrypoint beside the
+   ticket: `witness_identity="$(dc exec -T witness cat /shared/witness.identity)"`,
+   the Mabel id a record names, and `witness_id="$(dc exec -T witness cat
+   /shared/witness.id)"`, the machine a wallet dials for it. `GET
+   http://127.0.0.1:9080/api/node` answers `witness_for` holding one entry,
+   `{identity: <witness_identity>, advertised: true, reason: null}`.
 2. Open `http://127.0.0.1:9081/wallet`. The nav holds three entries and no
-   fourth, `nav-wallet`, `nav-witnesses` and `nav-node`. The page is three flat
-   sections under three headings (round 6 of proposal 005): the search box
-   `wallet-search`, whose field is labelled `Mabel ID or handle`, then
+   fourth, `nav-wallet`, `nav-witnesses` and `nav-node`: every node serves the
+   same three, whatever else it does (proposal 006 section 8). The page is three
+   flat sections under three headings (round 6 of proposal 005): the search box
+   `wallet-search`, whose field is labelled `Mabel ID, handle or link` and whose
+   placeholder reads `alice.example, or paste a Mabel ID or a link`, then
    `identity-list` with `identity-list-empty` reading `You have no identities
    yet. Create one below.`, then `known-identities` with its
    `known-trusted-only` switch off and `known-identities-empty` reading `Your
    wallet knows of no other identity yet.`, because this wallet has fetched,
-   crawled and noted nobody. The role itself is a fact of `GET /api/node`, which
-   answers `role: "wallet"`.
+   crawled and noted nobody. `GET /api/node` carries no `role` field at all:
+   what a node can do is read from what it holds, so this one answers
+   `identity_count: 0` and an empty `witness_for`.
 3. Click `identity-create-summary` to unfold the create form, which the wallet
    home keeps closed. Type `alice` into `identity-create-alias`, labelled
    `Private nickname (only this device sees it)` because it never leaves this
@@ -51,27 +61,33 @@ repository root.
    appears; record its identifier `data-value` as `alice_id`.
 4. Repeat step 3 at `http://127.0.0.1:9082/wallet` with alias `bob`; record
    `bob_id`.
-5. Exchange descriptors out of band. The descriptor carries the inception byte
-   for byte, which is what binds an id to a key; nothing in the protocol proves
-   it, which is what the flag-L sentence in every report says.
+5. Exchange links out of band. A `mabel://` link carries an identity's Mabel id
+   and up to four machines that answer for it (proposal 006 section 7); neither
+   half is proof of anything, which is what the flag-L sentence in every report
+   says.
    ```sh
-   dc exec -T bob mabel identity export bob --out /tmp/bob.descriptor
-   docker cp mabel-bob:/tmp/bob.descriptor /tmp/bob.descriptor
-   docker cp /tmp/bob.descriptor mabel-alice:/tmp/bob.descriptor
-   dc exec -T alice mabel identity export alice --out /tmp/alice.descriptor
-   docker cp mabel-alice:/tmp/alice.descriptor /tmp/alice.descriptor
-   docker cp /tmp/alice.descriptor mabel-bob:/tmp/alice.descriptor
+   dc exec -T bob mabel identity share bob --json
+   dc exec -T alice mabel identity share alice --json
    ```
-   Each export prints `exported <id> to <path> (N bytes)` and a second line
-   `declared kind person, raw root, 0 witnesses`.
+   Neither has advertised a machine yet, so `--endpoints auto` falls back to the
+   machine this home runs on and each document reads `endpoints_from: "node"`
+   with a `link` of `mabel://<id>?endpoints=<that machine>`. Paste bob's link
+   into `wallet-search-input` in alice's UI and click `wallet-search-submit`.
+   The browser parses no link: the box hands the string to the node, which owns
+   the grammar. Alice lands on `/identities/<bob_id>?machines=<bob's machine>`,
+   where `identity-fetch` offers to fetch the record this home does not hold and
+   `identity-fetch-link-note` says first what asking those machines does. Paste
+   alice's link into bob's UI the same way.
 6. In alice's UI click `identity-card-link-<alice_id>`: the whole card is one
    link to `/identities/<alice_id>`. On the identity page click
    `action-witnesses-summary` to open the action, which starts closed, put
-   `$witness_id` into `witness-add-endpoint` and click `witness-add-submit`.
-   `witness-add-head-seq` reads `Saved at position 1.` and the witness card
-   `witness-row-<witness_id>` appears, with `witness-row-link-<witness_id>`
-   opening that witness's page and the endpoint id written out whole. Do the
-   same in bob's UI.
+   `$witness_identity` into `witness-add-identity` and click
+   `witness-add-submit`. A witness is an identity, so the box takes its Mabel
+   ID and the event names that id rather than the machine behind it.
+   `witness-add-head-seq` reads `Saved at position 1.` and the row
+   `witness-row-<witness_identity>` appears, with
+   `witness-row-<witness_identity>-link` opening that identity's own page and
+   the id written out whole. Do the same in bob's UI.
 7. In each UI click `action-push-summary`, leave `sync-push-to` empty and click
    `sync-push-submit`. `sync-push-report` appears with
    `push-status-<witness_id>` reading `accepted`,
@@ -141,14 +157,26 @@ repository root.
     never pushed, so nothing earlier in this story moves. Back on the wallet
     home her card reads `Dana Example (dana)`, and her public email is in the
     opened card, one click into `identity-card-expand-<dana_id>`.
-17. Read the node page. Click `nav-node`, the third nav entry. It draws six
-    short rows of what `GET /api/node` answers about the program doing the work:
-    what it is, the Iroh ID other nodes dial it by, how it is reachable, how many
-    identities it holds, the space it uses and the build running. Where the API
-    listens left the page with round 5 of proposal 005, so there is no
-    `node-http-bind` row. `node-endpoint-id` is what `dc exec -T alice mabel node
-    id` prints, written out whole because it is the only name a node has. Under
-    the rows, `node-witnesses` lists the witnesses this node uses by default.
+17. Read the node page. Click `nav-node`, the third nav entry. It draws short
+    rows of what `GET /api/node` answers about the program doing the work: the
+    Iroh ID other nodes dial it by, how it is reachable, how many identities it
+    signs for, whose records it keeps, how many records and conflicts it holds,
+    the space it uses and the build running. There is no role row and no role
+    field: what a node can do is read from what it holds (proposal 006 section
+    8). Where the API listens left the page with round 5 of proposal 005, so
+    there is no `node-http-bind` row. `node-endpoint-id` is what `dc exec -T
+    alice mabel node id` prints, written out whole because it is the only name a
+    node has. Under the rows, `node-witnesses` lists the witnesses this node
+    uses by default, one identity card each.
+18. Read the witnesses screen. Click `nav-witnesses`. `witness-cards` holds one
+    card, `identity-card-<witness_identity>`, because a witness is an identity
+    and its card is the identity card every other screen draws.
+    `witness-default-<witness_identity>` reads `this node uses it by default`.
+    Open the card with `identity-card-expand-<witness_identity>` and the record
+    carries one `machine` row per machine that answers for it,
+    `identity-card-machine-<witness_id>-<witness_identity>`. `/witness` is not a
+    route at all and `/witnesses/<witness_identity>` redirects to
+    `/identities/<witness_identity>`, so a saved link still opens something.
 
 ## Verified outcomes
 
@@ -156,8 +184,9 @@ repository root.
   `identity-create-result-inception-event` carry the same `data-value`: an
   identity is the digest of its own inception event.
 - Step 6: `GET http://127.0.0.1:9081/api/identities/<alice_id>` answers
-  `identity.witnesses == ["<witness_id>"]`, `identity.head_seq: 1`,
-  `identity.event_count: 2`.
+  `identity.witnesses == ["<witness_identity>"]`, `identity.head_seq: 1`,
+  `identity.event_count: 2`. Naming a witness resolves it first, so alice's home
+  now holds a copy of the witness's own record.
 - Step 8: `trust-list` holds one card, `identity-card-<bob_id>`, and the
   identity document carries `identity.trust[0].subject == bob_id`,
   `identity.trust[0].revoked == false` and `identity.trust[0].attestation_event
@@ -179,9 +208,16 @@ repository root.
   `source == witness_id`, `sources_queried == [witness_id]`, `head_seq: 2`.
 - The mirrored verification, `--issuer "$bob_id" --subject "$alice_id"`, also
   exits 0 with `trusted: true`: two ledgers, two events.
-- After step 10, `GET http://127.0.0.1:9080/api/ledgers` lists exactly two
-  entries, `alice_id` and `bob_id`, each with `declared_kind: "person"`,
-  `head_seq: 2`, `event_count: 3`, `fork_count: 0`.
+- After step 10, `GET http://127.0.0.1:9080/api/identities/known?offset=0&limit=256`
+  on the witness lists exactly two rows, `alice_id` and `bob_id`, each with
+  `declared_kind: "person"`, `head_seq: 2` and `stored: true`. A witness's
+  holdings are the records it stores and cannot sign for, which is the route
+  every node answers: `/api/ledgers` is gone and a witness needs no route of its
+  own (proposal 006 section 8). How many entries each record holds is on `GET
+  /api/identities/<id>`, which answers `event_count: 3`, and a conflict is on
+  `GET /api/forks`, which answers an empty `entries`. The rows are sorted by the
+  rendered id, which orders the digits before the letters, where `GET
+  /api/identities` sorts by the bytes they encode.
 - Step 14 exits 0, and its document reads `trusted: true` with
   `subject_resolution: "unresolved"` and `subject_note` exactly `subject:
   unresolved (not held by any queried source)`. The text form prints that
@@ -191,9 +227,9 @@ repository root.
   <alice_id>, fetched from <witness_id> at <RFC 3339 UTC>; no revocation up to
   seq 3`. An unresolved subject changes what is reported, never the exit code:
   only chain, signature and equivocation failures exit 20.
-- `GET http://127.0.0.1:9080/api/ledgers/<carol_id>` answers 404 with
-  `details.reason == "ledger_not_held"`: the witness holds no copy of the
-  subject, which is exactly what step 14 reported.
+- `GET http://127.0.0.1:9080/api/identities/<carol_id>` answers 404 with
+  `details.reason == "unknown_ledger"`: the witness holds no copy of the
+  subject, which is exactly what step 14 reported. One node, one spelling.
 - After step 13 alice's wallet home draws one card per identity, in the
   ascending identity id order `GET /api/identities` answers in:
   `identity-cards` holds `identity-card-<alice_id>` and
@@ -215,10 +251,10 @@ repository root.
   reading `alice`), `identity-card-event-count-<alice_id>` reads `4`, and there is
   no `identity-card-principals-<alice_id>` row, because alice holds her own key
   and nothing else can act for her.
-- Alice and carol are both identities this wallet signs for, so
-  `known-identities-empty` still reads `Your wallet knows of no other identity
-  yet.`: a known row is an identity this home has a record of and does not
-  control.
+- Alice and carol are both identities this wallet signs for, so the one row in
+  `known-identity-cards` is the witness: naming it on a chain meant resolving it
+  first, and this home kept the copy it read. Bob is not there. Opening his link
+  read nothing into this home, which is what makes viewing safe (proposal 004).
 - Step 15: `GET /api/identities/<alice_id>/keys` answers 200 with `identity_id
   == alice_id`, an `active_secret_key` and a `reserve_secret_key` matching what
   the two boxes hold, and an `active_key` equal to `identity.active_key` of the
@@ -244,16 +280,20 @@ repository root.
   `identity-card-email-<dana_id>` is absent until
   `identity-card-expand-<dana_id>` is pressed, and then reads
   `dana@dana.example` under the lowercase label `email`.
-- Step 17: `node-role` reads `wallet`, the word the document carries, under the
-  label `role`. `node-relay` reads `direct connections only` (the topology sets
-  `MABEL_RELAY=disabled`), `node-endpoint-id` carries what `mabel node id` prints
-  and is not truncated, under the label `Iroh ID`. `node-version` repeats the
-  document's own value, `node-identity-count` is the bare count of the identities
-  this home holds under the label `identities`, and `node-storage` ends `of 2.1
-  GB` (the topology's `MABEL_STORAGE_CAPACITY`). `node-witnesses-empty` reads
-  `none`, because the base topology sets no node-wide witness. A wallet draws no
-  `node-ledger-count` and no `node-fork-count`, and no node draws
-  `node-http-bind`, though the document still carries `http_bind`.
+- Step 17: no screen names a role, so `node-role` does not exist. `node-relay`
+  reads `direct connections only` (the topology sets `MABEL_RELAY=disabled`),
+  `node-endpoint-id` carries what `mabel node id` prints and is not truncated,
+  under the label `Iroh ID`. `node-version` repeats the document's own value,
+  `node-storage` ends `of 2.1 GB` (the topology's `MABEL_STORAGE_CAPACITY`), and
+  the four counts are bare numbers under their own labels:
+  `node-identity-count` (`identities`), `node-ledger-count` (`records`),
+  `node-fork-count` (`conflicts`) and `node-witness-for` (`keeps records for`),
+  which reads `none` on a home that keeps nobody else's. `node-witness-cards`
+  draws the witness this node uses by default, because the entrypoint recorded
+  it from the ticket volume. No node draws `node-http-bind`, though the document
+  still carries `http_bind`.
+- Step 18: `/witness` draws `route-not-found`, and `/witnesses/<id>` lands on
+  `/identities/<id>`.
 
 ## Deviations
 
@@ -275,9 +315,9 @@ story text above.
   exactly `alice_id` and `carol_id`.
 - Step 13 creates carol with `--json` added, so the spec can read `carol_id`
   from the document instead of parsing the text form.
-- Step 2's role assertion goes through `GET /api/node`. Proposal 004 removed
-  the node card from the wallet home, so no testid carries the role; the two
-  nav entries and the search box are what the spec reads on the screen.
+- Step 2 asserts what `GET /api/node` does *not* carry: there is no `role` key
+  on any document and no testid for one. The three nav entries and the search
+  box are what the spec reads on the screen.
 - The shared `createIdentity` helper clicks `identity-create-summary` only when
   the form is not already on the screen: a summary click toggles, so a second
   one would close the form the previous step opened. The shared `openAction`

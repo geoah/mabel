@@ -26,6 +26,7 @@ let alicePage: Page;
 let bobPage: Page;
 
 let witnessId = "";
+let witnessIdentity = "";
 let aliceId = "";
 let bobId = "";
 let aliceKey = "";
@@ -42,6 +43,7 @@ test.beforeAll(async ({ browser }) => {
 test("step 1: story 002 steps 1 to 8, the shared ledger at seq 2", async () => {
   const state = await story002Steps1to8(alicePage, bobPage);
   witnessId = state.witnessId;
+  witnessIdentity = state.witnessIdentity;
   aliceId = state.aliceId;
   bobId = state.bobId;
   orgId = state.orgId;
@@ -49,16 +51,21 @@ test("step 1: story 002 steps 1 to 8, the shared ledger at seq 2", async () => {
 });
 
 test("steps 2 and 3: the ledger names the witness, and a second machine", async () => {
+  // Bob controls this ledger too, so this append asks the witness where it
+  // ends first, and reaching the witness from a CLI process needs the ticket.
   expectExit(
-    mabel("alice", ["witness", "add", "--identity", "mabel-demo-co", "--endpoint", witnessId]),
+    dcSh(
+      "alice",
+      `mabel witness add --identity mabel-demo-co --witness ${witnessIdentity} --peer "$(cat /shared/witness.ticket)"`,
+    ),
     0,
   );
   expectExit(
     dcSh("alice", 'mabel sync push --identity mabel-demo-co --peer "$(cat /shared/witness.ticket)"'),
     0,
   );
-  const ledger = await apiGet(WITNESS_URL, `/api/ledgers/${orgId}`);
-  expect(ledger.body.entry.head_seq).toBe(3);
+  const ledger = await apiGet(WITNESS_URL, `/api/identities/${orgId}`);
+  expect(ledger.body.identity.head_seq).toBe(3);
 
   await startAliceTwo();
 });
@@ -92,7 +99,7 @@ test("steps 4 and 5: alice appends, the second machine wins the race", async () 
     0,
   );
 
-  const events = await apiGet(WITNESS_URL, `/api/ledgers/${orgId}/events?since=4&limit=1`);
+  const events = await apiGet(WITNESS_URL, `/api/identities/${orgId}/ledger?since=4&limit=1`);
   secondMachineEvent = events.body.events[0].event_id;
 });
 
@@ -140,7 +147,7 @@ test("step 7: alice's home holds the second machine's event at seq 4", async () 
     [0, "created this identity", "inception"],
     [1, "invited someone to help control this identity", "membership_invitation"],
     [2, "confirmed someone as a controller", "membership_acceptance"],
-    [3, "chose who keeps a copy", "witness_config"],
+    [3, "chose who keeps a copy", "witness_set"],
     [4, "said it trusts someone", "trust_attestation"],
   ] as const) {
     await expect(reader.getByTestId(`event-gloss-${seq}`)).toHaveText(gloss);
@@ -181,10 +188,8 @@ test("step 7: alice's home holds the second machine's event at seq 4", async () 
   expect(trust.trust[0].attestation_seq).toBe(4);
 
   // The losing event was discarded before it was ever pushed, so no fork.
-  const forks = await apiGet(WITNESS_URL, "/api/forks");
+  const forks = await apiGet(WITNESS_URL, `/api/forks?ledger_id=${orgId}`);
   expect(forks.body.entries).toEqual([]);
-  const ledger = await apiGet(WITNESS_URL, `/api/ledgers/${orgId}`);
-  expect(ledger.body.entry.fork_count).toBe(0);
 });
 
 test("steps 8 and 9: the retry is the same action, run again", async () => {
@@ -227,9 +232,9 @@ test("step 10: the second machine reads the settled chain back", async () => {
   );
   expect(lines[2]).toBe(`signed by principal ${aliceId} (${aliceKey})`);
 
-  const ledger = await apiGet(WITNESS_URL, `/api/ledgers/${orgId}`);
-  expect(ledger.body.entry.head_seq).toBe(5);
-  expect(ledger.body.entry.event_count).toBe(6);
+  const ledger = await apiGet(WITNESS_URL, `/api/identities/${orgId}`);
+  expect(ledger.body.identity.head_seq).toBe(5);
+  expect(ledger.body.identity.event_count).toBe(6);
 });
 
 test("the same failure on the CLI is the same document", async () => {

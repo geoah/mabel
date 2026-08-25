@@ -29,6 +29,7 @@ import {
 import {
   addTrust,
   cardIds,
+  expandCard,
   identifier,
   idSpan,
   openAction,
@@ -56,6 +57,21 @@ const RESOLVER_IMAGE = "mabel-resolver:dev";
 /** 25 hours: past the 24-hour freshness window of a verified result. */
 const STALE_AFTER_MS = 25 * 60 * 60 * 1000;
 
+/**
+ * The label of `docker/dns/zones/example.zone` that names five machines, and
+ * the five it names: ed25519 public keys from fixed seeds, with no container
+ * behind any of them. What it proves is the parsing rule, which costs no
+ * container (proposal 006 section 6).
+ */
+const MANY_MACHINES_IDENTITY = "xpezo4a4wovzgs7dx43f2pzwk2w7gutnvrzmsrgzuxtcfzjbw4ka";
+const MANY_MACHINES = [
+  "cmo62aqzrfceqo7ruqkrvzutvktcw6474cwkovxd7z7ctorce3na",
+  "xyhbzzscrer36lffdqwwmhuqv45sshxx7wgfoxvlvj2suhub427a",
+  "72al4if4g2w4hrpec4r66oz3gs6xypgvk6avk73uduy6ffkrceva",
+  "msccj64kqyg7wqltmbwoom5kdimw7jzyb7yply2a7lnvvsxttvka",
+  "hyzbxuqfwf3yq2lnc7a5civnjlrgfigue7p6itgy2on4bpnnxsgq",
+];
+
 const GRAPH_CONSENT_FIRST =
   "Every witness your wallet asks learns which people you are interested in.";
 const GRAPH_CONSENT_SECOND =
@@ -70,6 +86,8 @@ let alicePage: Page;
 let bobPage: Page;
 
 let witnessId = "";
+let witnessIdentity = "";
+let aliceNodeId = "";
 let aliceId = "";
 let bobId = "";
 let carolId = "";
@@ -87,18 +105,45 @@ test.beforeAll(async ({ browser }) => {
 });
 
 /**
+ * One `mabel-endpoints=` record, split across two character-strings.
+ *
+ * A TXT character-string holds 255 bytes, so a label naming five machines has
+ * to be split; a reader joins the strings back with no separator before it
+ * parses anything (proposal 006 section 6). The split falls after a comma, so
+ * neither half names the whole list on its own.
+ */
+function endpointsRecord(label: string, endpoints: string[]): string {
+  const head = endpoints.slice(0, -1).map((endpoint) => `${endpoint},`).join("");
+  const tail = endpoints[endpoints.length - 1];
+  return `_mabel.${label} IN TXT "mabel-endpoints=${head}" "${tail}"`;
+}
+
+/**
  * The zone the test resolver serves, rewritten with the ids this run minted.
  * The serial has to rise or CoreDNS's `file` plugin keeps serving what it
  * loaded, and the health record has to stay or the container goes unhealthy.
+ *
+ * `claims` is the `mabel=` record at each label, `endpoints` the
+ * `mabel-endpoints=` record beside it. The `many-machines` label of
+ * `docker/dns/zones/example.zone` is kept whole, because the five ids on it
+ * are what the split rule is read against and no container answers at any of
+ * them.
  *
  * Both TTLs are one second, positive and negative. A wallet's resolver caches
  * for the TTL it is given, so a longer one would have a check taken seconds
  * after the resolver stopped still answering from that cache.
  */
-function zoneText(serial: number, claims: Record<string, string>): string {
-  const records = Object.entries(claims)
-    .map(([label, identity]) => `_mabel.${label} IN TXT "mabel=${identity}"`)
-    .join("\n");
+function zoneText(
+  serial: number,
+  claims: Record<string, string>,
+  endpoints: Record<string, string[]> = {},
+): string {
+  const records = [
+    ...Object.entries(claims).map(
+      ([label, identity]) => `_mabel.${label} IN TXT "mabel=${identity}"`,
+    ),
+    ...Object.entries(endpoints).map(([label, listed]) => endpointsRecord(label, listed)),
+  ].join("\n");
   return [
     "$ORIGIN example.",
     "$TTL 1",
@@ -109,6 +154,8 @@ function zoneText(serial: number, claims: Record<string, string>): string {
     "ns  IN A   127.0.0.1",
     "",
     '_mabel.health IN TXT "mabel=health"',
+    `_mabel.many-machines IN TXT "mabel=${MANY_MACHINES_IDENTITY}"`,
+    endpointsRecord("many-machines", MANY_MACHINES),
     records,
     "",
   ].join("\n");
@@ -236,6 +283,8 @@ test("step 1: story 001 steps 1 to 12, and carol in bob's home", async () => {
   test.setTimeout(300_000);
   const state = await story001Steps1to7(alicePage, bobPage, resetTopologyWithResolver);
   witnessId = state.witnessId;
+  witnessIdentity = state.witnessIdentity;
+  aliceNodeId = expectExit(mabel("alice", ["node", "id"]), 0).stdout.trim();
   aliceId = state.aliceId;
   bobId = state.bobId;
 
@@ -260,7 +309,10 @@ test("step 1: story 001 steps 1 to 12, and carol in bob's home", async () => {
     expect(carolId).toMatch(BASE32_ID);
     // A witness refuses a ledger whose chain does not name it, so without
     // this the push answers NOT_ADMITTED and the crawl has nothing to read.
-    expectExit(mabel("bob", ["witness", "add", "--identity", "carol", "--endpoint", witnessId]), 0);
+    expectExit(
+      mabel("bob", ["witness", "add", "--identity", "carol", "--witness", witnessIdentity]),
+      0,
+    );
     expectExit(
       dcSh("bob", 'mabel sync push --identity carol --peer "$(cat /shared/witness.ticket)"'),
       0,
@@ -277,9 +329,9 @@ test("step 1: story 001 steps 1 to 12, and carol in bob's home", async () => {
     );
   });
 
-  const ledger = await apiGet(WITNESS_URL, `/api/ledgers/${carolId}`);
-  expect(ledger.body.entry.head_seq).toBe(1);
-  expect(ledger.body.witnesses).toEqual([witnessId]);
+  const ledger = await apiGet(WITNESS_URL, `/api/identities/${carolId}`);
+  expect(ledger.body.identity.head_seq).toBe(1);
+  expect(ledger.body.identity.witnesses).toEqual([witnessIdentity]);
 
   const bob = await apiGet(BOB_URL, `/api/identities/${bobId}`);
   const attestation = bob.body.identity.trust.find(
@@ -290,24 +342,41 @@ test("step 1: story 001 steps 1 to 12, and carol in bob's home", async () => {
 });
 
 test("steps 2 and 3: the resolver answers, and the TXT records name the run's ids", async () => {
-  // Ticket 032's wiring: the wallets start pointed at the test resolver and
-  // with the witness as their node-wide witness, which is the crawler's third
-  // source (proposal 003 section 3).
+  // Ticket 032's wiring, on the shape proposal 006 gave it: the wallets start
+  // pointed at the test resolver and with `<mabel id>=<endpoint id>` in
+  // `MABEL_WITNESSES`, so node.json names the witness identity and the machine
+  // that answers for it, which is the crawler's third source.
   const node = await apiGet(ALICE_URL, "/api/node");
   expect(node.body.witnesses).toEqual([witnessId]);
+  const configured = await apiGet(ALICE_URL, "/api/witnesses");
+  expect(configured.body.witnesses).toHaveLength(1);
+  expect(configured.body.witnesses[0].identity_id).toBe(witnessIdentity);
+  expect(configured.body.witnesses[0].is_node_default).toBe(true);
+  expect(configured.body.witnesses[0].endpoints.map((entry: any) => entry.endpoint_id)).toEqual([
+    witnessId,
+  ]);
 
   // _mabel.bob.example names carol on purpose: a record that exists and
-  // claims the wrong identity is what "mismatched" is about.
+  // claims the wrong identity is what "mismatched" is about. alice.example
+  // gains the machines that answer for her beside the id she claims.
   writeFileBase64(
     RESOLVER,
     ZONE_PATH,
-    Buffer.from(zoneText(2, { alice: aliceId, bob: carolId })).toString("base64"),
+    Buffer.from(
+      zoneText(
+        2,
+        { alice: aliceId, bob: carolId },
+        { alice: [aliceNodeId, witnessId] },
+      ),
+    ).toString("base64"),
   );
   // The `file` plugin rereads the zone within five seconds of the serial
   // rising, so no restart and no healthcheck wait is needed.
   await until(
     "_mabel.alice.example to answer with alice's id",
-    () => digFromWallet("mabel-alice", "_mabel.alice.example") === `"mabel=${aliceId}"`,
+    // The label carries two records now, the claim and the machines beside it,
+    // so the claim is looked for among them rather than being the whole answer.
+    () => digFromWallet("mabel-alice", "_mabel.alice.example").includes(`"mabel=${aliceId}"`),
     30_000,
     1_000,
   );
@@ -608,7 +677,7 @@ test("the resolver comes back and alice verifies again", async () => {
   expectExit(docker(["start", RESOLVER], 60_000), 0);
   await until(
     "the resolver to answer again",
-    () => digFromWallet("mabel-alice", "_mabel.alice.example") === `"mabel=${aliceId}"`,
+    () => digFromWallet("mabel-alice", "_mabel.alice.example").includes(`"mabel=${aliceId}"`),
     60_000,
     1_000,
   );
@@ -949,7 +1018,12 @@ test("step 10: the wallet home lists who it knows of, and the switch narrows it"
   const rows: Record<string, any> = Object.fromEntries(
     known.body.identities.map((row: any) => [row.identity_id, row]),
   );
-  expect(Object.keys(rows).sort()).toEqual([bobId, carolId].sort());
+  // The witness is here too, and by the same rule: naming it on a chain means
+  // resolving it first, and this home kept the copy it read (proposal 006
+  // section 5.1). A witness is an identity, so it is a row like any other.
+  expect(Object.keys(rows).sort()).toEqual([bobId, carolId, witnessIdentity].sort());
+  expect(rows[witnessIdentity].stored).toBe(true);
+  expect(rows[witnessIdentity].declared_kind).toBe("service");
   // Alice attested bob herself, so he is trusted at one step; carol is only
   // reachable through him, and nothing in this home signs for either.
   expect(rows[bobId].trusted).toBe(true);
@@ -998,6 +1072,9 @@ test("step 10: the wallet home lists who it knows of, and the switch narrows it"
   await expect(trustedOnly).toHaveAttribute("aria-checked", "true");
   await expect(cards.getByTestId(`identity-card-${bobId}`)).toBeVisible();
   await expect(cards.getByTestId(`identity-card-${carolId}`)).toBeVisible();
+  // Alice keeps a copy of the witness and trusts nobody through it, so the
+  // switch drops it: holding a record is not a reason to trust its subject.
+  await expect(cards.getByTestId(`identity-card-${witnessIdentity}`)).toHaveCount(0);
 });
 
 test("step 11: an identity nobody in this crawl trusts answers with no path", async () => {
@@ -1039,7 +1116,10 @@ test("step 12: the search box takes a hostname and opens the identity it names",
   expect(resolved.body.status).toBe("resolved");
   expect(resolved.body.identity_id).toBe(aliceId);
 
-  await searchIdentity(alicePage, ALICE_URL, "alice.example", aliceId);
+  // The label names the machines that answer for her beside the id it claims,
+  // so they ride to the identity page with her (proposal 006 section 6).
+  expect(resolved.body.endpoints).toEqual([aliceNodeId, witnessId].sort());
+  await searchIdentity(alicePage, ALICE_URL, "alice.example", aliceId, resolved.body.endpoints);
   await expect(alicePage.getByTestId("identity-detail")).toBeVisible();
   expect(await identifier(alicePage, "identity-detail-resolved")).toBe(aliceId);
   await expect(alicePage.getByTestId("identity-detail-resolved-pill")).toHaveText("your identity");
@@ -1062,6 +1142,59 @@ test("step 12: the search box takes a hostname and opens the identity it names",
   const missing = await apiGet(ALICE_URL, "/api/resolve?input=nobody.example");
   expect(missing.body.status).toBe("no_record");
   expect(missing.body.identity_id).toBeNull();
+});
+
+test("a label's machines are read whole, and a link resolves the same way", async () => {
+  // `mabel-endpoints=` sits beside `mabel=` at the same label and names the
+  // machines that answer for whatever identity that label claims. Alice's
+  // label carries two, split across two character-strings, and the reader
+  // joins them back before it parses anything (proposal 006 section 6).
+  const alice = await apiGet(ALICE_URL, "/api/resolve?input=alice.example");
+  expect(alice.body.input_kind).toBe("hostname");
+  expect(alice.body.status).toBe("resolved");
+  expect(alice.body.identity_id).toBe(aliceId);
+  expect(alice.body.endpoints).toEqual([aliceNodeId, witnessId].sort());
+
+  // Five machines do not fit one character-string, so the zone splits them
+  // after the fourth comma. All five come back, sorted by their rendered form.
+  const many = await apiGet(ALICE_URL, "/api/resolve?input=many-machines.example");
+  expect(many.body.status).toBe("resolved");
+  expect(many.body.identity_id).toBe(MANY_MACHINES_IDENTITY);
+  expect(many.body.endpoints).toEqual([...MANY_MACHINES].sort());
+
+  // A label with no `mabel-endpoints=` record answers with no machines, which
+  // is not a failure: the identity is still named.
+  const bob = await apiGet(ALICE_URL, "/api/resolve?input=bob.example");
+  expect(bob.body.status).toBe("resolved");
+  expect(bob.body.endpoints).toEqual([]);
+
+  // The third kind of input the box takes. The browser parses no link: it
+  // hands the string to the node, which owns the grammar and answers with the
+  // identity and the machines the link named (proposal 006 section 7).
+  const link = json(
+    expectExit(
+      mabel("bob", ["identity", "share", "carol", "--endpoints", witnessId, "--json"]),
+      0,
+    ),
+  ).link;
+  expect(link).toBe(`mabel://${carolId}?endpoints=${witnessId}`);
+
+  const resolved = await apiGet(ALICE_URL, `/api/resolve?input=${encodeURIComponent(link)}`);
+  expect(resolved.body.input_kind).toBe("link");
+  expect(resolved.body.identity_id).toBe(carolId);
+  expect(resolved.body.endpoints).toEqual([witnessId]);
+  // A link queries nothing, so there is no lookup status to report.
+  expect(resolved.body.status).toBeNull();
+  expect(resolved.body.hostname).toBeNull();
+
+  // The box opens carol's page and carries the link's machines with it, so the
+  // fetch there dials them; viewing still writes nothing.
+  await searchIdentity(alicePage, ALICE_URL, link, carolId, [witnessId]);
+  await expect(alicePage.getByTestId("identity-fetch")).toBeVisible();
+  await expect(alicePage.getByTestId("identity-fetch-link-note")).toBeVisible();
+  expect(stdoutLines(expectExit(dcExec("alice", ["ls", "/data/ledgers"]), 0)).sort()).toEqual(
+    [aliceId, witnessIdentity].sort(),
+  );
 });
 
 test("a sync writes a new generation and swaps current.json", async () => {
@@ -1097,8 +1230,10 @@ test("a sync writes a new generation and swaps current.json", async () => {
 });
 
 test("the crawl writes no stranger's ledger", async () => {
+  // Two records on disk: alice's own, and the witness's, which naming a
+  // witness read and kept. The crawl added neither of the people it walked.
   const ledgers = stdoutLines(expectExit(dcExec("alice", ["ls", "/data/ledgers"]), 0));
-  expect(ledgers).toEqual([aliceId]);
+  expect([...ledgers].sort()).toEqual([aliceId, witnessIdentity].sort());
   expect(ledgers).not.toContain(carolId);
   expect(ledgers).not.toContain(bobId);
 });
@@ -1159,10 +1294,18 @@ test("bob taking alice's name changes what is shown, never which id is shown", a
 
 test("step 13: the witnesses screen, what one holds, and one deliberate fetch", async () => {
   // A wallet knows a witness from a ledger that names it and from its own
-  // defaults; there is no global directory (proposal 004).
+  // defaults; there is no global directory. A witness is an identity, so the
+  // rows are identities (proposal 006 section 8).
   const listed = await apiGet(ALICE_URL, "/api/witnesses");
   expect(listed.body.witnesses).toHaveLength(1);
-  expect(listed.body.witnesses[0].endpoint_id).toBe(witnessId);
+  expect(listed.body.witnesses[0].identity_id).toBe(witnessIdentity);
+  // The one machine it knows for the witness, and the label the binding rule
+  // gives it: the only chain this home ever read for the witness was served by
+  // that same machine, so nothing independent vouches for it (proposal 006
+  // section 4.2).
+  expect(listed.body.witnesses[0].endpoints).toEqual([
+    { endpoint_id: witnessId, binding: "hinted" },
+  ]);
   expect(listed.body.witnesses[0].named_by).toEqual([aliceId]);
   expect(listed.body.witnesses[0].is_node_default).toBe(true);
 
@@ -1170,41 +1313,39 @@ test("step 13: the witnesses screen, what one holds, and one deliberate fetch", 
   await alicePage.getByTestId("nav-witnesses").click();
   await expect(alicePage).toHaveURL(`${ALICE_URL}/witnesses`);
   await expect(alicePage.getByTestId("witness-cards")).toBeVisible();
-  // The final round of proposal 005 named the identities that chose this witness
-  // instead of counting them: `witness-card-named-by-*` is the container holding
-  // one inline identity per chain that names the endpoint, so its text is a name
-  // and an id rather than "chosen by 1 identity of yours". How many there are is
-  // a sentence on the witness's own page now.
-  const namedBy = alicePage.getByTestId(`witness-card-named-by-${witnessId}`);
-  await expect(namedBy).toContainText("Alice Example");
-  await expect(namedBy).not.toContainText("chosen by");
-  await expect(
-    alicePage.getByTestId(`witness-card-chose-${witnessId}-${aliceId}-name`),
-  ).toHaveText("Alice Example");
-  await expect(namedBy.locator("> [data-identity-id]")).toHaveCount(1);
-  await expect(alicePage.getByTestId(`witness-card-default-${witnessId}`)).toHaveText(
+  // One card, and it is the identity card every other screen draws: the Mabel
+  // ID, the marker saying this node uses it by default, and one row per
+  // machine that answers for it.
+  expect(await cardIds(alicePage, "witness-cards")).toEqual([witnessIdentity]);
+  await expect(alicePage.getByTestId(`witness-default-${witnessIdentity}`)).toHaveText(
     "this node uses it by default",
   );
-  // The card carries the endpoint id and every identity whose chain names it.
-  const onCard = await alicePage
-    .getByTestId(`witness-card-${witnessId}`)
-    .locator("[data-value]")
-    .evaluateAll((elements) => elements.map((element) => element.getAttribute("data-value") ?? ""));
-  expect(onCard).toEqual([witnessId, aliceId]);
+  // The machines that answer for it are rows of its record, which is the half
+  // of the card the collapsed one folds away.
+  await expandCard(alicePage, witnessIdentity);
+  const machineRow = `identity-card-machine-${witnessId}-${witnessIdentity}`;
+  expect(await identifier(alicePage, machineRow)).toBe(witnessId);
+  // A card's parts are `identity-card-<part>-<id>`, so the sentence beside the
+  // machine is `identity-card-machine-<machine>-note-<identity>`.
+  await expect(
+    alicePage.getByTestId(`identity-card-machine-${witnessId}-note-${witnessIdentity}`),
+  ).toHaveText("No record we have confirms that this machine answers for it.");
 
-  // What that witness holds, asked live over the sync protocol and rendered as
-  // the same identity card list.
-  await alicePage.getByTestId(`witness-card-link-${witnessId}`).click();
-  await expect(alicePage.getByTestId("witness-ledgers")).toBeVisible();
-  // The page names itself, and the count the card used to carry is the sentence
-  // under the heading. The way back is the nav, so there is no back link.
-  await expect(alicePage.getByRole("heading", { level: 1 })).toHaveText("This witness");
-  await expect(alicePage.getByTestId("witness-chosen-by")).toHaveText(
-    "Chosen by 1 of your identities. This node uses it by default.",
+  // The witness's page is the identity page, and what it holds is a section of
+  // it, asked live over the sync protocol.
+  await alicePage.getByTestId(`identity-card-link-${witnessIdentity}`).click();
+  await expect(alicePage).toHaveURL(`${ALICE_URL}/identities/${witnessIdentity}`);
+  await expect(alicePage.getByTestId("witness-holdings")).toBeVisible();
+  await expect(alicePage.getByTestId("witness-chosen-by")).toHaveText("1 of your identities");
+  await expect(alicePage.getByTestId("witness-node-default")).toHaveText(
+    "yes, for the identities that chose no witness of their own",
   );
-  await expect(alicePage.getByTestId("witness-ledgers-back")).toHaveCount(0);
   const held = await cardIds(alicePage);
-  expect([...held].sort(compareIds)).toEqual([aliceId, bobId, carolId].sort(compareIds));
+  // Four records: the three it keeps for other people and its own, which it
+  // serves like any other. A witness is an identity with a record.
+  expect([...held].sort(compareIds)).toEqual(
+    [aliceId, bobId, carolId, witnessIdentity].sort(compareIds),
+  );
   await expect(alicePage.getByTestId(`identity-card-declared-kind-${carolId}`)).toHaveText(
     "person",
   );
@@ -1225,7 +1366,7 @@ test("step 13: the witnesses screen, what one holds, and one deliberate fetch", 
     "aria-pressed",
     "true",
   );
-  await expect(alicePage.getByTestId("witness-ledgers")).toContainText(
+  await expect(alicePage.getByTestId("witness-holdings")).toContainText(
     "Every record this witness holds.",
   );
   // Yours is the records alice's own wallet controls, which is her own alone.
@@ -1234,7 +1375,7 @@ test("step 13: the witnesses screen, what one holds, and one deliberate fetch", 
     "aria-pressed",
     "true",
   );
-  await expect(alicePage.getByTestId("witness-ledgers")).toContainText(
+  await expect(alicePage.getByTestId("witness-holdings")).toContainText(
     "The records your own identities control.",
   );
   await expect(alicePage.getByTestId(`identity-card-${aliceId}`)).toBeVisible();
@@ -1243,7 +1384,7 @@ test("step 13: the witnesses screen, what one holds, and one deliberate fetch", 
   // Trusted is bob, whom alice trusts outright, and carol, whom the crawl
   // reached through him. Alice's own record is neither, so it drops out.
   await alicePage.getByTestId("witness-holdings-trusted").click();
-  await expect(alicePage.getByTestId("witness-ledgers")).toContainText(
+  await expect(alicePage.getByTestId("witness-holdings")).toContainText(
     "The people you trust, and the ones your wallet reaches through them.",
   );
   await expect(alicePage.getByTestId(`identity-card-${bobId}`)).toBeVisible();
@@ -1252,17 +1393,35 @@ test("step 13: the witnesses screen, what one holds, and one deliberate fetch", 
   await alicePage.getByTestId("witness-holdings-all").click();
   expect(await cardIds(alicePage)).toEqual(held);
 
-  const proxied = await apiGet(ALICE_URL, `/api/witnesses/${witnessId}/ledgers?offset=0&limit=256`);
+  // The route behind that section is keyed by the witness identity, and a
+  // machine id is refused there by name (proposal 006 section 8).
+  const proxied = await apiGet(
+    ALICE_URL,
+    `/api/witnesses/${witnessIdentity}/holdings?offset=0&limit=256`,
+  );
+  expect(proxied.body.identity_id).toBe(witnessIdentity);
   expect(proxied.body.endpoint_id).toBe(witnessId);
   expect(proxied.body.more).toBe(false);
   expect(proxied.body.ledgers.map((ledger: any) => ledger.ledger_id)).toEqual(held);
+
+  const notAnIdentity = await apiGet(
+    ALICE_URL,
+    `/api/witnesses/${witnessId}/holdings?offset=0&limit=256`,
+  );
+  expect(notAnIdentity.status).toBe(404);
+  expect(notAnIdentity.body.details.reason).toBe("endpoint_not_identity");
+  expect(notAnIdentity.body.message).toBe(
+    `${witnessId} is a machine this home knows, not a witness identity`,
+  );
 
   // A card opens the identity page, and browsing a witness stored nothing:
   // this home still holds no copy of carol's ledger.
   await alicePage.getByTestId(`identity-card-link-${carolId}`).click();
   await expect(alicePage).toHaveURL(`${ALICE_URL}/identities/${carolId}`);
   await expect(alicePage.getByTestId("identity-fetch")).toBeVisible();
-  expect(stdoutLines(expectExit(dcExec("alice", ["ls", "/data/ledgers"]), 0))).toEqual([aliceId]);
+  expect(stdoutLines(expectExit(dcExec("alice", ["ls", "/data/ledgers"]), 0))).not.toContain(
+    carolId,
+  );
 
   // Fetching is the one action a page offers for a ledger this home does not
   // hold, and the stored page is its confirmation.
@@ -1285,7 +1444,7 @@ test("step 13: the witnesses screen, what one holds, and one deliberate fetch", 
   expect(stored.body.identity.head_seq).toBe(1);
   expect(
     stdoutLines(expectExit(dcExec("alice", ["ls", "/data/ledgers"]), 0)).sort(),
-  ).toEqual([aliceId, carolId].sort());
+  ).toEqual([aliceId, carolId, witnessIdentity].sort());
 
   // A fetch writes `ledgers/<carol_id>` and no link: no key here signs for
   // carol, so nothing was recorded under `identities/`, the wallet home still

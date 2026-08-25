@@ -2,22 +2,21 @@
 
 A [Tauri](https://tauri.app) v2 app that is a wallet node with the wallet UI in
 front of it, built for macOS and iOS. It is the same node and the same React app
-as `mabel wallet serve` plus a browser, packaged as one process the user can
+as `mabel serve` plus a browser, packaged as one process the user can
 double click.
 
 ## How the in-process node works
 
-The rust side runs the wallet node inside the app process. On start,
-`app/src-tauri/src/node.rs` calls `mabel_node::wallet::WalletRuntime::start`, the
-same entry point `mabel wallet serve` uses, over a node home in the app's data
-directory. That binds the Iroh endpoint, the read-only sync server and the HTTP
-API, then the app opens its window on `http://127.0.0.1:<port>/wallet` and the
+The rust side runs the node inside the app process. On start,
+`app/src-tauri/src/node.rs` calls `mabel_node::NodeRuntime::start`, the same
+entry point `mabel serve` uses, over a node home in the app's data directory.
+That binds the Iroh endpoint, the sync server and the HTTP API, then the app opens its window on `http://127.0.0.1:<port>/wallet` and the
 node serves both the JSON API and the UI bundle from there.
 
 Three consequences worth knowing:
 
 - The HTTP listener always takes an ephemeral port on `127.0.0.1`, so the app
-  never collides with another copy of itself or with a `mabel wallet serve` on
+  never collides with another copy of itself or with a `mabel serve` on
   the default port 9080.
 - The API's loopback rules require `Host` to be `127.0.0.1:<port>` or
   `localhost:<port>`, and require an `Origin` that matches on mutating routes. A

@@ -99,12 +99,14 @@ docker compose -f docker/compose.yaml -f docker/compose.two-witnesses.yaml \
 ```
 
 `witness-two` is on `127.0.0.1:9083` and UDP 9073, with its own home volume,
-and publishes `/shared/witness-two.ticket` and `/shared/witness-two.id` beside
-the first witness's. Alice and bob wait for both tickets and start with both
-seeded as `--peer`, so a command in either wallet can push to either witness
-with no `--peer` of its own. The two witnesses share nothing but the ticket
-volume, which is what lets stories 004 and 005 push one branch of a ledger to
-one witness and another branch to the other.
+and publishes `/shared/witness-two.ticket`, `/shared/witness-two.id` and
+`/shared/witness-two.identity` beside the first witness's. Alice and bob wait
+for both tickets, start with both seeded as `--peer` and record both witness
+identities in `node.json`, so a command in either wallet can push to either
+witness with no `--peer` of its own. The two witnesses are two witness
+identities, not two machines answering for one: each home mints its own and
+witnesses for that one alone, which is what lets stories 004 and 005 push one
+branch of a ledger to one witness and another branch to the other.
 
 ### `compose.dns.yaml`, a test resolver
 
@@ -134,25 +136,35 @@ docker compose -f docker/compose.yaml -f docker/compose.dns.yaml exec -T \
 
 Story 007 is what this is for. A hostname claim is
 `_mabel.<hostname> IN TXT "mabel=<identity id>"` (proposal 003 section 2), and
-the story publishes three cases: a record naming alice, a record under
+`mabel-endpoints=<id>,<id>` beside it names the machines that answer for
+whatever identity that label claims (proposal 006 section 6). The committed zone
+carries `_mabel.many-machines.example`, a label naming five machines split
+across two character-strings, which a reader joins with no separator before it
+parses anything: `mabel-endpoints=` plus four ids is 227 of the 255 bytes a
+character-string holds. No container answers at any of those five, which is the
+point: the label proves the parsing rule and costs no container. The story
+publishes three more cases: a record naming alice, a record under
 `bob.example` naming the wrong identity, and no record at all under
 `nobody.example`. Keep `_mabel.health.example` in any zone you write: the
 resolver's healthcheck asks for it on every interval, and a rewritten zone
 that drops it makes the container unhealthy.
 
 The overlay also passes `MABEL_WITNESSES` through to both wallets, empty
-unless the environment sets it. Those endpoints are recorded against the first
-witness identity a waited-for prefix publishes, because `node.json.witnesses`
+unless the environment sets it. One entry per witness,
+`<mabel id>=<endpoint id>[,<endpoint id>...]`, because `node.json.witnesses`
 names an identity and the machines that answer for it (proposal 006 section
-5.4). A witness's endpoint id only exists once the witness has started, so a run
-that wants the node-wide witness brings the topology up in two phases:
+5.4). Neither half exists until the witness has started, so a run that wants the
+node-wide witness brings the topology up in two phases:
 
 ```sh
 docker compose -f docker/compose.yaml -f docker/compose.dns.yaml \
   up -d --wait witness resolver
+witness_identity="$(docker compose -f docker/compose.yaml exec -T witness \
+  cat /shared/witness.identity)"
 witness_id="$(docker compose -f docker/compose.yaml exec -T witness \
   cat /shared/witness.id)"
-MABEL_WITNESSES="$witness_id" docker compose -f docker/compose.yaml \
+MABEL_WITNESSES="$witness_identity=$witness_id" \
+  docker compose -f docker/compose.yaml \
   -f docker/compose.dns.yaml up -d --wait
 ```
 
@@ -197,19 +209,30 @@ reaches a node on the command line, never through this file.
   the services set `stop_signal: SIGINT`. Without it every `down` would wait out
   the stop grace period.
 - `node.json` is written by the entrypoint on every start from the service's
-  environment (`MABEL_ROLE`, `MABEL_HTTP_BIND`, `MABEL_RELAY`,
-  `MABEL_STORAGE_CAPACITY`, `MABEL_WITNESSES`), so an edited compose file takes
-  effect on restart. `MABEL_WITNESSES` is a space- or comma-separated list of
-  endpoint ids and goes through `mabel witness set-default`, so a typo fails
-  the container rather than being stored. These are the witnesses the node
-  queries for any ledger, which is a different set from the witnesses a
-  ledger's own chain names.
+  environment (`MABEL_HTTP_BIND`, `MABEL_RELAY`, `MABEL_STORAGE_CAPACITY`,
+  `MABEL_WITNESSES`), so an edited compose file takes effect on restart. The
+  file it writes carries no `role` and no `accept_legacy_witness_config`: one
+  node serves one API, and no ledger in this topology was written before
+  witnesses were identities. `MABEL_WITNESSES` holds one
+  `<mabel id>=<endpoint id>[,<endpoint id>...]` entry per witness, separated by
+  spaces, and each goes through `mabel witness set-default`, so a typo fails the
+  container rather than being stored. These are the witnesses the node queries
+  for any ledger, which is a different set from the witnesses a ledger's own
+  chain names.
   Nothing in mabel rewrites that file. `node.key`, the identities and the
   ledgers live on the home volume and survive a recreate; `down -v` drops them.
+- A volume carrying the pre-proposal-006 `node.json`, with a `role` line and
+  64-character hex endpoint ids under `witnesses`, is rewritten by the
+  entrypoint before anything loads it, so it starts clean. Started past the
+  entrypoint (`docker run --entrypoint mabel ... serve`) the same file exits 10
+  and names the command that fixes it: a hex endpoint id is 64 characters and a
+  base32 identity id is 52, so the loader tells the two apart rather than
+  configuring a witness that is not one.
 - The image runs `mabel` as the container command, and the command is `serve`
   on every node: what a node can do is read from the identities its home holds
-  and from `node.json.witness_for` (proposal 006 section 8). `MABEL_ROLE` still
-  picks whether the entrypoint mints a witness identity, and the `role` it
-  writes into `node.json` is recognised and read by nothing. `docker run --rm
-  mabel:dev node id` works the same way, and `docker run --rm --entrypoint mabel
-  mabel:dev --help` skips the compose preparation entirely.
+  and from `node.json.witness_for` (proposal 006 section 8). `MABEL_ROLE` is
+  read by the entrypoint alone and written nowhere: it picks whether this
+  container mints a witness identity, advertises itself on it and lists it in
+  `witness_for`. `docker run --rm mabel:dev node id` works the same way, and
+  `docker run --rm --entrypoint mabel mabel:dev --help` skips the compose
+  preparation entirely.

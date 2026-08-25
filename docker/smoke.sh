@@ -67,6 +67,34 @@ if [ "$witness_identity" = "null" ] || [ -z "$witness_identity" ]; then
 fi
 printf 'witness identity %s on machine %s\n' "$witness_identity" "$witness_id"
 echo "$node" | jq -c '.witness_for'
+# No document names a role. What a node can do is read from what it holds
+# (proposal 006 section 8), so `role` is absent rather than null.
+for port in "$witness_port" "$alice_port" "$bob_port"; do
+    if get "$port" /api/node | jq -e 'has("role")' >/dev/null; then
+        echo "the node document on 127.0.0.1:$port still carries a role" >&2
+        exit 1
+    fi
+done
+
+step "both wallets are configured for the witness identity"
+# The entrypoint read /shared/witness.identity beside /shared/witness.id and ran
+# `mabel witness set-default`, so node.json names the identity and the machine
+# that answers for it (proposal 006 section 5.4).
+for port in "$alice_port" "$bob_port"; do
+    row="$(get "$port" /api/witnesses |
+        jq -c --arg id "$witness_identity" '.witnesses[] | select(.identity_id == $id)')"
+    if [ -z "$row" ]; then
+        echo "127.0.0.1:$port knows no witness $witness_identity" >&2
+        exit 1
+    fi
+    echo "$row" | jq -c '{identity_id, is_node_default, endpoints: [.endpoints[].endpoint_id]}'
+    printf '%s' "$row" | jq -e --arg machine "$witness_id" \
+        '.is_node_default and ([.endpoints[].endpoint_id] | index($machine) != null)' >/dev/null ||
+        {
+            echo "127.0.0.1:$port does not reach $witness_identity at $witness_id" >&2
+            exit 1
+        }
+done
 
 step "alice creates an identity"
 created="$(post "$alice_port" /api/identities '{"alias":"alice","declared_kind":"person"}')"

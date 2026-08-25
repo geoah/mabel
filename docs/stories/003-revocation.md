@@ -14,8 +14,9 @@ read. Alice then attests again, and the same verifier says trusted.
   `http://127.0.0.1:9081`. The issuer.
 - bob: wallet node, compose service `bob`, API and UI on
   `http://127.0.0.1:9082`. The subject, who signs nothing here.
-- witness: witness node, compose service `witness`, API and UI on
-  `http://127.0.0.1:9080`.
+- the witness: a node that keeps other people's records, compose service
+  `witness`, API and UI on `http://127.0.0.1:9080`. `witness_identity` is the
+  Mabel id a record names; `witness_id` is the machine that answers for it.
 - a fresh verifier: one throwaway container per verification, with an empty
   home.
 
@@ -26,7 +27,8 @@ repository root.
 
 1. Run story 001 steps 1 to 12. Alice's ledger is at seq 2 with one unrevoked
    attestation naming bob, pushed to the witness, and a fresh home already
-   answered `trusted: true`. Keep `alice_id`, `bob_id`, `witness_id` and
+   answered `trusted: true`. Keep `alice_id`, `bob_id`, `witness_identity`,
+   `witness_id` and
    `alice_attestation`.
 2. In alice's UI open `identity-card-link-<alice_id>`. Who this identity trusts
    sits above the record: `trust-panel` is headed `Who alice trusts`, because

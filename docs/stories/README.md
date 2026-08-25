@@ -2,62 +2,81 @@
 
 End-to-end user stories, one scenario each, executable by hand and implemented
 as Playwright specs under `tests/e2e/` (milestone 10 of
-[../proposals/001-architecture.md](../proposals/001-architecture.md)). All
-seven are implemented; each story names its spec, and a "Deviations" section
-lists where that spec departs from the story text. Template:
+[../proposals/001-architecture.md](../proposals/001-architecture.md)). All nine
+are implemented; each story names its spec, and a "Deviations" section lists
+where that spec departs from the story text. Template:
 [../templates/story.md](../templates/story.md).
+
+A witness is an identity, not a machine (proposal 006 section 1, decision 019).
+Every story reads two ids where it used to read one: `witness_identity`, the
+Mabel id a `WitnessSet` records and `witness add --witness` takes, and
+`witness_id`, the Iroh endpoint id of the container answering for it, which is
+what a push dials and what `--from` pins. The compose entrypoint publishes both
+beside the ticket, as `/shared/witness.identity` and `/shared/witness.id`.
 
 The UI is three primitives and nothing else (proposal 004): the identity card
 list, the witness card list, and one identity page at `/identities/<id>` for
-every identity, local or foreign. Nav is `nav-wallet`, `nav-witnesses` and
-`nav-node` on a wallet, and `nav-witness` and `nav-node` on a witness, which
-serves no wallet. `/node` is six short rows of what `GET /api/node` answers,
-`node-role` (the document's own word, `wallet` or `witness`),
-`node-endpoint-id` (labelled `Iroh ID`), `node-relay` (`public relays` or
-`direct connections only`), `node-storage`, `node-version`, and either
-`node-identity-count` on a wallet or `node-ledger-count` and `node-fork-count`
-on a witness, each a bare number under the row's own label. Where the API
-listens is not a fact about the node's place in the network, so round 5 of
-proposal 005 dropped `node-http-bind` from the page. `node-witnesses` is the
-card list of the witnesses this node uses by default, `node-witnesses-empty`
-reading `none` when it uses none. There is no verify screen, no lookup screen
-and no identity selector, so a story that verified in the UI verifies on the CLI
-instead.
+every identity, local or foreign. Every node serves the same nav and the same
+home: `nav-wallet`, `nav-witnesses` and `nav-node`, three entries and no fourth,
+on a node that signs for nothing as much as on one that signs for ten. There is
+no `nav-witness`, no `/witness` route, and `/witnesses/<id>` redirects to
+`/identities/<id>`, because a witness is an identity and its page is the
+identity page (proposal 006 section 8). `/node` is short rows of what `GET
+/api/node` answers: `node-endpoint-id` (labelled `Iroh ID`), `node-relay`
+(`public relays` or `direct connections only`), `node-identity-count`
+(`identities`), `node-witness-for` (`keeps records for`, holding one inline
+identity per entry or the word `none`), `node-ledger-count` (`records`),
+`node-fork-count` (`conflicts`), `node-storage` and `node-version`. No document
+names a role and no screen draws one: what a node can do is read from what it
+holds. A home with no key of its own says so in one sentence, `node-no-keys`.
+Where the API listens is not a fact about the node's place in the network, so
+round 5 of proposal 005 dropped `node-http-bind` from the page.
+`node-witnesses` is the card list of the witnesses this node uses by default,
+`node-witnesses-empty` reading `none` when it uses none. There is no verify
+screen, no lookup screen and no identity selector, so a story that verified in
+the UI verifies on the CLI instead.
 
 A section is a heading, an optional one-line description and its content, and it
 draws no border: only the leaf inside it does, which is a card, a form input or a
 notice, so no screen draws a border inside a border. A section's description
 carries a testid where a story reads it, `trust-panel-description`,
-`witness-holdings-note`, `principals-description` and `fork-evidence-note`.
+`known-identities-note` and `principals-description`.
 
 The wallet home is three flat sections under three headings, divided by a rule
 and never nested in cards (round 6 of proposal 005): "Open an identity"
-(`wallet-search`, whose box is labelled `Mabel ID or handle` and whose
-placeholder reads `alice.example or paste a Mabel ID`), "Your
+(`wallet-search`, whose box is labelled `Mabel ID, handle or link` and whose
+placeholder reads `alice.example, or paste a Mabel ID or a link`; it takes a
+Mabel ID, a handle or a `mabel://` link, and the browser parses none of them:
+the box hands the string to the node, which owns the grammar), "Your
 identities" (`identity-list`, holding `identity-cards` and the folded
 `identity-create`), and "Known identities" (`known-identities`, holding
 `known-identity-cards` from `GET /api/identities/known` and the
 `known-trusted-only` switch, which narrows the list to direct trust and crawl
 distances). A known row is an identity this home has a record of and does not
 control, so `known-identities-empty` reads `Your wallet knows of no other
-identity yet.` on a wallet that has fetched, crawled and noted nobody.
+identity yet.` on a wallet that has fetched, crawled and noted nobody, and
+`known-identities-note` reads `This is what this home holds. A record missing
+here may still be on another witness.`, the sentence that came off the witness
+route when that route went away. A home that keeps other people's records lists
+them here: that is the whole of what a witness operator reads.
 
 Three facts of the UI every story after decision 017 depends on. Every action on
 the identity page starts closed, so a step that uses a form clicks that
 action's summary first: `action-trust`, `action-revoke`, `action-witnesses`,
 `action-push`, `action-profile`, `action-handle`, `action-keys`,
-`action-contact`, the four membership actions and `lookup-contact` on a foreign
-page. `action-contact` and `lookup-contact` are both named `Update local info`
+`action-contact`, `action-endpoints`, `action-share`, the four membership
+actions and `lookup-contact` on a foreign page. `action-contact` and `lookup-contact` are both named `Update local info`
 and hold one `contact-save` that writes the nickname and the note together. And
 the header carries the app name and the nav and nothing else: the one control
 that starts a graph sync is the `graph-sync` card on `/witnesses`, because a
 sync reads what witnesses hold. There is no developer mode and no demo mode, so
 a value the screen does not explain is read from the HTTP route instead.
 
-The twelve actions sit under four group headings rather than one "What you can
-do", which no story reads any more: `action-group-profile` (`Profile`),
-`action-group-trust` (`Trust`), `action-group-witnesses` (`Witnesses and sync`)
-and `action-group-control` (`Control and keys`). Every `action-<name>` and
+The actions sit under five group headings rather than one "What you can do",
+which no story reads any more: `action-group-profile` (`Profile`),
+`action-group-trust` (`Trust`), `action-group-witnesses` (`Witnesses and sync`),
+`action-group-reach` (`Reaching this identity`, holding `action-endpoints` and
+`action-share`) and `action-group-control` (`Control and keys`). Every `action-<name>` and
 `<action>-summary` kept its testid, so only the heading a story reads changed.
 
 An action is the shared collapsible, not a `details` element: the block carries
@@ -76,9 +95,12 @@ the screen, and a card with nothing more to show draws no button at all.
 Every story starts from the compose topology of
 [../../docker/compose.yaml](../../docker/compose.yaml): one witness on
 `http://127.0.0.1:9080` and two wallets on `http://127.0.0.1:9081` and
-`http://127.0.0.1:9082`. Three stories add to it: 004 and 005 hand-start a
-second witness and a second machine for alice, and 007 brings the topology up
-again with the test resolver overlay. Each node serves its own UI and its own API from that
+`http://127.0.0.1:9082`. Four stories add to it: 004 and 005 bring the second
+witness up with the
+[compose.two-witnesses.yaml](../../docker/compose.two-witnesses.yaml) overlay
+and hand-start a second machine for alice, 007 brings the topology up again
+with the test resolver overlay, and 008 and 009 hand-start one borrowed home
+each. Each node serves its own UI and its own API from that
 origin, and the host port equals the container port because the API refuses any
 `Host` that is not `127.0.0.1` or `localhost` on the port it bound. Assertion
 strings come from [../../contracts/](../../contracts/README.md) and the
@@ -119,8 +141,8 @@ markers and draws no `identity-card-kind-line-<id>` at all, and no identity page
 draws `identity-detail-kind-line`. Proposal 005 also removed five elements
 outright, so nothing in these stories reads them: the back link, the
 declared-kind advisory sentence, the DNS advisory sentence, the key-facts
-sentence and the name-provenance row. A detail page's way back is the nav, so
-`witness-ledgers-back` and `witness-ledger-back` are gone too.
+sentence and the name-provenance row. Every witness screen went with them: there
+is no witness detail page and no back link anywhere.
 
 A card that routes somewhere is one stretched anchor: `<testid>-link` and
 `identity-card-link-<id>` sit on the name, with the href they had before, and on
@@ -184,20 +206,36 @@ the toggle and stops the click there, so a list is opened by clicking
 `lookup-trust-label` or `lookup-reverse-label`, the heading a reader aims at,
 rather than the middle of the row, which can land on the icon.
 
-A witness card on `/witnesses` names the identities whose chains chose that
-witness rather than counting them: `witness-card-named-by-<endpoint>` is the
-container, holding one `witness-card-chose-<endpoint>-<id>` inline identity each,
-so its text is names and ids. How many there are is a sentence on the witness's
-own page. That page, `/witnesses/<endpoint>`, is headed `This witness`, carries
-`witness-chosen-by` reading `Chosen by N of your identities.` (plus `This node
-uses it by default.` when it is a default), and draws one flat card list with
-three filters over it: `witness-holdings-all`, `witness-holdings-ours` and
-`witness-holdings-trusted`, `All` chosen when the page opens. The chosen filter's
-own sentence is the section's description, and `witness-ledgers-empty` reads
-`This witness holds no record.` under `All` and `No record it holds matches
-this.` under the other two. A witness node's own route serves no wallet, so
-`/witness` draws no filter at all and `/witness/ledgers/<id>` is headed `This
-record`.
+`/witnesses` is a card list of the witness identities this home knows,
+`witness-cards`, each drawn by the same identity card every other screen draws.
+A witness this node uses by default carries
+`witness-default-<identity id>` reading `this node uses it by default`. The
+machines that answer for one are rows of its record, so a list card shows them
+once it is opened: `identity-card-machine-<machine>-<identity id>` holds the
+machine's Iroh ID and
+`identity-card-machine-<machine>-note-<identity id>` holds one of two
+sentences, `This machine is listed on this identity's own record.` or `No record
+we have confirms that this machine answers for it.` The identity page draws the
+same rows as `identity-detail-machine-<machine>` and
+`identity-detail-machine-<machine>-note`. `binding`, `verified` and `hinted` are
+API words and stop at the API.
+
+A witness's page is its identity page, and what it keeps for other people is a
+section of it, `witness-holdings`, asked live over the sync protocol when the
+page loads. Above the list, `witness-chosen-by` reads `N of your identities` and
+`witness-node-default` reads `yes, for the identities that chose no witness of
+their own` or `no`. The list has three filters over it, `witness-holdings-all`,
+`witness-holdings-ours` and `witness-holdings-trusted`, `All` chosen when the
+page opens; the chosen filter's own sentence is the section's description, and
+`witness-holdings-empty` reads `This witness holds no record.` under `All` and
+`No record it holds matches this.` under the other two. `witness-holdings-error`
+and `witness-unreachable` are what it says instead when the machines answering
+for that witness cannot be reached.
+
+A conflict is a fact about a stored record, and `GET /api/forks` is the one
+route that reports one, on every node. No screen draws a fork record: the
+witness detail page and its Forks card went with the witness routes, and what a
+list still says is `identity-card-fork-count-<id>` on a witness's holdings.
 
 The website is a handle everywhere a reader sees it. The identity page's row is
 labelled `handle`, `action-handle` is where one is set (`handle-current`,
@@ -221,12 +259,12 @@ document field is still `hostname`, so `identity-detail-hostname` and
   re-attested. Verification is a CLI concern (proposal 004), so every report
   here is read on the CLI.
 - [004-fork-on-two-witnesses.md](004-fork-on-two-witnesses.md): two divergent
-  branches on two witnesses, the fork record in the witness UI, and a
-  multi-source verify that exits 20 naming both sources.
-- [005-witness-operator.md](005-witness-operator.md): the witness debug route
-  as the card list and the identity page, declared kinds, fork counts,
-  read-only enforcement, and the paging the route still answers after the
-  controls left the screen.
+  branches on two witness identities, the fork record on `GET /api/forks`, and
+  a multi-source verify that exits 20 naming both sources.
+- [005-witness-operator.md](005-witness-operator.md): what a witness holds,
+  read on the one home every node draws, declared kinds, the conflict it
+  recorded, the routes the witness screens used answering 404, and an old
+  `node.json` refused rather than misread.
 - [006-stale-append.md](006-stale-append.md): a shared-ledger append that lost
   the race, the exit-50 recovery, and the retry that lands.
 - [007-profile-and-verification.md](007-profile-and-verification.md): display
@@ -236,3 +274,11 @@ document field is still `hostname`, so `identity-detail-hostname` and
   story that also needs
   [../../docker/compose.dns.yaml](../../docker/compose.dns.yaml), the test
   resolver overlay; its spec brings the topology up with that overlay itself.
+- [008-link-with-no-witness.md](008-link-with-no-witness.md): a machine
+  published on an identity's own record, a `mabel://` link handed over with a
+  ticket beside it, and a home that knows nobody reading that record with every
+  witness container stopped.
+- [009-endpoint-rotation.md](009-endpoint-rotation.md): a witness identity
+  moved to a second machine through proposal 006 section 5.5, the client that
+  was never handed the out-of-band update reaching nothing, and the fresh record
+  that recovers it.

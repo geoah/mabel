@@ -4,10 +4,17 @@
 #   docker compose -f docker/compose.yaml up --build -d
 #   docker compose -f docker/compose.yaml down -v
 #
-# The witness starts first, writes its EndpointTicket to the shared
-# witness-ticket volume, and the wallets start once it is healthy and pass that
-# ticket as --peer. Every node.json sets relay "disabled", so no relay and no
-# discovery service is contacted.
+# The witness starts first, mints its witness identity, advertises this
+# container on it and writes three files to the shared witness-ticket volume:
+# `witness.ticket`, the EndpointTicket; `witness.id`, the machine's Iroh id; and
+# `witness.identity`, the witness's Mabel id. The wallets start once it is
+# healthy, pass the ticket as --peer and record the identity with its machine in
+# `node.json.witnesses` (proposal 006 section 5.4). Every node.json sets relay
+# "disabled", so no relay and no discovery service is contacted.
+#
+# No node.json carries a role. A container is a witness because its home holds a
+# witness identity and lists it in `witness_for`, which `GET /api/node` reports
+# (proposal 006 section 8).
 #
 # Host port == container port for every HTTP port, because the API's loopback
 # rules require `Host: 127.0.0.1:<the port the API is bound to>`; a request
@@ -118,5 +125,6 @@ volumes:
   witness-data:
   alice-data:
   bob-data:
-  # The witness writes its ticket and endpoint id here; both wallets read them.
+  # The witness writes its ticket, its machine id and its Mabel id here; both
+  # wallets read all three.
   witness-ticket:

@@ -4,14 +4,14 @@ import {
   apiGet,
   composeDown,
   containerRunning,
-  dcExec,
   dcSh,
   docker,
   json,
   mabel,
+  mustRun,
   removeExtras,
   run,
-  witnessId as readWitnessId,
+  witnessOf,
   WITNESS_URL,
 } from "../lib/docker";
 import {
@@ -26,14 +26,19 @@ import { cardIds, identifier } from "../lib/ui";
 /** docs/stories/005-witness-operator.md */
 test.describe.configure({ mode: "serial" });
 
+/** The standing note the known list carries, which came off the witness route. */
 const HOLDINGS_NOTE =
-  "This is what this one witness holds. A record missing here may still be on another witness.";
-const READ_ONLY_NOTE = "This page only reads. Nothing here changes anything.";
+  "This is what this home holds. A record missing here may still be on another witness.";
+/** A 64-character hex endpoint id, which is the shape a pre-proposal-006 node.json holds. */
+const LEGACY_ENDPOINT = "9b7ba6acb9804b63ae69a67ed1ff1bc9ec7336f282757bfe1230cb5f8180eb0a";
+/** The volume the migration check builds and throws away. */
+const LEGACY_VOLUME = "mabel-legacy-home";
 
 let page: Page;
 
 let witnessId = "";
-let witnessTwoId = "";
+let witnessIdentity = "";
+let witnessTwoIdentity = "";
 let aliceNodeId = "";
 let aliceId = "";
 let orgId = "";
@@ -43,16 +48,14 @@ test.beforeAll(async ({ browser }) => {
   page = await context.newPage();
 });
 
-test("step 1: story 004 steps 1 to 7, one ledger and one fork record", async () => {
+test("step 1: story 004 steps 1 to 7, one record and one conflict", async () => {
   const holdsTheFork = async () => {
-    if (!containerRunning("mabel-alice-two") || !containerRunning("mabel-witness-two")) {
+    if (!containerRunning("mabel-alice-two")) {
       return false;
     }
     try {
-      const ledgers = await apiGet(WITNESS_URL, "/api/ledgers?offset=0&limit=256");
-      return ledgers.body.entries?.some(
-        (entry: any) => entry.head_seq === 3 && entry.fork_count === 1,
-      );
+      const forks = await apiGet(WITNESS_URL, "/api/forks");
+      return forks.body.entries?.length === 1;
     } catch {
       return false;
     }
@@ -64,22 +67,23 @@ test("step 1: story 004 steps 1 to 7, one ledger and one fork record", async () 
     await story004Steps1to7();
   }
 
-  witnessId = readWitnessId();
-  // Both witnesses publish to the shared volume, so the second one's id is
-  // readable whether this suite ran story 004 just now or inherited its state.
-  witnessTwoId = expectExit(dcExec("alice", ["cat", "/shared/witness-two.id"]), 0).stdout.trim();
-  // The endpoint that pushed alice's ledger to this witness: the second
+  const witness = witnessOf("witness");
+  witnessId = witness.endpointId;
+  witnessIdentity = witness.identity;
+  witnessTwoIdentity = witnessOf("witness-two").identity;
+  // The machine that pushed alice's record to this witness: the second
   // machine's push of the conflicting branch was rejected, so it is alice's.
   aliceNodeId = expectExit(mabel("alice", ["node", "id"]), 0).stdout.trim();
   const identities = json(expectExit(mabel("alice", ["identity", "list", "--json"]), 0)).identities;
   aliceId = identities.find((identity: any) => identity.alias === "alice").identity_id;
 
-  const ledgers = await apiGet(WITNESS_URL, `/api/ledgers/${aliceId}`);
-  expect(ledgers.body.entry.head_seq).toBe(3);
-  expect(ledgers.body.entry.fork_count).toBe(1);
+  const held = await apiGet(WITNESS_URL, `/api/identities/${aliceId}`);
+  expect(held.body.identity.head_seq).toBe(3);
+  const forks = await apiGet(WITNESS_URL, `/api/forks?ledger_id=${aliceId}`);
+  expect(forks.body.entries).toHaveLength(1);
 });
 
-test("step 2: five ledgers on the witness, four person and one organization", async () => {
+test("step 2: five records on the witness, four person and one organization", async () => {
   createIdentityCli("alice", "erin");
   orgId = createIdentityCli("alice", "mabel-demo-co", [
     "--kind",
@@ -88,131 +92,128 @@ test("step 2: five ledgers on the witness, four person and one organization", as
     "alice",
   ]);
   for (const name of ["carol", "dave", "erin", "mabel-demo-co"]) {
-    expectExit(mabel("alice", ["witness", "add", "--identity", name, "--endpoint", witnessId]), 0);
+    // The set names the witness identity; the push dials the machine.
+    expectExit(
+      mabel("alice", ["witness", "add", "--identity", name, "--witness", witnessIdentity]),
+      0,
+    );
     expectExit(
       dcSh("alice", `mabel sync push --identity ${name} --peer "$(cat /shared/witness.ticket)"`),
       0,
     );
   }
-  const ledgers = await apiGet(WITNESS_URL, "/api/ledgers?offset=0&limit=256");
-  expect(ledgers.body.entries).toHaveLength(5);
+  // A witness's holdings are the records it stores and does not sign for, so
+  // its own witness identity is not one of them.
+  const known = await apiGet(WITNESS_URL, "/api/identities/known?offset=0&limit=256");
+  expect(known.body.identities).toHaveLength(5);
+  expect(known.body.identities.map((row: any) => row.identity_id)).not.toContain(witnessIdentity);
 });
 
 test("step 3: the node facts, on the route and on the node page", async () => {
   const node = await apiGet(WITNESS_URL, "/api/node");
-  expect(node.body.role).toBe("witness");
+  expect(node.body).not.toHaveProperty("role");
   expect(node.body.relay).toBe("disabled");
   expect(node.body.endpoint_id).toBe(witnessId);
-  expect(node.body.ledger_count).toBe(5);
+  // Six records: the five it keeps for other people and its own.
+  expect(node.body.ledger_count).toBe(6);
+  expect(node.body.identity_count).toBe(1);
   expect(node.body.fork_count).toBe(1);
   expect(node.body.storage_capacity).toBe(2147483648);
 
-  // Round 4 of proposal 005 gave the facts a page again. A witness serves no
-  // wallet, so its nav names the records it keeps and the program keeping them.
-  await page.goto(`${WITNESS_URL}/witness`);
-  await expect(page.getByTestId("nav-witness")).toBeVisible();
+  // Every node serves the same three nav entries and the same home. A node
+  // that keeps other people's records is not a different program.
+  await page.goto(`${WITNESS_URL}/wallet`);
+  await expect(page.getByTestId("nav-wallet")).toBeVisible();
+  await expect(page.getByTestId("nav-witnesses")).toBeVisible();
   await expect(page.getByTestId("nav-node")).toBeVisible();
-  await expect(page.locator('header [data-testid^="nav-"]')).toHaveCount(2);
-  await readNodePage(page, WITNESS_URL, { role: "witness", endpointId: witnessId });
+  await expect(page.getByTestId("nav-witness")).toHaveCount(0);
+  await expect(page.locator('header [data-testid^="nav-"]')).toHaveCount(3);
+  await readNodePage(page, WITNESS_URL, {
+    endpointId: witnessId,
+    witnessFor: [witnessIdentity],
+  });
 });
 
-test("step 4: five ledgers as five cards, on one page and in id order", async () => {
-  await page.goto(`${WITNESS_URL}/witness`);
-  await expect(page.getByTestId("witness-read-only-note")).toHaveText(READ_ONLY_NOTE);
-  await expect(page.getByTestId("witness-holdings-note")).toHaveText(HOLDINGS_NOTE);
-  // The three holdings filters belong to the wallet's drill-in, where "yours"
-  // and "trusted" mean something: a witness serves no wallet, so this route
-  // draws one flat list and no filter at all. Story 007 step 13 pins them.
-  for (const filter of ["all", "ours", "trusted"] as const) {
-    await expect(page.getByTestId(`witness-holdings-${filter}`)).toHaveCount(0);
-  }
+test("step 4: five records as five cards on the witness's own home", async () => {
+  await page.goto(`${WITNESS_URL}/wallet`);
+  // The one identity this home signs for is the witness identity it minted,
+  // and it keeps its own record like any other.
+  expect(await cardIds(page)).toEqual([witnessIdentity]);
 
-  // Every ledger the witness holds is drawn, in ascending ledger id order,
-  // with no paging control anywhere: the route asks for all of them at once.
-  const ids = await cardIds(page);
+  // Everything else it holds is a known identity: a record it has and does not
+  // control. The note that used to sit on the witness route sits here.
+  await expect(page.getByTestId("known-identities-note")).toHaveText(HOLDINGS_NOTE);
+  const ids = await cardIds(page, "known-identity-cards");
   expect(ids).toHaveLength(5);
-  expect(ids).toEqual([...ids].sort(compareIds));
+  // `known` sorts by the rendered id, which orders the digits before the
+  // letters, and the list renders what the route answered.
+  expect(ids).toEqual([...ids].sort());
   expect(ids).toContain(aliceId);
   expect(ids).toContain(orgId);
 
-  const ledgers = await apiGet(WITNESS_URL, "/api/ledgers?offset=0&limit=256");
-  expect(ids).toEqual(ledgers.body.entries.map((entry: any) => entry.ledger_id));
+  const known = await apiGet(WITNESS_URL, "/api/identities/known?offset=0&limit=256");
+  expect(ids).toEqual(known.body.identities.map((row: any) => row.identity_id));
 });
 
-test("steps 5 to 7: the declared kind of every card, and the one fork count", async () => {
-  for (const id of await cardIds(page)) {
-    await expect(page.getByTestId(`identity-card-declared-kind-${id}`)).toHaveText(
-      id === orgId ? "organization" : "person",
-    );
+test("steps 5 to 7: the declared kind of every record, and the paged route", async () => {
+  const known = await apiGet(WITNESS_URL, "/api/identities/known?offset=0&limit=256");
+  for (const row of known.body.identities) {
+    expect(row.declared_kind).toBe(row.identity_id === orgId ? "organization" : "person");
+    expect(row.stored).toBe(true);
   }
-  // A fork count is drawn on a card only when the witness recorded one, so
-  // alice's card carries it and no other card has the element at all.
-  await expect(page.getByTestId(`identity-card-fork-count-${aliceId}`)).toHaveText("1 conflict");
-  await expect(page.locator('[data-testid^="identity-card-fork-count-"]')).toHaveCount(1);
 
-  // Paging left the UI with the operator table, so the route is where offset,
-  // limit and more are pinned. Two requests cover every ledger exactly once,
-  // in the one order that makes paging stable.
-  const first = await apiGet(WITNESS_URL, "/api/ledgers?offset=0&limit=4");
+  // Paging is a fact of the route, and two requests cover every record exactly
+  // once, in the one order that makes paging stable.
+  const first = await apiGet(WITNESS_URL, "/api/identities/known?offset=0&limit=4");
   expect(first.body.offset).toBe(0);
   expect(first.body.limit).toBe(4);
   expect(first.body.more).toBe(true);
-  expect(first.body.entries).toHaveLength(4);
-  const second = await apiGet(WITNESS_URL, "/api/ledgers?offset=4&limit=4");
+  expect(first.body.identities).toHaveLength(4);
+  const second = await apiGet(WITNESS_URL, "/api/identities/known?offset=4&limit=4");
   expect(second.body.offset).toBe(4);
   expect(second.body.more).toBe(false);
-  expect(second.body.entries).toHaveLength(1);
+  expect(second.body.identities).toHaveLength(1);
 
-  const paged = [...first.body.entries, ...second.body.entries].map(
-    (entry: any) => entry.ledger_id,
+  const paged = [...first.body.identities, ...second.body.identities].map(
+    (row: any) => row.identity_id,
   );
-  expect(paged).toEqual([...paged].sort(compareIds));
-  expect(paged).toEqual(await cardIds(page));
+  expect(paged).toEqual([...paged].sort());
+  expect(paged).toEqual(known.body.identities.map((row: any) => row.identity_id));
 });
 
-test("step 8: one ledger's summary and its chain, on the identity page", async () => {
+test("step 8: one record's summary and its chain, on the identity page", async () => {
+  // A record is a record: the witness draws the same identity page a wallet
+  // draws, opened from the same card (proposal 006 section 8).
+  await page.goto(`${WITNESS_URL}/wallet`);
   await page.getByTestId(`identity-card-link-${aliceId}`).click();
-  await expect(page.getByTestId("witness-ledger-detail")).toBeVisible();
-  // The page names itself, and the nav is the one way back: the final round of
-  // proposal 005 removed the page's own back link.
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText("This record");
-  await expect(page.getByTestId("witness-ledger-back")).toHaveCount(0);
+  await expect(page).toHaveURL(`${WITNESS_URL}/identities/${aliceId}`);
+  await expect(page.getByTestId("identity-detail")).toBeVisible();
 
-  expect(await identifier(page, "witness-detail-ledger-id")).toBe(aliceId);
-  await expect(page.getByTestId("witness-detail-declared-kind")).toHaveText("person");
-  await expect(page.getByTestId("witness-detail-head-seq")).toHaveText("3");
-  await expect(page.getByTestId("witness-detail-event-count")).toHaveText("4");
-  await expect(page.getByTestId("witness-detail-fork-count")).toHaveText("1");
-  // Proposal 005 removed the declared-kind advisory sentence outright. The row
-  // above still says which kind was declared, and nothing repeats a disclaimer
-  // beside it.
-  await expect(page.getByTestId("witness-detail-declared-kind-note")).toHaveCount(0);
-  await expect(page.getByTestId("witness-detail-holdings-note")).toHaveText(HOLDINGS_NOTE);
-  // The two endpoints alice's chain names, by value: witness one and witness
-  // two, in whichever order the rendered list holds them.
-  const witnesses = await page
-    .getByTestId("witness-detail-witnesses")
-    .locator("[data-value]")
-    .evaluateAll((elements) => elements.map((element) => element.getAttribute("data-value") ?? ""));
-  expect([...witnesses].sort(compareIds)).toEqual([witnessId, witnessTwoId].sort(compareIds));
-  expect(await identifier(page, "witness-detail-source-endpoint")).toBe(aliceNodeId);
+  expect(await identifier(page, "identity-detail-resolved")).toBe(aliceId);
+  await expect(page.getByTestId("identity-detail-declared-kind")).toHaveText("person");
+  await expect(page.getByTestId("identity-detail-event-count")).toHaveText("4");
+  // This home holds no key for alice, so the page carries no actions at all.
+  await expect(page.getByTestId("identity-actions")).toHaveCount(0);
 
-  // The chain renders through the wallet's own ledger component: one line per
-  // event, each opening into the event it records.
+  const identity = await apiGet(WITNESS_URL, `/api/identities/${aliceId}`);
+  expect(identity.body.identity.head_seq).toBe(3);
+  expect(identity.body.identity.event_count).toBe(4);
+  expect([...identity.body.identity.witnesses].sort(compareIds)).toEqual(
+    [witnessIdentity, witnessTwoIdentity].sort(compareIds),
+  );
+
+  // The chain renders through the same ledger component: one line per event,
+  // each opening into the event it records.
   await expect(page.getByTestId("ledger-event-count")).toHaveText("4");
-  await expect(page.getByTestId("ledger-head-seq")).toHaveText("3");
-  // Proposal 005 draws the ledger as compact rows rather than a table, so a
-  // line is an `li` under `ledger-events`.
   await expect(
     page.getByTestId("ledger-events").locator('li[data-testid^="ledger-event-"]'),
   ).toHaveCount(4);
-  // The final round of proposal 005 left the closed line the position and the
-  // plain gloss only: the raw kind string moved inside the opened entry, so a
-  // spec that wants it opens the line first.
+  // A closed line carries its position and the plain gloss only: the raw kind
+  // string is one click into the line.
   for (const [seq, gloss, kind] of [
     [0, "created this identity", "inception"],
-    [1, "chose who keeps a copy", "witness_config"],
-    [2, "chose who keeps a copy", "witness_config"],
+    [1, "chose who keeps a copy", "witness_set"],
+    [2, "chose who keeps a copy", "witness_set"],
     [3, "said it trusts someone", "trust_attestation"],
   ] as const) {
     await expect(page.getByTestId(`event-seq-${seq}`)).toHaveText(String(seq));
@@ -220,21 +221,17 @@ test("step 8: one ledger's summary and its chain, on the identity page", async (
     await expect(page.getByTestId(`event-payload-kind-${seq}`)).toHaveCount(0);
     await page.getByTestId(`event-expand-${seq}`).click();
     await expect(page.getByTestId(`event-payload-kind-${seq}`)).toHaveText(kind);
-    // Every line but the last closes again, so the one open entry step 8 reads
-    // its id from is the one it opened for that.
     if (seq !== 3) {
       await page.getByTestId(`event-expand-${seq}`).click();
       await expect(page.getByTestId(`event-detail-${seq}`)).toHaveCount(0);
     }
   }
   await expect(page.getByTestId("event-detail-3")).toBeVisible();
-  expect(await identifier(page, "event-id-3")).toBe(
-    (await apiGet(WITNESS_URL, `/api/ledgers/${aliceId}`)).body.entry.head_event,
-  );
+  expect(await identifier(page, "event-id-3")).toBe(identity.body.identity.head_event);
 
   // The event form left the UI with the paging controls, so `since` and
   // `limit` are pinned on the route the panel reads: since is inclusive.
-  const events = await apiGet(WITNESS_URL, `/api/ledgers/${aliceId}/events?since=2&limit=1`);
+  const events = await apiGet(WITNESS_URL, `/api/identities/${aliceId}/ledger?since=2&limit=1`);
   expect(events.body.since).toBe(2);
   expect(events.body.limit).toBe(1);
   expect(events.body.more).toBe(true);
@@ -242,55 +239,45 @@ test("step 8: one ledger's summary and its chain, on the identity page", async (
   expect(events.body.events[0].seq).toBe(2);
 });
 
-test("step 9: the Forks card holds this ledger's record and no other", async () => {
-  await expect(page.getByTestId("witness-forks")).toBeVisible();
-  await expect(page.getByTestId(`fork-record-${aliceId}-3`)).toBeVisible();
-  await expect(page.locator('[data-testid^="fork-record-"]')).toHaveCount(1);
+test("step 9: the conflict this witness recorded, and the one that has none", async () => {
+  // The witness detail screen and its Forks card went with the witness routes,
+  // so a conflict is read where it is recorded (proposal 006 section 8).
+  const forks = await apiGet(WITNESS_URL, `/api/forks?ledger_id=${aliceId}`);
+  expect(forks.body.entries).toHaveLength(1);
+  expect(forks.body.entries[0].seq).toBe(3);
+  expect(forks.body.entries[0].source_endpoint).not.toBe(aliceNodeId);
 
-  // A ledger with no fork record draws no Forks card at all.
-  await page.goto(`${WITNESS_URL}/witness/ledgers/${orgId}`);
-  await expect(page.getByTestId("witness-ledger-detail")).toBeVisible();
-  await expect(page.getByTestId("witness-forks")).toHaveCount(0);
-  const forks = await apiGet(WITNESS_URL, `/api/forks?ledger_id=${orgId}`);
-  expect(forks.body.entries).toEqual([]);
+  const none = await apiGet(WITNESS_URL, `/api/forks?ledger_id=${orgId}`);
+  expect(none.body.entries).toEqual([]);
+
+  const all = await apiGet(WITNESS_URL, "/api/forks?offset=0&limit=64");
+  expect(all.body.entries).toHaveLength(1);
+  expect(all.body.more).toBe(false);
 });
 
-test("step 10: every write is refused and nothing changed", async () => {
-  const before = await apiGet(WITNESS_URL, "/api/ledgers?offset=0&limit=256");
+test("step 10: the witness routes are gone and a stranger is still refused", async () => {
+  const before = await apiGet(WITNESS_URL, "/api/identities/known?offset=0&limit=256");
   const forksBefore = await apiGet(WITNESS_URL, "/api/forks");
 
-  const post = curl([
-    "-i",
-    "-X",
-    "POST",
-    "-H",
-    "Origin: http://127.0.0.1:9080",
-    "-H",
-    "Content-Type: application/json",
-    "--data",
-    "{}",
-    `${WITNESS_URL}/api/ledgers`,
-  ]);
-  expect(post.status).toBe(405);
-  expect(post.body.code).toBe(2);
-  expect(post.body.message).toBe("POST is not allowed on /api/ledgers");
-  expect(post.body.details.reason).toBe("method_not_allowed");
-
-  const trust = curl([
-    "-i",
-    "-X",
-    "POST",
-    "-H",
-    "Origin: http://127.0.0.1:9080",
-    "-H",
-    "Content-Type: application/json",
-    "--data",
-    "{}",
-    `${WITNESS_URL}/api/trust`,
-  ]);
-  expect(trust.status).toBe(404);
-  expect(trust.body.message).toBe("no route for POST /api/trust");
-  expect(trust.body.details.reason).toBe("unknown_route");
+  // `/api/ledgers` was the witness's own read-only route. One node serves one
+  // API now, so the path is not a route at all, for any method.
+  for (const method of ["GET", "POST"] as const) {
+    const answer = curl([
+      "-i",
+      "-X",
+      method,
+      "-H",
+      "Origin: http://127.0.0.1:9080",
+      "-H",
+      "Content-Type: application/json",
+      ...(method === "POST" ? ["--data", "{}"] : []),
+      `${WITNESS_URL}/api/ledgers`,
+    ]);
+    expect(answer.status).toBe(404);
+    expect(answer.body.code).toBe(2);
+    expect(answer.body.message).toBe(`no route for ${method} /api/ledgers`);
+    expect(answer.body.details.reason).toBe("unknown_route");
+  }
 
   const evil = curl(["-i", "-H", "Host: evil.example", `${WITNESS_URL}/api/node`]);
   expect(evil.status).toBe(403);
@@ -300,14 +287,12 @@ test("step 10: every write is refused and nothing changed", async () => {
     "request rejected: Host header must be 127.0.0.1:9080 or localhost:9080",
   );
 
-  const after = await apiGet(WITNESS_URL, "/api/ledgers?offset=0&limit=256");
+  const after = await apiGet(WITNESS_URL, "/api/identities/known?offset=0&limit=256");
   const summary = (body: any) =>
-    body.entries.map((entry: any) => ({
-      ledger_id: entry.ledger_id,
-      head_seq: entry.head_seq,
-      head_event: entry.head_event,
-      event_count: entry.event_count,
-      fork_count: entry.fork_count,
+    body.identities.map((row: any) => ({
+      identity_id: row.identity_id,
+      head_seq: row.head_seq,
+      declared_kind: row.declared_kind,
     }));
   expect(summary(after.body)).toEqual(summary(before.body));
   expect(summary(after.body)).toHaveLength(5);
@@ -318,6 +303,71 @@ test("step 10: every write is refused and nothing changed", async () => {
   expect(forksAfter.body.entries[0].conflicting.event_id).toBe(
     forksBefore.body.entries[0].conflicting.event_id,
   );
+});
+
+test("step 11: an old home is refused, and the entrypoint's rewrite starts clean", async () => {
+  // A `node.json` written before witnesses were identities holds 64-character
+  // hex endpoint ids under `witnesses`. A base32 identity id is 52, so the
+  // loader tells the two apart and refuses rather than misreading one
+  // (proposal 006 section 5.4).
+  docker(["volume", "rm", "-f", LEGACY_VOLUME]);
+  mustRun("docker", ["volume", "create", LEGACY_VOLUME]);
+  const legacy = JSON.stringify({
+    role: "witness",
+    http_bind: "0.0.0.0:9080",
+    witnesses: [LEGACY_ENDPOINT],
+    storage_capacity: 2147483648,
+    relay: "disabled",
+  });
+  mustRun("docker", [
+    "run",
+    "--rm",
+    "--volume",
+    `${LEGACY_VOLUME}:/data`,
+    "--entrypoint",
+    "sh",
+    "mabel:dev",
+    "-c",
+    `mabel node id >/dev/null && printf '%s\\n' '${legacy}' > /data/node.json`,
+  ]);
+
+  // Started past the entrypoint, so nothing rewrites the file first.
+  const refused = docker([
+    "run",
+    "--rm",
+    "--volume",
+    `${LEGACY_VOLUME}:/data`,
+    "--entrypoint",
+    "mabel",
+    "mabel:dev",
+    "serve",
+    "--http",
+    "127.0.0.1:9099",
+    "--iroh-port",
+    "9098",
+  ]);
+  expect(refused.status).toBe(10);
+  const said = `${refused.stdout}${refused.stderr}`;
+  expect(said).toContain(
+    `node.json names the endpoint id ${LEGACY_ENDPOINT} under witnesses, which proposal 006 replaced with {"identity", "endpoints"} objects`,
+  );
+  // The message names the command that fixes it.
+  expect(said).toContain(
+    "run mabel witness set-default --witness <mabel-id> --endpoints <endpoint,...>",
+  );
+
+  // The compose entrypoint writes node.json on every start, before anything
+  // loads it, so the same volume starts clean through the image's entrypoint.
+  const started = docker(["run", "--rm", "--volume", `${LEGACY_VOLUME}:/data`, "mabel:dev", "node", "id"]);
+  expect(started.status, `${started.stdout}${started.stderr}`).toBe(0);
+  const rewritten = json(
+    docker(["run", "--rm", "--volume", `${LEGACY_VOLUME}:/data`, "--entrypoint", "cat", "mabel:dev", "/data/node.json"]),
+  );
+  expect(rewritten).not.toHaveProperty("role");
+  expect(rewritten).not.toHaveProperty("accept_legacy_witness_config");
+  expect(rewritten.witnesses).toEqual([]);
+  expect(rewritten.witness_for).toEqual([]);
+  docker(["volume", "rm", "-f", LEGACY_VOLUME]);
 });
 
 /** One curl request, split into its status code and its JSON body. */
@@ -340,10 +390,11 @@ function splitResponse(response: string): [string, string] {
   return [response.slice(0, separator), response.slice(separator + 4)];
 }
 
-test("step 11: the hand-started containers and the topology come down", async () => {
+test("step 12: the hand-started container and the topology come down", async () => {
   removeExtras();
   expect(containerRunning("mabel-alice-two")).toBe(false);
-  expect(containerRunning("mabel-witness-two")).toBe(false);
   expect(docker(["volume", "inspect", "mabel-alice-second"]).status).not.toBe(0);
   composeDown();
+  // The second witness is a compose service now, so `down -v` removed it too.
+  expect(containerRunning("mabel-witness-two")).toBe(false);
 });

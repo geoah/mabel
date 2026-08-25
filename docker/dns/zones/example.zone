@@ -8,8 +8,10 @@
 ;     sh -c 'cat > /etc/coredns/zones/example.zone' < the-new-zone
 ;
 ; A hostname claim is `_mabel.<hostname> IN TXT "mabel=<identity id>"`
-; (proposal 003 section 2). The serial has to rise on every rewrite, or the
-; `file` plugin keeps serving what it already loaded.
+; (proposal 003 section 2). Beside it, `mabel-endpoints=<id>,<id>` names the
+; machines that answer for whatever identity the same label claims (proposal
+; 006 section 6). The serial has to rise on every rewrite, or the `file` plugin
+; keeps serving what it already loaded.
 
 $ORIGIN example.
 $TTL 5
@@ -26,3 +28,16 @@ ns  IN A   127.0.0.1
 ; What the container's healthcheck asks for. Story 007 keeps this record when
 ; it rewrites the zone, or the resolver goes unhealthy.
 _mabel.health IN TXT "mabel=health"
+
+; A label naming five machines. A TXT character-string holds 255 bytes and
+; `mabel-endpoints=` plus four ids is 227, so five have to be split across two
+; character-strings in one record; a reader joins them back with no separator
+; before it parses anything (proposal 006 section 6). The first string ends with
+; the comma after the fourth id, so the fifth is only there once the two are
+; joined and neither half names all five on its own.
+;
+; The five ids are ed25519 public keys generated from fixed seeds and no machine
+; answers at any of them: what this label proves is the parsing rule, which
+; costs no container. Story 007 keeps this record when it rewrites the zone.
+_mabel.many-machines IN TXT "mabel=xpezo4a4wovzgs7dx43f2pzwk2w7gutnvrzmsrgzuxtcfzjbw4ka"
+_mabel.many-machines IN TXT "mabel-endpoints=cmo62aqzrfceqo7ruqkrvzutvktcw6474cwkovxd7z7ctorce3na,xyhbzzscrer36lffdqwwmhuqv45sshxx7wgfoxvlvj2suhub427a,72al4if4g2w4hrpec4r66oz3gs6xypgvk6avk73uduy6ffkrceva,msccj64kqyg7wqltmbwoom5kdimw7jzyb7yply2a7lnvvsxttvka," "hyzbxuqfwf3yq2lnc7a5civnjlrgfigue7p6itgy2on4bpnnxsgq"

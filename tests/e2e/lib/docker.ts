@@ -8,6 +8,12 @@ export const REPO_ROOT = path.resolve(__dirname, "..", "..", "..");
 export const COMPOSE_FILE = path.join(REPO_ROOT, "docker", "compose.yaml");
 /** The test resolver overlay story 007 runs against (ticket 032). */
 export const DNS_COMPOSE_FILE = path.join(REPO_ROOT, "docker", "compose.dns.yaml");
+/** The second witness stories 004 and 005 run against (ticket 032). */
+export const TWO_WITNESSES_COMPOSE_FILE = path.join(
+  REPO_ROOT,
+  "docker",
+  "compose.two-witnesses.yaml",
+);
 
 /** The image both roles run, and the compose project's derived names. */
 export const IMAGE = "mabel:dev";
@@ -21,9 +27,24 @@ export const BOB_URL = "http://127.0.0.1:9082";
 export const WITNESS_TWO_URL = "http://127.0.0.1:9083";
 export const ALICE_TWO_URL = "http://127.0.0.1:9084";
 
-/** Containers and volumes stories 004, 005 and 006 start by hand. */
-export const EXTRA_CONTAINERS = ["mabel-alice-two", "mabel-witness-two"];
-export const EXTRA_VOLUMES = ["mabel-alice-second"];
+/**
+ * The containers and volumes stories 004 to 009 start by hand. The second
+ * witness is not one of them any more: it is a service of
+ * `docker/compose.two-witnesses.yaml`, so compose starts it and `down -v`
+ * removes it.
+ */
+export const EXTRA_CONTAINERS = [
+  "mabel-alice-two",
+  "mabel-dana",
+  "mabel-carla",
+  "mabel-witness-new",
+];
+export const EXTRA_VOLUMES = [
+  "mabel-alice-second",
+  "mabel-dana-home",
+  "mabel-carla-home",
+  "mabel-witness-new-home",
+];
 
 export interface RunResult {
   status: number;
@@ -130,6 +151,19 @@ export function verifier(args: string[], timeoutMs = 60_000): RunResult {
   );
 }
 
+/**
+ * The same throwaway container with no witness configured at all, so the only
+ * sources it has are the `--peer` tickets on its command line.
+ *
+ * `verify` with no `--from` asks the witnesses the ledger names and the ones
+ * `node.json` names; a home that has neither falls back to the endpoints of
+ * its tickets, which is what story 004 needs to ask two witnesses at once
+ * (proposal 001 section 11).
+ */
+export function verifierWithNoWitness(args: string[], timeoutMs = 60_000): RunResult {
+  return docker(["run", "--rm", "--network", NETWORK, IMAGE, ...args], timeoutMs);
+}
+
 /** The lines the command printed on stdout, with the trailing blank dropped. */
 export function stdoutLines(result: RunResult): string[] {
   return result.stdout.replace(/\n$/, "").split("\n");
@@ -149,9 +183,9 @@ export function composeUp(): void {
 }
 
 /**
- * `down -v` naming both compose files, so a run that brought the story 007
- * overlay up leaves no resolver container, no `resolver-zones` volume and no
- * network behind for the next story to trip over. The overlay declares the
+ * `down -v` naming all three compose files, so a run that brought the story 007
+ * resolver or the second witness up leaves no container, no volume and no
+ * network behind for the next story to trip over. The DNS overlay declares the
  * network's subnet, so a leftover network would also be the wrong one.
  *
  * A teardown that fails must fail the run: a half-removed topology is what
@@ -167,6 +201,8 @@ export function composeDown(): void {
       COMPOSE_FILE,
       "-f",
       DNS_COMPOSE_FILE,
+      "-f",
+      TWO_WITNESSES_COMPOSE_FILE,
       "down",
       "-v",
       "--remove-orphans",
@@ -177,39 +213,61 @@ export function composeDown(): void {
 
 /**
  * The topology of story 007: the base compose file plus the test resolver
- * overlay, brought up in two phases and answering with the witness's endpoint
- * id.
+ * overlay, brought up in two phases and answering with the witness identity and
+ * the machine that answers for it.
  *
- * Two phases because the wallets need `MABEL_WITNESSES`, and a witness's
- * endpoint id only exists once the witness has started. The witness and the
- * resolver come up first, `/shared/witness.id` is read, and the wallets start
- * with that id in their environment; compose interpolates it into the
- * overlay's `MABEL_WITNESSES`, the entrypoint runs `mabel witness set-default`
- * with it, and the crawler's third source has somewhere to ask.
+ * Two phases because the wallets need `MABEL_WITNESSES`, and neither half of it
+ * exists until the witness has started: the witness mints its identity and
+ * advertises this container on it on its first start. The witness and the
+ * resolver come up first, `/shared/witness.identity` and `/shared/witness.id`
+ * are read, and the wallets start with `<mabel id>=<endpoint id>` in their
+ * environment; compose interpolates it into the overlay's `MABEL_WITNESSES`,
+ * the entrypoint runs `mabel witness set-default` with both halves, and the
+ * crawler's third source has somewhere to ask (proposal 006 section 5.4).
  *
  * No `--build`: both images are the ones global-setup built from committed
  * HEAD, and `up --build` would rebuild them from the working tree.
  */
-export function composeUpWithResolver(): string {
+export function composeUpWithResolver(): Witness {
   const files = ["-f", COMPOSE_FILE, "-f", DNS_COMPOSE_FILE];
   mustRun(
     "docker",
     ["compose", ...files, "up", "-d", "--wait", "witness", "resolver"],
     300_000,
   );
-  const witness = mustRun("docker", [
-    "compose",
-    ...files,
-    "exec",
-    "-T",
-    "witness",
-    "cat",
-    "/shared/witness.id",
-  ]).stdout.trim();
+  const read = (file: string) =>
+    mustRun("docker", ["compose", ...files, "exec", "-T", "witness", "cat", file]).stdout.trim();
+  const witness: Witness = {
+    identity: read("/shared/witness.identity"),
+    endpointId: read("/shared/witness.id"),
+  };
   mustRun("docker", ["compose", ...files, "up", "-d", "--wait"], 180_000, {
-    MABEL_WITNESSES: witness,
+    MABEL_WITNESSES: `${witness.identity}=${witness.endpointId}`,
   });
   return witness;
+}
+
+/**
+ * The topology of stories 004 and 005: the base compose file plus the second
+ * witness. Compose starts it, waits for it and wires both wallets to both
+ * witnesses, so no story hand-wires a `docker run` for it (ticket 032).
+ */
+export function composeUpWithTwoWitnesses(): void {
+  mustRun(
+    "docker",
+    [
+      "compose",
+      "-f",
+      COMPOSE_FILE,
+      "-f",
+      TWO_WITNESSES_COMPOSE_FILE,
+      "up",
+      "-d",
+      "--wait",
+      "--remove-orphans",
+    ],
+    300_000,
+  );
 }
 
 /** Removes the containers and volumes stories 004 to 006 start by hand. */
@@ -230,13 +288,20 @@ export function resetTopology(): void {
 }
 
 /**
- * The same reset with the test resolver overlay, for story 007, answering
- * with the witness's endpoint id.
+ * The same reset with the test resolver overlay, for story 007, answering with
+ * the witness identity and its machine.
  */
-export function resetTopologyWithResolver(): string {
+export function resetTopologyWithResolver(): Witness {
   removeExtras();
   composeDown();
   return composeUpWithResolver();
+}
+
+/** The same reset with the second witness, for stories 004 and 005. */
+export function resetTopologyWithTwoWitnesses(): void {
+  removeExtras();
+  composeDown();
+  composeUpWithTwoWitnesses();
 }
 
 export function containerRunning(name: string): boolean {
@@ -244,18 +309,43 @@ export function containerRunning(name: string): boolean {
   return result.status === 0 && result.stdout.trim() === "true";
 }
 
-/** The witness's endpoint id, as story 001 step 1 reads it. */
+/**
+ * A witness, in the two ids every story needs: the identity a ledger names, and
+ * the machine a wallet dials for it (proposal 006 sections 1 and 2).
+ */
+export interface Witness {
+  /** The witness's Mabel id, which is what a `WitnessSet` records. */
+  identity: string;
+  /** The Iroh endpoint id of the container answering for it. */
+  endpointId: string;
+}
+
+/**
+ * One witness's two ids, from the files its entrypoint published to the shared
+ * volume. `<prefix>.identity` is the third file proposal 006 added beside
+ * `<prefix>.ticket` and `<prefix>.id`.
+ */
+export function witnessOf(prefix = "witness"): Witness {
+  const read = (file: string) =>
+    mustRun("docker", [
+      "compose",
+      "-f",
+      COMPOSE_FILE,
+      "exec",
+      "-T",
+      "witness",
+      "cat",
+      file,
+    ]).stdout.trim();
+  return {
+    identity: read(`/shared/${prefix}.identity`),
+    endpointId: read(`/shared/${prefix}.id`),
+  };
+}
+
+/** The witness's machine id, as story 001 step 1 reads it. */
 export function witnessId(): string {
-  return mustRun("docker", [
-    "compose",
-    "-f",
-    COMPOSE_FILE,
-    "exec",
-    "-T",
-    "witness",
-    "cat",
-    "/shared/witness.id",
-  ]).stdout.trim();
+  return witnessOf().endpointId;
 }
 
 /** A file carried between two homes that share no disk, by `docker cp`. */

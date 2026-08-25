@@ -1,187 +1,196 @@
 # 005: the witness operator
 
 - Status: implemented
-- Surfaces: witness UI, CLI, witness HTTP API
+- Surfaces: the node UI, CLI, the node HTTP API
 - Test: `tests/e2e/specs/005-witness-operator.spec.ts`
 
-Someone runs a witness and wants to know what it holds. The debug route is the
-same two screens the wallet has, read-only: the card list of its holdings and
-one page per ledger. It names the fork it recorded and issues nothing but
-reads.
-
-Proposal 004 took the node card, the ledger table, its paging controls and the
-event form out of that route, and round 4 of proposal 005 gave the node facts a
-page of their own at `/node`. The rest is still answered by the witness API, so
-this story reads on the screen what the screen draws and on the route what the
-route reports.
+Someone runs a witness and wants to know what it holds. There is no witness
+screen and no witness route: one node serves one API, so its holdings are the
+"Known identities" section of the same home every node draws, and one record is
+the same identity page a wallet draws (proposal 006 section 8). This story reads
+what that surface says, checks the conflict on the route that reports it, and
+proves an old home is refused rather than misread.
 
 ## Actors
 
 - witness one: compose service `witness`, API and UI on
-  `http://127.0.0.1:9080`. The node being inspected.
-- alice: wallet node, compose service `alice`, the source of every ledger the
-  witness holds.
+  `http://127.0.0.1:9080`. The node being inspected. It holds one identity, the
+  witness identity it minted on its first start, and keeps other people's
+  records under it.
+- alice: a node holding alice's key, compose service `alice`, the source of
+  every record the witness keeps.
 
 `dc` stands for `docker compose -f docker/compose.yaml`, run from the
 repository root. This story starts from story 004, so it inherits story 004's
-hand-started second witness and second machine (an operator would use ticket
-032's `compose.two-witnesses.yaml` overlay instead; the spec hand-starts them
-for the reason story 004 states), and step 11 tears them down.
+second witness (a service of `docker/compose.two-witnesses.yaml`) and its
+hand-started second machine, and step 12 tears both down.
 
 ## Story
 
 1. Run story 004 steps 1 to 7, stopping before its teardown. Witness one now
-   holds alice's ledger at seq 3 and has recorded one fork record for it. Keep
-   `alice_id` and `witness_id`.
-2. Give the witness five ledgers. Carol and dave exist in alice's home from
-   story 004 but were never pushed:
+   keeps alice's record at seq 3 and has recorded one conflict for it. Keep
+   `alice_id`, `witness_identity`, `witness_id` and `witness_two_identity`.
+2. Give the witness five records to keep. Carol and dave exist in alice's home
+   from story 004 but were never pushed:
    ```sh
    dc exec -T alice mabel identity create --alias erin --kind person
    dc exec -T alice mabel identity create --alias mabel-demo-co \
      --kind organization --founder alice
    for name in carol dave erin mabel-demo-co; do
-     dc exec -T alice mabel witness add --identity "$name" --endpoint "$witness_id"
+     dc exec -T alice mabel witness add --identity "$name" --witness "$witness_identity"
      dc exec -T alice sh -c 'mabel sync push --identity '"$name"' \
        --peer "$(cat /shared/witness.ticket)"'
    done
    ```
-   Record `org_id`. The witness now holds five ledgers, four `person` and one
-   `organization`.
+   Record `org_id`. The witness now keeps five records, four `person` and one
+   `organization`, none of which it can sign for.
 3. Read the node facts, on the route and on the page that draws them:
    `curl -fsS http://127.0.0.1:9080/api/node`. Then open
-   `http://127.0.0.1:9080/witness` and click `nav-node`. A witness serves no
-   wallet, so its nav is two entries and no third, `nav-witness` for the records
-   it keeps and `nav-node` for the program keeping them. Round 5 of proposal 005
-   cut the page to six short rows and a card list of the witnesses this node uses
-   by default, so a count on it is a bare number under the row's own label.
-4. Open `http://127.0.0.1:9080/witness`. It is one card list, `identity-cards`,
-   holding all five ledgers with no paging control anywhere: the route asks for
-   every ledger it holds at once. Read the two standing notes above the list.
-   Ledger ids are digests, so which card is where is whatever the ordering
-   says: read the ids out of the DOM and assert per card, never "the org is
-   first". The three holdings filters, `witness-holdings-all`,
-   `witness-holdings-ours` and `witness-holdings-trusted`, are absent here: a
-   witness serves no wallet, so "yours" and "trusted" mean nothing on this
-   route. They belong to the wallet's drill-in, which story 007 step 13 reads.
-5. Read the declared kind of each card,
-   `identity-card-declared-kind-<ledger_id>`.
-6. Read the fork counts. A card carries
-   `identity-card-fork-count-<ledger_id>` only when the witness recorded a fork
-   for that ledger, so exactly one card carries it.
-7. Page the route instead of the screen. Paging is still how the store is read
-   over HTTP, and the order is what makes it stable:
+   `http://127.0.0.1:9080/wallet` and click `nav-node`. The nav is the same
+   three entries every node serves, `nav-wallet`, `nav-witnesses` and
+   `nav-node`: a node that keeps other people's records is not a different
+   program, and `nav-witness` does not exist.
+4. Open `http://127.0.0.1:9080/wallet`. `identity-cards` holds one card, the
+   witness identity this home minted and signs for. Everything else it holds is
+   a known identity, a record it has and does not control, so
+   `known-identity-cards` holds five, under the standing note
+   `known-identities-note`. Record ids are digests, so which card is where is
+   whatever the ordering says: read the ids out of the DOM and assert per card,
+   never "the org is first".
+5. Read the declared kind of each known row on `GET /api/identities/known`.
+6. Page that route. Paging is how a home with up to 10000 records is read, and
+   the order is what makes it stable:
    ```sh
-   curl -fsS 'http://127.0.0.1:9080/api/ledgers?offset=0&limit=4'
-   curl -fsS 'http://127.0.0.1:9080/api/ledgers?offset=4&limit=4'
+   curl -fsS 'http://127.0.0.1:9080/api/identities/known?offset=0&limit=4'
+   curl -fsS 'http://127.0.0.1:9080/api/identities/known?offset=4&limit=4'
    ```
-8. Click `identity-card-link-<alice_id>`. The page is headed `This record` and
-   the nav is the only way back from it. Read the summary card, then the Ledger
-   card, which draws one line per event: a closed line carries the position and
-   a plain gloss, so click `event-expand-<seq>` to read the raw kind, the entry
-   id and the payload. Then page the events on the route, which is where `since`
-   and `limit` live now:
+7. Click `identity-card-link-<alice_id>` in the known list. It opens
+   `/identities/<alice_id>`, the same identity page a wallet draws, because a
+   record is a record. Read the card, then the Ledger card, which draws one line
+   per event: a closed line carries the position and a plain gloss, so click
+   `event-expand-<seq>` to read the raw kind, the entry id and the payload. Then
+   page the events on the route, which is where `since` and `limit` live:
    ```sh
-   curl -fsS 'http://127.0.0.1:9080/api/ledgers/'"$alice_id"'/events?since=2&limit=1'
+   curl -fsS 'http://127.0.0.1:9080/api/identities/'"$alice_id"'/ledger?since=2&limit=1'
    ```
-9. Read the Forks card on the same page: it holds the records of this ledger
-   and no other. Open `http://127.0.0.1:9080/witness/ledgers/<org_id>`, a
-   ledger with no fork record, which draws no Forks card at all.
-10. Try to write. Record the store first, so the "nothing changed" claim is
-    checked rather than asserted, then send three requests the witness must
-    refuse:
+8. Read the conflict. `GET /api/forks` is the one route that reports one, on
+   every node:
+   ```sh
+   curl -fsS 'http://127.0.0.1:9080/api/forks?ledger_id='"$alice_id"
+   curl -fsS 'http://127.0.0.1:9080/api/forks?ledger_id='"$org_id"
+   curl -fsS 'http://127.0.0.1:9080/api/forks?offset=0&limit=64'
+   ```
+9. Ask for the routes the witness screens used. Record the store first, so the
+   "nothing changed" claim is checked rather than asserted:
     ```sh
-    curl -fsS 'http://127.0.0.1:9080/api/ledgers?offset=0&limit=256' > /tmp/before.json
+    curl -fsS 'http://127.0.0.1:9080/api/identities/known?offset=0&limit=256' > /tmp/before.json
+    curl -i http://127.0.0.1:9080/api/ledgers
     curl -i -X POST -H 'Origin: http://127.0.0.1:9080' \
       -H 'Content-Type: application/json' --data '{}' \
       http://127.0.0.1:9080/api/ledgers
-    curl -i -X POST -H 'Origin: http://127.0.0.1:9080' \
-      -H 'Content-Type: application/json' --data '{}' \
-      http://127.0.0.1:9080/api/trust
     curl -i -H 'Host: evil.example' http://127.0.0.1:9080/api/node
-    curl -fsS 'http://127.0.0.1:9080/api/ledgers?offset=0&limit=256' > /tmp/after.json
+    curl -fsS 'http://127.0.0.1:9080/api/identities/known?offset=0&limit=256' > /tmp/after.json
     ```
-11. Tear down what story 004 left running, then the topology:
+10. Start a container on a home written before witnesses were identities. Its
+    `node.json` carries a `role` line and a 64-character hex endpoint id under
+    `witnesses`, which is the shape proposal 006 section 5.4 replaced:
     ```sh
-    docker rm -f mabel-alice-two mabel-witness-two
+    docker volume create mabel-legacy-home
+    docker run --rm --volume mabel-legacy-home:/data --entrypoint sh mabel:dev -c \
+      'mabel node id >/dev/null && printf "%s\n" "{\"role\":\"witness\",\"witnesses\":[\"<64 hex>\"]}" > /data/node.json'
+    docker run --rm --volume mabel-legacy-home:/data --entrypoint mabel mabel:dev \
+      serve --http 127.0.0.1:9099 --iroh-port 9098
+    ```
+    That second command starts past the entrypoint, so nothing rewrites the file
+    first, and it fails to load.
+11. Start the same volume through the image's entrypoint, which writes
+    `node.json` on every start before anything loads it:
+    ```sh
+    docker run --rm --volume mabel-legacy-home:/data mabel:dev node id
+    docker run --rm --volume mabel-legacy-home:/data --entrypoint cat mabel:dev /data/node.json
+    docker volume rm -f mabel-legacy-home
+    ```
+12. Tear down what story 004 left running, then the topology:
+    ```sh
+    docker rm -f mabel-alice-two
     docker volume rm mabel-alice-second
-    dc down -v
+    dc -f docker/compose.two-witnesses.yaml down -v
     ```
 
 ## Verified outcomes
 
-- Step 3: the node document answers `role: "witness"`, `relay: "disabled"`,
-  `endpoint_id == witness_id`, `ledger_count: 5`, `fork_count: 1` and
-  `storage_capacity: 2147483648`.
-- Step 3's page says the same in six short rows: `node-role` reads `witness`,
-  the word the document carries, `node-relay` reads `direct connections only`,
-  `node-endpoint-id` carries `witness_id` under the label `Iroh ID` and is not
-  truncated, `node-ledger-count` reads `5` under the label `records`,
-  `node-fork-count` reads `1` under the label `conflicts`, `node-storage` ends
-  `of 2.1 GB` and `node-version` repeats the document's own value.
-  `node-witnesses-empty` reads `none`. A witness draws no
-  `node-identity-count`: it holds no identity of its own. Round 5 of proposal
-  005 dropped `node-http-bind` from the page, so no node draws it.
-- Step 4: `witness-read-only-note` reads `This page only reads. Nothing here
-  changes anything.` and `witness-holdings-note` reads `This is what this one
-  witness holds. A record missing here may still be on another witness.` There
-  is no global discovery and no "who trusts B" query (flag D). None of
-  `witness-holdings-all`, `witness-holdings-ours` or `witness-holdings-trusted`
-  is on the page: this route draws one flat list and no filter.
-- Step 4: five `identity-card-link-*` elements are present, their ledger ids in
-  ascending order, and that order is the order `GET
-  /api/ledgers?offset=0&limit=256` answers in.
-- Step 5: `identity-card-declared-kind-<org_id>` reads `organization` and the
-  four person cards read `person`. Which card falls where follows from the
-  digest order, so the assertion is per card.
-- Step 6: `identity-card-fork-count-<alice_id>` reads `1 conflict`, and it is
-  the only `identity-card-fork-count-*` element on the page.
-- Step 7: the first request answers `offset: 0`, `limit: 4`, `more: true` and
-  four entries; the second answers `offset: 4`, `more: false` and one entry.
-  The two pages together name every ledger exactly once, in the same ascending
-  order the cards are drawn in.
-- Step 8's page is headed `This record`, its only `h1`, and it draws no back
-  link: `witness-ledger-back` is absent, because the nav is the way back.
-- Step 8's summary: `witness-detail-ledger-id` carries `alice_id`,
-  `witness-detail-declared-kind` reads `person`, `witness-detail-head-seq`
-  reads `3`, `witness-detail-event-count` reads `4`,
-  `witness-detail-fork-count` reads `1`, and `witness-detail-witnesses` lists
-  two endpoint ids, witness one and witness two, because that is what alice's
-  chain says. `witness-detail-source-endpoint` carries the endpoint that
-  pushed, which is provenance, not authorization.
-  Proposal 005 removed the declared-kind advisory sentence outright, so
-  `witness-detail-declared-kind-note` is absent from the page, and
-  `witness-detail-holdings-note` repeats the holdings sentence.
-- Step 8's chain: `ledger-event-count` reads `4`, `ledger-head-seq` reads `3`,
-  and four `ledger-event-*` rows are drawn. A closed line carries `event-seq-*`
-  and `event-gloss-*` only, reading in order `created this identity`, `chose who
-  keeps a copy`, `chose who keeps a copy` and `said it trusts someone`, with no
-  `event-payload-kind-*` element on the page at all. Opening
-  `event-expand-<seq>` shows `event-detail-<seq>`, and `event-payload-kind-*`
-  then reads `inception`, `witness_config`, `witness_config` and
-  `trust_attestation` in the same order. `event-id-3` in the open head entry
-  carries the `entry.head_event` the ledger route reports. The wallet's ledger
-  and a witness's copy of it render through the same component, because the
-  chain is the same chain.
-- Step 8's event page answers `since: 2`, `limit: 1`, `more: true` and one
+- Step 3: the node document carries no `role` key at all, and answers `relay:
+  "disabled"`, `endpoint_id == witness_id`, `identity_count: 1`,
+  `ledger_count: 6`, `fork_count: 1` and `storage_capacity: 2147483648`. Six
+  records: the five it keeps for other people and its own.
+- Step 3's page says the same in short rows. There is no `node-role` element:
+  what a node can do is read from what it holds. `node-relay` reads `direct
+  connections only`, `node-endpoint-id` carries `witness_id` under the label
+  `Iroh ID` and is not truncated, `node-identity-count` reads `1` under the
+  label `identities`, `node-witness-for` holds one inline identity,
+  `node-witness-for-<witness_identity>`, under the label `keeps records for`,
+  `node-ledger-count` reads `6` under `records`, `node-fork-count` reads `1`
+  under `conflicts`, `node-storage` ends `of 2.1 GB` and `node-version` repeats
+  the document's own value. This home holds a key, so `node-no-keys` is absent.
+  Round 5 of proposal 005 dropped `node-http-bind` from the page.
+- Step 4: `identity-cards` holds exactly `identity-card-<witness_identity>`,
+  and `known-identity-cards` holds five links whose ids are the ids `GET
+  /api/identities/known?offset=0&limit=256` answers, in the same order.
+  `known-identities-note` reads `This is what this home holds. A record missing
+  here may still be on another witness.`, the sentence that came off the witness
+  route with it (proposal 006 section 8). There is no global discovery and no
+  "who trusts B" query (flag D). The witness identity is not a known row: a
+  home's holdings are what it stores and cannot sign for.
+- Step 5: the row for `org_id` reads `declared_kind: "organization"`, the four
+  others read `"person"`, and every row reads `stored: true`.
+- Step 6: the first request answers `offset: 0`, `limit: 4`, `more: true` and
+  four rows; the second answers `offset: 4`, `more: false` and one row. The two
+  pages together name every record exactly once, in the order the route sorts
+  by, which is the rendered id: the digits sort before the letters.
+- Step 7's page: `identity-detail-resolved` carries `alice_id`,
+  `identity-detail-declared-kind` reads `person` and
+  `identity-detail-event-count` reads `4`. This home holds no key for alice, so
+  `identity-actions` is absent from the page entirely. `GET
+  /api/identities/<alice_id>` answers `head_seq: 3`, `event_count: 4` and
+  `witnesses` holding `witness_identity` and `witness_two_identity`, because
+  that is what alice's chain says.
+- Step 7's chain: `ledger-event-count` reads `4` and four `ledger-event-*` rows
+  are drawn. A closed line carries `event-seq-*` and `event-gloss-*` only,
+  reading in order `created this identity`, `chose who keeps a copy`, `chose who
+  keeps a copy` and `said it trusts someone`, with no `event-payload-kind-*`
+  element on the page at all. Opening `event-expand-<seq>` shows
+  `event-detail-<seq>`, and `event-payload-kind-*` then reads `inception`,
+  `witness_set`, `witness_set` and `trust_attestation` in the same order: a
+  witness set is tag 19 and names identities. `event-id-3` in the open head
+  entry carries the `head_event` the identity route reports.
+- Step 7's event page answers `since: 2`, `limit: 1`, `more: true` and one
   event whose `seq` is 2: `since` is inclusive.
-- Step 9: `witness-forks` is present with exactly one `fork-record-*` element,
-  `fork-record-<alice_id>-3`. On `<org_id>`'s page `witness-forks` is absent
-  and `GET /api/forks?ledger_id=<org_id>` answers `entries: []`: a ledger with
-  no fork record has nothing to say.
-- Step 10, first request: HTTP 405, body `{"ok": false, "code": 2, ...}` with
-  `message` exactly `POST is not allowed on /api/ledgers` and
-  `details.reason == "method_not_allowed"`.
-- Step 10, second request: HTTP 404 with `message` exactly `no route for POST
-  /api/trust` and `details.reason == "unknown_route"`. The wallet's mutating
-  routes do not exist on a witness.
-- Step 10, third request: HTTP 403 with `code: 2`, `details.reason ==
+- Step 8: `?ledger_id=<alice_id>` answers one entry at `seq: 3` whose
+  `source_endpoint` is not alice's own node, because the branch witness one
+  refused came from her second machine. `?ledger_id=<org_id>` answers `entries:
+  []`, and the unfiltered page answers one entry with `more: false`.
+- Step 9: both requests to `/api/ledgers` answer HTTP 404 with `code: 2`,
+  `details.reason == "unknown_route"` and `message` exactly `no route for GET
+  /api/ledgers` and `no route for POST /api/ledgers`. That path was the
+  witness's own read-only route, and one node serves one API now, so it is not a
+  route at all for any method.
+- Step 9's third request answers HTTP 403 with `code: 2`, `details.reason ==
   "host_not_loopback"` and `message` exactly `request rejected: Host header
   must be 127.0.0.1:9080 or localhost:9080`.
-- Nothing in step 10 changed the store. Every mutating request answered 405 or
-  404, and `/tmp/after.json` holds the same five entries as `/tmp/before.json`:
-  the same `head_seq`, `head_event`, `event_count` and `fork_count` per ledger.
-  `GET /api/forks` still answers one record with the same `kept.event_id` and
-  `conflicting.event_id`.
+- Nothing in step 9 changed the store: `/tmp/after.json` holds the same five
+  rows as `/tmp/before.json`, with the same `head_seq` and `declared_kind` each,
+  and `GET /api/forks` still answers one record with the same `kept.event_id`
+  and `conflicting.event_id`.
+- Step 10 exits 10 and says what to run: `Schema error: node.json is not valid:
+  node.json names the endpoint id <64 hex> under witnesses, which proposal 006
+  replaced with {"identity", "endpoints"} objects; run mabel witness set-default
+  --witness <mabel-id> --endpoints <endpoint,...>`. A hex endpoint id is 64
+  characters and a base32 identity id is 52, so the loader tells the two apart
+  and refuses rather than configuring a witness that is not one.
+- Step 11 exits 0, and the rewritten `node.json` carries no `role` key, no
+  `accept_legacy_witness_config` key, `witnesses: []` and `witness_for: []`.
+  `mabel node id` reads `node.key` and not `node.json`, so it runs before the
+  rewrite on a volume the old file would otherwise stop.
 
 ## Deviations
 
@@ -191,25 +200,15 @@ the story text above.
 - Step 1 runs story 004 steps 1 to 7 only when the state they leave is
   missing. The suite runs story 004 first, so the usual path inherits its
   containers; running this spec on its own rebuilds them.
-- Step 8 asserts the two summary rows by value, which the story states in
-  words. `witness-detail-witnesses` holds exactly `witness_id` and
-  `witness_two_id`, and `witness-detail-source-endpoint` holds alice's node
-  endpoint id: the second machine's push of the conflicting branch was
-  rejected, so the endpoint that stored this ledger is alice's own.
-- Steps 3, 7, 8 and 10 read the API through `apiGet` rather than through `curl`
-  and `/tmp/*.json` files. The three refused requests of step 10 are the
-  story's `curl` commands, because a refusal is about headers and status codes.
-- The spec also waits on the containers the story does not name:
-  `identity-cards`, `witness-ledger-detail` and `ledger-events`.
-- Step 8 counts the chain's rows as `li[data-testid^="ledger-event-"]` under
+- Steps 3 and 5 to 9 read the API through `apiGet` rather than through `curl`
+  and `/tmp/*.json` files. The three refused requests of step 9 are the story's
+  `curl` commands, because a refusal is about headers and status codes.
+- Step 7 counts the chain's rows as `li[data-testid^="ledger-event-"]` under
   `ledger-events`. Proposal 005 draws the ledger as compact rows rather than a
-  table, so a line is a list item; the wallet's own ledger and this witness's
-  copy still render through the one component.
-- Step 8 opens all four lines rather than only the head, and closes the first
-  three again. The final round of proposal 005 moved the raw kind string into the
-  opened entry, so reading four kinds means four clicks; the head entry is left
-  open, which is the one state the story asks for.
-- `forks_truncated` is asserted nowhere on the screen. The redesigned route
-  draws the flag in `witness-detail-fork-count`'s sentence only when a witness
-  stopped recording, which this witness did not, so the flag is pinned on the
-  ledger route in story 004 instead.
+  table, so a line is a list item.
+- Step 7 opens all four lines rather than only the head, and closes the first
+  three again. The final round of proposal 005 moved the raw kind string into
+  the opened entry, so reading four kinds means four clicks; the head entry is
+  left open, which is the one state the story asks for.
+- Step 10 writes the whole `node.json` the old shape had, five keys, rather
+  than the two the story abbreviates to.

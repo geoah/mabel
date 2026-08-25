@@ -100,6 +100,26 @@ run() {
     [ "$RUN_STATUS" -eq 0 ] || fail "mabel $* exited $RUN_STATUS in $service"
 }
 
+# `mabel <args> --peer <the witness ticket this container holds>`, for a command
+# that appends to a ledger somebody else can also append to. The append
+# discipline asks that ledger's witnesses where it ends before it signs
+# (proposal 001 section 5), and reaching a witness needs an address: node.json
+# records which identity witnesses and which machines answer for it, never how
+# to route to one, so the ticket on the shared volume is the address hint
+# (proposal 006 section 5.4).
+run_shared() {
+    local service="$1" arguments=""
+    shift
+    for argument in "$@"; do arguments+=" $argument"; done
+    just_titled=0
+    printf '\n  [%s] $ mabel%s --peer "$(cat /shared/witness.ticket)"\n' "$service" "$arguments"
+    RUN_STATUS=0
+    RUN_OUT="$(dc exec -T "$service" sh -c \
+        "mabel$arguments --peer \"\$(cat /shared/witness.ticket)\"" 2>&1)" || RUN_STATUS=$?
+    emit
+    [ "$RUN_STATUS" -eq 0 ] || fail "mabel $* exited $RUN_STATUS in $service"
+}
+
 # `mabel sync push <args> --peer <the witness ticket this container holds>`.
 # The ticket is an address hint and never authorization (section 4), which is
 # why it can sit on a world-readable volume. A rejected push is the caller's
@@ -151,8 +171,9 @@ hand_over() {
 work="$(mktemp -d)"
 
 phase "1. one witness and two wallets, on one bridge network"
-note 'a witness stores and serves ledgers and signs nothing of its own'
-note '(decision 001, passive witnesses): it cannot admit, attest or revoke.'
+note 'a witness is an identity, and the container that answers for it is a'
+note 'machine that identity published on its own record (decision 019). It'
+note "keeps other people's records and signs nothing on them."
 printf '\n  $ docker compose -f docker/compose.yaml down -v && up -d --wait\n'
 dc down -v >/dev/null 2>&1 || true
 dc up -d --wait >/dev/null 2>&1 || fail "the topology did not come up healthy"
@@ -166,8 +187,12 @@ ticket_volume="$(docker inspect \
     -f '{{range .Mounts}}{{if eq .Destination "/shared"}}{{.Name}}{{end}}{{end}}' mabel-witness)"
 witness_id="$(dc exec -T witness cat /shared/witness.id)"
 [ -n "$witness_id" ] || fail "the witness published no endpoint id to /shared/witness.id"
+witness_identity="$(dc exec -T witness cat /shared/witness.identity)"
+[ -n "$witness_identity" ] ||
+    fail "the witness published no Mabel id to /shared/witness.identity"
 blank
-note "witness endpoint $witness_id"
+note "witness identity $witness_identity"
+note "answering on machine $witness_id"
 
 phase "2. alice and bob create person identities"
 note 'an identity is the digest of its own inception event, so the id and the'
@@ -180,9 +205,10 @@ bob_id="$(printf '%s' "$RUN_OUT" | sed -n 's/^created identity //p')"
 
 phase "3. both name the witness in their ledger and push"
 note 'naming a witness is an event in the ledger, so who was asked to hold a'
-note 'copy is part of the record a verifier reads.'
-run alice witness add --identity alice --endpoint "$witness_id"
-run bob witness add --identity bob --endpoint "$witness_id"
+note 'copy is part of the record a verifier reads. The event names the'
+note 'witness identity, so replacing the machine behind it leaves it standing.'
+run alice witness add --identity alice --witness "$witness_identity"
+run bob witness add --identity bob --witness "$witness_identity"
 push alice --identity alice
 [ "$RUN_STATUS" -eq 0 ] || fail "alice could not push to the witness"
 push bob --identity bob
@@ -222,23 +248,30 @@ phase "7. alice and the shared ledger both attest trust in bob"
 note 'trust is one-way and it is a statement, not a permission (decision'
 note '005): an attestation names a subject and grants nothing.'
 run alice trust add --issuer alice --subject "$bob_id"
-run alice trust add --issuer mabel-demo-co --subject "$bob_id"
 blank
-note "the shared ledger holds no key, so alice's key signed for it. The"
-note "report names the principal that signed, so a delegate's signature is"
-note "not read as the ledger's own (proposal 002 section 5)."
-run alice verify trust --issuer mabel-demo-co --subject "$bob_id"
+note "bob controls the shared ledger too, so this append asks the witness"
+note "where that ledger ends before it signs. Reaching the witness needs an"
+note "address, which is what the ticket on the shared volume carries."
+run_shared alice trust add --issuer mabel-demo-co --subject "$bob_id"
 
 phase "8. push what the witness will take"
 push alice --identity alice
 [ "$RUN_STATUS" -eq 0 ] || fail "alice could not push her attestation"
 blank
 note "now the shared ledger. First it names the witness on its own chain,"
-note "because a witness only admits a ledger whose witness config names it"
-note "(admission, proposal 001 section 5); then the push is accepted."
-run alice witness add --identity mabel-demo-co --endpoint "$witness_id"
+note "because a witness only admits a ledger whose witness set names an"
+note "identity it witnesses for (proposal 006 section 4); then the push is"
+note "accepted."
+run_shared alice witness add --identity mabel-demo-co --witness "$witness_identity"
 push alice --identity mabel-demo-co
 [ "$RUN_STATUS" -eq 0 ] || fail "the witness refused the shared ledger"
+blank
+note "and now the witness's copy answers for it. The shared ledger holds no"
+note "key, so alice's key signed for it: the report names the principal that"
+note "signed, so a delegate's signature is not read as the ledger's own"
+note "(proposal 002 section 5)."
+run_shared alice verify trust --issuer mabel-demo-co --subject "$bob_id" \
+    --from "$witness_id"
 
 phase "9. a stranger verifies alice-trusts-bob from an empty home"
 note "a fresh container: no identities, no aliases, no keys but the node key"
@@ -267,23 +300,25 @@ printf '%s\n' "$RUN_OUT" | grep -q 'revoked at seq' ||
     fail "the report does not name the revocation"
 
 phase "11. what the witness holds"
-note "the witness's read-only debug API, on the host at 127.0.0.1:9080. Host"
-note "port equals container port because the API refuses any Host that is"
-note "not 127.0.0.1 or localhost on the port it bound (section 10)."
-printf '\n  $ curl -fsS http://127.0.0.1:9080/api/ledgers\n'
-ledgers="$(curl -fsS http://127.0.0.1:9080/api/ledgers)" ||
-    fail "the witness debug API did not answer on 127.0.0.1:9080"
+note "a witness's holdings are the ledgers it stores and does not sign for,"
+note "which is the route every node answers, on the host at 127.0.0.1:9080."
+note "Host port equals container port because the API refuses any Host that"
+note "is not 127.0.0.1 or localhost on the port it bound (section 10)."
+printf '\n  $ curl -fsS http://127.0.0.1:9080/api/identities/known\n'
+ledgers="$(curl -fsS http://127.0.0.1:9080/api/identities/known)" ||
+    fail "the witness API did not answer on 127.0.0.1:9080"
 printf '%s' "$ledgers" |
-    jq -r '.entries[] | "      \(.ledger_id)  \(.declared_kind)  head seq \(.head_seq) at \(.head_event)  \(.event_count) events"' ||
-    fail "the witness ledger list did not parse"
-count="$(printf '%s' "$ledgers" | jq '.entries | length')"
+    jq -r '.identities[] | "      \(.identity_id)  \(.declared_kind)  head seq \(.head_seq)"' ||
+    fail "the witness holdings did not parse"
+count="$(printf '%s' "$ledgers" | jq '.identities | length')"
 [ "$count" -ge 3 ] || fail "the witness holds $count ledgers, expected at least 3"
 
 printf '\n\n=== the demo ran green in %s seconds\n' "$(($(date +%s) - started_at))"
 printf '  alice        %s\n' "$alice_id"
 printf '  bob          %s\n' "$bob_id"
 printf '  shared       %s\n' "$org_id"
-printf '  witness      %s, holding %s ledgers\n' "$witness_id" "$count"
+printf '  witness      %s, holding %s ledgers\n' "$witness_identity" "$count"
+printf '  its machine  %s\n' "$witness_id"
 if [ "$keep" -eq 1 ]; then
     printf '\n  --keep: the topology is still up. The UI is on http://127.0.0.1:9081\n'
     printf '  for alice and http://127.0.0.1:9080 for the witness.\n'
