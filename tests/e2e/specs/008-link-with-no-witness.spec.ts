@@ -24,18 +24,18 @@ test.describe.configure({ mode: "serial" });
 const DANA = "mabel-dana";
 const DANA_URL = "http://127.0.0.1:9085";
 
-/** What publishing a machine puts in front of a person, once per home. */
+/** What publishing an endpoint puts in front of a person, once per home. */
 const CONSENT = [
-  "The machine's id stays readable forever by anyone who can name this identity.",
-  "Anyone who reads it can dial that machine directly, which shows the machine's address to them and to the relay that connects them.",
+  "The endpoint's id stays readable forever by anyone who can name this identity.",
+  "Anyone who reads it can dial that endpoint directly, which shows the endpoint's address to them and to the relay that connects them.",
   "Once this home answers at a published address, anyone who dials it can list the identities it signs for and, if it keeps records for other people, the records it keeps.",
 ];
 
 /** What handing the link over gives away, said on the panel that makes one. */
 const DISCLOSURE = [
   "The link carries this identity's Mabel ID, which anyone holding it can read.",
-  "It carries the machines that answer for this identity, so whoever has it can dial them directly.",
-  "Whoever uses it asks those machines for this record, which tells them this home's network address.",
+  "It carries the endpoints that answer for this identity, so whoever has it can dial them directly.",
+  "Whoever uses it asks those endpoints for this record, which tells them this home's network address.",
 ];
 
 let bobPage: Page;
@@ -67,7 +67,7 @@ test("step 1: the topology from nothing, and an identity in bob's wallet", async
   expect(identity.body.identity.endpoints).toEqual([]);
 });
 
-test("step 2: bob publishes the machine that answers for him", async () => {
+test("step 2: bob publishes the endpoint that answers for him", async () => {
   await bobPage.getByTestId(`identity-card-link-${bobId}`).click();
   await expect(bobPage).toHaveURL(`${BOB_URL}/identities/${bobId}`);
   // The action sits under the group about being reached, beside the one that
@@ -75,11 +75,11 @@ test("step 2: bob publishes the machine that answers for him", async () => {
   await expect(bobPage.getByTestId("action-group-reach")).toContainText("Reaching this identity");
   await openAction(bobPage, "action-endpoints");
   await expect(bobPage.getByTestId("endpoints-empty")).toHaveText(
-    "This identity's record names no machine yet.",
+    "This identity's record names no endpoint yet.",
   );
 
-  // "Use this node" fills the box with the Iroh ID of the machine serving this
-  // page, which is the machine that answers for bob.
+  // "Use this node" fills the box with the Iroh ID of the endpoint serving this
+  // page, which is the endpoint that answers for bob.
   await bobPage.getByTestId("endpoints-use-this-node").click();
   await expect(bobPage.getByTestId("endpoints-input")).toHaveValue(bobNodeId);
   await bobPage.getByTestId("endpoints-submit").click();
@@ -89,7 +89,7 @@ test("step 2: bob publishes the machine that answers for him", async () => {
   for (const sentence of CONSENT) {
     await expect(consent).toContainText(sentence);
   }
-  await expect(bobPage.getByTestId("endpoints-consent-confirm")).toHaveText("Publish the machine");
+  await expect(bobPage.getByTestId("endpoints-consent-confirm")).toHaveText("Publish the endpoint");
   await bobPage.getByTestId("endpoints-consent-confirm").click();
   await expect(bobPage.getByTestId("endpoints-head-seq")).toHaveText("Saved at position 1.");
   await expect(bobPage.getByTestId("endpoints-list")).toContainText(bobNodeId);
@@ -103,16 +103,16 @@ test("step 2: bob publishes the machine that answers for him", async () => {
   expect(ledger.body.events[0].payload).toEqual({ endpoints: [bobNodeId] });
   // The record says what it did, in the words a reader gets.
   await expect(bobPage.getByTestId("event-gloss-1")).toHaveText(
-    "published the machines that answer for it",
+    "published the endpoints that answer for it",
   );
 });
 
-test("step 3: the link bob hands over names him and that machine", async () => {
+test("step 3: the link bob hands over names him and that endpoint", async () => {
   await openAction(bobPage, "action-share");
   await expect(bobPage.getByTestId("share-panel")).toBeVisible();
   link = await identifier(bobPage, "share-panel");
   expect(link).toBe(`mabel://${bobId}?endpoints=${bobNodeId}`);
-  await expect(bobPage.getByTestId("share-machine-count")).toHaveText("The link names 1 machine.");
+  await expect(bobPage.getByTestId("share-machine-count")).toHaveText("The link names 1 endpoint.");
   // The same string as a square to scan, and as a file to hand over.
   await expect(bobPage.getByTestId("share-qr")).toBeVisible();
   await expect(bobPage.getByTestId("share-download")).toHaveAttribute(
@@ -130,7 +130,7 @@ test("step 3: the link bob hands over names him and that machine", async () => {
   expect(shared.endpoints).toEqual([bobNodeId]);
   expect(shared.endpoints_from).toBe("advertised");
 
-  // The address to route to that machine is not on any ledger and never will
+  // The address to route to that endpoint is not on any ledger and never will
   // be, so it travels the way the first one always does: as a ticket, out of
   // band (proposal 006 section 5.4).
   bobTicket = expectExit(mabel("bob", ["node", "ticket", "--port", "9072"]), 0).stdout.trim();
@@ -171,7 +171,7 @@ test("step 4: every witness stops, and a home with none of them starts", async (
     "0.0.0.0:9085",
     "--iroh-port",
     "9075",
-    // The one thing this home is told: how to route to bob's machine.
+    // The one thing this home is told: how to route to bob's endpoint.
     "--peer",
     bobTicket,
   ]);
@@ -201,7 +201,7 @@ test("step 4: every witness stops, and a home with none of them starts", async (
 
 test("step 5: the link opens bob's page in a wallet that knows nobody", async () => {
   // The wallet parses no link: it hands the string to the node, which owns the
-  // grammar and answers with the identity and the machines the link named.
+  // grammar and answers with the identity and the endpoints the link named.
   const resolved = await apiGet(DANA_URL, `/api/resolve?input=${encodeURIComponent(link)}`);
   expect(resolved.body.input_kind).toBe("link");
   expect(resolved.body.identity_id).toBe(bobId);
@@ -209,13 +209,13 @@ test("step 5: the link opens bob's page in a wallet that knows nobody", async ()
 
   await searchIdentity(danaPage, DANA_URL, link, bobId, [bobNodeId]);
   // This home holds no copy, so the page offers to fetch it and says first
-  // what asking those machines does.
+  // what asking those endpoints does.
   await expect(danaPage.getByTestId("identity-fetch")).toBeVisible();
   await expect(danaPage.getByTestId("identity-fetch-link-note")).toHaveText(
-    "This link names the machines to ask for this record. Asking them tells those machines this home's network address and which identity it is looking for.",
+    "This link names the endpoints to ask for this record. Asking them tells those endpoints this home's network address and which identity it is looking for.",
   );
   await expect(danaPage.getByTestId("identity-fetch")).toContainText(
-    "Asks the machines the link named, in order, and keeps what they send.",
+    "Asks the endpoints the link named, in order, and keeps what they send.",
   );
 });
 
@@ -225,7 +225,7 @@ test("step 6: the fetch lands with no witness in the topology", async () => {
   await expect(danaPage.getByTestId("identity-fetch")).toHaveCount(0);
   await expect(danaPage.getByTestId("identity-detail-event-count")).toHaveText("2");
 
-  // The record came from bob's own machine, verified from nothing the way any
+  // The record came from bob's own endpoint, verified from nothing the way any
   // other source is (proposal 001 section 3.7).
   const stored = await apiGet(DANA_URL, `/api/identities/${bobId}`);
   expect(stored.body.identity.head_seq).toBe(1);

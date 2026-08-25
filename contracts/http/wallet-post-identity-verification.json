@@ -21,7 +21,7 @@
       "body": {
         "ok": false,
         "code": 20,
-        "message": "Policy error: sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq claims no hostname, so there is nothing to check",
+        "message": "Policy error: mabel://sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq claims no hostname, so there is nothing to check",
         "details": {
           "reason": "no_hostname_claimed",
           "identity_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq"
@@ -33,7 +33,7 @@
       "body": {
         "ok": false,
         "code": 2,
-        "message": "this home holds no ledger jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq",
+        "message": "this home holds no ledger mabel://jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq",
         "details": {
           "reason": "unknown_ledger",
           "ledger_id": "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq"

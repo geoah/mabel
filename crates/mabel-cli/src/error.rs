@@ -11,6 +11,7 @@ use mabel_core::fold::Reason;
 use mabel_core::sign::BuildError;
 use mabel_node::StorageError;
 use mabel_node::api::{ErrorLayer, ServiceError};
+use mabel_node::wallet::fold_message;
 use serde::Serialize;
 use serde_json::{Map, Value};
 
@@ -171,10 +172,11 @@ impl From<ServiceError> for CliError {
 /// Chain and cryptographic failures are `Ledger error:` and the semantic rules
 /// are `Policy error:`; both exit 20. [`Reason::code`] is the `details.reason`,
 /// so the CLI never invents a second spelling for a rejection the fold already
-/// names.
+/// names, and [`fold_message`] is where the ids in that sentence take their
+/// `mabel://` prefix, so the CLI line and the HTTP envelope read alike.
 impl From<&Reason> for CliError {
     fn from(reason: &Reason) -> Self {
-        let message = reason.to_string();
+        let message = fold_message(reason);
         match reason {
             Reason::Wire(_) => Self::schema(reason.code(), message),
             Reason::WrongSeq { .. }
@@ -255,6 +257,49 @@ mod tests {
         assert_eq!(cli.message(), service.message());
         assert!(cli.message().starts_with("State error: "), "{cli:?}");
         assert_eq!(cli.to_document(), service.to_document());
+    }
+
+    /// One wording on both surfaces, and a conformance vector that keeps its
+    /// ids bare.
+    ///
+    /// The fold's own `Display` is what `test-vectors/rejections/` pins, so it
+    /// spells ids bare and must keep doing so. The sentence a person reads is
+    /// built by `fold_message`, which both envelopes go through, so a rejection
+    /// cannot read one way on the CLI and another over HTTP (decision 019).
+    ///
+    /// `RootNotRemovable` is the case to pin here because it takes the plain
+    /// path. `DuplicateAttestation` is the one reason both surfaces respell
+    /// before this point, and it has a parity test of its own in
+    /// `mabel-node/tests/membership.rs`.
+    #[test]
+    fn one_rejection_reads_the_same_on_both_surfaces_and_the_vector_stays_bare() {
+        let root = mabel_core::IdentityId::from_bytes([0x11; 32]);
+        let reason = mabel_core::fold::Reason::RootNotRemovable(root);
+
+        let shown = mabel_node::wallet::fold_message(&reason);
+        assert_eq!(
+            shown,
+            format!(
+                "{}{root} is this ledger's raw root and is not removable",
+                mabel_core::LINK_PREFIX
+            )
+        );
+
+        let cli = CliError::from(&reason);
+        let service = mabel_node::wallet::fold_error(&reason);
+        assert!(cli.message().ends_with(&shown), "{}", cli.message());
+        assert!(service.message().ends_with(&shown), "{}", service.message());
+        assert_eq!(
+            cli.message(),
+            service.message(),
+            "the CLI line and the HTTP envelope spell one rejection one way"
+        );
+
+        // The wire evidence another implementation compares against is
+        // untouched by how this one draws an id.
+        let vector = reason.to_string();
+        assert!(!vector.contains("mabel://"), "{vector}");
+        assert!(vector.contains(&root.to_string()), "{vector}");
     }
 
     /// Code 30 carries the `Network error:` prefix once, not twice.

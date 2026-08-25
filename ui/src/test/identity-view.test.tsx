@@ -87,7 +87,10 @@ describe("the identity page's top section", () => {
     const kind = screen.getByTestId("identity-detail-declared-kind");
     const name = screen.getByTestId("identity-detail-resolved-name");
     expect(kind).toHaveTextContent("person");
-    expect(kind.parentElement).toBe(name.parentElement);
+    // The kind leads the pill row at the end of the name's line, which is one
+    // row up from the name itself.
+    expect(kind.parentElement?.firstElementChild).toBe(kind);
+    expect(kind.parentElement?.parentElement).toBe(name.parentElement?.parentElement);
     // There is no small line above the name any more.
     expect(screen.queryByTestId("identity-detail-kind-line")).not.toBeInTheDocument();
   });

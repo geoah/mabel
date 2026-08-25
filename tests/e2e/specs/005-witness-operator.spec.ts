@@ -92,7 +92,7 @@ test("step 2: five records on the witness, four person and one organization", as
     "alice",
   ]);
   for (const name of ["carol", "dave", "erin", "mabel-demo-co"]) {
-    // The set names the witness identity; the push dials the machine.
+    // The set names the witness identity; the push dials the endpoint.
     expectExit(
       mabel("alice", ["witness", "add", "--identity", name, "--witness", witnessIdentity]),
       0,

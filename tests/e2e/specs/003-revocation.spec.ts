@@ -11,7 +11,15 @@ import {
   verifier,
 } from "../lib/docker";
 import { expectExit, expectHeadSeq, story001Steps1to7 } from "../lib/stories";
-import { addTrust, openAction, openIdentity, push, revokeTrust, trustCard } from "../lib/ui";
+import {
+  addTrust,
+  openAction,
+  openIdentity,
+  push,
+  revokeTrust,
+  shown,
+  trustCard,
+} from "../lib/ui";
 
 /** docs/stories/003-revocation.md */
 test.describe.configure({ mode: "serial" });
@@ -111,8 +119,10 @@ test("step 3: a second unrevoked attestation for one subject is refused", async 
   expect(document.details.subject).toBe(bobId);
   expect(document.details.attestation_event).toBe(aliceAttestation);
   expect(document.details.at_seq).toBe(2);
+  // `message` is prose a person reads, so the subject carries the prefix; the
+  // id-valued fields of the same document stay bare (decision 019).
   expect(document.message).toBe(
-    `Policy error: an unrevoked attestation for ${bobId} already exists at seq 2`,
+    `Policy error: an unrevoked attestation for ${shown(bobId)} already exists at seq 2`,
   );
 
   // Every action starts closed (decision 017), so the form is opened before it
@@ -127,8 +137,11 @@ test("step 3: a second unrevoked attestation for one subject is refused", async 
     "A signature, the record itself or a rule refused this.",
   );
   await expect(alicePage.getByTestId("error-reason")).toHaveText("duplicate_unrevoked_attestation");
+  // The node builds its own copy of the sentence for the HTTP error envelope,
+  // and the UI puts that message on the screen, so the subject carries the
+  // prefix there too. The id-valued fields beside it stay bare.
   await expect(alicePage.getByTestId("error-message")).toHaveText(
-    `Policy error: an unrevoked attestation for ${bobId} already exists at seq 2`,
+    `Policy error: an unrevoked attestation for ${shown(bobId)} already exists at seq 2`,
   );
   await expect(alicePage.getByTestId("error-detail-at_seq")).toHaveText("2");
   await expectHeadSeq(ALICE_URL, aliceId, 2);
@@ -171,7 +184,7 @@ test("steps 5 to 7: a fresh verifier reads the revocation", async () => {
   await push(alicePage, witnessId, { stored: 1 });
 
   const statement = new RegExp(
-    `^valid as of seq 3 of ${aliceId}, fetched from ${witnessId} at ${RFC3339_UTC}; attestation ${aliceAttestation} revoked at seq 3$`,
+    `^valid as of seq 3 of ${shown(aliceId)}, fetched from ${witnessId} at ${RFC3339_UTC}; attestation ${aliceAttestation} revoked at seq 3$`,
   );
 
   const text = expectExit(
@@ -274,7 +287,7 @@ test("steps 8 and 9: attested again, and revocation stays history", async () => 
   // stays in revoked_attestations (revoked_count above).
   expect(document.statement).toMatch(
     new RegExp(
-      `^valid as of seq 4 of ${aliceId}, fetched from ${witnessId} at ${RFC3339_UTC}; no revocation up to seq 4$`,
+      `^valid as of seq 4 of ${shown(aliceId)}, fetched from ${witnessId} at ${RFC3339_UTC}; no revocation up to seq 4$`,
     ),
   );
 });

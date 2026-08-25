@@ -42,7 +42,7 @@ function witnessEntry(witness: WitnessSummary): IdentityCardEntry {
  * The witnesses this home knows, each drawn as the identity card every other
  * screen draws (proposal 006 section 8). A home knows a witness from a ledger
  * that names it or from its own configuration: there is no global directory.
- * What one of them holds, and which machines answer for it, are on its own page.
+ * What one of them holds, and which endpoints answer for it, are on its own page.
  */
 export function WitnessesPage() {
   const witnesses = useResource(listWitnesses, []);

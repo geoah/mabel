@@ -34,7 +34,7 @@
       "body": {
         "ok": false,
         "code": 2,
-        "message": "this home knows no machine that answers for jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq",
+        "message": "this home knows no endpoint that answers for mabel://jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq",
         "details": {
           "reason": "unresolvable_witness",
           "witness": "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq",
@@ -47,7 +47,7 @@
       "body": {
         "ok": false,
         "code": 30,
-        "message": "Network error: zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq does not hold sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+        "message": "Network error: zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq does not hold mabel://sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
         "details": {
           "reason": "ledger_not_held",
           "ledger_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
@@ -60,7 +60,7 @@
       "body": {
         "ok": false,
         "code": 30,
-        "message": "Network error: zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq did not answer for sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+        "message": "Network error: zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq did not answer for mabel://sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
         "details": {
           "reason": "witness_unreachable",
           "ledger_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",

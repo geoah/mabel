@@ -15,6 +15,9 @@ import { IdentityPillBadge, type Pill, usePill } from "./pill";
  */
 export type IdentityInlineLayout = "inline" | "stacked" | "page";
 
+/** How much of the id stands in for a name when an identity has none. */
+export const PLACEHOLDER_CHARS = 8;
+
 interface IdentityInlineProps {
   identity: ResolvedIdentityDocument;
   /** True when the identity document reports its verified result as aged. */
@@ -68,6 +71,13 @@ export function IdentityInline({
   className,
 }: IdentityInlineProps) {
   const { name, source, nickname } = resolveName(identity);
+  // An identity that publishes no name and that this device has never named
+  // still needs something to be called on a card, so it is titled with the
+  // first characters of its id. That title stands in for a name: it is not the
+  // id being shown, which is why it carries no prefix and why the rule that
+  // every shown id is whole does not reach it (decision 019). The whole id is
+  // under it as on every other card.
+  const title = name ?? `${identity.identity_id.slice(0, PLACEHOLDER_CHARS)}…`;
   // Two entries of one list resolving to the same name both drop the
   // truncation, because the id is the only thing telling them apart.
   const shared = useSharedName(name);
@@ -81,33 +91,34 @@ export function IdentityInline({
     <>
       {/* The name and what the identity says it is stay together: on a phone the
           pair wraps as one, so the kind never ends up alone on a line. */}
-      {name !== null && (
-        <NameTag
-          data-testid={testId && `${testId}-name`}
-          className={
-            layout === "page"
-              ? "text-2xl leading-tight font-semibold tracking-tight"
-              : layout === "stacked"
-                ? "text-base leading-tight font-medium"
-                : "text-sm"
-          }
-        >
-          {to === undefined ? (
-            name
-          ) : (
-            <Link
-              to={to}
-              data-testid={linkId}
-              className={cn(
-                "hover:underline focus-visible:outline-none",
-                stretch && "after:absolute after:inset-0",
-              )}
-            >
-              {name}
-            </Link>
-          )}
-        </NameTag>
-      )}
+      <NameTag
+        data-testid={testId && `${testId}-name`}
+        data-placeholder-name={String(name === null)}
+        className={cn(
+          layout === "page"
+            ? "text-2xl leading-tight font-semibold tracking-tight"
+            : layout === "stacked"
+              ? "text-base leading-tight font-medium"
+              : "text-sm",
+          // A stand-in reads quieter than a name someone chose.
+          name === null && "font-mono text-muted-foreground",
+        )}
+      >
+        {to === undefined ? (
+          title
+        ) : (
+          <Link
+            to={to}
+            data-testid={linkId}
+            className={cn(
+              "hover:underline focus-visible:outline-none",
+              stretch && "after:absolute after:inset-0",
+            )}
+          >
+            {title}
+          </Link>
+        )}
+      </NameTag>
       {trailing}
       {/* The name you gave them, after the name they publish. */}
       {nickname !== null && (
@@ -133,11 +144,8 @@ export function IdentityInline({
       // A card has the width for the whole id, and a Mabel ID is the only thing
       // that tells two identities apart: no card truncates one.
       full={shared || stacked || full}
-      // A nameless identity is reachable by its id and by nothing else.
-      to={name === null ? to : undefined}
-      linkTestId={name === null ? linkId : undefined}
-      stretch={name === null && stretch}
       copyLabel="Copy Mabel ID"
+      mabel
     />
   );
 

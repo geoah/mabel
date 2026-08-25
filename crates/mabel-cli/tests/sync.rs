@@ -829,9 +829,10 @@ fn a_shared_link_round_trips_through_a_fetch_with_no_from() {
     assert_eq!(document["source"], Value::from(witness.endpoint.as_str()));
     assert_eq!(document["stored"], Value::from(2));
 
-    // The same link on an operand that signs locally warns on stderr, names
-    // the flag, and does the work anyway.
-    let (code, stdout, stderr) = publisher.run(&[
+    // The same link on an operand that signs locally is refused rather than
+    // obeyed in part: `--identity` takes one identity, and where to push is
+    // what `--to` is for.
+    let (code, error) = publisher.failure(&[
         "sync",
         "push",
         "--identity",
@@ -839,9 +840,24 @@ fn a_shared_link_round_trips_through_a_fetch_with_no_from() {
         "--peer",
         &witness.ticket,
     ]);
+    assert_eq!(code, 2);
+    assert_eq!(
+        error["details"]["reason"],
+        Value::from("invalid_mabel_link")
+    );
+    assert_eq!(error["details"]["parameter"], Value::from("--identity"));
+    assert_eq!(error["details"]["input"], Value::from(link.clone()));
+
+    // The identity on its own does the work.
+    let (code, stdout, stderr) = publisher.run(&[
+        "sync",
+        "push",
+        "--identity",
+        &alice,
+        "--peer",
+        &witness.ticket,
+    ]);
     assert_eq!(code, 0, "{stdout}{stderr}");
-    assert!(stderr.contains("warning: ignoring"), "{stderr}");
-    assert!(stderr.contains("--identity"), "{stderr}");
     assert!(stdout.contains(&alice), "{stdout}");
 
     // A fetch that names neither a source nor a link is a usage failure.
@@ -1402,7 +1418,7 @@ fn verify_over_the_network_reports_the_witness_as_its_source() {
     ]);
     assert_eq!(code, 0, "{stdout}{stderr}");
     assert!(
-        stdout.contains(&format!("signed by principal {alice} (")),
+        stdout.contains(&format!("signed by principal mabel://{alice} (")),
         "{stdout}"
     );
 

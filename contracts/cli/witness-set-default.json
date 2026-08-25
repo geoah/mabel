@@ -22,7 +22,7 @@
       "document": {
         "ok": false,
         "code": 2,
-        "message": "no endpoint is known for the witness jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq: pass --endpoints, or fetch its ledger first",
+        "message": "no endpoint is known for the witness mabel://jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq: pass --endpoints, or fetch its ledger first",
         "details": {
           "reason": "unresolvable_witness",
           "witness": "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq",

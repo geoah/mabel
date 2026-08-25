@@ -527,9 +527,14 @@ async fn two_witnesses_on_divergent_branches_report_equivocation() {
 
         assert_eq!(error.code(), 20);
         assert_eq!(error.reason(), "equivocation");
+        // Prose names the ledger the way a person reads an identity; the
+        // `ledger_id` detail below stays bare (decision 019).
         assert_eq!(
             error.message(),
-            format!("Ledger error: two sources hold divergent events at seq 2 of {alice}")
+            format!(
+                "Ledger error: two sources hold divergent events at seq 2 of {}{alice}",
+                mabel_core::LINK_PREFIX
+            )
         );
         let document = error.to_document();
         assert_eq!(document["details"]["at_seq"], 2);

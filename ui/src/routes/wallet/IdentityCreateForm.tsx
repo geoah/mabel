@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { asApiError } from "@/hooks/useResource";
+import { identityIdInput } from "@/lib/link";
 
 import { KeysPanel } from "./KeysPanel";
 
@@ -44,9 +45,14 @@ export function IdentityCreateForm({ onCreated }: { onCreated: () => void }) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<ApiError | null>(null);
   const [created, setCreated] = useState<CreateIdentityResponse | null>(null);
+  // The founder box takes the id or the id with its prefix.
+  const typedFounder = identityIdInput(founder);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
+    if (typedFounder.id === null) {
+      return;
+    }
     setPending(true);
     setError(null);
     setCreated(null);
@@ -56,7 +62,7 @@ export function IdentityCreateForm({ onCreated }: { onCreated: () => void }) {
       const response = await createIdentity({
         alias,
         declared_kind: declaredKind,
-        ...(founder.trim() ? { founder: founder.trim() } : {}),
+        ...(typedFounder.id ? { founder: typedFounder.id } : {}),
         ...(publicName ? { display_name: publicName } : {}),
         ...(publicEmail ? { email: publicEmail } : {}),
       });
@@ -141,6 +147,11 @@ export function IdentityCreateForm({ onCreated }: { onCreated: () => void }) {
               Leave this empty and the new identity gets a key of its own. Name a founder and that
               identity signs for this one instead, which is how an organization works.
             </p>
+            {typedFounder.error !== null && (
+              <p data-testid="identity-create-founder-not-an-identity" className="text-xs">
+                {typedFounder.error}
+              </p>
+            )}
           </div>
           <Button type="submit" data-testid="identity-create-submit" disabled={pending}>
             {pending ? "creating" : "Create"}
@@ -155,7 +166,7 @@ export function IdentityCreateForm({ onCreated }: { onCreated: () => void }) {
           <div className="mt-3 space-y-3" data-testid="identity-create-result">
             <KeyValueTable>
               <KeyValue label="Mabel ID" testId="identity-create-result-identity-id">
-                <Identifier value={created.identity.identity_id} />
+                <Identifier value={created.identity.identity_id} mabel copyLabel="Copy Mabel ID" />
               </KeyValue>
               <KeyValue label="first entry" testId="identity-create-result-inception-event">
                 <Identifier value={created.inception_event} />

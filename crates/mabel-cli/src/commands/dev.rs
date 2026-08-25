@@ -87,8 +87,11 @@ const ORGANIZATION: &str = "acme";
 /// names it in its `WitnessSet`.
 const WITNESS: &str = "witness";
 
-/// The name the witness identity publishes.
-const WITNESS_NAME: &str = "Seed Witness";
+/// The name the witness identity publishes, which `identity create` lands as a
+/// `ProfileUpdate` at seq 1 like every other seeded name. It carries no word
+/// from the protocol, because a wallet prints this name wherever it would
+/// otherwise print the bare id.
+const WITNESS_NAME: &str = "The Keeper";
 
 /// The name it publishes.
 const ORGANIZATION_NAME: &str = "Acme Corporation";
@@ -302,7 +305,10 @@ fn admit_controller(
     let invitee_key = descriptor.active_key().ok_or_else(|| {
         CliError::policy(
             "invitee_holds_no_key",
-            format!("{invitee} holds no key of its own, so it cannot be invited"),
+            format!(
+                "{} holds no key of its own, so it cannot be invited",
+                ids::shown(invitee)
+            ),
         )
         .with_detail("invitee", invitee.to_string())
     })?;
@@ -436,7 +442,8 @@ fn text(document: &SeededHome) -> String {
     }
     for witness in &document.witnesses {
         lines.push(format!(
-            "{witness} witnesses all {} ledgers and advertises this node's machine",
+            "{} witnesses all {} ledgers and advertises this node's endpoint",
+            ids::shown(witness),
             identities.len()
         ));
     }
@@ -471,7 +478,9 @@ fn text(document: &SeededHome) -> String {
 fn line(identity: &Identity) -> String {
     let mut text = format!(
         "{} {} {}",
-        identity.alias, identity.identity_id, identity.declared_kind
+        identity.alias,
+        ids::shown(&identity.identity_id),
+        identity.declared_kind
     );
     match &identity.profile {
         Some(profile) => {
@@ -496,9 +505,12 @@ fn line(identity: &Identity) -> String {
 }
 
 /// The alias of a seeded identity, or the id when the seed did not create it.
+///
+/// The fallback is a bare id in a sentence of aliases, so it carries the prefix
+/// that says what it is.
 fn named(identities: &[Identity], identity: &str) -> String {
     identities
         .iter()
         .find(|held| held.identity_id.as_str() == identity)
-        .map_or_else(|| identity.to_owned(), |held| held.alias.clone())
+        .map_or_else(|| ids::shown(identity), |held| held.alias.clone())
 }

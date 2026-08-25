@@ -3,7 +3,7 @@ import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
 
 import { HOSTNAME_CONSENT_KEY } from "@/lib/preferences";
-import { ACME, ALICE, seedIdentities } from "@/mocks/fixtures";
+import { ACME, ALICE, HINTED_MACHINE, seedIdentities, WITNESS_MACHINE } from "@/mocks/fixtures";
 import { server } from "@/mocks/server";
 
 import { openAction, renderApp } from "./render";
@@ -28,6 +28,65 @@ describe("the handle action", () => {
     expect(record?.getAttribute("data-value")).toBe(
       `_mabel.alice.example. IN TXT "mabel=${ALICE}"`,
     );
+  });
+
+  // The identity a fixture ships advertises no endpoint, so the second line has
+  // nothing to name and the screen says so with one line and the singular
+  // wording.
+  it("shows the handle line alone when this identity advertises no endpoint", async () => {
+    const { user } = renderApp(`/identities/${ALICE}`);
+    await openAction(user, "action-handle");
+
+    expect(screen.getByTestId("handle-panel")).toHaveTextContent(
+      "Add this line to the DNS records of your handle, then check it here.",
+    );
+    expect(screen.getByTestId("handle-txt-record")).toBeInTheDocument();
+    expect(screen.queryByTestId("handle-txt-endpoints-record")).not.toBeInTheDocument();
+  });
+
+  // The second line of proposal 006 section 6, on the screen that asks for the
+  // first one. The ids inside a record value stay bare: what goes in a zone file
+  // is the DNS grammar, and `mabel-endpoints=` is defined over bare ids.
+  it("shows the endpoints line beside the handle line once this identity advertises endpoints", async () => {
+    server.use(
+      http.get(`/api/identities/${ALICE}`, () =>
+        HttpResponse.json({
+          ok: true,
+          identity: { ...alice, endpoints: [WITNESS_MACHINE, HINTED_MACHINE] },
+        }),
+      ),
+    );
+
+    const { user } = renderApp(`/identities/${ALICE}`);
+    await openAction(user, "action-handle");
+
+    const endpointsLine = await screen.findByTestId("handle-txt-endpoints-record");
+    expect(screen.getByTestId("handle-panel")).toHaveTextContent(
+      "Add these two lines to the DNS records of your handle, then check them here.",
+    );
+
+    // Both lines, in the order a zone file wants them, each one whole.
+    expect(
+      screen.getByTestId("handle-txt-record").querySelector("[data-value]"),
+    ).toHaveAttribute("data-value", `_mabel.alice.example. IN TXT "mabel=${ALICE}"`);
+    expect(endpointsLine.querySelector("[data-value]")).toHaveAttribute(
+      "data-value",
+      `_mabel.alice.example. IN TXT "mabel-endpoints=${WITNESS_MACHINE},${HINTED_MACHINE}"`,
+    );
+    // Comma joined, no space, and no prefix on an id inside the record value.
+    expect(endpointsLine.textContent).toContain(`${WITNESS_MACHINE},${HINTED_MACHINE}`);
+    expect(endpointsLine.textContent).not.toContain("mabel://");
+
+    // A sentence under each line saying what that line does, and a copy control
+    // on each: a person adding these to a zone copies them one at a time.
+    expect(screen.getByTestId("handle-panel")).toHaveTextContent(
+      "This line says the handle belongs to this identity.",
+    );
+    expect(screen.getByTestId("handle-panel")).toHaveTextContent(
+      "This line names the endpoints that answer for it, so someone who has the handle can reach it.",
+    );
+    expect(screen.getByLabelText("Copy the handle line")).toBeInTheDocument();
+    expect(screen.getByLabelText("Copy the endpoints line")).toBeInTheDocument();
   });
 
   it("names the handle in the box, so the line follows what you are about to set", async () => {

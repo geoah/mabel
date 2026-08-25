@@ -50,7 +50,7 @@
       "body": {
         "ok": false,
         "code": 50,
-        "message": "Replay error: this acceptance was already admitted at seq 5 of sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+        "message": "Replay error: this acceptance was already admitted at seq 5 of mabel://sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
         "details": {
           "reason": "acceptance_already_used",
           "ledger_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",

@@ -39,7 +39,7 @@
       "body": {
         "ok": false,
         "code": 30,
-        "message": "Network error: no configured witness accepted the push for sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+        "message": "Network error: no configured witness accepted the push for mabel://sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
         "details": {
           "reason": "all_witnesses_failed",
           "ledger_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",

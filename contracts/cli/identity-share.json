@@ -37,7 +37,7 @@
       "document": {
         "ok": false,
         "code": 2,
-        "message": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq cannot be shared with these endpoints: endpoints names more than 4 endpoints, the link cap",
+        "message": "mabel://sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq cannot be shared with these endpoints: endpoints names more than 4 endpoints, the link cap",
         "details": {
           "reason": "invalid_mabel_link",
           "identity": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",

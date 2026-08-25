@@ -29,6 +29,7 @@ import {
   openAction,
   openIdentity,
   push,
+  shown,
   trustCard,
 } from "../lib/ui";
 
@@ -163,10 +164,10 @@ test("steps 11 and 12: a stranger verifies from an empty home", async () => {
   expect(lines[0]).toBe("trusted: true");
   expect(lines[1]).toMatch(
     new RegExp(
-      `^valid as of seq 2 of ${aliceId}, fetched from ${witnessId} at ${RFC3339_UTC}; no revocation up to seq 2$`,
+      `^valid as of seq 2 of ${shown(aliceId)}, fetched from ${witnessId} at ${RFC3339_UTC}; no revocation up to seq 2$`,
     ),
   );
-  expect(lines[2]).toBe(`signed by principal ${aliceId} (${aliceKey})`);
+  expect(lines[2]).toBe(`signed by principal ${shown(aliceId)} (${aliceKey})`);
   expect(lines[3]).toBe(SUBJECT_CONTROL);
   expect(lines[4]).toBe(VERIFIED_MEANS);
 
@@ -250,7 +251,7 @@ test("steps 13 and 14: the subject nobody can read", async () => {
   expect(document.head_seq).toBe(3);
   expect(document.statement).toMatch(
     new RegExp(
-      `^valid as of seq 3 of ${aliceId}, fetched from ${witnessId} at ${RFC3339_UTC}; no revocation up to seq 3$`,
+      `^valid as of seq 3 of ${shown(aliceId)}, fetched from ${witnessId} at ${RFC3339_UTC}; no revocation up to seq 3$`,
     ),
   );
 
@@ -263,7 +264,7 @@ test("steps 13 and 14: the subject nobody can read", async () => {
   const lines = stdoutLines(text);
   expect(lines).toHaveLength(6);
   expect(lines[0]).toBe("trusted: true");
-  expect(lines[2]).toMatch(new RegExp(`^signed by principal ${aliceId} \\([a-z2-7]{52}\\)$`));
+  expect(lines[2]).toMatch(new RegExp(`^signed by principal ${shown(aliceId)} \\([a-z2-7]{52}\\)$`));
   expect(lines[3]).toBe("subject: unresolved (not held by any queried source)");
   expect(lines[4]).toBe(SUBJECT_CONTROL);
   expect(lines[5]).toBe(VERIFIED_MEANS);
@@ -439,11 +440,12 @@ test("the witnesses screen draws the witness as the identity it is", async () =>
   await expect(alicePage.getByTestId(`witness-default-${witnessIdentity}`)).toHaveText(
     "this node uses it by default",
   );
-  // The machine that answers for it is a row of its record, which is the half
-  // of the card the collapsed one folds away.
+  // The endpoint that answers for it is a row of its record, which is the half
+  // of the card the collapsed one folds away. The testid keeps the older
+  // spelling of the row; the label a reader sees is `endpoint`.
   await expandCard(alicePage, witnessIdentity);
   const machineRow = `identity-card-machine-${witnessId}-${witnessIdentity}`;
-  await expect(alicePage.getByTestId(`${machineRow}-row`).locator("dt")).toHaveText("machine");
+  await expect(alicePage.getByTestId(`${machineRow}-row`).locator("dt")).toHaveText("endpoint");
   expect(await identifier(alicePage, machineRow)).toBe(witnessId);
 
   // `/witnesses/<id>` is not a page of its own any more: it redirects to the

@@ -141,13 +141,14 @@ describe("a witness's own page", () => {
     await screen.findByTestId("identity-cards");
 
     // Everything it holds, which is what the page opens on.
-    expect(screen.getByTestId("witness-holdings-all")).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByTestId("witness-holdings-all")).toHaveAttribute("aria-selected", "true");
     expect(screen.getByTestId(`identity-card-${ALICE}`)).toBeInTheDocument();
     expect(screen.getByTestId(`identity-card-${BOB}`)).toBeInTheDocument();
 
     await user.click(screen.getByTestId("witness-holdings-ours"));
 
     // The ledgers this wallet controls, and nothing else.
+    expect(screen.getByTestId("witness-holdings-ours")).toHaveAttribute("aria-selected", "true");
     expect(screen.getByTestId(`identity-card-${ALICE}`)).toBeInTheDocument();
     expect(screen.queryByTestId(`identity-card-${BOB}`)).not.toBeInTheDocument();
 
@@ -156,6 +157,33 @@ describe("a witness's own page", () => {
     // The people one of your identities has vouched for, and nothing you own.
     expect(screen.getByTestId(`identity-card-${BOB}`)).toBeInTheDocument();
     expect(screen.queryByTestId(`identity-card-${ALICE}`)).not.toBeInTheDocument();
+  });
+
+  it("walks the holdings tabs with the arrow keys, ending on the last", async () => {
+    const { user } = renderApp(`/identities/${REACHABLE_WITNESS}`);
+    await screen.findByTestId("identity-cards");
+
+    const all = screen.getByTestId("witness-holdings-all");
+    const trusted = screen.getByTestId("witness-holdings-trusted");
+    const ours = screen.getByTestId("witness-holdings-ours");
+    all.focus();
+    await user.keyboard("{ArrowRight}");
+
+    // The row is drawn All, Trusted, Yours, and activation follows focus.
+    expect(trusted).toHaveFocus();
+    expect(trusted).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByTestId(`identity-card-${BOB}`)).toBeInTheDocument();
+
+    await user.keyboard("{End}");
+
+    expect(ours).toHaveFocus();
+    expect(ours).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByTestId(`identity-card-${ALICE}`)).toBeInTheDocument();
+
+    await user.keyboard("{Home}");
+
+    expect(all).toHaveFocus();
+    expect(all).toHaveAttribute("aria-selected", "true");
   });
 
   it("states a witness no machine answers for as a fact about the connection", async () => {
@@ -212,7 +240,7 @@ describe("naming a witness", () => {
     await user.click(screen.getByTestId("witness-add-submit"));
 
     expect(await screen.findByTestId("witness-add-refused")).toHaveTextContent(
-      "That is the id of a machine, not of an identity.",
+      "That is the id of an endpoint, not of an identity.",
     );
   });
 
@@ -225,7 +253,7 @@ describe("naming a witness", () => {
     await user.click(screen.getByTestId("witness-add-submit"));
 
     expect(await screen.findByTestId("witness-add-refused")).toHaveTextContent(
-      "found no machine that answers for that identity",
+      "found no endpoint that answers for that identity",
     );
   });
 
@@ -252,21 +280,24 @@ describe("the machines that answer for an identity", () => {
     expect(own).toHaveTextContent(WITNESS_MACHINE);
     expect(
       screen.getByTestId(`identity-detail-machine-${WITNESS_MACHINE}-note`),
-    ).toHaveTextContent("This machine is listed on this identity's own record.");
+    ).toHaveTextContent("This endpoint is listed on this identity's own record.");
 
     // The machine this home only knows from somewhere else.
     const hinted = screen.getByTestId(`identity-detail-machine-${HINTED_MACHINE}`);
     expect(hinted).toHaveTextContent(HINTED_MACHINE);
     expect(
       screen.getByTestId(`identity-detail-machine-${HINTED_MACHINE}-note`),
-    ).toHaveTextContent("No record we have confirms that this machine answers for it.");
+    ).toHaveTextContent("No record we have confirms that this endpoint answers for it.");
 
     // The row is labelled, and the id carries no separators and no status.
     expect(screen.getByTestId(`identity-detail-machine-${WITNESS_MACHINE}-row`)).toHaveTextContent(
-      "machine",
+      "endpoint",
     );
     const page = screen.getByTestId("identity-detail").textContent ?? "";
-    expect(page).not.toMatch(/binding|hinted|verified|endpoint/i);
+    // `endpoint` left this list when it became the word for the thing
+    // (decision 020). `binding` and `hinted` are still API words and still stop
+    // at the API.
+    expect(page).not.toMatch(/binding|hinted|verified/i);
     expect(page).not.toMatch(/·/);
   });
 

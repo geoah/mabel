@@ -175,7 +175,7 @@
       "body": {
         "ok": false,
         "code": 2,
-        "message": "no identity here is named jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq",
+        "message": "no identity here is named mabel://jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq",
         "details": {
           "reason": "unknown_from_identity",
           "parameter": "from",

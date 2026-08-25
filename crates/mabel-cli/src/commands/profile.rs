@@ -139,7 +139,8 @@ pub fn replace(
         head_event: ids::event(appended.event_id),
     };
     let text = format!(
-        "replaced the profile of {identity} at seq {}\n{}",
+        "replaced the profile of {} at seq {}\n{}",
+        ids::shown(identity),
         appended.seq,
         summary(fields)
     );
@@ -159,9 +160,10 @@ fn diff_text(
 ) -> String {
     let before = Fields::of(previous);
     let mut text = format!(
-        "{} ({identity})\n  display name: {} -> {}\n  hostname:     {} -> {}\n  \
+        "{} ({})\n  display name: {} -> {}\n  hostname:     {} -> {}\n  \
          email:        {} -> {}",
         ctx.alias(identity),
+        ids::shown(identity),
         shown(before.display_name),
         shown(fields.display_name),
         shown(before.hostname),
@@ -215,7 +217,10 @@ fn refuse_no_op(
     }
     let mut error = CliError::policy(
         "no_op_profile_update",
-        format!("this profile is already the profile of {identity}: nothing would change"),
+        format!(
+            "this profile is already the profile of {}: nothing would change",
+            ids::shown(identity)
+        ),
     )
     .with_detail("ledger_id", identity.to_string())
     .with_detail("display_name", fields.display_name)
@@ -232,8 +237,9 @@ fn refuse_no_op(
 /// Asks before the key is used.
 fn confirm(ctx: &Context, identity: IdentityId) -> Result<()> {
     print!(
-        "replace the profile of {} ({identity})? type yes to sign: ",
-        ctx.alias(identity)
+        "replace the profile of {} ({})? type yes to sign: ",
+        ctx.alias(identity),
+        ids::shown(identity)
     );
     let _ = std::io::stdout().flush();
     let mut answer = String::new();

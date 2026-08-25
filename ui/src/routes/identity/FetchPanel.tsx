@@ -12,7 +12,7 @@ import { asApiError } from "@/hooks/useResource";
  * 7).
  */
 export const LINK_FETCH_NOTE =
-  "This link names the machines to ask for this record. Asking them tells those machines this home's network address and which identity it is looking for.";
+  "This link names the endpoints to ask for this record. Asking them tells those endpoints this home's network address and which identity it is looking for.";
 
 /**
  * Asks for a record this home does not hold in full. Viewing never writes, so
@@ -88,7 +88,7 @@ export function FetchPanel({
       description={
         machines.length === 0
           ? "Asks the witnesses your wallet knows, in order, and keeps what they send."
-          : "Asks the machines the link named, in order, and keeps what they send."
+          : "Asks the endpoints the link named, in order, and keeps what they send."
       }
     >
       {machines.length > 0 && (

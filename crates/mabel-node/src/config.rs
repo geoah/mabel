@@ -228,6 +228,9 @@ fn witnesses<'de, D: serde::Deserializer<'de>>(
                 Vec::new(),
             ),
         };
+        // Every id these parse errors quote is quoted as `node.json` spells it,
+        // bare, so a reader can search the file for the string the error names.
+        // Decision 019 keeps `node.json` a machine surface for the same reason.
         if entries.iter().any(|seen| seen.identity == entry.identity) {
             return Err(D::Error::custom(format!(
                 "witnesses names {} twice",

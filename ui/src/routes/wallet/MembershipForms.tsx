@@ -24,6 +24,7 @@ import { KeyValue, KeyValueTable } from "@/components/KeyValue";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { asApiError } from "@/hooks/useResource";
+import { mabelId } from "@/lib/link";
 
 /**
  * Bringing other people onto one identity: you invite them with a file, they
@@ -59,9 +60,11 @@ function SignerSelect({
         onChange={(event) => onChange(event.target.value)}
         className="h-10 w-full rounded-md border bg-transparent px-2 font-mono text-xs shadow-xs focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none"
       >
+        {/* The value stays the bare id the request carries; what a reader picks
+            from reads as the link it is (decision 019). */}
         {controllers.map((principal) => (
           <option key={principal.identity} value={principal.identity}>
-            {principal.identity}
+            {mabelId(principal.identity)}
           </option>
         ))}
       </select>
@@ -481,7 +484,7 @@ export function RemoveForm({
             <option value="">choose someone, or an invitation they never accepted</option>
             {[...new Set(removable)].map((identityId) => (
               <option key={identityId} value={identityId}>
-                {identityId}
+                {mabelId(identityId)}
               </option>
             ))}
           </select>

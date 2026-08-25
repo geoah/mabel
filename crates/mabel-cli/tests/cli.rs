@@ -1078,27 +1078,54 @@ fn a_link_names_an_identity_on_every_operand_and_is_refused_whole() {
     let home = Home::new();
     let alice = home.create("alice");
     let endpoint = home.endpoint();
-    let link = format!("mabel://{alice}?endpoints={endpoint}");
+    let bare = format!("mabel://{alice}");
+    let hinted = format!("mabel://{alice}?endpoints={endpoint}");
 
     // A read that takes `<alias|id>` takes the link and answers about alice.
-    let document = home.json(&["identity", "show", &link]);
+    let document = home.json(&["identity", "show", &bare]);
     assert_eq!(document["identity_id"], Value::from(alice.clone()));
     assert_eq!(document["alias"], Value::from("alice"));
 
-    // An operand that signs warns about the hints it cannot use, on stderr,
-    // and still does the work.
+    // An operand that signs takes the same link and does the work.
     let (code, stdout, stderr) = home.run(&[
         "identity",
         "endpoints",
         "replace",
         "--identity",
-        &link,
+        &bare,
         "--endpoints",
         "auto",
     ]);
     assert_eq!(code, 0, "{stdout}{stderr}");
-    assert!(stderr.contains("--identity"), "{stderr}");
-    assert!(stderr.contains("warning: ignoring"), "{stderr}");
+
+    // An id-only slot refuses a link that also names machines, rather than
+    // obeying the identity and dropping them: reading and signing both take
+    // one identity and dial nothing.
+    for arguments in [
+        vec!["identity", "show", hinted.as_str()],
+        vec![
+            "identity",
+            "endpoints",
+            "replace",
+            "--identity",
+            hinted.as_str(),
+            "--endpoints",
+            "auto",
+        ],
+    ] {
+        let (code, error) = home.failure(&arguments);
+        assert_eq!(code, 2, "{arguments:?}");
+        assert_eq!(
+            error["details"]["reason"],
+            Value::from("invalid_mabel_link"),
+            "{arguments:?}"
+        );
+        assert_eq!(
+            error["details"]["input"],
+            Value::from(hinted.clone()),
+            "{arguments:?}"
+        );
+    }
 
     // Every refusal is whole, with one reason and the string as it was typed.
     for bad in [
@@ -1138,8 +1165,9 @@ fn verify_ledger_matches_the_fixture() {
     assert_eq!(document["event_count"], Value::from(2));
     assert_eq!(document["source"], document["sources_queried"][0]);
     assert!(
-        text(&document["statement"])
-            .starts_with(&format!("valid as of seq 1 of {alice}, fetched from ")),
+        text(&document["statement"]).starts_with(&format!(
+            "valid as of seq 1 of mabel://{alice}, fetched from "
+        )),
         "{document}"
     );
     assert!(

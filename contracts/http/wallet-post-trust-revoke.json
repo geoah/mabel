@@ -30,7 +30,7 @@
       "body": {
         "ok": false,
         "code": 20,
-        "message": "Policy error: 3inplmxflxlqgc2fyq3uipmpesgeju5m4u76sxngaj2tl7qoxlva names no attestation in ledger sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+        "message": "Policy error: 3inplmxflxlqgc2fyq3uipmpesgeju5m4u76sxngaj2tl7qoxlva names no attestation in ledger mabel://sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
         "details": {
           "reason": "unknown_attestation",
           "ledger_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",

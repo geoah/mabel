@@ -180,16 +180,16 @@ function RecordRows({
   resolvePrincipal: (identityId: string) => ResolvedIdentityDocument;
 }) {
   const record = facts.record;
-  // One row per machine, each with its id and the sentence saying where the
+  // One row per endpoint, each with its id and the sentence saying where the
   // claim came from. Never an id and a status on one line (decision 017).
   const machines = facts.machines.map((machine) => (
     <KeyValue
       key={machine.endpointId}
-      label="machine"
+      label="endpoint"
       testId={testIds(`machine-${machine.endpointId}`)}
     >
       <span className="flex flex-col gap-1">
-        <Identifier value={machine.endpointId} full copyLabel="Copy machine ID" />
+        <Identifier value={machine.endpointId} full copyLabel="Copy endpoint ID" />
         <span
           data-testid={testIds(`machine-${machine.endpointId}-note`)}
           className="text-xs text-muted-foreground"
@@ -386,13 +386,14 @@ export function IdentityCard({
           layout={page ? "page" : "stacked"}
           // The card draws the pill itself, at the end of the name line.
           pill={null}
-          trailing={
-            facts.declaredKind !== null && (
-              <DeclaredKindValue kind={facts.declaredKind} testId={testIds("declared-kind")} />
-            )
-          }
           aside={
             <>
+              {/* What the identity says it is leads the row: it is the first
+                  thing that sorts one card from another, and the pills about
+                  trust follow it. */}
+              {facts.declaredKind !== null && (
+                <DeclaredKindValue kind={facts.declaredKind} testId={testIds("declared-kind")} />
+              )}
               {pill !== null && <IdentityPillBadge pill={pill} testId={`${testIds("name")}-pill`} />}
               {/* Everything on a card with no copy of the record came from a
                   crawl, and that is worth a pill beside the ones about trust. */}
@@ -411,7 +412,10 @@ export function IdentityCard({
                   data-testid={testIds("expand")}
                   aria-label={shown ? "Hide the record" : "Show the record"}
                   title={shown ? "Hide the record" : "Show the record"}
-                  className={cn(ICON_BUTTON, "relative z-10")}
+                  // A pill is 24px, and so is this: the kind, the pills and the
+                  // control that opens the card read as one line of equal
+                  // height rather than one tall button among short badges.
+                  className={cn(ICON_BUTTON, "relative z-10 size-6")}
                 >
                   <CollapsibleChevron className="size-4" />
                 </CollapsibleTrigger>

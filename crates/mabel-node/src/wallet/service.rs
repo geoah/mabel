@@ -283,7 +283,10 @@ impl NodeService for NodeApiService {
                 profile.and_then(|profile| profile.hostname).ok_or_else(|| {
                     ServiceError::policy(
                         "no_hostname_claimed",
-                        format!("{identity} claims no hostname, so there is nothing to check"),
+                        format!(
+                            "{}{identity} claims no hostname, so there is nothing to check",
+                            mabel_core::LINK_PREFIX
+                        ),
                     )
                     .with_detail("identity_id", identity.to_string())
                 })
@@ -380,7 +383,10 @@ impl NodeService for NodeApiService {
             if asked.is_empty() {
                 return Err(ServiceError::usage(
                     "no_witness_configured",
-                    format!("this wallet knows no witness to fetch {ledger} from"),
+                    format!(
+                        "this wallet knows no witness to fetch {}{ledger} from",
+                        mabel_core::LINK_PREFIX
+                    ),
                 )
                 .with_detail("ledger_id", ledger.to_string()));
             }
@@ -394,7 +400,10 @@ impl NodeService for NodeApiService {
                         refused = Some(
                             endpoint_unreachable(
                                 endpoint_id,
-                                format!("{endpoint_id} did not answer for {ledger}"),
+                                format!(
+                                    "{endpoint_id} did not answer for {}{ledger}",
+                                    mabel_core::LINK_PREFIX
+                                ),
                                 unreachable_detail(&error),
                             )
                             .with_detail("ledger_id", ledger.to_string()),
@@ -425,7 +434,10 @@ impl NodeService for NodeApiService {
                     if !core.home().identity_dir(from).is_dir() {
                         return Err(ServiceError::usage(
                             "unknown_from_identity",
-                            format!("no identity here is named {from}"),
+                            format!(
+                                "no identity here is named {}{from}",
+                                mabel_core::LINK_PREFIX
+                            ),
                         )
                         .with_detail("parameter", "from")
                         .with_detail("value", from.to_string()));
@@ -645,7 +657,10 @@ impl NodeService for NodeApiService {
             {
                 return Err(ServiceError::network(
                     "all_witnesses_failed",
-                    format!("no configured witness accepted the push for {identity}"),
+                    format!(
+                        "no configured witness accepted the push for {}{identity}",
+                        mabel_core::LINK_PREFIX
+                    ),
                 )
                 .with_detail("ledger_id", identity.to_string())
                 .with_detail("results", &pushed.results));
@@ -808,7 +823,10 @@ impl NodeService for NodeApiService {
             }
             Err(witness_unreachable(
                 &identity_id,
-                format!("no machine answering for {identity_id} served its ledger list"),
+                format!(
+                    "no endpoint answering for {}{identity_id} served its ledger list",
+                    mabel_core::LINK_PREFIX
+                ),
                 &endpoints,
                 failures.join("; "),
             ))
@@ -1139,7 +1157,10 @@ fn endpoint_unreachable(endpoint_id: &Id, sentence: String, detail: String) -> S
 fn unresolvable_witness(identity_id: &Id, tried: &[EndpointId]) -> ServiceError {
     ServiceError::usage(
         "unresolvable_witness",
-        format!("this home knows no machine that answers for {identity_id}"),
+        format!(
+            "this home knows no endpoint that answers for {}{identity_id}",
+            mabel_core::LINK_PREFIX
+        ),
     )
     .with_detail("witness", identity_id.as_str())
     .with_detail(
@@ -1157,7 +1178,7 @@ fn unresolvable_witness(identity_id: &Id, tried: &[EndpointId]) -> ServiceError 
 fn endpoint_not_identity(identity_id: &Id) -> ServiceError {
     ServiceError::usage(
         "endpoint_not_identity",
-        format!("{identity_id} is a machine this home knows, not a witness identity"),
+        format!("{identity_id} is an endpoint this home knows, not a witness identity"),
     )
     .with_detail("value", identity_id.as_str())
 }
@@ -1212,5 +1233,57 @@ where
             format!("the storage task did not finish: {error}"),
         )
         .with_status(StatusCode::INTERNAL_SERVER_ERROR)),
+    }
+}
+
+#[cfg(test)]
+mod message_contract_tests {
+    use super::{endpoint_not_identity, unresolvable_witness};
+    use crate::api::documents::Id;
+
+    /// The fixtures the messages below are pinned in.
+    const WITNESSES: &str =
+        include_str!("../../../../contracts/http/wallet-post-identity-witnesses.json");
+    const HOLDINGS: &str =
+        include_str!("../../../../contracts/http/wallet-get-witness-holdings.json");
+
+    /// The `message` of the one error in `fixture` carrying `reason`.
+    fn pinned(fixture: &str, reason: &str) -> String {
+        let document: serde_json::Value = serde_json::from_str(fixture).expect("a fixture");
+        document["errors"]
+            .as_array()
+            .expect("an errors array")
+            .iter()
+            .find(|error| error["body"]["details"]["reason"] == reason)
+            .unwrap_or_else(|| panic!("no {reason} in this fixture"))["body"]["message"]
+            .as_str()
+            .expect("a message")
+            .to_owned()
+    }
+
+    /// What this module writes is what the fixtures promise, word for word.
+    ///
+    /// The contract test in `api::tests` builds a service error *from* the
+    /// fixture and checks the envelope renders it back, so it proves the shape
+    /// and never the sentence: a reason whose wording drifts here stays green
+    /// there. These two sentences drifted exactly that way once, saying
+    /// "machine" after this module had moved to "endpoint", so they are pinned
+    /// against the fixture directly.
+    #[test]
+    fn the_witness_sentences_read_as_their_fixtures_pin_them() {
+        let witness = Id::parse("q7hnsnk6ycwjyzwbmqjcaxwlmxvvfjbmwzq4gz4dbtvpojjuh3fq")
+            .expect("a fixture id");
+        assert_eq!(
+            unresolvable_witness(&witness, &[]).message(),
+            pinned(WITNESSES, "unresolvable_witness")
+        );
+
+        let endpoint = Id::parse("zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq")
+            .expect("a fixture id");
+        let expected = pinned(HOLDINGS, "endpoint_not_identity");
+        assert_eq!(endpoint_not_identity(&endpoint).message(), expected);
+        // The same sentence is pinned in a second fixture, and the two must not
+        // drift apart from each other either.
+        assert_eq!(pinned(WITNESSES, "endpoint_not_identity"), expected);
     }
 }

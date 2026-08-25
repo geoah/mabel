@@ -24,7 +24,7 @@ and stories 001 to 006 keep running on their own.
   except through the crawl.
 - the witness: compose service `witness`, the only place alice can read bob's
   and carol's records from. `witness_identity` is the Mabel id a record names;
-  `witness_id` is the machine that answers for it.
+  `witness_id` is the endpoint that answers for it.
 - resolver: compose service `resolver` in `docker/compose.dns.yaml`, serving
   TXT records for `example` names to the wallets at `172.29.0.53` and
   refusing every other name. Nothing reaches the public internet.
@@ -61,19 +61,19 @@ docker/compose.dns.yaml`, run from the repository root.
    The overlay reads `MABEL_WITNESSES` from the environment for both wallets,
    one `<mabel id>=<endpoint id>` entry per witness, and the entrypoint runs
    `mabel witness set-default` with both halves: `node.json` names an identity
-   and the machines that answer for it (proposal 006 section 5.4). That is the
+   and the endpoints that answer for it (proposal 006 section 5.4). That is the
    node-wide witness the crawler's third source asks (proposal 003 section 3).
 3. Publish the TXT records on the test resolver, by writing the zone file into
    the resolver's zone volume with the ids this run minted:
    - `_mabel.alice.example. IN TXT "mabel=<alice_id>"`, and beside it
-     `_mabel.alice.example. IN TXT "mabel-endpoints=<alice's machine>,<witness_id>"`,
-     the machines that answer for whatever identity that label claims (proposal
+     `_mabel.alice.example. IN TXT "mabel-endpoints=<alice's endpoint>,<witness_id>"`,
+     the endpoints that answer for whatever identity that label claims (proposal
      006 section 6). The record is split across two character-strings, which a
      reader joins with no separator before it parses anything.
    - `_mabel.bob.example. IN TXT "mabel=<carol_id>"`, a record that names the
-     wrong identity on purpose, with no machines beside it
+     wrong identity on purpose, with no endpoints beside it
    - `_mabel.many-machines.example.`, kept from
-     `docker/dns/zones/example.zone`: a `mabel=` record and five machines split
+     `docker/dns/zones/example.zone`: a `mabel=` record and five endpoints split
      across two character-strings, because `mabel-endpoints=` plus four ids is
      227 of the 255 bytes a character-string holds. No container answers at any
      of the five, which is the point: what the label proves is the parsing rule.
@@ -163,7 +163,7 @@ docker/compose.dns.yaml`, run from the repository root.
     ```
     Type `alice.example` into `wallet-search-input` and click
     `wallet-search-submit`: the wallet lands on alice's own page, carrying the
-    machines her label named on the query string. Type `nobody.example` and the
+    endpoints her label named on the query string. Type `nobody.example` and the
     wallet stays where it is and says what the lookup answered. Resolving is
     navigation, never verification: the page still draws alice's own advisory
     verdict.
@@ -176,19 +176,21 @@ docker/compose.dns.yaml`, run from the repository root.
     curl -fsS "http://127.0.0.1:9081/api/resolve?input=$link"
     ```
     Paste that link into `wallet-search-input`: the wallet lands on carol's page
-    with the link's machines on the query string, `identity-fetch-link-note`
+    with the link's endpoints on the query string, `identity-fetch-link-note`
     says what asking them does, and nothing is fetched until the button is
     pressed.
 13. Browse the witness. Click `nav-witnesses`. A witness is an identity, so
     `witness-cards` draws the identity card every other screen draws, with
     `witness-default-<witness_identity>` reading `this node uses it by default`
-    and one `machine` row per machine that answers for it inside the card's
+    and one row per endpoint that answers for it, labelled `endpoint`, inside
+    the card's
     record. Click `identity-card-link-<witness_identity>`: its page is the
     identity page, and what it keeps for other people is a section of it,
     `witness-holdings`, asked live over the sync protocol. `witness-chosen-by`
     and `witness-node-default` are the two facts the card used to carry, and one
-    flat card list has three ways to narrow it, `witness-holdings-all`,
-    `witness-holdings-ours` and `witness-holdings-trusted`. Put it back on `All`
+    flat card list sits under the tab row `witness-holdings-filter`, whose
+    three tabs are `witness-holdings-all`, `witness-holdings-trusted` and
+    `witness-holdings-ours`. Put it back on `All`
     and click carol's card. Her record is not in this home, so the page offers
     one action: click `identity-fetch-button`, and the same page then renders as
     a stored record.
@@ -227,7 +229,9 @@ docker/compose.dns.yaml`, run from the repository root.
   that has published none.
 - Step 5 exits 20 with `details.reason == "no_op_profile_update"` and appends
   nothing: an update whose effect equals the current folded profile is refused
-  before signing.
+  before signing. Its `message` reads `Policy error: this profile is already the
+  profile of mabel://<alice_id>: nothing would change`, with the prefix on the
+  sentence a person reads and `details.ledger_id` beside it bare.
 - A profile replace that omits `--hostname` clears the hostname, and the
   cleared field is absent from the wire rather than encoded empty: the ledger
   event reports `payload.hostname: null` (and `payload.email: null` beside it),
@@ -326,7 +330,8 @@ docker/compose.dns.yaml`, run from the repository root.
   `bob_id`, `carol_id` and `witness_identity`, sorted by the rendered id. The
   witness is a row by the same rule as the others: naming it on a chain meant
   resolving it first, and this home kept the copy it read, so it reads
-  `stored: true` and `declared_kind: "service"`. Pressing `known-trusted-only`
+  `stored: true` and `declared_kind: "service"`. Choosing
+  `known-identities-trusted`
   drops it, because holding a record is not a reason to trust its subject. Bob reads `trusted: true`,
   `degrees: 1`, `stored: false`, `head_seq: null` and `alias: "Bob at the print
   shop"`, the nickname step 9 set; carol reads `trusted: false`, `degrees: 2` and
@@ -334,9 +339,10 @@ docker/compose.dns.yaml`, run from the repository root.
   `identity-card-name-<bob_id>-pill` carrying `data-pill` `trusted` and
   `identity-card-name-<carol_id>-pill` carrying `degree`, and both cards carry
   `not stored here` in `identity-card-unheld-<id>`. Pressing
-  `known-trusted-only` sets `aria-checked` to `true` and keeps both, because
-  carol is reachable through bob: the filter covers direct trust and crawl
-  distances alike.
+  `known-identities-trusted` sets its own `aria-selected` to `true` and
+  `known-identities-all` to `false`, and keeps both cards, because carol is
+  reachable through bob: the tab covers direct trust and crawl distances alike.
+  Both are `role="tab"` inside the `tablist` `known-identities-filter`.
 - Step 11 answers 200 with `degrees: null` and an empty path list, stated as
   one sentence: `lookup-degrees-none` reads `No connection found yet.` and
   `lookup-degrees` inside it reads `No connection found`. It is never stated as
@@ -344,7 +350,7 @@ docker/compose.dns.yaml`, run from the repository root.
   `lookup-verdict-pill` and `lookup-paths` are both absent.
 - Step 12: `GET /api/resolve?input=alice.example` answers `input_kind:
   "hostname"`, `status: "resolved"`, `identity_id == alice_id` and `endpoints`
-  holding alice's machine and the witness's, sorted. The search box lands on
+  holding alice's endpoint and the witness's, sorted. The search box lands on
   `/identities/<alice_id>?machines=<those two>`, which carries
   `identity-detail-resolved-pill` reading `your identity` and
   `identity-detail-hostname-verification` with `data-verification` `verified`.
@@ -353,10 +359,10 @@ docker/compose.dns.yaml`, run from the repository root.
   `wallet-search-status` carrying `data-status` `no_record` and reading
   `_mabel.nobody.example.` and `names no identity`.
 - Step 12a: `?input=many-machines.example` answers `status: "resolved"` with
-  that label's claimed id and all five machines, sorted by their rendered form,
+  that label's claimed id and all five endpoints, sorted by their rendered form,
   which is only possible if the two character-strings were joined first.
   `?input=bob.example` answers `status: "resolved"` with `endpoints: []`: a
-  label with no `mabel-endpoints=` record names no machine, which is an answer
+  label with no `mabel-endpoints=` record names no endpoint, which is an answer
   and not a failure. `?input=<the link>` answers `input_kind: "link"`,
   `identity_id == carol_id`, `endpoints == [witness_id]`, `status: null` and
   `hostname: null`, because a link queries nothing. Pasting it navigates to
@@ -367,15 +373,16 @@ docker/compose.dns.yaml`, run from the repository root.
   home signs for, and its chain names that witness) and `is_node_default: true`
   (the overlay set it). Its `endpoints` holds one entry, `{endpoint_id:
   <witness_id>, binding: "hinted"}`: the only chain this home ever read for the
-  witness was served by that same machine, and an endpoint that served its own
+  witness was served by that same endpoint, and an endpoint that served its own
   evidence proves nothing (proposal 006 section 4.2).
 - Step 13's card is the identity card: `witness-cards` holds exactly
   `identity-card-<witness_identity>`,
   `witness-default-<witness_identity>` reads `this node uses it by default`,
   and opening the card with `identity-card-expand-<witness_identity>` draws one
-  `machine` row, `identity-card-machine-<witness_id>-<witness_identity>`, whose
+  `endpoint` row, `identity-card-machine-<witness_id>-<witness_identity>`, whose
   sentence `identity-card-machine-<witness_id>-note-<witness_identity>` reads
-  `No record we have confirms that this machine answers for it.`
+  `No record we have confirms that this endpoint answers for it.` The testids
+  keep the older spelling of the row; only the label a reader sees changed.
 - Step 13's page is the identity page, and the section on it reads
   `witness-chosen-by` `1 of your identities` and `witness-node-default` `yes,
   for the identities that chose no witness of their own`.
@@ -383,16 +390,16 @@ docker/compose.dns.yaml`, run from the repository root.
   four cards, `alice_id`, `bob_id`, `carol_id` and `witness_identity`, because
   a witness serves its own record like any other, in the order `GET
   /api/witnesses/<witness_identity>/holdings` answers, which reports `more:
-  false`. A machine id at that path is refused by name: `GET
+  false`. An endpoint id at that path is refused by name: `GET
   /api/witnesses/<witness_id>/holdings` answers 404 with `details.reason ==
-  "endpoint_not_identity"` and the message `<witness_id> is a machine this home
+  "endpoint_not_identity"` and the message `<witness_id> is an endpoint this home
   knows, not a witness identity`.
   Carol's card reads `identity-card-declared-kind-<carol_id>` `person` and
   `identity-card-entries-<carol_id>` `2 entries`: how much of a record this
   witness holds is what the listing is about, and round 5 of proposal 005 took
   the position off the cards.
-- Step 13's three filters narrow that one list, `All` chosen when the page
-  opens with `aria-pressed` `true`, and the sentence under the heading says
+- Step 13's three tabs narrow that one list, `All` chosen when the page
+  opens with `aria-selected` `true`, and the sentence under the heading says
   which is chosen: `Every record this witness holds.` for `All`, `The records
   your own identities control.` for `Yours`, which leaves `alice_id` alone, and
   `The people you trust, and the ones your wallet reaches through them.` for
@@ -464,7 +471,7 @@ docker/compose.dns.yaml`, run from the repository root.
   their borders in the final round of proposal 005, which widened the row enough
   that its centre point falls on that icon. Clicking the heading is what a reader
   aims at anyway.
-- Step 13's `Trusted` filter is asserted per card rather than as a set. Whether
+- Step 13's `Trusted` tab is asserted per card rather than as a set. Whether
   an id counts as trusted here depends on the stored crawl, so the spec waits on
   `identity-card-<bob_id>` and `identity-card-<carol_id>` being drawn and on
   `identity-card-<alice_id>` being absent, which retries while the page's

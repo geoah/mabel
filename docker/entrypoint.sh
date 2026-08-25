@@ -6,10 +6,11 @@
 #   MABEL_HOME             node home, /data in the image
 #   MABEL_ROLE             wallet (default) or witness. Read here and written
 #                          nowhere: a witness home mints a witness identity,
-#                          advertises this container on it and lists it in
-#                          node.json.witness_for. What a node can do is read
-#                          from what its home holds (proposal 006 section 8),
-#                          so node.json carries no role line at all.
+#                          publishes a name and this container's endpoint on
+#                          it, and lists it in node.json.witness_for. What a
+#                          node can do is read from what its home holds
+#                          (proposal 006 section 8), so node.json carries no
+#                          role line at all.
 #   MABEL_HTTP_BIND        node.json http_bind, default 0.0.0.0:9080
 #   MABEL_RELAY            node.json relay, disabled (default) or n0
 #   MABEL_STORAGE_CAPACITY node.json storage_capacity in bytes
@@ -27,7 +28,9 @@
 #   MABEL_ADVERTISE_IP     IP the published ticket names, default this
 #                          container's address on the compose network
 #   MABEL_PUBLISH_TICKET   path prefix to write <prefix>.ticket, <prefix>.id
-#                          and <prefix>.identity to, for the witness
+#                          and <prefix>.identity to, for the witness. Its last
+#                          path segment is also the name the witness identity
+#                          publishes: witness reads as Witness one.
 #   MABEL_WAIT_FOR_TICKET  path prefixes to read <prefix>.ticket from,
 #                          separated by spaces or commas; each ticket is
 #                          appended to the command as --peer
@@ -103,6 +106,19 @@ identity_id_of() {
         tail -1
 }
 
+# The name a witness identity publishes, taken from the path prefix this
+# container publishes its ticket under so that two witnesses in one compose file
+# do not read as the same person. `witness` is the first one, `witness-two` the
+# second, and any other prefix is used as it is written.
+witness_display_name() {
+    local label="${1##*/}"
+    label="${label//[-_]/ }"
+    if [ "$label" = "witness" ]; then
+        label="witness one"
+    fi
+    printf '%s' "${label^}"
+}
+
 # `node id` opens the home, or creates it with node.key when the volume is
 # empty. It reads node.key and not node.json, so it runs first even on a volume
 # whose node.json is the pre-proposal-006 file: `write_node_json` replaces that
@@ -111,8 +127,8 @@ mabel node id >/dev/null
 write_node_json "[]"
 
 # A witness is an identity, not an endpoint (proposal 006 section 1). A witness
-# home mints one, publishes the machine that answers for it on that identity's
-# own ledger, and names it in `node.json.witness_for`: that is what admits a
+# home mints one, publishes a name and the machine that answers for it on that
+# identity's own ledger, and names it in `node.json.witness_for`: that admits a
 # push whose witness set names the identity (section 4), and the advertisement
 # is what section 4.1 requires before this home takes a ledger it does not
 # already store. The alias is stable, so a restart reuses the identity on the
@@ -121,6 +137,7 @@ witness_identity=""
 if [ "$role" = "witness" ]; then
     witness_alias="${MABEL_WITNESS_ALIAS:-witness}"
     witness_identity="$(identity_id_of "$witness_alias")"
+    minted=0
     if [ -z "$witness_identity" ]; then
         mabel identity create --alias "$witness_alias" --kind service >/dev/null
         witness_identity="$(identity_id_of "$witness_alias")"
@@ -128,7 +145,35 @@ if [ "$role" = "witness" ]; then
             log "the witness identity could not be created"
             exit 1
         fi
+        minted=1
         log "minted witness identity $witness_identity as $witness_alias"
+    fi
+    # An identity that publishes no profile shows in a wallet as a bare id, so
+    # this one publishes a name, and it publishes it before the advertisement
+    # below so that a freshly minted witness reads like a seeded one: inception,
+    # then name, then endpoint.
+    #
+    # Only on the boot that mints it. A profile replacement is the whole
+    # document, so replaying it on every start would append an event clearing
+    # any hostname or email an operator published on this identity in the
+    # meantime. The name is worth one event at the beginning and is not worth
+    # overwriting an operator's later work on every restart. The cost is that a
+    # witness whose volume predates this line keeps its bare id until someone
+    # runs `mabel profile replace` against it once.
+    #
+    # `--yes` because nobody is at a terminal to confirm, and `--no-sync`
+    # because this is the first boot: the ledger names no witness yet, so there
+    # is nobody to ask where its chain ends and nothing for the network step to
+    # do.
+    if [ "$minted" -eq 1 ]; then
+        witness_name="$(witness_display_name "${publish:-$witness_alias}")"
+        if named="$(mabel profile replace --identity "$witness_alias" \
+            --display-name "$witness_name" --yes --no-sync --json 2>&1)"; then
+            log "$witness_alias publishes the name $witness_name"
+        else
+            log "publishing a name for $witness_alias failed: $named"
+            exit 1
+        fi
     fi
     # `auto` is this container's own endpoint id, which is the machine a pusher
     # must dial for this identity. It is replayed on every start, so a

@@ -15,6 +15,16 @@ export const ICON_BUTTON = cn(
   "shrink-0 border border-input bg-background text-muted-foreground hover:text-foreground",
 );
 
+/**
+ * The control that copies the value beside it: smaller than an icon button and
+ * without its border, because it is a handle on the id next to it rather than a
+ * control of its own. The id is the thing a reader came to look at.
+ */
+export const COPY_BUTTON = cn(
+  buttonVariants({ variant: "ghost", size: "icon-sm" }),
+  "size-5 shrink-0 border-0 bg-transparent text-muted-foreground hover:text-foreground",
+);
+
 export function IconButton({ className, ...props }: React.ComponentProps<"button">) {
   return <button type="button" className={cn(ICON_BUTTON, className)} {...props} />;
 }

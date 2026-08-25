@@ -13,10 +13,10 @@ export interface Machine {
 }
 
 /** The sentence for a machine the identity itself published. */
-export const ON_OWN_RECORD = "This machine is listed on this identity's own record.";
+export const ON_OWN_RECORD = "This endpoint is listed on this identity's own record.";
 
 /** The sentence for a machine nothing this home holds backs up. */
-export const NOT_CONFIRMED = "No record we have confirms that this machine answers for it.";
+export const NOT_CONFIRMED = "No record we have confirms that this endpoint answers for it.";
 
 /** Which of the two sentences one machine gets. */
 export function machineSentence(machine: Machine): string {

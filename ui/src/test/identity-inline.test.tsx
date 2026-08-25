@@ -92,10 +92,15 @@ describe("IdentityInline", () => {
     expect(within(screen.getByTestId("who")).getByLabelText("Copy Mabel ID")).toBeInTheDocument();
   });
 
-  it("renders the id alone when nothing names the identity", () => {
+  it("titles a nameless identity with the first characters of its id", () => {
     host(<IdentityInline identity={document({ display_name: null, alias: null })} testId="who" />);
 
-    expect(screen.queryByTestId("who-name")).not.toBeInTheDocument();
+    // A stand-in for a name, not the id being shown: no prefix, and the whole
+    // id is still under it (decision 019).
+    const title = screen.getByTestId("who-name");
+    expect(title).toHaveTextContent(`${ALICE.slice(0, 8)}\u2026`);
+    expect(title).toHaveAttribute("data-placeholder-name", "true");
+    expect(title.textContent).not.toContain("mabel://");
     expect(screen.getByTestId("who")).toHaveAttribute("data-name-source", "id");
     expect(screen.getByTestId("who").querySelector("[data-value]")).toHaveAttribute(
       "data-truncated",

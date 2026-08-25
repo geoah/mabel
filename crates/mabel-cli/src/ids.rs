@@ -9,7 +9,7 @@
 use data_encoding::{BASE32_NOPAD, HEXLOWER_PERMISSIVE};
 use iroh_base::{EndpointId, PublicKey};
 use mabel_core::id::ID_STR_LEN;
-use mabel_core::{EventId, IdentityId};
+use mabel_core::{EventId, IdentityId, LINK_PREFIX};
 use mabel_node::api::documents::Id;
 use mabel_node::verification::check_hostname;
 
@@ -38,6 +38,17 @@ pub fn event(id: EventId) -> Id {
 #[must_use]
 pub fn key(key: &PublicKey) -> Id {
     bytes(key.as_bytes())
+}
+
+/// One identity id as a person reads it: `mabel://<id>`.
+///
+/// An identity id and an endpoint id are both 52 base32 characters, so the
+/// prefix is the only thing in printed text that says which one a reader is
+/// looking at. Built from the link's own prefix (proposal 006 section 7) so the
+/// two can never drift. JSON documents keep the bare id.
+#[must_use]
+pub fn shown(id: impl std::fmt::Display) -> String {
+    format!("{LINK_PREFIX}{id}")
 }
 
 /// Parses an event id typed on the command line.
@@ -108,13 +119,31 @@ fn malformed_endpoint(raw: &str) -> CliError {
 
 #[cfg(test)]
 mod tests {
-    use super::{bytes, parse_endpoint, parse_event};
+    use super::{LINK_PREFIX, bytes, parse_endpoint, parse_event, shown};
+    use mabel_core::IdentityId;
 
     #[test]
     fn thirty_two_bytes_render_as_fifty_two_lowercase_characters() {
         let rendered = bytes(&[0xab; 32]);
         assert_eq!(rendered.as_str().len(), 52);
         assert_eq!(rendered.as_str(), rendered.as_str().to_ascii_lowercase());
+    }
+
+    #[test]
+    fn an_identity_id_is_shown_behind_the_link_prefix_and_whole() {
+        let identity = IdentityId::from_bytes([0xab; 32]);
+        let rendered = shown(identity);
+        assert_eq!(rendered, format!("{LINK_PREFIX}{identity}"));
+        assert!(rendered.starts_with("mabel://"), "{rendered}");
+        assert!(rendered.ends_with(&identity.to_string()), "{rendered}");
+        assert_eq!(
+            rendered.len(),
+            LINK_PREFIX.len() + 52,
+            "the id is never shortened"
+        );
+        // A rendered document id goes through the same helper, so the text and
+        // the JSON of one command name the same 52 characters.
+        assert_eq!(shown(super::identity(identity)), rendered);
     }
 
     #[test]

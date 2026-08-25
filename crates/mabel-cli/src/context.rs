@@ -59,17 +59,24 @@ impl Context {
     ///
     /// An id resolves to itself whether or not this home holds it, which is
     /// what lets `--subject` name someone else's identity. A link resolves to
-    /// the identity it names; the machines it hints at are dropped here, and a
-    /// command that dials reads them through [`Context::resolve_hinted`].
+    /// the identity it names, and a link that also names endpoints is refused:
+    /// this slot takes one identity and dials nothing, so obeying the identity
+    /// and dropping the endpoints would leave a flag that looks obeyed and is
+    /// not. A command that does dial reads them through
+    /// [`Context::resolve_hinted`].
     ///
     /// # Errors
     ///
     /// Returns code 2 with reason `unknown_alias` when no local identity
     /// carries the name, and `invalid_mabel_link` for a string that means to be
-    /// a link and is not.
+    /// a link and is not, and for a link that names endpoints.
     pub fn resolve(&self, name: &str) -> Result<IdentityId> {
         if MabelLink::looks_like_link(name) {
-            return Ok(parse_link(name)?.identity());
+            let link = parse_link(name)?;
+            if !link.endpoints().is_empty() {
+                return Err(endpoints_not_accepted(name));
+            }
+            return Ok(link.identity());
         }
         if let Ok(id) = name.parse::<IdentityId>() {
             return Ok(id);
@@ -85,7 +92,7 @@ impl Context {
         )
     }
 
-    /// Resolves a name and keeps the machines a link hinted at.
+    /// Resolves a name and keeps the endpoints a link hinted at.
     ///
     /// The hints apply to the subject that is fetched, and to nothing else: an
     /// alias and a bare id hint at nothing, so a caller that dials falls back
@@ -102,33 +109,25 @@ impl Context {
         Ok((self.resolve(name)?, Vec::new()))
     }
 
-    /// Resolves a name that must be an identity this home signs for, warning
-    /// when a link on `flag` hinted at machines.
+    /// Resolves a name that must be an identity this home signs for, refusing a
+    /// link on `flag` that also names endpoints.
     ///
     /// A local signer is reached from this home, so there is nothing to dial and
-    /// the hints do nothing. Saying so on stderr beats a flag that looks
-    /// obeyed and is not (proposal 006 section 7).
+    /// the hints would do nothing. This is an id-only slot like every other, so
+    /// the endpoints are refused rather than dropped: a flag that looks obeyed
+    /// and is not is worse than a refusal (proposal 006 section 7).
+    ///
+    /// `flag` is the flag the value arrived on, which the refusal names.
     ///
     /// # Errors
     ///
-    /// Returns the errors of [`Context::resolve_local`].
+    /// Returns code 2 with reason `invalid_mabel_link` for a link that names
+    /// endpoints, and the errors of [`Context::resolve_local`].
     pub fn resolve_local_hinted(&self, name: &str, flag: &str) -> Result<IdentityId> {
-        let (identity, hints) = self.resolve_hinted(name)?;
-        if !hints.is_empty() {
-            // stderr, not a tracing event: a warning about a flag has to be
-            // seen without `--verbose`, and stdout carries the document.
-            eprintln!(
-                "warning: ignoring the {} {} the link on {flag} names: {identity} is signed for \
-                 by this home",
-                hints.len(),
-                if hints.len() == 1 {
-                    "endpoint"
-                } else {
-                    "endpoints"
-                }
-            );
+        if MabelLink::looks_like_link(name) && !parse_link(name)?.endpoints().is_empty() {
+            return Err(endpoints_not_accepted(name).with_detail("parameter", flag));
         }
-        self.resolve_local(&identity.to_string())
+        self.resolve_local(name)
     }
 
     /// Resolves a name that must be an identity this home can act as.
@@ -154,7 +153,7 @@ impl Context {
         }
         Err(CliError::usage(
             "unknown_identity",
-            format!("identity {identity} is not in this home"),
+            format!("identity {} is not in this home", ids::shown(identity)),
         )
         .with_detail("identity", identity.to_string()))
     }
@@ -244,7 +243,10 @@ impl Context {
             }
             CliError::usage(
                 "no_signing_key",
-                format!("this home holds no key that may sign for {identity}"),
+                format!(
+                    "this home holds no key that may sign for {}",
+                    ids::shown(identity)
+                ),
             )
             .with_detail("identity", identity.to_string())
         })
@@ -288,6 +290,24 @@ pub fn parse_link(input: &str) -> Result<MabelLink> {
     })
 }
 
+/// The refusal an id-only slot answers a link that also names endpoints.
+///
+/// The slot takes one identity and dials nothing, so there is nowhere for the
+/// endpoints to be used. Dropping them silently would leave a link that looks
+/// obeyed and is not, which is the failure proposal 006 section 7 names. The
+/// reason is the link grammar's own [`mabel_core::INVALID_MABEL_LINK`], and
+/// `details.input` carries the string as it was typed, the shape [`parse_link`]
+/// already uses.
+#[must_use]
+fn endpoints_not_accepted(input: &str) -> CliError {
+    CliError::usage(
+        mabel_core::INVALID_MABEL_LINK,
+        format!("{input} names endpoints, and this value takes one identity: give the identity on its own"),
+    )
+    .with_detail("input", input)
+    .with_detail("detail", "this value takes one identity and names no endpoint")
+}
+
 /// The refusal a ledger this home stores but cannot sign for answers.
 ///
 /// A fetch stores any chain that verifies; only a chain naming a local key a
@@ -299,10 +319,89 @@ pub fn not_locally_controlled(ledger: LedgerId) -> CliError {
     CliError::usage(
         "not_locally_controlled",
         format!(
-            "ledger {ledger} is stored here read-only: no identity in this home \
-             is one of its controllers"
+            "ledger {} is stored here read-only: no identity in this home \
+             is one of its controllers",
+            ids::shown(ledger)
         ),
     )
     .with_detail("ledger_id", ledger.to_string())
     .with_detail("identity", ledger.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Context;
+    use iroh_base::SecretKey;
+    use mabel_core::{IdentityId, MabelLink};
+
+    /// A home in a fresh directory, which every one of these cases resolves
+    /// against without holding a single identity.
+    fn context() -> (tempfile::TempDir, Context) {
+        let root = tempfile::tempdir().expect("a temporary directory");
+        let context = Context::open(Some(root.path()), false).expect("the home opens");
+        (root, context)
+    }
+
+    fn identity() -> IdentityId {
+        IdentityId::from_bytes([0x11; 32])
+    }
+
+    /// `mabel://<id>?endpoints=<endpoint>`, the string every case below hands
+    /// to an id-only slot.
+    fn link_with_endpoints() -> String {
+        let endpoint = SecretKey::from_bytes(&[7u8; 32]).public();
+        MabelLink::new(identity(), &[endpoint])
+            .expect("one endpoint fits the link cap")
+            .to_string()
+    }
+
+    #[test]
+    fn an_id_only_slot_refuses_a_link_that_names_endpoints() {
+        let (_root, context) = context();
+        let text = link_with_endpoints();
+
+        for error in [
+            context.resolve(&text).expect_err("resolve refuses it"),
+            context
+                .resolve_local_hinted(&text, "--identity")
+                .expect_err("resolve_local_hinted refuses it"),
+        ] {
+            assert_eq!(error.exit_code(), 2);
+            let document = error.to_document();
+            assert_eq!(
+                document["details"]["reason"],
+                mabel_core::INVALID_MABEL_LINK
+            );
+            assert_eq!(
+                document["details"]["input"], text,
+                "the refusal names the string as it was typed"
+            );
+        }
+    }
+
+    #[test]
+    fn an_id_only_slot_takes_a_link_that_names_no_endpoint() {
+        let (_root, context) = context();
+        let bare = MabelLink::new(identity(), &[])
+            .expect("no endpoint is a link")
+            .to_string();
+        assert_eq!(context.resolve(&bare).expect("a bare link"), identity());
+        assert_eq!(
+            context
+                .resolve(&identity().to_string())
+                .expect("a bare id resolves to itself"),
+            identity()
+        );
+    }
+
+    #[test]
+    fn a_slot_that_dials_still_keeps_the_endpoints_a_link_names() {
+        let (_root, context) = context();
+        let endpoint = SecretKey::from_bytes(&[7u8; 32]).public();
+        let (resolved, hints) = context
+            .resolve_hinted(&link_with_endpoints())
+            .expect("resolve_hinted takes endpoints");
+        assert_eq!(resolved, identity());
+        assert_eq!(hints, [endpoint]);
+    }
 }

@@ -637,7 +637,8 @@ impl WalletCore {
             return Err(ServiceError::policy(
                 "no_op_endpoint_advertisement",
                 format!(
-                    "{identity} already advertises these {} endpoints: nothing would change",
+                    "{}{identity} already advertises these {} endpoints: nothing would change",
+                    mabel_core::LINK_PREFIX,
                     endpoints.len()
                 ),
             )
@@ -689,7 +690,10 @@ impl WalletCore {
             // unreachable.
             return Err(ServiceError::ledger(
                 "attestation_not_folded",
-                format!("attestation {attestation} is not in ledger {issuer}"),
+                format!(
+                    "attestation {attestation} is not in ledger {}{issuer}",
+                    mabel_core::LINK_PREFIX
+                ),
             ));
         };
         Ok(Revoked {
@@ -739,8 +743,9 @@ impl WalletCore {
             ServiceError::policy(
                 "invitee_holds_no_key",
                 format!(
-                    "{invitee} is an identity-rooted ledger and holds no key of its own, \
-                     so it cannot be invited"
+                    "{}{invitee} is an identity-rooted ledger and holds no key of its own, \
+                     so it cannot be invited",
+                    mabel_core::LINK_PREFIX
                 ),
             )
             .with_detail("invitee", invitee.to_string())
@@ -806,8 +811,9 @@ impl WalletCore {
             return Err(ServiceError::usage(
                 "not_the_invitee",
                 format!(
-                    "this invitation invites {}, not {identity}",
-                    summary.invitee
+                    "this invitation invites {prefix}{}, not {prefix}{identity}",
+                    summary.invitee,
+                    prefix = mabel_core::LINK_PREFIX
                 ),
             )
             .with_detail("ledger_id", summary.ledger.to_string())
@@ -818,8 +824,9 @@ impl WalletCore {
             return Err(ServiceError::policy(
                 "acceptance_invitee_key_mismatch",
                 format!(
-                    "the invitation records key {} for {identity}, and this home signs with {}",
+                    "the invitation records key {} for {}{identity}, and this home signs with {}",
                     summary.invitee_key,
+                    mabel_core::LINK_PREFIX,
                     key.public()
                 ),
             )
@@ -895,8 +902,9 @@ impl WalletCore {
             return Err(ServiceError::ledger(
                 "invitation_not_folded",
                 format!(
-                    "invitation {} is not in ledger {ledger}",
-                    file.invitation_event()
+                    "invitation {} is not in ledger {}{ledger}",
+                    file.invitation_event(),
+                    mabel_core::LINK_PREFIX
                 ),
             ));
         };
@@ -977,7 +985,8 @@ impl WalletCore {
         Err(ServiceError::replay(
             "acceptance_already_used",
             format!(
-                "this acceptance was already admitted at seq {at_seq} of {}",
+                "this acceptance was already admitted at seq {at_seq} of {}{}",
+                mabel_core::LINK_PREFIX,
                 loaded.ledger
             ),
         )
@@ -1050,7 +1059,11 @@ impl WalletCore {
         let head = loaded.state.head().ok_or_else(|| {
             ServiceError::usage(
                 "empty_ledger",
-                format!("ledger {} holds no inception", loaded.ledger),
+                format!(
+                    "ledger {}{} holds no inception",
+                    mabel_core::LINK_PREFIX,
+                    loaded.ledger
+                ),
             )
         })?;
         let signer = self.signing_key(identity)?;
@@ -1329,7 +1342,10 @@ impl WalletCore {
             if stored != events[seq as usize] {
                 return Err(ServiceError::state(
                     "divergent_local_copy",
-                    format!("this node holds a different event at seq {seq} of {ledger}"),
+                    format!(
+                        "this node holds a different event at seq {seq} of {}{ledger}",
+                        mabel_core::LINK_PREFIX
+                    ),
                 )
                 .with_detail("ledger_id", ledger.to_string())
                 .with_detail("at_seq", seq));
@@ -1420,7 +1436,10 @@ impl WalletCore {
             {
                 return Err(ServiceError::usage(
                     "alias_in_use",
-                    format!("{alias} already names {identity} in this home"),
+                    format!(
+                        "{alias} already names {}{identity} in this home",
+                        mabel_core::LINK_PREFIX
+                    ),
                 )
                 .with_detail("alias", alias)
                 .with_detail("identity", identity.to_string()));
@@ -1483,7 +1502,10 @@ fn refuse_no_op_profile(
     }
     let mut error = ServiceError::policy(
         "no_op_profile_update",
-        format!("this profile is already the profile of {identity}: nothing would change"),
+        format!(
+            "this profile is already the profile of {}{identity}: nothing would change",
+            mabel_core::LINK_PREFIX
+        ),
     )
     .with_detail("ledger_id", identity.to_string())
     .with_detail("display_name", display_name)
@@ -1509,8 +1531,9 @@ fn check_lock(lock: &AppendLock, ledger: LedgerId) -> Result<(), ServiceError> {
     Err(ServiceError::state(
         "wrong_append_lock",
         format!(
-            "this write holds the append lock of {}, not of {ledger}",
-            lock.ledger()
+            "this write holds the append lock of {prefix}{}, not of {prefix}{ledger}",
+            lock.ledger(),
+            prefix = mabel_core::LINK_PREFIX
         ),
     ))
 }
@@ -1520,7 +1543,10 @@ fn check_lock(lock: &AppendLock, ledger: LedgerId) -> Result<(), ServiceError> {
 pub fn no_keys_held(identity: IdentityId) -> ServiceError {
     ServiceError::policy(
         "no_keys_held",
-        format!("this home holds no key of its own for {identity}: its controllers sign for it"),
+        format!(
+            "this home holds no key of its own for {}{identity}: its controllers sign for it",
+            mabel_core::LINK_PREFIX
+        ),
     )
     .with_detail("identity_id", identity.to_string())
 }
@@ -1535,7 +1561,10 @@ pub fn no_keys_held(identity: IdentityId) -> ServiceError {
 pub fn no_local_signer(identity: IdentityId) -> ServiceError {
     ServiceError::usage(
         "no_local_signer",
-        format!("this home holds no key that may append to {identity}"),
+        format!(
+            "this home holds no key that may append to {}{identity}",
+            mabel_core::LINK_PREFIX
+        ),
     )
     .with_detail("identity", identity.to_string())
     .with_status(axum::http::StatusCode::FORBIDDEN)
@@ -1546,7 +1575,10 @@ pub fn no_local_signer(identity: IdentityId) -> ServiceError {
 pub fn unknown_ledger(ledger: LedgerId) -> ServiceError {
     ServiceError::usage(
         "unknown_ledger",
-        format!("this home holds no ledger {ledger}"),
+        format!(
+            "this home holds no ledger {}{ledger}",
+            mabel_core::LINK_PREFIX
+        ),
     )
     .with_detail("ledger_id", ledger.to_string())
     .with_status(axum::http::StatusCode::NOT_FOUND)
@@ -1588,8 +1620,9 @@ fn remove(path: &std::path::Path) -> Result<(), ServiceError> {
 /// wording on both surfaces.
 fn raw_root_warning(ledger: LedgerId) -> String {
     format!(
-        "accepting a controller role on a raw-rooted ledger means signing as {ledger}: \
-         every event you append to it is that identity's own event"
+        "accepting a controller role on a raw-rooted ledger means signing as {}{ledger}: \
+         every event you append to it is that identity's own event",
+        mabel_core::LINK_PREFIX
     )
 }
 

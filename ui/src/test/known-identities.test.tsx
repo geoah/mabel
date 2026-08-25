@@ -115,19 +115,38 @@ describe("the known identities section", () => {
     const { user } = renderApp("/wallet");
     await screen.findByTestId("known-identity-cards");
 
-    const toggle = screen.getByTestId("known-trusted-only");
-    expect(toggle).toHaveAttribute("aria-checked", "false");
+    const all = screen.getByTestId("known-identities-all");
+    const trusted = screen.getByTestId("known-identities-trusted");
+    expect(all).toHaveAttribute("aria-selected", "true");
+    expect(trusted).toHaveAttribute("aria-selected", "false");
 
-    await user.click(toggle);
+    await user.click(trusted);
 
-    expect(toggle).toHaveAttribute("aria-checked", "true");
+    expect(trusted).toHaveAttribute("aria-selected", "true");
+    expect(all).toHaveAttribute("aria-selected", "false");
     // Both seeded rows are trusted, one explicitly and one through the graph.
     expect(screen.getByTestId(`identity-card-${BOB}`)).toBeInTheDocument();
     expect(screen.getByTestId(`identity-card-${CAROL}`)).toBeInTheDocument();
 
-    await user.click(toggle);
+    await user.click(all);
 
-    expect(toggle).toHaveAttribute("aria-checked", "false");
+    expect(all).toHaveAttribute("aria-selected", "true");
+    expect(trusted).toHaveAttribute("aria-selected", "false");
+  });
+
+  it("reaches the trusted tab with the arrow keys alone", async () => {
+    const { user } = renderApp("/wallet");
+    await screen.findByTestId("known-identity-cards");
+
+    const all = screen.getByTestId("known-identities-all");
+    const trusted = screen.getByTestId("known-identities-trusted");
+    all.focus();
+    await user.keyboard("{ArrowRight}");
+
+    // Activation follows focus, so arrowing across the row shows the panel.
+    expect(trusted).toHaveFocus();
+    expect(trusted).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByTestId("known-identity-cards")).toBeInTheDocument();
   });
 
   it("links a known card at the identity's own page", async () => {

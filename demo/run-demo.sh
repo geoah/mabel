@@ -104,7 +104,7 @@ run() {
 # that appends to a ledger somebody else can also append to. The append
 # discipline asks that ledger's witnesses where it ends before it signs
 # (proposal 001 section 5), and reaching a witness needs an address: node.json
-# records which identity witnesses and which machines answer for it, never how
+# records which identity witnesses and which endpoints answer for it, never how
 # to route to one, so the ticket on the shared volume is the address hint
 # (proposal 006 section 5.4).
 run_shared() {
@@ -171,9 +171,9 @@ hand_over() {
 work="$(mktemp -d)"
 
 phase "1. one witness and two wallets, on one bridge network"
-note 'a witness is an identity, and the container that answers for it is a'
-note 'machine that identity published on its own record (decision 019). It'
-note "keeps other people's records and signs nothing on them."
+note 'a witness is an identity, and the container that answers for it is an'
+note 'endpoint that identity published on its own record (proposal 006'
+note "section 1). It keeps other people's records and signs nothing on them."
 printf '\n  $ docker compose -f docker/compose.yaml down -v && up -d --wait\n'
 dc down -v >/dev/null 2>&1 || true
 dc up -d --wait >/dev/null 2>&1 || fail "the topology did not come up healthy"
@@ -191,22 +191,22 @@ witness_identity="$(dc exec -T witness cat /shared/witness.identity)"
 [ -n "$witness_identity" ] ||
     fail "the witness published no Mabel id to /shared/witness.identity"
 blank
-note "witness identity $witness_identity"
-note "answering on machine $witness_id"
+note "witness identity mabel://$witness_identity"
+note "answering on endpoint $witness_id"
 
 phase "2. alice and bob create person identities"
 note 'an identity is the digest of its own inception event, so the id and the'
 note 'first key are one fact (proposal 001 section 3.3). The alias is local.'
 run alice identity create --alias alice --kind person
-alice_id="$(printf '%s' "$RUN_OUT" | sed -n 's/^created identity //p')"
+alice_id="$(printf '%s' "$RUN_OUT" | sed -n 's|^created identity mabel://||p')"
 run bob identity create --alias bob --kind person
-bob_id="$(printf '%s' "$RUN_OUT" | sed -n 's/^created identity //p')"
+bob_id="$(printf '%s' "$RUN_OUT" | sed -n 's|^created identity mabel://||p')"
 [ -n "$alice_id" ] && [ -n "$bob_id" ] || fail "could not read the new identity ids"
 
 phase "3. both name the witness in their ledger and push"
 note 'naming a witness is an event in the ledger, so who was asked to hold a'
 note 'copy is part of the record a verifier reads. The event names the'
-note 'witness identity, so replacing the machine behind it leaves it standing.'
+note 'witness identity, so replacing the endpoint behind it leaves it standing.'
 run alice witness add --identity alice --witness "$witness_identity"
 run bob witness add --identity bob --witness "$witness_identity"
 push alice --identity alice
@@ -225,7 +225,7 @@ note 'an organization is a ledger with an identity root: it holds no key of'
 note 'its own and its controllers sign for it (decision 002). One ledger type'
 note 'covers a person and an organization (unified ledgers, decision 003).'
 run alice identity create --alias mabel-demo-co --kind organization --founder alice
-org_id="$(printf '%s' "$RUN_OUT" | sed -n 's/^created identity //p')"
+org_id="$(printf '%s' "$RUN_OUT" | sed -n 's|^created identity mabel://||p')"
 [ -n "$org_id" ] || fail "could not read the shared ledger id"
 
 phase "6. alice invites bob, bob accepts, alice admits"
@@ -314,11 +314,11 @@ count="$(printf '%s' "$ledgers" | jq '.identities | length')"
 [ "$count" -ge 3 ] || fail "the witness holds $count ledgers, expected at least 3"
 
 printf '\n\n=== the demo ran green in %s seconds\n' "$(($(date +%s) - started_at))"
-printf '  alice        %s\n' "$alice_id"
-printf '  bob          %s\n' "$bob_id"
-printf '  shared       %s\n' "$org_id"
-printf '  witness      %s, holding %s ledgers\n' "$witness_identity" "$count"
-printf '  its machine  %s\n' "$witness_id"
+printf '  alice        mabel://%s\n' "$alice_id"
+printf '  bob          mabel://%s\n' "$bob_id"
+printf '  shared       mabel://%s\n' "$org_id"
+printf '  witness      mabel://%s, holding %s ledgers\n' "$witness_identity" "$count"
+printf '  its endpoint %s\n' "$witness_id"
 if [ "$keep" -eq 1 ]; then
     printf '\n  --keep: the topology is still up. The UI is on http://127.0.0.1:9081\n'
     printf '  for alice and http://127.0.0.1:9080 for the witness.\n'

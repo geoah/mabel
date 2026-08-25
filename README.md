@@ -93,10 +93,11 @@ docker compose -f docker/compose.yaml down -v
 membership, trust, revocation and a stranger verifying from an empty home. It
 needs docker, curl and jq, and reaches nothing outside the bridge network.
 
-The Playwright suite runs the seven stories in [docs/stories/](docs/stories/README.md),
+The Playwright suite runs the nine stories in [docs/stories/](docs/stories/README.md),
 driving the CLI through `docker compose exec` and both UIs in a browser. Six
-run against the compose topology above; story 007 brings it up again with the
-test resolver overlay:
+run against the compose topology above; 004 and 005 add the second witness
+overlay, 007 brings the topology up again with the test resolver overlay, and
+008 and 009 hand-start one borrowed home each:
 
 ```sh
 (cd tests/e2e && npm ci && npx playwright install --with-deps chromium && npm test)

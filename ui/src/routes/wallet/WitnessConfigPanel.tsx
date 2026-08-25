@@ -8,6 +8,7 @@ import { InlineField, InlineForm } from "@/components/InlineForm";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { asApiError } from "@/hooks/useResource";
+import { identityIdInput } from "@/lib/link";
 
 /** What a reader is told when the id they typed is already in the set. */
 export const WITNESS_ALREADY_NAMED = "This witness already keeps a copy of this record.";
@@ -18,9 +19,9 @@ export const WITNESS_ALREADY_NAMED = "This witness already keeps a copy of this 
  */
 export const WITNESS_REFUSALS: Record<string, string> = {
   unresolvable_witness:
-    "Your wallet found no machine that answers for that identity, so it cannot tell whether the identity exists. Ask whoever runs the witness for a link, which carries a machine to try.",
+    "Your wallet found no endpoint that answers for that identity, so it cannot tell whether the identity exists. Ask whoever runs the witness for a link, which carries an endpoint to try.",
   endpoint_not_identity:
-    "That is the id of a machine, not of an identity. A witness has a Mabel ID of its own, and its machines are listed on its record.",
+    "That is the id of an endpoint, not of an identity. A witness has a Mabel ID of its own, and its endpoints are listed on its record.",
 };
 
 /**
@@ -43,7 +44,11 @@ export function WitnessConfigPanel({
   const [error, setError] = useState<ApiError | null>(null);
   const [duplicate, setDuplicate] = useState(false);
   const [headSeq, setHeadSeq] = useState<number | null>(null);
-  const wanted = witness.trim();
+  // The box takes the id or the id with its prefix. A link that also names
+  // machines is refused: this set records who keeps a copy, and has nowhere to
+  // put where they answer.
+  const typed = identityIdInput(witness);
+  const wanted = typed.id ?? "";
   const refused = error === null ? undefined : WITNESS_REFUSALS[error.reason];
 
   async function submit(event: FormEvent) {
@@ -119,6 +124,11 @@ export function WitnessConfigPanel({
           {pending ? "adding" : "Add witness"}
         </Button>
       </InlineForm>
+      {typed.error !== null && (
+        <p data-testid="witness-add-not-an-identity" className="text-sm">
+          {typed.error}
+        </p>
+      )}
       {duplicate && (
         <p data-testid="witness-add-duplicate" className="text-sm">
           {WITNESS_ALREADY_NAMED}

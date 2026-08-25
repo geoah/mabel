@@ -16,7 +16,7 @@ read. Alice then attests again, and the same verifier says trusted.
   `http://127.0.0.1:9082`. The subject, who signs nothing here.
 - the witness: a node that keeps other people's records, compose service
   `witness`, API and UI on `http://127.0.0.1:9080`. `witness_identity` is the
-  Mabel id a record names; `witness_id` is the machine that answers for it.
+  Mabel id a record names; `witness_id` is the endpoint that answers for it.
 - a fresh verifier: one throwaway container per verification, with an empty
   home.
 
@@ -94,16 +94,20 @@ repository root.
   false`, `code: 20`, `details.reason == "duplicate_unrevoked_attestation"`,
   `details.subject == bob_id`, `details.attestation_event ==
   alice_attestation`, `details.at_seq == 2`, and `message` exactly `Policy
-  error: an unrevoked attestation for <bob_id> already exists at seq 2`, the
-  `policy` case of `contracts/cli/errors.json`.
+  error: an unrevoked attestation for mabel://<bob_id> already exists at seq 2`,
+  the `policy` case of `contracts/cli/errors.json`. `message` is prose a person
+  reads, so the subject carries the prefix; `details.subject` beside it is an
+  id-valued field and stays bare.
 - Step 3's UI attempt is refused too, in the same words. `trust-error` is
   present with `error-code` reading `code 20`, `error-status` reading `status
   409`, `error-code-meaning` reading `A signature, the record itself or a rule
   refused this.`, `error-reason` reading `duplicate_unrevoked_attestation` and
-  `error-message` reading `Policy error: an unrevoked attestation for <bob_id>
-  already exists at seq 2`. `error-detail-at_seq` reads `2`, the position of the attestation
-  still standing. Nothing was appended on either path: `GET
-  /api/identities/<alice_id>` still answers `head_seq: 2`.
+  `error-message` reading `Policy error: an unrevoked attestation for
+  mabel://<bob_id> already exists at seq 2`: the node writes its own copy of that
+  sentence into the HTTP error envelope and the screen shows it as it stands, so
+  the subject carries the prefix there too. `error-detail-at_seq` reads `2`, the
+  position of the attestation still standing. Nothing was appended on either
+  path: `GET /api/identities/<alice_id>` still answers `head_seq: 2`.
 - Step 2: `GET http://127.0.0.1:9081/api/identities/<alice_id>` answers
   `identity.trust[0].subject == bob_id`, `identity.trust[0].revoked == false`
   and `identity.trust[0].attestation_event == alice_attestation`.
@@ -119,8 +123,8 @@ repository root.
 - Step 6 exits 0 (a revoked attestation is a successful verification, not a
   failure) and prints, in order:
   - `trusted: false`
-  - `valid as of seq 3 of <alice_id>, fetched from <witness_id> at <RFC 3339
-    UTC>; attestation <alice_attestation> revoked at seq 3`
+  - `valid as of seq 3 of mabel://<alice_id>, fetched from <witness_id> at <RFC
+    3339 UTC>; attestation <alice_attestation> revoked at seq 3`
   - `subject control was not proven to this verifier; the issuer is
     responsible for out-of-band confirmation`
   - `Verified means this identity signed this statement at this position in
@@ -138,8 +142,8 @@ repository root.
   001 section 6).
 - Step 9's verification exits 0 with `trusted: true`, `attestation_event ==
   second_attestation`, `attestation_seq: 4`, `revoked_count: 1`, and the
-  statement `valid as of seq 4 of <alice_id>, fetched from <witness_id> at
-  <RFC 3339 UTC>; no revocation up to seq 4`. The revoked attestation stays in
+  statement `valid as of seq 4 of mabel://<alice_id>, fetched from <witness_id>
+  at <RFC 3339 UTC>; no revocation up to seq 4`. The revoked attestation stays in
   `revoked_attestations`.
 - Step 7 prints the same four lines step 6 printed, from a home that holds
   alice's ledger. Where the report is read from does not change it, because

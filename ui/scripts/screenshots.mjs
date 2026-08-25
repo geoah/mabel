@@ -72,7 +72,7 @@ const SCREENS = [
     path: "/wallet",
     ready: "known-identity-cards",
     async act(page) {
-      await page.getByTestId("known-trusted-only").click();
+      await page.getByTestId("known-identities-trusted").click();
       await page.getByTestId("known-identity-cards").waitFor();
     },
   },
@@ -145,6 +145,28 @@ const SCREENS = [
     async act(page) {
       await page.getByTestId("action-handle-summary").click();
       await page.getByTestId("handle-form").waitFor();
+    },
+  },
+  {
+    // The same action once this identity advertises endpoints: the second DNS
+    // line of proposal 006 section 6 appears beside the first. The fixture
+    // alice advertises none, so this publishes one first, which is also the
+    // only way to see the two-line wording.
+    name: "identity-own-handle-endpoints",
+    path: `/identities/${ALICE}`,
+    ready: "action-endpoints-summary",
+    async act(page) {
+      await page.getByTestId("action-endpoints-summary").click();
+      await page.getByTestId("endpoints-input").fill("b".repeat(52));
+      await page.getByTestId("endpoints-submit").click();
+      await page.getByTestId("endpoints-consent").waitFor();
+      await page.getByTestId("endpoints-consent-confirm").click();
+      await page.getByTestId("endpoints-head-seq").waitFor();
+      // Close the endpoints action so the handle action is what the capture
+      // shows.
+      await page.getByTestId("action-endpoints-summary").click();
+      await page.getByTestId("action-handle-summary").click();
+      await page.getByTestId("handle-txt-endpoints-record").waitFor();
     },
   },
   {

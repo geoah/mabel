@@ -26,7 +26,7 @@ pub const TXT_ENDPOINTS_PREFIX: &str = "mabel-endpoints=";
 
 /// Most endpoints one label may name, between all its records.
 ///
-/// The same cap the payload carries: one number for "how many machines answer
+/// The same cap the payload carries: one number for "how many endpoints answer
 /// for one identity", wherever the list is read. A TXT character-string holds
 /// 255 bytes and `mabel-endpoints=` plus four ids is 227, so a zone publishing
 /// 5 to 8 splits them across two character-strings in one record, which the

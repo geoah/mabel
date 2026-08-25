@@ -14,7 +14,7 @@ import {
 import { KeyValue, KeyValueTable } from "@/components/KeyValue";
 import { Section } from "@/components/Section";
 import { Alert } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { degreesOf, named, useResolvedNames } from "@/hooks/useResolvedNames";
 import { usePagedList } from "@/hooks/usePagedList";
 
@@ -24,15 +24,15 @@ const LEDGER_CAP = 1024;
 /** Which of the records a witness holds the list is showing. */
 type Holdings = "all" | "ours" | "trusted";
 
-/** The three buttons, in the order they narrow the list. */
+/** The three tabs, in the order they are drawn, widest first. */
 const FILTERS: { key: Holdings; label: string; sentence: string }[] = [
   { key: "all", label: "All", sentence: "Every record this witness holds." },
-  { key: "ours", label: "Yours", sentence: "The records your own identities control." },
   {
     key: "trusted",
     label: "Trusted",
     sentence: "The people you trust, and the ones your wallet reaches through them.",
   },
+  { key: "ours", label: "Yours", sentence: "The records your own identities control." },
 ];
 
 /**
@@ -54,11 +54,11 @@ function Unreachable({ message }: { message: string }) {
 }
 
 /**
- * What one witness holds, asked live and drawn as the identity card list, with
- * three ways to narrow it: everything it holds, the records your own identities
- * control, and the people you have a reason to trust. Above the list are the
- * two facts a witness's card used to carry: who chose it, and whether this node
- * sends records there by default.
+ * What one witness holds, asked live and drawn as the identity card list, under
+ * three tabs: everything it holds, the people you have a reason to trust, and
+ * the records your own identities control. Above the tabs are the two facts a
+ * witness's card used to carry: who chose it, and whether this node sends
+ * records there by default.
  *
  * Nothing here is fetched into this home: a card opens the identity page, which
  * is where fetching is an explicit button.
@@ -138,23 +138,6 @@ export function WitnessHoldings({
         testId="witness-holdings"
         title="What this witness holds"
         description={`${chosen.sentence} Asked when this page loaded, so a record missing here may be on another witness.`}
-        action={
-          <div className="flex flex-wrap gap-1">
-            {FILTERS.map((filter) => (
-              <Button
-                key={filter.key}
-                type="button"
-                size="sm"
-                variant={holdings === filter.key ? "default" : "outline"}
-                aria-pressed={holdings === filter.key}
-                data-testid={`witness-holdings-${filter.key}`}
-                onClick={() => setHoldings(filter.key)}
-              >
-                {filter.label}
-              </Button>
-            ))}
-          </div>
-        }
       >
         <KeyValueTable>
           <KeyValue label="chosen by" testId="witness-chosen-by">
@@ -168,28 +151,46 @@ export function WitnessHoldings({
               : "no"}
           </KeyValue>
         </KeyValueTable>
-        {page.loading && <p data-testid="witness-holdings-loading">loading</p>}
-        {unreachable && <Unreachable message={unreachable.message} />}
-        {page.error && !unreachable && (
-          <ErrorEnvelopeView error={page.error} testId="witness-holdings-error" />
-        )}
-        {page.capped && (
-          <p data-testid="witness-holdings-capped" className="text-sm">
-            Showing the first {page.items.length} records. This witness holds more.
-          </p>
-        )}
-        {page.loaded && (
-          <IdentityCardList
-            entries={entries}
-            testId="identity-cards"
-            empty={
-              holdings === "all"
-                ? "This witness holds no record."
-                : "No record it holds matches this."
-            }
-            emptyTestId="witness-holdings-empty"
-          />
-        )}
+        <Tabs value={holdings} onValueChange={(next) => setHoldings(next as Holdings)}>
+          <TabsList data-testid="witness-holdings-filter">
+            {FILTERS.map((filter) => (
+              <TabsTrigger
+                key={filter.key}
+                value={filter.key}
+                data-testid={`witness-holdings-${filter.key}`}
+              >
+                {filter.label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+          {/* One panel, drawn for whichever tab is chosen: all three hold the
+              same list narrowed, so writing it once keeps them from drifting
+              apart, and the reading of the witness is asked for once. */}
+          <TabsContent value={holdings} className="space-y-3">
+            {page.loading && <p data-testid="witness-holdings-loading">loading</p>}
+            {unreachable && <Unreachable message={unreachable.message} />}
+            {page.error && !unreachable && (
+              <ErrorEnvelopeView error={page.error} testId="witness-holdings-error" />
+            )}
+            {page.capped && (
+              <p data-testid="witness-holdings-capped" className="text-sm">
+                Showing the first {page.items.length} records. This witness holds more.
+              </p>
+            )}
+            {page.loaded && (
+              <IdentityCardList
+                entries={entries}
+                testId="identity-cards"
+                empty={
+                  holdings === "all"
+                    ? "This witness holds no record."
+                    : "No record it holds matches this."
+                }
+                emptyTestId="witness-holdings-empty"
+              />
+            )}
+          </TabsContent>
+        </Tabs>
       </Section>
     </IdentityPillScope>
   );

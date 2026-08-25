@@ -149,12 +149,14 @@ pub fn create(
         witnesses: loaded.witnesses(),
     };
     let mut text = format!(
-        "created identity {identity}\nalias {alias}, declared kind {}",
+        "created identity {}\nalias {alias}, declared kind {}",
+        ids::shown(identity),
         document.declared_kind
     );
     match founder {
         Some(founder) => text.push_str(&format!(
-            ", identity root\nfounding principal {founder} ({})",
+            ", identity root\nfounding principal {} ({})",
+            ids::shown(founder),
             ctx.alias(founder)
         )),
         None => text.push_str(", raw root"),
@@ -209,7 +211,7 @@ pub fn show(ctx: &Context, name: &str) -> Result<Outcome> {
     let document = ctx.identity_document(identity)?;
     let mut text = format!(
         "{}\nalias {}, declared kind {}\nhead seq {}, {} events",
-        document.identity_id,
+        ids::shown(&document.identity_id),
         document.alias,
         document.declared_kind,
         document.head_seq,
@@ -222,22 +224,26 @@ pub fn show(ctx: &Context, name: &str) -> Result<Outcome> {
         text.push_str("\nno witnesses configured");
     } else {
         for witness in &document.witnesses {
-            text.push_str(&format!("\nwitness {witness}"));
+            // A witness is named by identity id, never by endpoint (proposal
+            // 006 section 1), so it carries the prefix.
+            text.push_str(&format!("\nwitness {}", ids::shown(witness)));
         }
     }
     // The machines row: what the chain advertises, which is where anyone
     // resolving this identity dials it (proposal 006 section 2).
     if document.endpoints.is_empty() {
-        text.push_str("\nno machine is advertised for this identity");
+        text.push_str("\nno endpoint is advertised for this identity");
     } else {
         for endpoint in &document.endpoints {
-            text.push_str(&format!("\nmachine {endpoint}"));
+            text.push_str(&format!("\nendpoint {endpoint}"));
         }
     }
     for entry in &document.trust {
         text.push_str(&format!(
             "\nattestation {} at seq {} names {}",
-            entry.attestation_event, entry.attestation_seq, entry.subject
+            entry.attestation_event,
+            entry.attestation_seq,
+            ids::shown(&entry.subject)
         ));
     }
     Outcome::new(&document, text)
@@ -267,7 +273,8 @@ pub fn replace_endpoints(
         return Err(CliError::policy(
             "no_op_endpoint_advertisement",
             format!(
-                "{identity} already advertises these {} endpoints: nothing would change",
+                "{} already advertises these {} endpoints: nothing would change",
+                ids::shown(identity),
                 endpoints.len()
             ),
         )
@@ -288,12 +295,14 @@ pub fn replace_endpoints(
     };
     let mut text = match document.endpoints.len() {
         0 => format!(
-            "{identity} advertises no machine as of seq {}",
+            "{} advertises no endpoint as of seq {}",
+            ids::shown(identity),
             appended.seq
         ),
         count => format!(
-            "{identity} advertises {count} {} as of seq {}",
-            if count == 1 { "machine" } else { "machines" },
+            "{} advertises {count} {} as of seq {}",
+            ids::shown(identity),
+            if count == 1 { "endpoint" } else { "endpoints" },
             appended.seq
         ),
     };
@@ -358,7 +367,10 @@ pub fn share(
     let link = MabelLink::new(identity, &endpoints).map_err(|error| {
         CliError::usage(
             error.reason(),
-            format!("{identity} cannot be shared with these endpoints: {error}"),
+            format!(
+                "{} cannot be shared with these endpoints: {error}",
+                ids::shown(identity)
+            ),
         )
         .with_detail("identity", identity.to_string())
         .with_detail("detail", error.clause())
@@ -476,7 +488,8 @@ pub fn export(ctx: &Context, name: &str, out: &Path) -> Result<Outcome> {
         bytes,
     };
     let text = format!(
-        "exported {identity} to {} ({bytes} bytes)\ndeclared kind {}, {} root, {} witnesses",
+        "exported {} to {} ({bytes} bytes)\ndeclared kind {}, {} root, {} witnesses",
+        ids::shown(identity),
         out.display(),
         document.declared_kind,
         root.as_str(),
@@ -500,7 +513,10 @@ fn refuse_reused_alias(ctx: &Context, alias: &str) -> Result<()> {
         if ctx.home().identity_meta(identity)?.alias == alias {
             return Err(CliError::usage(
                 "alias_in_use",
-                format!("{alias} already names {identity} in this home"),
+                format!(
+                    "{alias} already names {} in this home",
+                    ids::shown(identity)
+                ),
             )
             .with_detail("alias", alias)
             .with_detail("identity", identity.to_string()));
@@ -521,6 +537,9 @@ fn reserve_commit(loaded: &Loaded) -> Option<mabel_node::api::documents::Id> {
 fn line(identity: &Identity) -> String {
     format!(
         "{}  {}  {}  head seq {}",
-        identity.identity_id, identity.alias, identity.declared_kind, identity.head_seq
+        ids::shown(&identity.identity_id),
+        identity.alias,
+        identity.declared_kind,
+        identity.head_seq
     )
 }

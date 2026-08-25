@@ -22,7 +22,7 @@
         "head_seq": 3,
         "head_event": "ewckxhi7cixugkyrql6eqnncbgxqtnrho3rpsp6plhhh7yr6rosq",
         "fetched_at_ms": 1700000500000,
-        "statement": "valid as of seq 3 of sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq, fetched from zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq at 2023-11-14T22:21:40Z",
+        "statement": "valid as of seq 3 of mabel://sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq, fetched from zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq at 2023-11-14T22:21:40Z",
         "verified_means": "Verified means this identity signed this statement at this position in its chain. It is not proof that the statement is true, not proof of legal identity, and not proof of unique humanity."
       }
     },
@@ -52,7 +52,7 @@
           "head_seq": 3,
           "head_event": "3inplmxflxlqgc2fyq3uipmpesgeju5m4u76sxngaj2tl7qoxlva",
           "fetched_at_ms": 1700000560000,
-          "statement": "valid to seq 2 of sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq, fetched from 5yy7qpeiu4jbtjx47g7obwu3yitcaweplik2mfcvknie36letzoa at 2023-11-14T22:22:40Z; failed at seq 3: signature does not verify under the authorized key"
+          "statement": "valid to seq 2 of mabel://sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq, fetched from 5yy7qpeiu4jbtjx47g7obwu3yitcaweplik2mfcvknie36letzoa at 2023-11-14T22:22:40Z; failed at seq 3: signature does not verify under the authorized key"
         }
       }
     }

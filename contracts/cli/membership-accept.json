@@ -23,7 +23,7 @@
         "invitee_key": "2bflemtufo2kwoqtnc6umfpe43icesvxdiawxl4fecrtfslxq43q",
         "role": "controller",
         "controller_on_raw_root": true,
-        "warning": "accepting a controller role on a raw-rooted ledger means signing as jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq: every event you append to it is that identity's own event",
+        "warning": "accepting a controller role on a raw-rooted ledger means signing as mabel://jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq: every event you append to it is that identity's own event",
         "path": "alice.acceptance",
         "bytes": 205
       }

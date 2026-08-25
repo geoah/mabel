@@ -6,7 +6,7 @@
 
 Two strangers create identities in two wallet UIs, exchange `mabel://` links out
 of band, name the same witness identity, push, and each attests trust in the
-other. A third party with an empty home reads the result from the machine that
+other. A third party with an empty home reads the result from the endpoint that
 answers for the witness.
 
 ## Actors
@@ -16,9 +16,9 @@ answers for the witness.
 - bob: the same, compose service `bob`, on `http://127.0.0.1:9082`.
 - the witness: a node that keeps other people's records, compose service
   `witness`, API and UI on `http://127.0.0.1:9080`. It is not a different
-  program: it mints a witness identity on its first start, publishes the machine
-  that answers for it on that identity's own record, and lists the identity in
-  `node.json.witness_for` (proposal 006 sections 1, 2 and 4).
+  program: it mints a witness identity on its first start, publishes a name and
+  the endpoint that answers for it on that identity's own record, and lists the
+  identity in `node.json.witness_for` (proposal 006 sections 1, 2 and 4).
 - a stranger: one throwaway container with an empty home, holding no identity
   and no key but the node key it makes on the spot.
 
@@ -34,7 +34,7 @@ repository root.
    lowercase base32 strings and both published by the entrypoint beside the
    ticket: `witness_identity="$(dc exec -T witness cat /shared/witness.identity)"`,
    the Mabel id a record names, and `witness_id="$(dc exec -T witness cat
-   /shared/witness.id)"`, the machine a wallet dials for it. `GET
+   /shared/witness.id)"`, the endpoint a wallet dials for it. `GET
    http://127.0.0.1:9080/api/node` answers `witness_for` holding one entry,
    `{identity: <witness_identity>, advertised: true, reason: null}`.
 2. Open `http://127.0.0.1:9081/wallet`. The nav holds three entries and no
@@ -45,7 +45,9 @@ repository root.
    placeholder reads `alice.example, or paste a Mabel ID or a link`, then
    `identity-list` with `identity-list-empty` reading `You have no identities
    yet. Create one below.`, then `known-identities` with its
-   `known-trusted-only` switch off and `known-identities-empty` reading `Your
+   tab row `known-identities-filter` opened on `known-identities-all`, whose
+   `aria-selected` reads `true` while `known-identities-trusted` reads `false`,
+   and `known-identities-empty` reading `Your
    wallet knows of no other identity yet.`, because this wallet has fetched,
    crawled and noted nobody. `GET /api/node` carries no `role` field at all:
    what a node can do is read from what it holds, so this one answers
@@ -62,28 +64,29 @@ repository root.
 4. Repeat step 3 at `http://127.0.0.1:9082/wallet` with alias `bob`; record
    `bob_id`.
 5. Exchange links out of band. A `mabel://` link carries an identity's Mabel id
-   and up to four machines that answer for it (proposal 006 section 7); neither
+   and up to four endpoints that answer for it (proposal 006 section 7); neither
    half is proof of anything, which is what the flag-L sentence in every report
    says.
    ```sh
    dc exec -T bob mabel identity share bob --json
    dc exec -T alice mabel identity share alice --json
    ```
-   Neither has advertised a machine yet, so `--endpoints auto` falls back to the
-   machine this home runs on and each document reads `endpoints_from: "node"`
-   with a `link` of `mabel://<id>?endpoints=<that machine>`. Paste bob's link
-   into `wallet-search-input` in alice's UI and click `wallet-search-submit`.
+   Neither has advertised an endpoint yet, so `--endpoints auto` falls back to
+   the endpoint this home runs on and each document reads `endpoints_from:
+   "node"` with a `link` of `mabel://<id>?endpoints=<that endpoint>`. Paste
+   bob's link into `wallet-search-input` in alice's UI and click
+   `wallet-search-submit`.
    The browser parses no link: the box hands the string to the node, which owns
-   the grammar. Alice lands on `/identities/<bob_id>?machines=<bob's machine>`,
+   the grammar. Alice lands on `/identities/<bob_id>?machines=<bob's endpoint>`,
    where `identity-fetch` offers to fetch the record this home does not hold and
-   `identity-fetch-link-note` says first what asking those machines does. Paste
+   `identity-fetch-link-note` says first what asking those endpoints does. Paste
    alice's link into bob's UI the same way.
 6. In alice's UI click `identity-card-link-<alice_id>`: the whole card is one
    link to `/identities/<alice_id>`. On the identity page click
    `action-witnesses-summary` to open the action, which starts closed, put
    `$witness_identity` into `witness-add-identity` and click
    `witness-add-submit`. A witness is an identity, so the box takes its Mabel
-   ID and the event names that id rather than the machine behind it.
+   ID and the event names that id rather than the endpoint behind it.
    `witness-add-head-seq` reads `Saved at position 1.` and the row
    `witness-row-<witness_identity>` appears, with
    `witness-row-<witness_identity>-link` opening that identity's own page and
@@ -173,8 +176,9 @@ repository root.
     and its card is the identity card every other screen draws.
     `witness-default-<witness_identity>` reads `this node uses it by default`.
     Open the card with `identity-card-expand-<witness_identity>` and the record
-    carries one `machine` row per machine that answers for it,
-    `identity-card-machine-<witness_id>-<witness_identity>`. `/witness` is not a
+    carries one row per endpoint that answers for it, labelled `endpoint`:
+    `identity-card-machine-<witness_id>-<witness_identity>`, whose testid keeps
+    the older spelling of the row. `/witness` is not a
     route at all and `/witnesses/<witness_identity>` redirects to
     `/identities/<witness_identity>`, so a saved link still opens something.
 
@@ -193,9 +197,9 @@ repository root.
   == alice_attestation`.
 - Step 11 exits 0. Its stdout is five lines in this order:
   - `trusted: true`
-  - `valid as of seq 2 of <alice_id>, fetched from <witness_id> at <RFC 3339
-    UTC>; no revocation up to seq 2`
-  - `signed by principal <alice_id> (<alice active key>)`
+  - `valid as of seq 2 of mabel://<alice_id>, fetched from <witness_id> at <RFC
+    3339 UTC>; no revocation up to seq 2`
+  - `signed by principal mabel://<alice_id> (<alice active key>)`
   - `subject control was not proven to this verifier; the issuer is
     responsible for out-of-band confirmation`
   - `Verified means this identity signed this statement at this position in
@@ -224,9 +228,11 @@ repository root.
   sentence as its own line, after `signed by principal ...` and before the two
   standing sentences.
 - Step 14's `head_seq` is 3 and its statement reads `valid as of seq 3 of
-  <alice_id>, fetched from <witness_id> at <RFC 3339 UTC>; no revocation up to
-  seq 3`. An unresolved subject changes what is reported, never the exit code:
-  only chain, signature and equivocation failures exit 20.
+  mabel://<alice_id>, fetched from <witness_id> at <RFC 3339 UTC>; no revocation
+  up to seq 3`. The ledger is an identity and carries the prefix; the endpoint
+  it was fetched from is not one and stays bare. An unresolved subject changes
+  what is reported, never the exit code: only chain, signature and equivocation
+  failures exit 20.
 - `GET http://127.0.0.1:9080/api/identities/<carol_id>` answers 404 with
   `details.reason == "unknown_ledger"`: the witness holds no copy of the
   subject, which is exactly what step 14 reported. One node, one spelling.

@@ -27,7 +27,7 @@
       "document": {
         "ok": false,
         "code": 2,
-        "message": "this home holds no key that may append to sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+        "message": "this home holds no key that may append to mabel://sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
         "details": {
           "reason": "no_local_signer",
           "identity": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq"
@@ -41,7 +41,7 @@
       "document": {
         "ok": false,
         "code": 2,
-        "message": "no endpoint is known for the witness jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq: pass --endpoints, or fetch its ledger first",
+        "message": "no endpoint is known for the witness mabel://jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq: pass --endpoints, or fetch its ledger first",
         "details": {
           "reason": "unresolvable_witness",
           "witness": "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq",
@@ -56,7 +56,7 @@
       "document": {
         "ok": false,
         "code": 2,
-        "message": "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq is a machine this home knows, not a witness identity",
+        "message": "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq is an endpoint this home knows, not a witness identity",
         "details": {
           "reason": "endpoint_not_identity",
           "value": "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq"
@@ -151,7 +151,7 @@
       "document": {
         "ok": false,
         "code": 20,
-        "message": "Policy error: an unrevoked attestation for jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq already exists at seq 2",
+        "message": "Policy error: an unrevoked attestation for mabel://jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq already exists at seq 2",
         "details": {
           "reason": "duplicate_unrevoked_attestation",
           "ledger_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
@@ -168,7 +168,7 @@
       "document": {
         "ok": false,
         "code": 30,
-        "message": "Network error: no source answered for sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+        "message": "Network error: no source answered for mabel://sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
         "details": {
           "reason": "no_source_available",
           "ledger_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
@@ -203,7 +203,7 @@
       "document": {
         "ok": false,
         "code": 50,
-        "message": "Replay error: this acceptance was already admitted at seq 2 of 2okqwhextnpkpmydrgrkk563vbehcklffwfzidxlh5dslawjmn6a",
+        "message": "Replay error: this acceptance was already admitted at seq 2 of mabel://2okqwhextnpkpmydrgrkk563vbehcklffwfzidxlh5dslawjmn6a",
         "details": {
           "reason": "acceptance_already_used",
           "ledger_id": "2okqwhextnpkpmydrgrkk563vbehcklffwfzidxlh5dslawjmn6a",

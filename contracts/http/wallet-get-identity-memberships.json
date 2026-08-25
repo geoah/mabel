@@ -46,7 +46,7 @@
       "body": {
         "ok": false,
         "code": 2,
-        "message": "this home holds no ledger 2okqwhextnpkpmydrgrkk563vbehcklffwfzidxlh5dslawjmn6a",
+        "message": "this home holds no ledger mabel://2okqwhextnpkpmydrgrkk563vbehcklffwfzidxlh5dslawjmn6a",
         "details": {
           "reason": "unknown_ledger",
           "ledger_id": "2okqwhextnpkpmydrgrkk563vbehcklffwfzidxlh5dslawjmn6a"

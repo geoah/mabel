@@ -22,7 +22,7 @@
     "invitee_key": "2bflemtufo2kwoqtnc6umfpe43icesvxdiawxl4fecrtfslxq43q",
     "role": "controller",
     "controller_on_raw_root": true,
-    "warning": "accepting a controller role on a raw-rooted ledger means signing as jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq: every event you append to it is that identity's own event",
+    "warning": "accepting a controller role on a raw-rooted ledger means signing as mabel://jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq: every event you append to it is that identity's own event",
     "acceptance_base64": "m9hvFtScb+qyaYTkiFTQssPsYm0uuEE9iNtlNBUe1Wqc1Dg4gtgGVzQmRoRjpj1B8CTey3t22U/UYVewXT3eUextTwJzQutc"
   },
   "errors": [
@@ -43,7 +43,7 @@
       "body": {
         "ok": false,
         "code": 2,
-        "message": "this invitation invites jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq, not sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+        "message": "this invitation invites mabel://jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq, not mabel://sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
         "details": {
           "reason": "not_the_invitee",
           "ledger_id": "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq",
@@ -56,7 +56,7 @@
       "body": {
         "ok": false,
         "code": 20,
-        "message": "Policy error: the invitation records key mpvsw45ffkwexrnkxubkqqwgdg5mwopl5qoeaimfyw27cm42ttiq for sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq, and this home signs with 2bflemtufo2kwoqtnc6umfpe43icesvxdiawxl4fecrtfslxq43q",
+        "message": "Policy error: the invitation records key mpvsw45ffkwexrnkxubkqqwgdg5mwopl5qoeaimfyw27cm42ttiq for mabel://sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq, and this home signs with 2bflemtufo2kwoqtnc6umfpe43icesvxdiawxl4fecrtfslxq43q",
         "details": {
           "reason": "acceptance_invitee_key_mismatch",
           "ledger_id": "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq"

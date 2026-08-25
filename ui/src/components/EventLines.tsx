@@ -7,6 +7,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+import { mabelId } from "@/lib/link";
 import { formatTimestamp } from "@/lib/time";
 
 /**
@@ -18,7 +19,7 @@ const GLOSS: Record<string, string> = {
   profile_update: "changed the public name, email and handle",
   witness_config: "chose who keeps a copy",
   witness_set: "chose who keeps a copy",
-  endpoint_advertisement: "published the machines that answer for it",
+  endpoint_advertisement: "published the endpoints that answer for it",
   trust_attestation: "said it trusts someone",
   trust_revocation: "took back trusting someone",
   membership_invitation: "invited someone to help control this identity",
@@ -28,6 +29,66 @@ const GLOSS: Record<string, string> = {
 
 /** What a kind this build does not know is called on the closed line. */
 const UNKNOWN_GLOSS = "did something this version does not know about";
+
+/**
+ * Where an identity id sits inside each kind of payload, so the contents a
+ * reader opens name identities the way the rest of the screen does
+ * (decision 019).
+ *
+ * Kind by kind, never by field name, because one name means two things: `target`
+ * is an identity under `membership_removal` and the entry id of an attestation
+ * under `trust_revocation`, and `witnesses` holds identity ids under
+ * `witness_set` and endpoints under the retired `witness_config`. Keys, entry ids,
+ * signatures and the endpoints of `endpoint_advertisement` are named by nothing
+ * here and stay bare.
+ */
+const IDENTITY_PATHS: Record<string, string[][]> = {
+  inception: [["root", "identity_root", "founder"]],
+  trust_attestation: [["subject"]],
+  membership_invitation: [["invitee"]],
+  membership_removal: [["target"]],
+  witness_set: [["witnesses"]],
+};
+
+/** One value, or every value of one list, as a person reads an identity id. */
+function shownValue(value: unknown): unknown {
+  if (typeof value === "string") {
+    return mabelId(value);
+  }
+  if (Array.isArray(value)) {
+    return value.map(shownValue);
+  }
+  return value;
+}
+
+/** A copy of `payload` with the identity ids at `path` prefixed. */
+function withShownPath(payload: unknown, path: string[]): unknown {
+  if (payload === null || typeof payload !== "object" || Array.isArray(payload)) {
+    return payload;
+  }
+  const [head, ...rest] = path;
+  const fields = payload as Record<string, unknown>;
+  if (!(head in fields)) {
+    return payload;
+  }
+  return {
+    ...fields,
+    [head]: rest.length === 0 ? shownValue(fields[head]) : withShownPath(fields[head], rest),
+  };
+}
+
+/**
+ * The payload as it is shown: the document the node sent, with every identity
+ * id in it carrying the prefix. The document itself is untouched, and what a
+ * `--json` run or the API returns is the bare id.
+ */
+export function shownPayload(kind: string, payload: Record<string, unknown>): string {
+  let shown: unknown = payload;
+  for (const path of IDENTITY_PATHS[kind] ?? []) {
+    shown = withShownPath(shown, path);
+  }
+  return JSON.stringify(shown);
+}
 
 /**
  * One entry, opened: the fields the record carries, contents last. The raw kind
@@ -50,7 +111,9 @@ function EventDetail({ event }: { event: LedgerEvent }) {
         {formatTimestamp(event.timestamp_ms)}
       </KeyValue>
       <KeyValue label="what it says" testId={`event-payload-${event.seq}`}>
-        <span className="font-mono text-xs break-all">{JSON.stringify(event.payload)}</span>
+        <span className="font-mono text-xs break-all">
+          {shownPayload(event.payload_kind, event.payload)}
+        </span>
       </KeyValue>
     </KeyValueTable>
   );

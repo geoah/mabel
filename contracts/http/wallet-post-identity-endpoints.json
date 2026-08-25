@@ -59,7 +59,7 @@
       "body": {
         "ok": false,
         "code": 2,
-        "message": "this home holds no key that may append to sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
+        "message": "this home holds no key that may append to mabel://sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",
         "details": {
           "reason": "no_local_signer",
           "identity": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq"
@@ -71,7 +71,7 @@
       "body": {
         "ok": false,
         "code": 20,
-        "message": "Policy error: sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq already advertises these 2 endpoints: nothing would change",
+        "message": "Policy error: mabel://sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq already advertises these 2 endpoints: nothing would change",
         "details": {
           "reason": "no_op_endpoint_advertisement",
           "identity_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq"

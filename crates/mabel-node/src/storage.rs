@@ -919,7 +919,8 @@ impl LedgerStorage {
     ) -> StoreError {
         if entries.is_empty() {
             return StoreError::not_admitted(format!(
-                "this home witnesses for nobody, so it does not take pushes for {ledger}"
+                "this home witnesses for nobody, so it does not take pushes for {}{ledger}",
+                mabel_core::LINK_PREFIX
             ));
         }
         // A witness set that names an entry which is failing section 4.1 is the
@@ -930,14 +931,16 @@ impl LedgerStorage {
         if let Some(entry) = blocked {
             let gap = entry.gap.expect("the entry was filtered on its gap");
             return StoreError::not_admitted(format!(
-                "{ledger} names {} as a witness and this home witnesses for it, but {}, so this \
-                 home takes no ledger it does not already store under it",
+                "{prefix}{ledger} names {prefix}{} as a witness and this home witnesses for it, \
+                 but {}, so this home takes no ledger it does not already store under it",
                 entry.identity,
-                gap.reason()
+                gap.reason(),
+                prefix = mabel_core::LINK_PREFIX
             ));
         }
         StoreError::not_admitted(format!(
-            "the witness set of {ledger} names none of the {} identities this home witnesses for",
+            "the witness set of {}{ledger} names none of the {} identities this home witnesses for",
+            mabel_core::LINK_PREFIX,
             entries.len()
         ))
     }
@@ -1138,7 +1141,8 @@ impl LedgerStorage {
             }
             Err(ForkError::Kept(violation)) => {
                 return Err(StoreError::Unavailable(format!(
-                    "the stored event at seq {seq} of {ledger} does not verify: {violation}"
+                    "the stored event at seq {seq} of {}{ledger} does not verify: {violation}",
+                    mabel_core::LINK_PREFIX
                 )));
             }
             // `ForkError` is non-exhaustive; a class this build does not know

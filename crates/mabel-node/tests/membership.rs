@@ -729,9 +729,14 @@ async fn a_duplicate_attestation_answers_the_reason_both_surfaces_pin() {
         "duplicate_unrevoked_attestation",
         "not the fold's own duplicate_attestation"
     );
+    // The message names the subject the way a person reads an identity, and the
+    // detail beside it carries the bare id a caller matches on (decision 019).
     assert_eq!(
         error.message(),
-        format!("Policy error: an unrevoked attestation for {bob} already exists at seq 1")
+        format!(
+            "Policy error: an unrevoked attestation for {}{bob} already exists at seq 1",
+            mabel_core::LINK_PREFIX
+        )
     );
     let details = error.details();
     assert_eq!(details["subject"], serde_json::json!(bob.as_str()));

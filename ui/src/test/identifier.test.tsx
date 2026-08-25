@@ -76,6 +76,39 @@ describe("Identifier", () => {
     expect(screen.getByText(PARTS.middle)).toHaveClass("sr-only");
   });
 
+  it("shows an identity id with its prefix and keeps the bare id on data-value", () => {
+    host(<Identifier value={ALICE} mabel full />);
+
+    // The helper above finds an identifier by its title, and a prefixed one
+    // is titled with the prefix, so this reads the span directly.
+    const value = screen.getByTestId("host").querySelector("[data-value]")!;
+    // What a person reads names the system; what a path is built from does not
+    // (decision 019).
+    expect(value).toHaveTextContent(`mabel://${ALICE}`);
+    expect(value).toHaveAttribute("data-value", ALICE);
+    expect(within(screen.getByTestId("host")).getByTitle(`mabel://${ALICE}`)).toBeInTheDocument();
+  });
+
+  it("keeps the prefix whole and truncates only the id under it", () => {
+    host(<Identifier value={ALICE} mabel />);
+
+    // Splitting the shown string instead would spend the eight kept characters
+    // on `mabel://` and show none of the id.
+    expect(screen.getByText(`mabel://${PARTS.head}`)).toBeInTheDocument();
+    expect(screen.getByTestId("host").querySelector("[data-value]")).toHaveAttribute(
+      "data-value",
+      ALICE,
+    );
+  });
+
+  it("copies an identity id in the form it shows it", async () => {
+    const { user } = host(<Identifier value={ALICE} mabel copyLabel="Copy Mabel ID" />);
+
+    await user.click(screen.getByRole("button", { name: "Copy Mabel ID" }));
+
+    expect(await navigator.clipboard.readText()).toBe(`mabel://${ALICE}`);
+  });
+
   it("copies the whole value and holds the confirmation, whatever the pointer does", async () => {
     const { user } = host(<Identifier value={ALICE} copyLabel="Copy Mabel ID" />);
 

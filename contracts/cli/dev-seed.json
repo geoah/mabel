@@ -245,7 +245,7 @@
             ],
             "open_invitation_count": 0,
             "profile": {
-              "display_name": "Seed Witness",
+              "display_name": "The Keeper",
               "hostname": null,
               "email": null,
               "signing_principal": {
@@ -533,7 +533,7 @@
             ],
             "open_invitation_count": 0,
             "profile": {
-              "display_name": "Seed Witness",
+              "display_name": "The Keeper",
               "hostname": null,
               "email": null,
               "signing_principal": {
@@ -691,7 +691,7 @@
             },
             {
               "identity_id": "ovfp3btcnjyhwmyw3ldk3wmt2ppb5w5c5adyzcavswmyq7xkg7fq",
-              "display_name": "Seed Witness",
+              "display_name": "The Keeper",
               "email": null,
               "alias": "witness",
               "hostname": null,

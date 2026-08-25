@@ -129,7 +129,10 @@ where
     let head = loaded.state.head().ok_or_else(|| {
         CliError::usage(
             "empty_ledger",
-            format!("ledger {} holds no inception", loaded.ledger),
+            format!(
+                "ledger {} holds no inception",
+                crate::ids::shown(loaded.ledger)
+            ),
         )
     })?;
     let signer = ctx.signing_key(identity)?;

@@ -29,11 +29,12 @@ pub fn set(
     let contact = ctx.contacts().replace(identity, nickname, note)?;
     let text = match &contact {
         Some(contact) => format!(
-            "{identity}\n  nickname: {}\n  note:     {}",
+            "{}\n  nickname: {}\n  note:     {}",
+            ids::shown(identity),
             shown(contact.nickname.as_deref()),
             shown(contact.note.as_deref())
         ),
-        None => format!("{identity}\nno contact note recorded here"),
+        None => format!("{}\nno contact note recorded here", ids::shown(identity)),
     };
     let document = ContactView {
         identity_id: ids::identity(identity),
@@ -48,11 +49,12 @@ pub fn show(ctx: &Context, name: &str) -> Result<Outcome> {
     let contact = ctx.contacts().read(identity)?;
     let text = match &contact {
         Some(contact) => format!(
-            "{identity}\n  nickname: {}\n  note:     {}",
+            "{}\n  nickname: {}\n  note:     {}",
+            ids::shown(identity),
             shown(contact.nickname.as_deref()),
             shown(contact.note.as_deref())
         ),
-        None => format!("{identity}\nno contact note recorded here"),
+        None => format!("{}\nno contact note recorded here", ids::shown(identity)),
     };
     let document = ContactView {
         identity_id: ids::identity(identity),

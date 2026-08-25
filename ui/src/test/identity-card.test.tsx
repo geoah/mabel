@@ -57,9 +57,9 @@ describe("the card's layout", () => {
     const expand = screen.getByTestId(`identity-card-expand-${ALICE}`);
 
     expect(kind).toHaveTextContent("person");
-    // The kind sits beside the name, in the same row, not on a line above it.
-    expect(kind.parentElement).toBe(name.parentElement);
-    // The pill and the expand control share the end of that same row.
+    // The kind leads the pill row, which shares the name's row and ends it.
+    expect(kind.parentElement).toBe(pill.parentElement);
+    expect(kind.parentElement?.firstElementChild).toBe(kind);
     expect(pill.parentElement).toBe(expand.parentElement);
     expect(pill.parentElement?.parentElement).toBe(name.parentElement?.parentElement);
     // The id comes under the row, across the whole card.

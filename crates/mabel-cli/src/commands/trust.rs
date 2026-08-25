@@ -37,8 +37,10 @@ pub fn add(ctx: &Context, issuer: &str, subject: &str, options: &AppendOptions) 
         pushed: false,
     };
     let text = format!(
-        "attested {subject} at seq {} of {issuer}\n{SUBJECT_CONTROL_SENTENCE}",
-        appended.seq
+        "attested {} at seq {} of {}\n{SUBJECT_CONTROL_SENTENCE}",
+        ids::shown(subject),
+        appended.seq,
+        ids::shown(issuer)
     );
     Outcome::new(&document, text)
 }
@@ -64,7 +66,10 @@ pub fn revoke(
         // The fold rejects a target it does not hold, so this is unreachable.
         return Err(CliError::internal(
             "attestation_not_folded",
-            format!("attestation {target} is not in ledger {issuer}"),
+            format!(
+                "attestation {target} is not in ledger {}",
+                ids::shown(issuer)
+            ),
         ));
     };
     let document = RevokedTrust {
@@ -79,9 +84,13 @@ pub fn revoke(
         head_event: ids::event(appended.event_id),
         pushed: false,
     };
+    // `target` is the attestation's event id and stays bare; the issuer and the
+    // subject are identities and carry the prefix.
     let text = format!(
-        "revoked attestation {target} at seq {} of {issuer}\nit named {subject} at seq {attestation_seq}",
-        appended.seq
+        "revoked attestation {target} at seq {} of {}\nit named {} at seq {attestation_seq}",
+        appended.seq,
+        ids::shown(issuer),
+        ids::shown(subject)
     );
     Outcome::new(&document, text)
 }
@@ -93,7 +102,8 @@ pub fn list(ctx: &Context, issuer: &str) -> Result<Outcome> {
     let entries = loaded.trust();
     let text = if entries.is_empty() {
         format!(
-            "{issuer} has issued no attestations up to seq {}",
+            "{} has issued no attestations up to seq {}",
+            ids::shown(issuer),
             loaded.head_seq
         )
     } else {
@@ -103,13 +113,15 @@ pub fn list(ctx: &Context, issuer: &str) -> Result<Outcome> {
                 |entry| match (&entry.revocation_event, entry.revocation_seq) {
                     (Some(event), Some(seq)) => format!(
                         "{} at seq {} names {}; revoked at seq {seq} by {event}",
-                        entry.attestation_event, entry.attestation_seq, entry.subject
+                        entry.attestation_event,
+                        entry.attestation_seq,
+                        ids::shown(&entry.subject)
                     ),
                     _ => format!(
                         "{} at seq {} names {}; no revocation up to seq {}",
                         entry.attestation_event,
                         entry.attestation_seq,
-                        entry.subject,
+                        ids::shown(&entry.subject),
                         loaded.head_seq
                     ),
                 },

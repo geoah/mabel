@@ -11,7 +11,7 @@ import {
   type PillFacts,
 } from "@/components/identity";
 import { Section } from "@/components/Section";
-import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useResource } from "@/hooks/useResource";
 
 /**
@@ -60,15 +60,19 @@ export function knownPills(rows: KnownIdentity[], own: Identity[]): PillFacts {
   return { own: new Set(own.map((identity) => identity.identity_id)), trusted, degrees };
 }
 
+/** Which of the identities this wallet knows of the list is showing. */
+type Known = "all" | "trusted";
+
 /**
  * Every identity this wallet has a record of and does not control: the ones it
  * fetched and the ones the last crawl read. The same card as everywhere, so a
- * name here reads exactly as it does on the identity's own page, and the toggle
- * on the heading narrows the list to the ones you have a reason to trust.
+ * name here reads exactly as it does on the identity's own page, and the two
+ * tabs over the list narrow it to the ones you have a reason to trust.
  */
 export function KnownIdentities({ own }: { own: Identity[] }) {
   const known = useResource(listKnownIdentities, []);
-  const [trustedOnly, setTrustedOnly] = useState(false);
+  const [filter, setFilter] = useState<Known>("all");
+  const trustedOnly = filter === "trusted";
   const rows = known.data?.identities ?? [];
   const shown = trustedOnly ? rows.filter(isTrusted) : rows;
   const entries: IdentityCardEntry[] = shown.map((row) => ({
@@ -90,43 +94,45 @@ export function KnownIdentities({ own }: { own: Identity[] }) {
       testId="known-identities"
       title="Known identities"
       description="Everyone your wallet has a record of and does not control."
-      action={
-        <Button
-          type="button"
-          variant={trustedOnly ? "default" : "outline"}
-          size="sm"
-          role="switch"
-          aria-checked={trustedOnly}
-          data-testid="known-trusted-only"
-          onClick={() => setTrustedOnly(!trustedOnly)}
-        >
-          Trusted only
-        </Button>
-      }
     >
       <p data-testid="known-identities-note" className="text-sm text-muted-foreground">
         {HOLDINGS_NOTE}
       </p>
-      {known.loading && <p data-testid="known-identities-loading">loading</p>}
-      {known.error && (
-        <ErrorEnvelopeView error={known.error} testId="known-identities-error" />
-      )}
-      {/* The distances come from the rows themselves, so no pill on this list
-          costs a request of its own. */}
-      {known.data && (
-        <IdentityPillScope facts={pills}>
-          <IdentityCardList
-            entries={entries}
-            testId="known-identity-cards"
-            empty={
-              trustedOnly
-                ? "None of the identities your wallet knows of is trusted yet."
-                : "Your wallet knows of no other identity yet."
-            }
-            emptyTestId="known-identities-empty"
-          />
-        </IdentityPillScope>
-      )}
+      <Tabs value={filter} onValueChange={(next) => setFilter(next as Known)}>
+        <TabsList data-testid="known-identities-filter">
+          <TabsTrigger value="all" data-testid="known-identities-all">
+            All
+          </TabsTrigger>
+          <TabsTrigger value="trusted" data-testid="known-identities-trusted">
+            Trusted
+          </TabsTrigger>
+        </TabsList>
+        {/* One panel, drawn for whichever tab is chosen: the list it holds is
+            the same list narrowed, so writing it once keeps the two tabs from
+            drifting apart. */}
+        <TabsContent value={filter} className="space-y-3">
+          {known.loading && <p data-testid="known-identities-loading">loading</p>}
+          {known.error && (
+            <ErrorEnvelopeView error={known.error} testId="known-identities-error" />
+          )}
+          {/* The distances come from the rows themselves, so no pill on this list
+              costs a request of its own. */}
+          {known.data && (
+            <IdentityPillScope facts={pills}>
+              <IdentityCardList
+                entries={entries}
+                testId="known-identity-cards"
+                empty={
+                  trustedOnly
+                    ? "None of the identities your wallet knows of is trusted yet."
+                    : "Your wallet knows of no other identity yet."
+                }
+                emptyTestId="known-identities-empty"
+              />
+            </IdentityPillScope>
+          )}
+        </TabsContent>
+      </Tabs>
     </Section>
   );
 }

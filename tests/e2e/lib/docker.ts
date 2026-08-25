@@ -214,7 +214,7 @@ export function composeDown(): void {
 /**
  * The topology of story 007: the base compose file plus the test resolver
  * overlay, brought up in two phases and answering with the witness identity and
- * the machine that answers for it.
+ * the endpoint that answers for it.
  *
  * Two phases because the wallets need `MABEL_WITNESSES`, and neither half of it
  * exists until the witness has started: the witness mints its identity and
@@ -289,7 +289,7 @@ export function resetTopology(): void {
 
 /**
  * The same reset with the test resolver overlay, for story 007, answering with
- * the witness identity and its machine.
+ * the witness identity and its endpoint.
  */
 export function resetTopologyWithResolver(): Witness {
   removeExtras();
@@ -311,7 +311,7 @@ export function containerRunning(name: string): boolean {
 
 /**
  * A witness, in the two ids every story needs: the identity a ledger names, and
- * the machine a wallet dials for it (proposal 006 sections 1 and 2).
+ * the endpoint a wallet dials for it (proposal 006 sections 1 and 2).
  */
 export interface Witness {
   /** The witness's Mabel id, which is what a `WitnessSet` records. */
@@ -343,7 +343,7 @@ export function witnessOf(prefix = "witness"): Witness {
   };
 }
 
-/** The witness's machine id, as story 001 step 1 reads it. */
+/** The witness's endpoint id, as story 001 step 1 reads it. */
 export function witnessId(): string {
   return witnessOf().endpointId;
 }

@@ -17,6 +17,7 @@ use mabel_node::wallet::{Names, WalletCore, default_root, graph_status, lookup_d
 
 use crate::context::Context;
 use crate::error::{CliError, Result};
+use crate::ids;
 use crate::network::on_network;
 use crate::render::Outcome;
 
@@ -116,7 +117,10 @@ fn summary_text(graph: &GraphStatus) -> String {
         text.push_str("\nthis crawl is over 24 hours old");
     }
     for identity in &graph.equivocations {
-        text.push_str(&format!("\ntwo sources disagree about {identity}"));
+        text.push_str(&format!(
+            "\ntwo sources disagree about {}",
+            ids::shown(identity)
+        ));
     }
     text
 }
@@ -126,12 +130,12 @@ fn lookup_text(document: &Lookup) -> String {
     let mut text = format!(
         "{} ({})\nfrom {} ({})",
         label(target.display_name.as_deref(), target.alias.as_deref()),
-        target.identity_id,
+        ids::shown(&target.identity_id),
         label(
             document.from.display_name.as_deref(),
             document.from.alias.as_deref()
         ),
-        document.from.identity_id
+        ids::shown(&document.from.identity_id)
     );
     match document.degrees {
         Some(degrees) => text.push_str(&format!("\n{degrees} degrees in this crawl")),
@@ -139,9 +143,13 @@ fn lookup_text(document: &Lookup) -> String {
     }
     for path in &document.paths {
         for hop in &path.hops {
+            // The two identities carry the prefix; the attestation is an event
+            // id and does not.
             text.push_str(&format!(
                 "\n  {} trusts {} ({})",
-                hop.from.identity_id, hop.to.identity_id, hop.attestation_event
+                ids::shown(&hop.from.identity_id),
+                ids::shown(&hop.to.identity_id),
+                hop.attestation_event
             ));
             if hop.stale {
                 text.push_str(" [stale]");

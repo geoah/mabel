@@ -138,7 +138,7 @@ export function SyncPushPanel({ identityId }: { identityId: string }) {
         <div className="space-y-2" data-testid="sync-push-report">
           <KeyValueTable>
             <KeyValue label="identity" testId="sync-push-ledger-id">
-              <Identifier value={report.ledger_id} />
+              <Identifier value={report.ledger_id} mabel copyLabel="Copy Mabel ID" />
             </KeyValue>
             <KeyValue label="newest position" testId="sync-push-head-seq">
               {report.head_seq}

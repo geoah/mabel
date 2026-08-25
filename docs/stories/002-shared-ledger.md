@@ -17,7 +17,7 @@ signed.
   `http://127.0.0.1:9082`. The invitee, who signs his own acceptance.
 - the witness: a node that keeps other people's records, compose service
   `witness`, API and UI on `http://127.0.0.1:9080`. `witness_identity` is the
-  Mabel id a record names; `witness_id` is the machine that answers for it.
+  Mabel id a record names; `witness_id` is the endpoint that answers for it.
 
 `dc` stands for `docker compose -f docker/compose.yaml`, run from the
 repository root. Bob's wallet UI has membership forms in the Actions section of
@@ -40,10 +40,10 @@ those forms render.
    docker cp mabel-alice:/tmp/alice.descriptor /tmp/alice.descriptor
    docker cp /tmp/alice.descriptor mabel-bob:/tmp/alice.descriptor
    ```
-   Each export prints `exported <id> to <path> (N bytes)` and a second line
-   `declared kind person, raw root, 0 witnesses`. The count is the raw endpoints
+   Each export prints `exported mabel://<id> to <path> (N bytes)` and a second
+   line `declared kind person, raw root, 0 witnesses`. The count is the raw endpoints
    the retired tag-11 list holds, and these chains hold none: a descriptor
-   carries machines to dial, and a witness set names identities, which is not
+   carries endpoints to dial, and a witness set names identities, which is not
    the same thing (proposal 006 section 1). Alice and bob each hold one person
    identity, both name the witness identity and both are pushed.
 2. In alice's UI at `http://127.0.0.1:9081/wallet`, click
@@ -71,8 +71,8 @@ those forms render.
    dc exec -T alice mabel membership invite --ledger mabel-demo-co --by alice \
      --invitee /tmp/bob.descriptor --role controller --out /tmp/invitation.bundle
    ```
-   It prints `invited <bob_id> as controller at seq 1 of <org_id>` and
-   `wrote /tmp/invitation.bundle (2 events, N bytes)`.
+   It prints `invited mabel://<bob_id> as controller at seq 1 of
+   mabel://<org_id>` and `wrote /tmp/invitation.bundle (2 events, N bytes)`.
 5. Carry the bundle to bob's machine, which shares no disk with alice's:
    ```sh
    docker cp mabel-alice:/tmp/invitation.bundle /tmp/invitation.bundle
@@ -95,7 +95,8 @@ those forms render.
    dc exec -T alice mabel membership admit --ledger mabel-demo-co --by alice \
      /tmp/acceptance.file
    ```
-   It prints `admitted <bob_id> as controller at seq 2 of <org_id>`.
+   It prints `admitted mabel://<bob_id> as controller at seq 2 of
+   mabel://<org_id>`.
 8. Read the membership state: `dc exec -T alice mabel membership list --ledger
    mabel-demo-co`.
 9. Read the same state in alice's UI. Reload `identity-card-link-<org_id>` and
@@ -134,7 +135,7 @@ those forms render.
     `witness-add-identity`, click `witness-add-submit` (`witness-add-head-seq`
     reads `Saved at position 4.`), then click `action-push-summary` and
     `sync-push-submit`. The event names the witness identity; the push dials the
-    machine that answers for it.
+    endpoint that answers for it.
 14. Verify who signed, from alice's home. Verification is a CLI concern
     (proposal 004): the wallet UI has no verify screen, so this is the whole of
     the step, run once for the text form and once with `--json`:
@@ -154,11 +155,14 @@ those forms render.
   `identity == alice_id` and `is_root == true`, `invitee == bob_id`, `role:
   "controller"`, `controller_on_raw_root: false` and `warning: null`, plus a
   non-empty `acceptance_base64`.
-- Step 8 prints `<org_id>: 2 principals, 0 open invitations up to seq 2`, one
-  `controller <alice_id> (<key>) root` line and one `controller <bob_id>
-  (<key>)` line, and an `invitation ... offers controller to <bob_id>,
-  accepted` line. `--json` gives `root: "identity"`, `principals` sorted by
-  ascending `identity`, and `invitations[0].status == "accepted"`.
+- Step 8 prints `mabel://<org_id>: 2 principals, 0 open invitations up to seq
+  2`, one `controller mabel://<alice_id> (<key>) root` line and one `controller
+  mabel://<bob_id> (<key>)` line, and an `invitation ... offers controller to
+  mabel://<bob_id>, accepted` line. The identity on each of those lines carries
+  the prefix and the active key beside it does not: both are 52 base32
+  characters, and only one of them is a Mabel ID. `--json` gives `root:
+  "identity"`, `principals` sorted by ascending `identity`, and
+  `invitations[0].status == "accepted"`.
 - Step 9's Principals card holds exactly two `principal-row-*` elements, one
   per principal: `principal-role-<alice_id>` and `principal-role-<bob_id>` both
   read `controller`, `principal-root-<alice_id>` is present and
@@ -167,23 +171,27 @@ those forms render.
 - Step 9's card names both of them in its own `who can act for it` row, resolved
   rather than printed as 52-character ids:
   `identity-detail-principal-<alice_id>-name` reads `alice`, the nickname this
-  device keeps for her. Bob is a stranger to this home, so his row has no name
-  element at all and falls back to his Mabel ID, which is what the row is for.
+  device keeps for her. Bob is a stranger to this home, so
+  `identity-detail-principal-<bob_id>-name` is the stand-in title, the first
+  eight characters of his id and an ellipsis, with `data-placeholder-name`
+  `true`; alice's reads `false`. His whole Mabel ID sits under it, which is what
+  the row is for.
 - Step 10's accept document, the `controller-on-a-raw-root` case of
   `contracts/cli/membership-accept.json`, answers `ledger_id == alice_id`,
   `declared_kind: "person"`, `root: "raw"`, `controller_on_raw_root: true` and
   `warning` exactly: `accepting a controller role on a raw-rooted ledger means
-  signing as <alice_id>: every event you append to it is that identity's own
-  event`. The text form prints that sentence prefixed `warning: ` before
+  signing as mabel://<alice_id>: every event you append to it is that identity's
+  own event`. The text form prints that sentence prefixed `warning: ` before
   anything is signed.
 - Step 10's removal document answers `principal_removed: false` (bob signed an
   acceptance but nobody admitted it), `invitation_cancelled == <the step 10
   invitation event>`, `target == bob_id`, `removal_seq: 3` and `head_seq: 3`:
   alice's ledger was at seq 1 after story 001 step 7, the invitation landed at
-  seq 2 and the removal at seq 3. The text form prints `removed <bob_id> at seq
-  3 of <alice_id>` and `cancelled open invitation <invitation event>`.
+  seq 2 and the removal at seq 3. The text form prints `removed mabel://<bob_id>
+  at seq 3 of mabel://<alice_id>` and `cancelled open invitation <invitation
+  event>`.
 - Replaying step 7 exits 50 with `Replay error: this acceptance was already
-  admitted at seq 2 of <org_id>` and `details.reason ==
+  admitted at seq 2 of mabel://<org_id>` and `details.reason ==
   "acceptance_already_used"`.
 - Step 12 exits 30 with `details.reason == "all_witnesses_failed"`,
   `details.results[0].status == "rejected"` and `details.results[0].reject_code
@@ -196,13 +204,15 @@ those forms render.
 - Step 13's push report reads `push-status-<witness_id>` `accepted` and
   `push-stored-<witness_id>` `5`.
 - Step 14 exits 0 and prints five lines: `trusted: true`, then `valid as of
-  seq 4 of <org_id>, fetched from <witness_id> at <RFC 3339 UTC>; no revocation
-  up to seq 4`, then `signed by principal <alice_id> (<alice active key>)`,
-  then `subject control was not proven to this verifier; the issuer is
-  responsible for out-of-band confirmation`, then `Verified means this identity
-  signed this statement at this position in its chain. It is not proof that the
-  statement is true, not proof of legal identity, and not proof of unique
-  humanity.` The signing principal is alice, not the shared ledger.
+  seq 4 of mabel://<org_id>, fetched from <witness_id> at <RFC 3339 UTC>; no
+  revocation up to seq 4`, then `signed by principal mabel://<alice_id> (<alice
+  active key>)`, then `subject control was not proven to this verifier; the
+  issuer is responsible for out-of-band confirmation`, then `Verified means this
+  identity signed this statement at this position in its chain. It is not proof
+  that the statement is true, not proof of legal identity, and not proof of
+  unique humanity.` The signing principal is alice, not the shared ledger. The
+  ledger and the principal are identities and carry the prefix; the endpoint the
+  chain was fetched from and the active key are not identities and stay bare.
 - Step 14's document carries the same report: `trusted: true`, `statement` the
   sentence above, `signing_principal.identity == alice_id` with
   `signing_principal.key` alice's active key, and `subject_control` and
@@ -250,7 +260,7 @@ story text above.
   screen says instead.
 - Bob controls the shared ledger, so every CLI append to it asks the witness
   where it ends before it signs (proposal 001 section 5). `node.json` records
-  which identity witnesses and which machines answer for it, never how to route
+  which identity witnesses and which endpoints answer for it, never how to route
   to one, so those commands carry `--peer "$(cat /shared/witness.ticket)"`; the
   UI needs none, because the node process was seeded with that ticket at
   startup. The spec adds it to the replayed admission for that reason.

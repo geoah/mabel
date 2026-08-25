@@ -32,6 +32,7 @@ import {
   openIdentity,
   push,
   searchIdentity,
+  shown,
 } from "./ui";
 
 export const BASE32_ID = /^[a-z2-7]{52}$/;
@@ -65,9 +66,9 @@ export function expectExit(result: RunResult, status: number): RunResult {
 }
 
 export interface MeetState {
-  /** The witness identity a ledger names, and the machine that answers for it. */
+  /** The witness identity a ledger names, and the endpoint that answers for it. */
   witness: Witness;
-  /** The machine that answers for the witness, which is what a push dials. */
+  /** The endpoint that answers for the witness, which is what a push dials. */
   witnessId: string;
   /** The witness's Mabel id, which is what a `WitnessSet` records. */
   witnessIdentity: string;
@@ -114,7 +115,7 @@ export async function story001Steps1to7(
     expect(state.witnessIdentity).toMatch(BASE32_ID);
     expect(state.witnessIdentity).not.toBe(state.witnessId);
 
-    // The witness home witnesses for that identity and advertises this machine
+    // The witness home witnesses for that identity and advertises this endpoint
     // on its record, which is what admits a push naming it (section 4).
     const witness = await apiGet(WITNESS_URL, "/api/node");
     expect(witness.body.witness_for).toEqual([
@@ -150,9 +151,16 @@ export async function story001Steps1to7(
         "You have no identities yet. Create one below.",
       );
       // A wallet that has never fetched, crawled or noted anybody knows of no
-      // other identity, and the trusted-only switch starts off.
+      // other identity, and the list opens on the tab that hides nothing.
       await expect(page.getByTestId("known-identities")).toBeVisible();
-      await expect(page.getByTestId("known-trusted-only")).toHaveAttribute("aria-checked", "false");
+      await expect(page.getByTestId("known-identities-all")).toHaveAttribute(
+        "aria-selected",
+        "true",
+      );
+      await expect(page.getByTestId("known-identities-trusted")).toHaveAttribute(
+        "aria-selected",
+        "false",
+      );
       await expect(page.getByTestId("known-identities-empty")).toHaveText(
         "Your wallet knows of no other identity yet.",
       );
@@ -177,8 +185,8 @@ export async function story001Steps1to7(
 
   await test.step("001 step 5: links exchanged out of band", async () => {
     // `identity share` builds the link this identity hands over: its Mabel ID
-    // and the machines that answer for it. Neither has advertised one yet, so
-    // `auto` names the machine this home runs on (proposal 006 section 7).
+    // and the endpoints that answer for it. Neither has advertised one yet, so
+    // `auto` names the endpoint this home runs on (proposal 006 section 7).
     const aliceNode = expectExit(mabel("alice", ["node", "id"]), 0).stdout.trim();
     const bobNode = expectExit(mabel("bob", ["node", "id"]), 0).stdout.trim();
     const aliceLink = shareLink("alice", "alice", state.aliceId, aliceNode);
@@ -191,7 +199,7 @@ export async function story001Steps1to7(
     // says first what using the link does.
     await expect(alicePage.getByTestId("identity-fetch")).toBeVisible();
     await expect(alicePage.getByTestId("identity-fetch-link-note")).toHaveText(
-      "This link names the machines to ask for this record. Asking them tells those machines this home's network address and which identity it is looking for.",
+      "This link names the endpoints to ask for this record. Asking them tells those endpoints this home's network address and which identity it is looking for.",
     );
     await searchIdentity(bobPage, BOB_URL, aliceLink, state.aliceId, [aliceNode]);
     await expect(bobPage.getByTestId("identity-fetch")).toBeVisible();
@@ -203,8 +211,8 @@ export async function story001Steps1to7(
     await openIdentity(bobPage, BOB_URL, state.bobId);
     await addWitness(bobPage, state.witnessIdentity, 1);
 
-    // The set on the chain names the witness identity, not the machine: a
-    // witness that moves machines keeps this event standing (section 1).
+    // The set on the chain names the witness identity, not the endpoint: a
+    // witness that moves endpoints keeps this event standing (section 1).
     const identity = await apiGet(ALICE_URL, `/api/identities/${state.aliceId}`);
     expect(identity.body.identity.witnesses).toEqual([state.witnessIdentity]);
     expect(identity.body.identity.head_seq).toBe(1);
@@ -221,7 +229,7 @@ export async function story001Steps1to7(
 
 /**
  * `mabel identity share`, with the two facts story 001 step 5 reads: the link
- * names this identity and the machine this home runs on.
+ * names this identity and the endpoint this home runs on.
  */
 function shareLink(
   service: string,
@@ -393,7 +401,9 @@ function exportDescriptor(
 ): void {
   const result = expectExit(mabel(service, ["identity", "export", alias, "--out", outPath]), 0);
   const lines = stdoutLines(result);
-  expect(lines[0]).toMatch(new RegExp(`^exported ${identityId} to ${outPath} \\(\\d+ bytes\\)$`));
+  expect(lines[0]).toMatch(
+    new RegExp(`^exported ${shown(identityId)} to ${outPath} \\(\\d+ bytes\\)$`),
+  );
   expect(lines[1]).toBe("declared kind person, raw root, 0 witnesses");
 }
 
@@ -479,7 +489,9 @@ export async function story002Steps1to8(
       0,
     );
     const lines = stdoutLines(invite);
-    expect(lines[0]).toBe(`invited ${state.bobId} as controller at seq 1 of ${state.orgId}`);
+    expect(lines[0]).toBe(
+      `invited ${shown(state.bobId)} as controller at seq 1 of ${shown(state.orgId)}`,
+    );
     expect(lines[1]).toMatch(/^wrote \/tmp\/invitation\.bundle \(2 events, \d+ bytes\)$/);
   });
 
@@ -524,25 +536,31 @@ export async function story002Steps1to8(
       0,
     );
     expect(stdoutLines(admit)[0]).toBe(
-      `admitted ${state.bobId} as controller at seq 2 of ${state.orgId}`,
+      `admitted ${shown(state.bobId)} as controller at seq 2 of ${shown(state.orgId)}`,
     );
   });
 
   await test.step("002 step 8: the membership state reads back", async () => {
     const list = expectExit(mabel("alice", ["membership", "list", "--ledger", "mabel-demo-co"]), 0);
     const lines = stdoutLines(list).map((line) => line.trim());
-    expect(lines[0]).toBe(`${state.orgId}: 2 principals, 0 open invitations up to seq 2`);
+    expect(lines[0]).toBe(`${shown(state.orgId)}: 2 principals, 0 open invitations up to seq 2`);
+    // The identity carries the prefix and the active key beside it does not:
+    // both are 52 base32 characters, and only one of them is a Mabel ID.
     expect(
       lines.some((line) =>
-        new RegExp(`^controller ${state.aliceId} \\([a-z2-7]{52}\\) root$`).test(line),
+        new RegExp(`^controller ${shown(state.aliceId)} \\([a-z2-7]{52}\\) root$`).test(line),
       ),
     ).toBe(true);
     expect(
-      lines.some((line) => new RegExp(`^controller ${state.bobId} \\([a-z2-7]{52}\\)$`).test(line)),
+      lines.some((line) =>
+        new RegExp(`^controller ${shown(state.bobId)} \\([a-z2-7]{52}\\)$`).test(line),
+      ),
     ).toBe(true);
     expect(
       lines.some((line) =>
-        new RegExp(`^invitation .* offers controller to ${state.bobId}, accepted$`).test(line),
+        new RegExp(`^invitation .* offers controller to ${shown(state.bobId)}, accepted$`).test(
+          line,
+        ),
       ),
     ).toBe(true);
 
@@ -559,12 +577,12 @@ export async function story002Steps1to8(
 }
 
 export interface ForkState {
-  /** Witness one: the identity alice's chain names, and its machine. */
+  /** Witness one: the identity alice's chain names, and its endpoint. */
   witness: Witness;
   witnessId: string;
   witnessIdentity: string;
   witnessTicket: string;
-  /** Witness two: a second witness identity, on a second machine. */
+  /** Witness two: a second witness identity, on a second endpoint. */
   witnessTwo: Witness;
   witnessTwoId: string;
   witnessTwoIdentity: string;
@@ -622,7 +640,7 @@ export async function story004Steps1to7(): Promise<ForkState> {
     ]) {
       expect(id).toMatch(BASE32_ID);
     }
-    // Two witnesses are two identities, not two machines answering for one:
+    // Two witnesses are two identities, not two endpoints answering for one:
     // each home minted its own and witnesses for that one alone.
     expect(state.witnessTwoIdentity).not.toBe(state.witnessIdentity);
     await waitForNode(WITNESS_TWO_URL);
@@ -637,7 +655,7 @@ export async function story004Steps1to7(): Promise<ForkState> {
     state.carolId = createIdentityCli("alice", "carol");
     state.daveId = createIdentityCli("alice", "dave");
     // The set on the chain names both witness identities. Alice's home reaches
-    // each of them through the machine its entrypoint recorded in node.json.
+    // each of them through the endpoint its entrypoint recorded in node.json.
     for (const witness of [state.witnessIdentity, state.witnessTwoIdentity]) {
       expectExit(
         mabel("alice", ["witness", "add", "--identity", "alice", "--witness", witness]),

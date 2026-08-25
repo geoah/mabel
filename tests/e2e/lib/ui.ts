@@ -1,6 +1,17 @@
 import { expect, type Locator, type Page } from "@playwright/test";
 
 /**
+ * One identity id as a person reads it, `mabel://<id>` (decision 019).
+ *
+ * The prefix is display only, so this is for visible text and for CLI lines
+ * outside `--json`. A `data-value`, an API document, a `--json` document and an
+ * endpoint id all carry the bare 52 characters and never go through here.
+ */
+export function shown(identityId: string): string {
+  return `mabel://${identityId}`;
+}
+
+/**
  * The whole 52-character value of an identifier, read the way
  * docs/stories/README.md says to read one: the `data-value` attribute sits on
  * the `Identifier` span inside the element carrying the testid.
@@ -130,8 +141,9 @@ export async function openIdentity(page: Page, base: string, identityId: string)
  * `mabel://` link is resolved through `GET /api/resolve?input=<input>` first,
  * because the browser parses no link of its own (proposal 006 section 7).
  *
- * A link that names machines leaves them on the query string, so the fetch on
- * the identity page can dial them; `machines` is what a caller expects there.
+ * A link that names endpoints leaves them on the query string, so the fetch on
+ * the identity page can dial them; `machines` is the older spelling the query
+ * string still uses, and is what a caller expects there.
  */
 export async function searchIdentity(
   page: Page,
@@ -168,8 +180,9 @@ export async function addWitness(
   );
   const row = page.getByTestId(`witness-row-${witnessIdentity}`);
   await expect(row).toBeVisible();
-  // A witness this home knows no name for is reachable by its id alone, so the
-  // id carries the link, written out whole: a Mabel ID is the only thing that
+  // The card's title carries the link, whether that is the name the witness
+  // publishes or the stand-in title a home that has not read its record draws.
+  // The id under it is written out whole: a Mabel ID is the only thing that
   // tells two identities apart.
   await expect(page.getByTestId(`witness-row-${witnessIdentity}-link`)).toBeVisible();
   await expect(row.locator("[data-value]")).toHaveAttribute("data-truncated", "false");

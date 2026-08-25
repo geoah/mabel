@@ -57,6 +57,94 @@ pub fn storage_error(error: StorageError) -> ServiceError {
     }
 }
 
+/// The sentence a person reads for a rejection, with every identity id it
+/// names carrying the `mabel://` prefix (decision 019).
+///
+/// [`Reason`]'s own `Display` spells its ids bare and has to keep doing so:
+/// `test-vectors/rejections/` pins those strings as wire evidence another
+/// implementation compares its rejections against, and a display prefix has no
+/// place in a conformance vector. The prefix is added here instead, at the one
+/// point both the HTTP envelope and the CLI envelope pass through, so neither
+/// surface spells a rejection differently from the other.
+///
+/// Every variant is listed, including the ones that name no identity. [`Reason`]
+/// is `#[non_exhaustive]`, so a wildcard is still required and the compiler
+/// cannot force the next person to choose; `every_identity_bearing_reason_is_
+/// prefixed` below is what catches a new id-bearing variant falling through it.
+#[must_use]
+pub fn fold_message(reason: &Reason) -> String {
+    let prefix = mabel_core::LINK_PREFIX;
+    match reason {
+        Reason::DuplicateAttestation {
+            subject,
+            attestation,
+        } => format!("{prefix}{subject} already has an unrevoked attestation, {attestation}"),
+        Reason::DuplicateInvitation {
+            invitee,
+            invitation,
+        } => format!("{prefix}{invitee} already has an open invitation, {invitation}"),
+        Reason::PrincipalKeyMismatch {
+            identity,
+            expected,
+            found,
+        } => format!("{prefix}{identity} is a principal with key {expected}, not {found}"),
+        Reason::DuplicatePrincipalKey { key, held_by } => {
+            format!("key {key} is already held by principal {prefix}{held_by}")
+        }
+        Reason::RootNotRemovable(identity) => {
+            format!("{prefix}{identity} is this ledger's raw root and is not removable")
+        }
+        Reason::LastController(identity) => {
+            format!("removing {prefix}{identity} would leave this ledger with no controller")
+        }
+        Reason::RootNotDemotable(identity) => {
+            format!("{prefix}{identity} is this ledger's raw root and is not demotable")
+        }
+        Reason::DemotesLastController(identity) => {
+            format!("demoting {prefix}{identity} would leave this ledger with no controller")
+        }
+        // These name a protobuf field and then the identity it holds. The field
+        // name is machine vocabulary and stays as it is; the id beside it is
+        // still an identity being put in front of a reader, so it carries the
+        // prefix like every other.
+        Reason::WrongLedger { expected, found } => {
+            format!("EventBody.ledger names {prefix}{found}, not this ledger {prefix}{expected}")
+        }
+        Reason::SelfAttestation(identity) => {
+            format!("TrustAttestation.subject is this ledger's own id {prefix}{identity}")
+        }
+        Reason::AcceptanceForAnotherLedger { named, expected } => {
+            format!("Acceptance.ledger names {prefix}{named}, not this ledger {prefix}{expected}")
+        }
+        Reason::AcceptanceInviteeMismatch { named, invited } => format!(
+            "Acceptance.invitee names {prefix}{named}, but the invitation invited {prefix}{invited}"
+        ),
+        Reason::UnknownRemovalTarget(identity) => format!(
+            "MembershipRemoval.target {prefix}{identity} is neither a principal nor an open invitee"
+        ),
+        // Everything left names no identity: sequence numbers, timestamps, event
+        // ids, public keys and field names. The fold's own wording is already
+        // right for a reader, so it is what both surfaces show.
+        Reason::Wire(_)
+        | Reason::WrongSeq { .. }
+        | Reason::BrokenPrevLink { .. }
+        | Reason::BackwardsTimestamp { .. }
+        | Reason::PayloadNotAllowed { .. }
+        | Reason::InvalidPublicKey { .. }
+        | Reason::UnauthorizedSigner { .. }
+        | Reason::BadSignature
+        | Reason::UnknownRevocationTarget(_)
+        | Reason::AlreadyRevoked { .. }
+        | Reason::UnknownInvitation(_)
+        | Reason::InvitationNotOpen { .. }
+        | Reason::AcceptanceInviteeKeyMismatch { .. } => reason.to_string(),
+        // Forced by `#[non_exhaustive]`. A variant added upstream lands here
+        // and reads as the fold spells it, which is right for one naming no
+        // identity and wrong for one that does; the test below is the guard.
+        _ => reason.to_string(),
+    }
+}
+
 /// A rejection from the fold, which is the authority on why an event is not
 /// allowed.
 ///
@@ -85,13 +173,16 @@ pub fn fold_error_at(reason: &Reason, standing_seq: Option<u64>) -> ServiceError
         let at = standing_seq.unwrap_or_default();
         return ServiceError::policy(
             "duplicate_unrevoked_attestation",
-            format!("an unrevoked attestation for {subject} already exists at seq {at}"),
+            format!(
+                "an unrevoked attestation for {}{subject} already exists at seq {at}",
+                mabel_core::LINK_PREFIX
+            ),
         )
         .with_detail("subject", subject.to_string())
         .with_detail("attestation_event", attestation.to_string())
         .with_detail("at_seq", at);
     }
-    let message = reason.to_string();
+    let message = fold_message(reason);
     match reason {
         Reason::Wire(_) => ServiceError::schema(reason.code(), message),
         Reason::WrongSeq { .. }
@@ -136,7 +227,7 @@ pub fn build_error(error: &BuildError) -> ServiceError {
 pub fn no_source_available(ledger: LedgerId, queried: &[EndpointId]) -> ServiceError {
     ServiceError::network(
         "no_source_available",
-        format!("no source answered for {ledger}"),
+        format!("no source answered for {}{ledger}", mabel_core::LINK_PREFIX),
     )
     .with_detail("ledger_id", ledger.to_string())
     .with_detail("sources_queried", rendered(queried))
@@ -210,7 +301,10 @@ pub fn equivocation(
     };
     ServiceError::ledger(
         "equivocation",
-        format!("two sources hold divergent events at seq {at_seq} of {ledger}"),
+        format!(
+            "two sources hold divergent events at seq {at_seq} of {}{ledger}",
+            mabel_core::LINK_PREFIX
+        ),
     )
     .with_detail("ledger_id", ledger.to_string())
     .with_detail("at_seq", at_seq)
@@ -224,4 +318,118 @@ pub fn rendered(endpoints: &[EndpointId]) -> Vec<String> {
         .iter()
         .map(|endpoint| ids::key(endpoint).as_str().to_owned())
         .collect()
+}
+
+#[cfg(test)]
+mod fold_message_tests {
+    use super::fold_message;
+    use mabel_core::fold::Reason;
+    use mabel_core::{EventId, IdentityId, LINK_PREFIX};
+
+    fn identity(seed: u8) -> IdentityId {
+        IdentityId::from_bytes([seed; 32])
+    }
+
+    fn event(seed: u8) -> EventId {
+        EventId::from_bytes([seed; 32])
+    }
+
+    fn key(seed: u8) -> iroh_base::PublicKey {
+        iroh_base::SecretKey::from_bytes(&[seed; 32]).public()
+    }
+
+    /// Every rejection that names an identity names it the way a person reads
+    /// one, and names it that way everywhere it appears in the sentence
+    /// (decision 019).
+    ///
+    /// [`Reason`] is `#[non_exhaustive]`, so `fold_message` must keep a wildcard
+    /// arm and the compiler cannot object when a new id-bearing variant falls
+    /// through it. This is the thing that objects: add a variant that carries an
+    /// identity, forget its arm, and the id shows up bare here.
+    #[test]
+    fn every_identity_bearing_reason_is_prefixed() {
+        let one = identity(0x11);
+        let two = identity(0x22);
+        let cases: Vec<(Reason, Vec<IdentityId>)> = vec![
+            (
+                Reason::DuplicateAttestation {
+                    subject: one,
+                    attestation: event(0x33),
+                },
+                vec![one],
+            ),
+            (Reason::SelfAttestation(one), vec![one]),
+            (
+                Reason::DuplicateInvitation {
+                    invitee: one,
+                    invitation: event(0x33),
+                },
+                vec![one],
+            ),
+            (
+                Reason::PrincipalKeyMismatch {
+                    identity: one,
+                    expected: key(0x44),
+                    found: key(0x55),
+                },
+                vec![one],
+            ),
+            (
+                Reason::AcceptanceForAnotherLedger {
+                    named: one,
+                    expected: two,
+                },
+                vec![one, two],
+            ),
+            (
+                Reason::AcceptanceInviteeMismatch {
+                    named: one,
+                    invited: two,
+                },
+                vec![one, two],
+            ),
+            (
+                Reason::DuplicatePrincipalKey {
+                    key: key(0x44),
+                    held_by: one,
+                },
+                vec![one],
+            ),
+            (Reason::RootNotRemovable(one), vec![one]),
+            (Reason::UnknownRemovalTarget(one), vec![one]),
+            (Reason::LastController(one), vec![one]),
+            (Reason::RootNotDemotable(one), vec![one]),
+            (Reason::DemotesLastController(one), vec![one]),
+            (
+                Reason::WrongLedger {
+                    expected: two,
+                    found: one,
+                },
+                vec![one, two],
+            ),
+        ];
+
+        for (reason, identities) in cases {
+            let shown = fold_message(&reason);
+            for id in identities {
+                let prefixed = format!("{LINK_PREFIX}{id}");
+                assert!(
+                    shown.contains(&prefixed),
+                    "{reason:?} shows {id} without its prefix: {shown}"
+                );
+                // Not merely present somewhere: no occurrence of this id in the
+                // sentence may stand without the prefix in front of it.
+                assert!(
+                    !shown.replace(&prefixed, "").contains(&id.to_string()),
+                    "{reason:?} names {id} bare somewhere in: {shown}"
+                );
+            }
+            // The wire evidence another implementation compares against is
+            // untouched by how this one draws an id.
+            assert!(
+                !reason.to_string().contains(LINK_PREFIX),
+                "the conformance vector for {reason:?} must stay bare"
+            );
+        }
+    }
 }

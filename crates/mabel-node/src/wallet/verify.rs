@@ -378,11 +378,18 @@ fn divergence(left: &Candidate, right: &Candidate) -> Option<(u64, Divergent, Di
     None
 }
 
-/// `valid as of seq N of <ledger>, fetched from <source> at <RFC 3339>`.
+/// `valid as of seq N of mabel://<ledger>, fetched from <source> at <RFC 3339>`.
+///
+/// The ledger is a mabel identity and the source is an Iroh endpoint. Both
+/// render as 52 base32 characters, so the sentence carries the `mabel://`
+/// prefix on the one that is a mabel id and nothing on the one that is not.
+/// This is prose a person reads, so it keeps the prefix in the report document
+/// too; every id-valued field of the report stays bare.
 #[must_use]
 pub fn as_of(seq: u64, ledger: &Id, source: &Id, fetched_at_ms: u64) -> String {
     format!(
-        "valid as of seq {seq} of {ledger}, fetched from {source} at {}",
+        "valid as of seq {seq} of {}{ledger}, fetched from {source} at {}",
+        mabel_core::LINK_PREFIX,
         rfc3339_utc(fetched_at_ms)
     )
 }

@@ -24,9 +24,9 @@ signatures.
 ## The eleven phases
 
 1. **The topology comes up.** `docker compose up -d --wait`, then the three
-   containers, the witness's Mabel id and the machine that answers for it. A
+   containers, the witness's Mabel id and the endpoint that answers for it. A
    witness is an identity, and the container publishes its own endpoint on that
-   identity's record (decision 019). It keeps other people's records and signs
+   identity's record (proposal 006 section 1). It keeps other people's records and signs
    nothing on them: it cannot admit anyone, attest to anyone or revoke
    anything.
 2. **Alice and bob create person identities.** `identity create` prints the new
@@ -35,8 +35,8 @@ signatures.
    label and is never signed.
 3. **Both name the witness and push.** `witness add --witness <mabel id>`
    appends an event, so who was asked to hold a copy is part of the record a
-   verifier reads. The event names the witness identity, not the machine, so
-   replacing the machine leaves it standing. `sync push` carries the ledger
+   verifier reads. The event names the witness identity, not the endpoint, so
+   replacing the endpoint leaves it standing. `sync push` carries the ledger
    there. The `--peer` ticket is an address hint, never authorization
    (section 4).
 4. **Bob exports his descriptor.** The `IdentityDescriptor` carries bob's
@@ -59,14 +59,14 @@ signatures.
    names a subject and grants nothing, and the CLI says so on every line it
    prints. Bob controls the shared ledger too, so that append asks the witness
    where the ledger ends before it signs, and it carries `--peer` with the
-   ticket: `node.json` records which identity witnesses and which machines
+   ticket: `node.json` records which identity witnesses and which endpoints
    answer for it, never how to route to one (proposal 006 section 5.4).
 8. **Push what the witness will take.** Alice's ledger goes up with the
    attestation. The shared ledger first names the witness identity on its own
    chain, because a witness only admits a ledger whose witness set names an
    identity it witnesses for (proposal 006 section 4), and then its push is
    accepted too. `verify trust --issuer mabel-demo-co --from <the witness's
-   machine>` then reads the witness's copy and shows the delegation: the report
+   endpoint>` then reads the witness's copy and shows the delegation: the report
    names alice as the principal that signed, so a delegate's signature is not
    read as the ledger's own (proposal 002 section 5).
 9. **A stranger verifies from an empty home.** A throwaway container with no

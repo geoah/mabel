@@ -158,7 +158,10 @@ impl WalletSync {
         if witnesses.is_empty() {
             return Err(ServiceError::usage(
                 "no_witness_configured",
-                format!("no endpoint is configured to push {ledger} to"),
+                format!(
+                    "no endpoint is configured to push {}{ledger} to",
+                    mabel_core::LINK_PREFIX
+                ),
             )
             .with_detail("ledger_id", ledger.to_string()));
         }
@@ -452,7 +455,11 @@ impl WalletSync {
         let Some(candidate) = self.candidate(source, ledger).await? else {
             return Err(ServiceError::network(
                 "ledger_not_held",
-                format!("{} does not hold {ledger}", ids::key(&source)),
+                format!(
+                    "{} does not hold {}{ledger}",
+                    ids::key(&source),
+                    mabel_core::LINK_PREFIX
+                ),
             )
             .with_detail("ledger_id", ledger.to_string())
             .with_detail("source", ids::key(&source).as_str()));
@@ -633,8 +640,9 @@ fn verified(
         return Err(ServiceError::ledger(
             violation.code(),
             format!(
-                "{} served a chain for {ledger} that fails at seq {}: {}",
+                "{} served a chain for {}{ledger} that fails at seq {}: {}",
                 ids::key(&peer),
+                mabel_core::LINK_PREFIX,
                 violation.seq,
                 violation.reason
             ),
@@ -647,8 +655,9 @@ fn verified(
         return Err(ServiceError::ledger(
             "wrong_ledger",
             format!(
-                "{} served a chain whose ledger id is not {ledger}",
-                ids::key(&peer)
+                "{} served a chain whose ledger id is not {}{ledger}",
+                ids::key(&peer),
+                mabel_core::LINK_PREFIX
             ),
         )
         .with_detail("ledger_id", ledger.to_string())

@@ -13,6 +13,7 @@ import {
   WITNESS_URL,
 } from "../lib/docker";
 import { expectExit, story004Steps1to7, type ForkState } from "../lib/stories";
+import { shown } from "../lib/ui";
 
 /**
  * docs/stories/004-fork-on-two-witnesses.md
@@ -79,7 +80,7 @@ test("first seen wins: witness one still serves the kept branch", async () => {
   const identity = await apiGet(WITNESS_URL, `/api/identities/${state.aliceId}`);
   expect(identity.body.identity.head_seq).toBe(3);
   expect(identity.body.identity.head_event).toBe(state.keptEvent);
-  // The set on the chain names the two witness identities, not their machines.
+  // The set on the chain names the two witness identities, not their endpoints.
   expect([...identity.body.identity.witnesses].sort()).toEqual(
     [state.witnessIdentity, state.witnessTwoIdentity].sort(),
   );
@@ -92,10 +93,12 @@ test("step 8: the fork record, on the route that reports it", async () => {
   const forks = await apiGet(WITNESS_URL, `/api/forks?ledger_id=${state.aliceId}`);
   expect(forks.body.entries).toHaveLength(1);
   const record = forks.body.entries[0];
+  // `ledger_id` is an id-valued field and stays bare; `statement` is prose a
+  // person reads, so the ledger in it carries the prefix (decision 019).
   expect(record.ledger_id).toBe(state.aliceId);
   expect(record.seq).toBe(3);
   expect(record.statement).toBe(
-    `two distinct validly signed events exist at seq 3 of ${state.aliceId}, produced by whoever held signing authority there; this is evidence of equivocation or of a lost race between honest controllers`,
+    `two distinct validly signed events exist at seq 3 of ${shown(state.aliceId)}, produced by whoever held signing authority there; this is evidence of equivocation or of a lost race between honest controllers`,
   );
   expect(record.kept.event_id).toBe(state.keptEvent);
   expect(record.conflicting.event_id).toBe(state.conflictingEvent);
@@ -108,7 +111,7 @@ test("step 8: the fork record, on the route that reports it", async () => {
   expect(record.kept.prev).toBe(record.conflicting.prev);
   expect(record.kept.author_key).toBe(record.conflicting.author_key);
 
-  // The machine that offered the branch witness one refused, which is alice's
+  // The endpoint that offered the branch witness one refused, which is alice's
   // second machine.
   const secondMachineEndpoint = mustRun("docker", [
     "exec",
@@ -169,7 +172,7 @@ test("step 9: a verifier that asks both sources exits 20 naming both", async () 
   expect(document.ok).toBe(false);
   expect(document.code).toBe(20);
   expect(document.message).toBe(
-    `Ledger error: two sources hold divergent events at seq 3 of ${state.aliceId}`,
+    `Ledger error: two sources hold divergent events at seq 3 of ${shown(state.aliceId)}`,
   );
   expect(document.details.reason).toBe("equivocation");
   expect(document.details.at_seq).toBe(3);

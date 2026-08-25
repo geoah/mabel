@@ -41,3 +41,9 @@ Number 013 was used briefly and retired.
 - [018-explicit-exposure.md](018-explicit-exposure.md): a node answers
   loopback unless an operator names a host with `--allow-host`; the wallet has
   no authentication, so the operator owns the network boundary. Accepted.
+- [019-mabel-id-prefix.md](019-mabel-id-prefix.md): an identity id shown to a
+  person reads `mabel://<id>`; machine surfaces keep the bare id, and every
+  field that takes an id takes the prefixed form too. Accepted.
+- [020-endpoints-not-machines.md](020-endpoints-not-machines.md): the machines
+  an identity advertises are called endpoints in prose as well as on the wire,
+  and "node" means the running program alone. Accepted.

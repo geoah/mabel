@@ -325,7 +325,7 @@ fn the_invite_accept_admit_flow_runs_between_two_homes() {
         "{stdout}"
     );
     assert!(
-        stdout.contains(&format!("controller {} ", flow.invited)),
+        stdout.contains(&format!("controller mabel://{} ", flow.invited)),
         "{stdout}"
     );
 }
@@ -777,7 +777,7 @@ fn the_accept_surface_warns_before_signing_a_controller_role_on_a_raw_root() {
     assert_eq!(document["invitee"], Value::from(invited));
     assert_eq!(document["controller_on_raw_root"], Value::Bool(true));
     assert!(
-        text(&document["warning"]).contains(&format!("means signing as {ledger}")),
+        text(&document["warning"]).contains(&format!("means signing as mabel://{ledger}")),
         "{document}"
     );
     let controllers = document["controllers"].as_array().expect("an array");
@@ -804,7 +804,7 @@ fn the_accept_surface_warns_before_signing_a_controller_role_on_a_raw_root() {
         .expect("the file is signed");
     assert!(warning < signed, "{stdout}");
     assert!(
-        stdout.contains(&format!("invitation to {ledger}")),
+        stdout.contains(&format!("invitation to mabel://{ledger}")),
         "{stdout}"
     );
     assert!(stdout.contains("role offered controller"), "{stdout}");

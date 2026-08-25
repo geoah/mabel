@@ -88,7 +88,7 @@
       "body": {
         "ok": false,
         "code": 2,
-        "message": "this home holds no ledger jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq",
+        "message": "this home holds no ledger mabel://jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq",
         "details": {
           "reason": "unknown_ledger",
           "ledger_id": "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq"

@@ -582,9 +582,14 @@ async fn a_mutating_route_on_a_ledger_this_home_cannot_append_to_answers_no_loca
     assert_eq!(status, StatusCode::FORBIDDEN, "{answered}");
     assert_eq!(answered["code"], json!(2));
     assert_eq!(answered["details"]["reason"], json!("no_local_signer"));
+    // The message names the ledger the way a person reads an identity, and the
+    // detail beside it carries the bare id a caller matches on (decision 019).
     assert_eq!(
         answered["message"],
-        json!(format!("this home holds no key that may append to {alice}"))
+        json!(format!(
+            "this home holds no key that may append to {}{alice}",
+            mabel_core::LINK_PREFIX
+        ))
     );
 }
 

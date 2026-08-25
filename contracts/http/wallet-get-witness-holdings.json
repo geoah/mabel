@@ -59,7 +59,7 @@
       "body": {
         "ok": false,
         "code": 2,
-        "message": "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq is a machine this home knows, not a witness identity",
+        "message": "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq is an endpoint this home knows, not a witness identity",
         "details": {
           "reason": "endpoint_not_identity",
           "value": "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq"
@@ -71,7 +71,7 @@
       "body": {
         "ok": false,
         "code": 30,
-        "message": "Network error: no machine answering for ovfp3btcnjyhwmyw3ldk3wmt2ppb5w5c5adyzcavswmyq7xkg7fq served its ledger list",
+        "message": "Network error: no endpoint answering for mabel://ovfp3btcnjyhwmyw3ldk3wmt2ppb5w5c5adyzcavswmyq7xkg7fq served its ledger list",
         "details": {
           "reason": "witness_unreachable",
           "identity_id": "ovfp3btcnjyhwmyw3ldk3wmt2ppb5w5c5adyzcavswmyq7xkg7fq",

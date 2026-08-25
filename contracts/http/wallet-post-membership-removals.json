@@ -48,7 +48,7 @@
       "body": {
         "ok": false,
         "code": 20,
-        "message": "Policy error: sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq is this ledger's raw root and is not removable",
+        "message": "Policy error: mabel://sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq is this ledger's raw root and is not removable",
         "details": {
           "reason": "root_not_removable",
           "at_seq": 6
@@ -60,7 +60,7 @@
       "body": {
         "ok": false,
         "code": 20,
-        "message": "Policy error: removing jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq would leave this ledger with no controller",
+        "message": "Policy error: removing mabel://jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq would leave this ledger with no controller",
         "details": {
           "reason": "last_controller",
           "at_seq": 6

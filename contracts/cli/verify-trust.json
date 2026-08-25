@@ -29,7 +29,7 @@
         "head_seq": 2,
         "head_event": "65cssg5tnr3gyxe2rwhsgqc3nct3pwg2bqxr2oxpelejuoorlsnq",
         "fetched_at_ms": 1700000500000,
-        "statement": "valid as of seq 2 of sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq, fetched from zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq at 2023-11-14T22:21:40Z; no revocation up to seq 2",
+        "statement": "valid as of seq 2 of mabel://sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq, fetched from zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq at 2023-11-14T22:21:40Z; no revocation up to seq 2",
         "subject_control": "subject control was not proven to this verifier; the issuer is responsible for out-of-band confirmation",
         "verified_means": "Verified means this identity signed this statement at this position in its chain. It is not proof that the statement is true, not proof of legal identity, and not proof of unique humanity."
       }
@@ -66,7 +66,7 @@
         "head_seq": 3,
         "head_event": "ewckxhi7cixugkyrql6eqnncbgxqtnrho3rpsp6plhhh7yr6rosq",
         "fetched_at_ms": 1700000560000,
-        "statement": "valid as of seq 3 of sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq, fetched from zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq at 2023-11-14T22:22:40Z; attestation 65cssg5tnr3gyxe2rwhsgqc3nct3pwg2bqxr2oxpelejuoorlsnq revoked at seq 3",
+        "statement": "valid as of seq 3 of mabel://sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq, fetched from zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq at 2023-11-14T22:22:40Z; attestation 65cssg5tnr3gyxe2rwhsgqc3nct3pwg2bqxr2oxpelejuoorlsnq revoked at seq 3",
         "subject_control": "subject control was not proven to this verifier; the issuer is responsible for out-of-band confirmation",
         "verified_means": "Verified means this identity signed this statement at this position in its chain. It is not proof that the statement is true, not proof of legal identity, and not proof of unique humanity."
       }
@@ -99,7 +99,7 @@
         "head_seq": 2,
         "head_event": "65cssg5tnr3gyxe2rwhsgqc3nct3pwg2bqxr2oxpelejuoorlsnq",
         "fetched_at_ms": 1700000620000,
-        "statement": "valid as of seq 2 of sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq, fetched from zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq at 2023-11-14T22:23:40Z; no revocation up to seq 2",
+        "statement": "valid as of seq 2 of mabel://sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq, fetched from zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq at 2023-11-14T22:23:40Z; no revocation up to seq 2",
         "subject_control": "subject control was not proven to this verifier; the issuer is responsible for out-of-band confirmation",
         "verified_means": "Verified means this identity signed this statement at this position in its chain. It is not proof that the statement is true, not proof of legal identity, and not proof of unique humanity."
       }

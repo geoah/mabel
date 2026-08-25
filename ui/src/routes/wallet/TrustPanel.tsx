@@ -15,6 +15,7 @@ import { InlineField, InlineForm } from "@/components/InlineForm";
 import { Section } from "@/components/Section";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { identityIdInput } from "@/lib/link";
 import { named, type ResolvedNames } from "@/hooks/useResolvedNames";
 import { asApiError } from "@/hooks/useResource";
 
@@ -84,12 +85,16 @@ export function useTrustActions(issuer: string, onAppended: () => void): TrustAc
 /** The action: saying, once and in public, that you trust one identity. */
 export function TrustAddForm({ actions }: { actions: TrustActions }) {
   const [subject, setSubject] = useState("");
+  const typed = identityIdInput(subject);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
+    if (typed.id === null) {
+      return;
+    }
     // A refused append leaves the subject in the box: retrying is the same
     // action, run again, not the same identity id typed again.
-    if (await actions.add(subject.trim())) {
+    if (await actions.add(typed.id)) {
       setSubject("");
     }
   }
@@ -111,6 +116,11 @@ export function TrustAddForm({ actions }: { actions: TrustActions }) {
           {actions.pending && actions.last === "add" ? "saving" : "I trust them"}
         </Button>
       </InlineForm>
+      {typed.error !== null && (
+        <p data-testid="trust-add-not-an-identity" className="text-sm">
+          {typed.error}
+        </p>
+      )}
       {actions.error && actions.last === "add" && (
         <ErrorEnvelopeView error={actions.error} testId="trust-error" />
       )}
@@ -133,11 +143,15 @@ export function TrustRevokeForm({
 }) {
   const [subject, setSubject] = useState("");
   const [missing, setMissing] = useState(false);
+  const typed = identityIdInput(subject);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    const wanted = subject.trim();
+    const wanted = typed.id;
     setMissing(false);
+    if (wanted === null) {
+      return;
+    }
     const standing = identity.trust.find(
       (record) => !record.revoked && record.subject === wanted,
     );
@@ -179,6 +193,11 @@ export function TrustRevokeForm({
           {actions.pending && actions.last === "revoke" ? "saving" : "Take it back"}
         </Button>
       </InlineForm>
+      {typed.error !== null && (
+        <p data-testid="trust-revoke-not-an-identity" className="text-sm">
+          {typed.error}
+        </p>
+      )}
       {missing && (
         <p data-testid="trust-revoke-none" className="text-sm">
           This identity does not trust that id right now, so there is nothing to take back.

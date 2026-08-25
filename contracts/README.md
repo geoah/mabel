@@ -136,7 +136,15 @@ whether the CLI or the HTTP API answers it.
 base32 without padding: 32-byte values (identity ids, ledger ids, event ids,
 public keys, endpoint ids) are 52 characters, a 16-byte nonce is 26. Parsing
 is case-insensitive. `node.json` on disk is the exception, because
-`iroh_base::EndpointId` serializes as hex there. `GET
+`iroh_base::EndpointId` serializes as hex there.
+
+Every document here carries the bare id. What a person reads carries the
+`mabel://` prefix instead: an identity id rendered on a screen or in a CLI text
+line reads `mabel://<id>`, and only an identity id does, so an endpoint id, a
+public key and an event id stay bare wherever they are shown (decision 019).
+The one place a prefix reaches a document is a rendered sentence a person is
+meant to read, which is the `statement` of a verification report and the
+`warning` of an accept surface. `GET
 /api/identities/:identity_id/keys` renders `active_secret_key` and
 `reserve_secret_key`, the 32 raw secret-key bytes, in that same base32, not in
 the hex `identities/<id>/active.key` holds on disk: every key value that
@@ -237,7 +245,7 @@ verify tab, and verification stays a CLI concern. Every report carries
 section 6), plus `sources_queried`, and a rendered `statement`:
 
 ```
-valid as of seq 2 of <ledger id>, fetched from <endpoint id> at <RFC 3339>; no revocation up to seq 2
+valid as of seq 2 of mabel://<ledger id>, fetched from <endpoint id> at <RFC 3339>; no revocation up to seq 2
 ```
 
 The revocation clause appears only in trust verification. It reads
@@ -285,7 +293,7 @@ present in one and absent in the other (proposal 003 section 5).
 Three arrays fold three different payloads and never merge (proposal 006
 section 3). `witnesses` is the latest `WitnessSet`, identity ids, the
 identities that may keep this ledger. `endpoints` is the latest
-`EndpointAdvertisement`, endpoint ids, the machines that answer for this
+`EndpointAdvertisement`, endpoint ids, the endpoints that answer for this
 identity. `witness_endpoints` is the latest `WitnessConfig`, payload tag 11,
 endpoint ids, which nothing writes any more and a chain written before proposal
 006 may hold. All three are empty arrays, never `null`, and all three render as
@@ -410,7 +418,7 @@ returned beside every append: `event_id`, `seq`, `ledger_id`, `prev`,
 `oneof` tag name from `ledger.proto` in snake_case, and `payload` holds that
 variant's fields with the same names. The node decodes; the UI holds no keys
 and does no crypto (proposal 001 section 10), so no raw event bytes are served
-over HTTP. Raw bytes cross machines over Iroh and through the file artifacts.
+over HTTP. Raw bytes cross endpoints over Iroh and through the file artifacts.
 
 The payload subtree is frozen. Ten `payload_kind` values exist, one per
 `oneof payload` tag of `ledger.proto`, and each `payload` holds exactly these
@@ -464,10 +472,10 @@ and a golden vector name the same event: Alice is
 active key, the one conflicting fork event and the membership events are
 fabricated but consistent across files.
 
-Two witness identities and four machines run through the fixtures, and no id is
+Two witness identities and four endpoints run through the fixtures, and no id is
 both. The witnesses are `ovfp3btcnjyhwmyw3ldk3wmt2ppb5w5c5adyzcavswmyq7xkg7fq`,
 "the co-op witness", and `q7hnsnk6ycwjyzwbmqjcaxwlmxvvfjbmwzq4gz4dbtvpojjuh3fq`,
-which this home has not stored; Alice's `WitnessSet` names both. The machines
+which this home has not stored; Alice's `WitnessSet` names both. The endpoints
 are `zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq` and
 `54rw3lmckcpqf4ofkvyx3i74agumvale2qmzdu76ubpita6sw5va`, which answer for the
 co-op witness, `5yy7qpeiu4jbtjx47g7obwu3yitcaweplik2mfcvknie36letzoa`, which
@@ -659,7 +667,7 @@ reviewer can overrule them cheaply, before consumers are written.
   with code 30 and reason `witness_unreachable`, naming the identity in
   `details.identity_id` and every endpoint dialled in
   `details.endpoints_tried`. A fetch that named a bare endpoint keeps
-  `details.endpoint_id`, because that caller named a machine and no identity.
+  `details.endpoint_id`, because that caller named an endpoint and no identity.
 - `GET /api/resolve?input=` takes one identity id, one hostname or one
   `mabel://` link and says which it read in `input_kind` (`identity`,
   `hostname` or `link`). It writes nothing: it never reads or fills the
@@ -690,9 +698,9 @@ reviewer can overrule them cheaply, before consumers are written.
   `mabel=` record that names an identity (proposal 006 section 6). It is
   refused beside `--from` or `--from-witness` with `conflicting_source` and
   `details.parameter` naming `--from-host`, a value that is not a hostname is
-  code 2 and reason `malformed_hostname`, and a zone that names no machine is
+  code 2 and reason `malformed_hostname`, and a zone that names no endpoint is
   code 2 and reason `unresolvable_hostname`.
-- `mabel witness add --endpoints <endpoint,...>` names machines for that call
+- `mabel witness add --endpoints <endpoint,...>` names endpoints for that call
   alone: they are `CallerHint`s while the command resolves witness identities
   for the freshness query, and neither `node.json` nor `peers.json` records
   them (proposal 006 section 5.3). A link on `--witness` carries the same kind
@@ -757,7 +765,7 @@ reviewer can overrule them cheaply, before consumers are written.
 - Two fixtures take a `node-` prefix and the other 27 keep `wallet-`:
   `http/node-get-node.json` and `http/node-get-forks.json`. The rule is what a
   route answers about, not who serves it, since one router serves every node
-  (proposal 006 section 8): those two answer about the machine and what it
+  (proposal 006 section 8): those two answer about the node and what it
   stores, and every other route answers about identities a home signs for or
   reads, which is a wallet whatever else the node does. Witnessing adds no
   route, so no `witness-` half is left to be symmetrical with, and renaming 27
@@ -767,7 +775,7 @@ reviewer can overrule them cheaply, before consumers are written.
   `payload_kind: "endpoint_advertisement"` and an `endpoints` array in
   `payload`. Both routes replace a whole list and neither takes an add or a
   remove: one event says "these and only these", so a rotation names the
-  machine it keeps beside the new one. The list holds 0 to 8 distinct endpoint
+  endpoint it keeps beside the new one. The list holds 0 to 8 distinct endpoint
   ids; more is `endpoints_out_of_range` and a repeat is `duplicate_endpoint`,
   both code 10, matching `witnesses_out_of_range` and `duplicate_witness`. An
   absent `endpoints` key is `missing_field`, never "change nothing".

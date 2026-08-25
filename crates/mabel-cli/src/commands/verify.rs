@@ -155,7 +155,7 @@ fn local_ledger(ctx: &Context, ledger: IdentityId) -> Result<Outcome> {
 
     report.statement = format!(
         "valid to seq {valid_to_seq} of {}, fetched from {source} at {}; failed at seq {}: {}",
-        report.ledger_id,
+        ids::shown(&report.ledger_id),
         rfc3339_utc(fetched_at_ms),
         violation.seq,
         violation.reason
@@ -248,9 +248,12 @@ fn render_ledger(report: &LedgerReport) -> Result<Outcome> {
 fn render_trust(report: &TrustReport) -> Result<Outcome> {
     let mut text = format!("trusted: {}\n{}", report.trusted, report.statement);
     if let Some(principal) = &report.signing_principal {
+        // The identity carries the prefix and the key does not: they render
+        // alike, and only one of them is a mabel id.
         text.push_str(&format!(
             "\nsigned by principal {} ({})",
-            principal.identity, principal.key
+            ids::shown(&principal.identity),
+            principal.key
         ));
     }
     if let Some(note) = &report.subject_note {

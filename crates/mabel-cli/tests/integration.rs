@@ -657,7 +657,9 @@ fn the_whole_story_runs_and_a_fresh_home_verifies_it_from_the_witness_alone() {
     assert_eq!(code, 0, "{stdout}{stderr}");
     assert!(stdout.starts_with("trusted: true"), "{stdout}");
     assert!(
-        stdout.contains(&format!("signed by principal {alice} ({alice_key})")),
+        stdout.contains(&format!(
+            "signed by principal mabel://{alice} ({alice_key})"
+        )),
         "{stdout}"
     );
 

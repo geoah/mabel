@@ -38,10 +38,10 @@ describe("sharing an identity", () => {
 
     const disclosure = screen.getByTestId("share-disclosure");
     expect(disclosure).toHaveTextContent("Mabel ID");
-    expect(disclosure).toHaveTextContent("the machines that answer for this identity");
+    expect(disclosure).toHaveTextContent("the endpoints that answer for this identity");
     expect(disclosure).toHaveTextContent("this home's network address");
     expect(screen.getByTestId("share-machine-count")).toHaveTextContent(
-      "No machine answers for this identity yet",
+      "No endpoint answers for this identity yet",
     );
   });
 
@@ -61,7 +61,7 @@ describe("sharing an identity", () => {
     await waitFor(() =>
       expect(screen.getByTestId("share-qr")).toHaveAttribute("data-value", link),
     );
-    expect(screen.getByTestId("share-machine-count")).toHaveTextContent("names 1 machine");
+    expect(screen.getByTestId("share-machine-count")).toHaveTextContent("names 1 endpoint");
   });
 });
 
@@ -77,7 +77,7 @@ describe("publishing the machines that answer for an identity", () => {
 
     const consent = screen.getByTestId("endpoints-consent");
     expect(consent).toHaveTextContent("stays readable forever");
-    expect(consent).toHaveTextContent("can dial that machine directly");
+    expect(consent).toHaveTextContent("can dial that endpoint directly");
     expect(consent).toHaveTextContent("list the identities it signs for");
     expect(globalThis.localStorage.getItem(ENDPOINTS_CONSENT_KEY)).toBeNull();
 
@@ -93,7 +93,7 @@ describe("publishing the machines that answer for an identity", () => {
     // The machines row on the card above says where the new claim came from.
     expect(
       await screen.findByTestId(`identity-detail-machine-${machine}-note`),
-    ).toHaveTextContent("This machine is listed on this identity's own record.");
+    ).toHaveTextContent("This endpoint is listed on this identity's own record.");
   });
 
   it("publishes nothing when the consent is declined", async () => {
@@ -160,7 +160,7 @@ describe("a link pasted into the search box", () => {
     expect(asked).toEqual([link]);
     // The page states what using the link does before anything is fetched.
     expect(await screen.findByTestId("identity-fetch-link-note")).toHaveTextContent(
-      "tells those machines this home's network address",
+      "tells those endpoints this home's network address",
     );
   });
 

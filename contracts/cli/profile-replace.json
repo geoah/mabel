@@ -52,7 +52,7 @@
       "document": {
         "ok": false,
         "code": 20,
-        "message": "Policy error: this profile is already the profile of sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq: nothing would change",
+        "message": "Policy error: this profile is already the profile of mabel://sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq: nothing would change",
         "details": {
           "reason": "no_op_profile_update",
           "ledger_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",

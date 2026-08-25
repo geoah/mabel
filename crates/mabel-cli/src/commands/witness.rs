@@ -59,7 +59,7 @@ pub fn add(
     if !given.is_empty() && !linked.is_empty() {
         return Err(CliError::usage(
             "conflicting_source",
-            "--endpoints names machines and the link on --witness names others: give one",
+            "--endpoints names endpoints and the link on --witness names others: give one",
         )
         .with_detail("parameter", "--endpoints"));
     }
@@ -85,8 +85,9 @@ pub fn add(
         head_event: ids::event(appended.event_id),
     };
     let text = format!(
-        "{} witnesses {identity} as of seq {}\nthe set now holds {} witnesses",
-        document.witness,
+        "{} witnesses {} as of seq {}\nthe set now holds {} witnesses",
+        ids::shown(&document.witness),
+        ids::shown(identity),
         appended.seq,
         document.witnesses.len()
     );
@@ -133,8 +134,9 @@ pub fn set_default(ctx: &Context, witness: &str, endpoints: &[String]) -> Result
         return Err(CliError::usage(
             "unresolvable_witness",
             format!(
-                "no endpoint is known for the witness {witness}: pass --endpoints, or fetch its \
-                 ledger first"
+                "no endpoint is known for the witness {}: pass --endpoints, or fetch its \
+                 ledger first",
+                ids::shown(witness)
             ),
         )
         .with_detail("witness", witness.to_string())
@@ -171,7 +173,10 @@ pub fn set_default(ctx: &Context, witness: &str, endpoints: &[String]) -> Result
             })
             .collect(),
     };
-    let mut text = format!("node.json now names {witness} as a default witness");
+    let mut text = format!(
+        "node.json now names {} as a default witness",
+        ids::shown(witness)
+    );
     for endpoint in recorded.iter().map(ids::key) {
         text.push('\n');
         text.push_str(endpoint.as_str());

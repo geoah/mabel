@@ -139,11 +139,11 @@ export function ActionsSection({
       <ActionGroup
         testId="action-group-reach"
         title="Reaching this identity"
-        description="The machines that answer for it, and the link that opens it somewhere else."
+        description="The endpoints that answer for it, and the link that opens it somewhere else."
       >
         <Action
           testId="action-endpoints"
-          title="Publish the machines that answer for this identity"
+          title="Publish the endpoints that answer for this identity"
           description="Other people's wallets dial these to ask for this record."
         >
           <EndpointsPanel identity={identity} onAppended={onAppended} />

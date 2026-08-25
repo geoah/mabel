@@ -2,7 +2,13 @@ import type { Identity } from "@/api/types";
 import { Identifier } from "@/components/Identifier";
 import { type Machine } from "@/components/identity";
 import { QrSquare } from "@/components/QrSquare";
-import { mabelLink, mabelLinkFile, mabelLinkFileName, MAX_LINK_MACHINES } from "@/lib/link";
+import {
+  mabelId,
+  mabelLink,
+  mabelLinkFile,
+  mabelLinkFileName,
+  MAX_LINK_MACHINES,
+} from "@/lib/link";
 
 /**
  * What handing the link over gives away, said on the panel that makes one
@@ -10,8 +16,8 @@ import { mabelLink, mabelLinkFile, mabelLinkFileName, MAX_LINK_MACHINES } from "
  */
 export const SHARE_DISCLOSURE = [
   "The link carries this identity's Mabel ID, which anyone holding it can read.",
-  "It carries the machines that answer for this identity, so whoever has it can dial them directly.",
-  "Whoever uses it asks those machines for this record, which tells them this home's network address.",
+  "It carries the endpoints that answer for this identity, so whoever has it can dial them directly.",
+  "Whoever uses it asks those endpoints for this record, which tells them this home's network address.",
 ];
 
 /**
@@ -37,15 +43,15 @@ export function SharePanel({
       <Identifier value={link} full copyLabel="Copy the link" className="text-xs" />
       <p data-testid="share-machine-count" className="text-xs text-muted-foreground">
         {carried.length === 0
-          ? "No machine answers for this identity yet, so the link carries the Mabel ID alone."
+          ? "No endpoint answers for this identity yet, so the link carries the Mabel ID alone."
           : machines.length > carried.length
-            ? `The link names the first ${carried.length} of the ${machines.length} machines that answer for this identity, which is as many as a link holds.`
-            : `The link names ${carried.length} ${carried.length === 1 ? "machine" : "machines"}.`}
+            ? `The link names the first ${carried.length} of the ${machines.length} endpoints that answer for this identity, which is as many as a link holds.`
+            : `The link names ${carried.length} ${carried.length === 1 ? "endpoint" : "endpoints"}.`}
       </p>
       <QrSquare
         value={link}
         testId="share-qr"
-        label={`A square holding the link to ${identity.identity_id}`}
+        label={`A square holding the link to ${mabelId(identity.identity_id)}`}
       />
       <a
         href={file}

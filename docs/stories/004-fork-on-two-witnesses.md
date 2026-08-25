@@ -17,10 +17,10 @@ Nothing here forges a signature: both events are valid.
   alice's home with a fresh node key. It runs CLI commands only.
 - witness one: compose service `witness`, API and UI on
   `http://127.0.0.1:9080`. It meets both branches. `witness_identity` is the
-  Mabel id it witnesses for; `witness_id` is the machine that answers for it.
+  Mabel id it witnesses for; `witness_id` is the endpoint that answers for it.
 - witness two: compose service `witness-two`, API and UI on
   `http://127.0.0.1:9083`. It meets one branch. It is a second witness
-  identity, not a second machine answering for the first: each home mints its
+  identity, not a second endpoint answering for the first: each home mints its
   own and witnesses for that one alone (proposal 006 sections 1 and 4).
 
 `dc` stands for `docker compose -f docker/compose.yaml`, run from the
@@ -96,7 +96,7 @@ for it (ticket 032).
    curl -fsS "http://127.0.0.1:9081/api/identities/$alice_id/ledger?since=3" | jq -r .events[0].prev
    curl -fsS "http://127.0.0.1:9084/api/identities/$alice_id/ledger?since=3" | jq -r .events[0].prev
    ```
-6. One branch to each witness. `--to` names the machine to dial, which is what a
+6. One branch to each witness. `--to` names the endpoint to dial, which is what a
    push connects to:
    ```sh
    dc exec -T alice sh -c 'mabel sync push --identity alice --to '"$witness_id"' \
@@ -156,14 +156,16 @@ for it (ticket 032).
 - Witness one still serves the first branch: `GET
   http://127.0.0.1:9080/api/identities/<alice_id>` answers `identity.head_seq:
   3`, `identity.head_event == kept_event`, and `identity.witnesses` listing both
-  witness identities. The set on the chain names identities, not machines: a
-  witness that moves machines leaves those events standing.
+  witness identities. The set on the chain names identities, not endpoints: a
+  witness that moves endpoints leaves those events standing.
 - Step 8's fork record, the one entry `GET /api/forks?ledger_id=<alice_id>`
   answers:
   - `ledger_id == alice_id`, `seq: 3`, and `statement` exactly `two distinct
-    validly signed events exist at seq 3 of <alice_id>, produced by whoever held
-    signing authority there; this is evidence of equivocation or of a lost race
-    between honest controllers`.
+    validly signed events exist at seq 3 of mabel://<alice_id>, produced by
+    whoever held signing authority there; this is evidence of equivocation or of
+    a lost race between honest controllers`. `statement` is prose a person
+    reads, so the ledger in it carries the prefix; `ledger_id` beside it is an
+    id-valued field and stays bare (decision 019).
   - `kept.event_id == kept_event` and `conflicting.event_id ==
     conflicting_event`; both carry `payload_kind` `trust_attestation`, `seq` 3,
     the same `prev` and the same `author_key`. A reader checks the conflict
@@ -180,7 +182,7 @@ for it (ticket 032).
   `entries: []`, and `GET http://127.0.0.1:9083/api/identities/<alice_id>`
   answers `identity.head_event == conflicting_event`.
 - Step 9 exits 20 with `ok: false`, `code: 20`, `message` exactly `Ledger
-  error: two sources hold divergent events at seq 3 of <alice_id>`,
+  error: two sources hold divergent events at seq 3 of mabel://<alice_id>`,
   `details.reason == "equivocation"`, `details.at_seq == 3`, and two
   `details.candidates` entries: one `{source: <witness_id>, event_id:
   <kept_event>}` and one `{source: <witness_two_id>, event_id:
@@ -194,7 +196,7 @@ exceeds the story text above.
 - Step 5's `verify ledger` commands were rewritten to the forms the spec runs.
   `mabel verify ledger` reads its copy from a source over the network, and a
   CLI process in either container holds no address for one, so each command
-  names the machine that holds that branch and passes its ticket.
+  names the endpoint that holds that branch and passes its ticket.
 - The spec does not run step 10. Story 005 opens on what this story leaves
   running and tears it down in its own step 12; the suite's global teardown
   clears it either way.

@@ -31,7 +31,11 @@ describe("identity create", () => {
     await user.click(screen.getByTestId("identity-create-submit"));
 
     const created = await screen.findByTestId("identity-create-result-identity-id");
-    const identityId = created.textContent ?? "";
+    // The screen shows the id with its prefix; the bare id is what a path is
+    // built from, and it stays on data-value (decision 019).
+    const shown = created.textContent ?? "";
+    expect(shown).toMatch(/^mabel:\/\/[a-z2-7]{52}$/);
+    const identityId = created.querySelector("[data-value]")!.getAttribute("data-value")!;
     expect(identityId).toHaveLength(52);
     expect(bodies).toEqual([{ alias: "carol", declared_kind: "organization" }]);
 
@@ -109,7 +113,9 @@ describe("identity create", () => {
     await user.click(screen.getByTestId("identity-create-submit"));
 
     const created = await screen.findByTestId("identity-create-result-identity-id");
-    const identityId = created.textContent ?? "";
+    // The path is built from the bare id, which stays on data-value while the
+    // screen shows the prefixed form (decision 019).
+    const identityId = created.querySelector("[data-value]")!.getAttribute("data-value")!;
     expect(bodies).toEqual([
       {
         alias: "dana",
@@ -155,7 +161,8 @@ describe("identity create", () => {
     await user.type(screen.getByTestId("identity-create-alias"), "quiet");
     await user.click(screen.getByTestId("identity-create-submit"));
 
-    const identityId = (await screen.findByTestId("identity-create-result-identity-id")).textContent;
+    const created = await screen.findByTestId("identity-create-result-identity-id");
+    const identityId = created.querySelector("[data-value]")!.getAttribute("data-value")!;
     expect(bodies).toEqual([{ alias: "quiet", declared_kind: "person" }]);
     expect(screen.queryByTestId("identity-create-result-email")).not.toBeInTheDocument();
     expect(screen.queryByTestId(`identity-card-email-${identityId}`)).not.toBeInTheDocument();

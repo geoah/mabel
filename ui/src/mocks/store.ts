@@ -90,6 +90,8 @@ import {
   witnessEvents,
   witnessLedgers,
 } from "./fixtures";
+import { mabelId } from "@/lib/link";
+
 import { MOCK_STATE_KEY } from "./persistence";
 
 /** A rejected request: the HTTP status plus the error envelope body. */
@@ -1333,7 +1335,7 @@ export function witnessHoldings(
     failWith(404, {
       ok: false,
       code: 2,
-      message: `${identityId} is a machine this home knows, not a witness identity`,
+      message: `${identityId} is an endpoint this home knows, not a witness identity`,
       details: { reason: "endpoint_not_identity", value: identityId },
     });
   }
@@ -1342,14 +1344,14 @@ export function witnessHoldings(
     failWith(502, {
       ok: false,
       code: 30,
-      message: `Network error: no machine answering for ${identityId} served its ledger list`,
+      message: `Network error: no endpoint answering for ${mabelId(identityId)} served its ledger list`,
       details: {
         reason: "witness_unreachable",
         identity_id: identityId,
         endpoints_tried: machines,
         error:
           machines.length === 0
-            ? "no machine is known for it"
+            ? "no endpoint is known for it"
             : `${machines[0]}: no route to ${machines[0]} after 10s`,
       },
     });

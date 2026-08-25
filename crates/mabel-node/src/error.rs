@@ -81,7 +81,10 @@ pub enum StorageError {
     },
 
     /// An append did not start where the ledger ends.
-    #[error("ledger {ledger} expects seq {expected}, got {got}")]
+    #[error(
+        "ledger {}{ledger} expects seq {expected}, got {got}",
+        mabel_core::LINK_PREFIX
+    )]
     OutOfOrderAppend {
         /// The ledger.
         ledger: LedgerId,
@@ -97,7 +100,10 @@ pub enum StorageError {
     /// another writer landed a moment ago; either way it is an event somebody
     /// built and overwriting it loses it. Recovery is to drop the events past
     /// the head and rebuild the cache.
-    #[error("ledger {ledger} holds a different event at seq {seq}, so {offered} cannot land there")]
+    #[error(
+        "ledger {}{ledger} holds a different event at seq {seq}, so {offered} cannot land there",
+        mabel_core::LINK_PREFIX
+    )]
     ConflictingEvent {
         /// The ledger.
         ledger: LedgerId,
@@ -119,7 +125,10 @@ pub enum StorageError {
     },
 
     /// A read named a sequence the ledger does not hold.
-    #[error("ledger {ledger} holds no event at seq {seq}")]
+    #[error(
+        "ledger {}{ledger} holds no event at seq {seq}",
+        mabel_core::LINK_PREFIX
+    )]
     MissingEvent {
         /// The ledger.
         ledger: LedgerId,
@@ -128,7 +137,7 @@ pub enum StorageError {
     },
 
     /// The home holds no directory for that identity.
-    #[error("identity {identity} is not in this home")]
+    #[error("identity {}{identity} is not in this home", mabel_core::LINK_PREFIX)]
     UnknownIdentity {
         /// The identity that was looked up.
         identity: IdentityId,

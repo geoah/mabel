@@ -16,8 +16,8 @@ action, run again.
 - alice's second machine: container `mabel-alice-two`, a byte-for-byte copy of
   alice's home with a fresh node key. The machine that wins it.
 - bob: wallet node, compose service `bob`, a controller of the shared ledger
-  who does nothing here. His key is what makes the ledger shared: no machine
-  holds every controller key, so every append must ask the witness first.
+  who does nothing here. His key is what makes the ledger shared: no one
+  endpoint holds every controller key, so every append must ask the witness first.
 - witness: compose service `witness`, API and UI on `http://127.0.0.1:9080`.
 
 `dc` stands for `docker compose -f docker/compose.yaml`, run from the
@@ -34,7 +34,7 @@ machines; two admitted controllers acting from their own homes is ticket 031.
 2. Name the witness identity on the shared ledger and push it, so the ledger
    has somewhere to be asked about. Bob controls this ledger too, so the append
    asks the witness where it ends before it signs, and a CLI process needs the
-   ticket to reach one: `node.json` records which machines answer for a witness,
+   ticket to reach one: `node.json` records which endpoints answer for a witness,
    never how to route to one (proposal 006 section 5.4).
    ```sh
    dc exec -T alice sh -c 'mabel witness add --identity mabel-demo-co \
@@ -112,7 +112,8 @@ machines; two admitted controllers acting from their own homes is ticket 031.
     head seq 4, this node holds seq 4`.
   - `error-code-meaning` reads `Something changed this record first. Reload the
     page and try again.`
-  - `error-detail-ledger_id` carries `org_id`, `error-detail-local_head_seq`
+  - `error-detail-ledger_id` carries `org_id` bare, because the details beside a
+    message are id-valued fields rather than prose, `error-detail-local_head_seq`
     reads `4`, `error-detail-observed_head_seq` reads `4`, and
     `error-detail-source` carries `witness_id`.
 - The same failure on the CLI is the same document:
@@ -135,7 +136,9 @@ machines; two admitted controllers acting from their own homes is ticket 031.
   names identities; tag 11 `witness_config` is readable forever and never
   written again (proposal 006 section 1). In the open entry at position 4 the identifier inside
   `event-id-4` carries the second machine's event id and `event-payload-4` reads
-  `{"subject":"<alice_id>"}`.
+  `{"subject":"mabel://<alice_id>"}`: the contents a reader opens name
+  identities the way the rest of the screen does, while the document the node
+  sent carries the bare id (decision 019).
 - No fork was created: `GET http://127.0.0.1:9080/api/forks?ledger_id=<org_id>`
   answers `entries: []`. The losing event was discarded before it was ever
   pushed, which is the difference between this story and story 004.
@@ -152,8 +155,9 @@ machines; two admitted controllers acting from their own homes is ticket 031.
 - Step 9's push report reads `push-status-<witness_id>` `accepted` and
   `push-stored-<witness_id>` `1`.
 - Step 10 exits 0 and prints `trusted: true`, then `valid as of seq 5 of
-  <org_id>, fetched from <witness_id> at <RFC 3339 UTC>; no revocation up to
-  seq 5`, then `signed by principal <alice_id> (<alice active key>)`. The
+  mabel://<org_id>, fetched from <witness_id> at <RFC 3339 UTC>; no revocation
+  up to seq 5`, then `signed by principal mabel://<alice_id> (<alice active
+  key>)`. The
   second machine reads the witness's seq-5 copy: `--from` pins the source, so
   the report is about the witness's chain, not this container's own.
 - The witness agrees: `GET http://127.0.0.1:9080/api/identities/<org_id>`

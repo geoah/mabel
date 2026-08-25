@@ -104,7 +104,7 @@ and publishes `/shared/witness-two.ticket`, `/shared/witness-two.id` and
 for both tickets, start with both seeded as `--peer` and record both witness
 identities in `node.json`, so a command in either wallet can push to either
 witness with no `--peer` of its own. The two witnesses are two witness
-identities, not two machines answering for one: each home mints its own and
+identities, not two endpoints answering for one: each home mints its own and
 witnesses for that one alone, which is what lets stories 004 and 005 push one
 branch of a ledger to one witness and another branch to the other.
 
@@ -119,7 +119,7 @@ docker compose -f docker/compose.yaml -f docker/compose.dns.yaml \
 `resolver` is CoreDNS on Alpine (`docker/Dockerfile.resolver`), fixed at
 `172.29.0.53`, serving the `example` zone from
 `/etc/coredns/zones/example.zone` and answering REFUSED for every other name,
-so no lookup leaves the machine. Alice and bob are pointed at it with `dns:`;
+so no lookup leaves the host. Alice and bob are pointed at it with `dns:`;
 Docker's embedded resolver still owns the container names and forwards the
 rest. The address is fixed because `dns:` takes addresses, which is why this
 overlay gives the network a declared subnet.
@@ -136,9 +136,9 @@ docker compose -f docker/compose.yaml -f docker/compose.dns.yaml exec -T \
 
 Story 007 is what this is for. A hostname claim is
 `_mabel.<hostname> IN TXT "mabel=<identity id>"` (proposal 003 section 2), and
-`mabel-endpoints=<id>,<id>` beside it names the machines that answer for
+`mabel-endpoints=<id>,<id>` beside it names the endpoints that answer for
 whatever identity that label claims (proposal 006 section 6). The committed zone
-carries `_mabel.many-machines.example`, a label naming five machines split
+carries `_mabel.many-machines.example`, a label naming five endpoints split
 across two character-strings, which a reader joins with no separator before it
 parses anything: `mabel-endpoints=` plus four ids is 227 of the 255 bytes a
 character-string holds. No container answers at any of those five, which is the
@@ -152,7 +152,7 @@ that drops it makes the container unhealthy.
 The overlay also passes `MABEL_WITNESSES` through to both wallets, empty
 unless the environment sets it. One entry per witness,
 `<mabel id>=<endpoint id>[,<endpoint id>...]`, because `node.json.witnesses`
-names an identity and the machines that answer for it (proposal 006 section
+names an identity and the endpoints that answer for it (proposal 006 section
 5.4). Neither half exists until the witness has started, so a run that wants the
 node-wide witness brings the topology up in two phases:
 
@@ -232,7 +232,10 @@ reaches a node on the command line, never through this file.
   on every node: what a node can do is read from the identities its home holds
   and from `node.json.witness_for` (proposal 006 section 8). `MABEL_ROLE` is
   read by the entrypoint alone and written nowhere: it picks whether this
-  container mints a witness identity, advertises itself on it and lists it in
-  `witness_for`. `docker run --rm mabel:dev node id` works the same way, and
+  container mints a witness identity, gives it a display name, advertises itself
+  on it and lists it in `witness_for`. The name is derived from the ticket
+  prefix, so `/shared/witness` publishes `Witness one` and `/shared/witness-two`
+  publishes `Witness two`, and a witness reads as a named identity in a wallet
+  rather than as a bare id. `docker run --rm mabel:dev node id` works the same way, and
   `docker run --rm --entrypoint mabel mabel:dev --help` skips the compose
   preparation entirely.

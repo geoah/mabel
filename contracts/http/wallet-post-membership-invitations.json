@@ -66,7 +66,7 @@
       "body": {
         "ok": false,
         "code": 20,
-        "message": "Policy error: jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq already has an open invitation, zx7msbfj3lbmwq3d2aybjddujknuwsyxdqczvxgs55kvn56iwo7q",
+        "message": "Policy error: mabel://jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq already has an open invitation, zx7msbfj3lbmwq3d2aybjddujknuwsyxdqczvxgs55kvn56iwo7q",
         "details": {
           "reason": "duplicate_invitation",
           "at_seq": 5
@@ -78,7 +78,7 @@
       "body": {
         "ok": false,
         "code": 2,
-        "message": "this home holds no ledger 2okqwhextnpkpmydrgrkk563vbehcklffwfzidxlh5dslawjmn6a",
+        "message": "this home holds no ledger mabel://2okqwhextnpkpmydrgrkk563vbehcklffwfzidxlh5dslawjmn6a",
         "details": {
           "reason": "unknown_ledger",
           "ledger_id": "2okqwhextnpkpmydrgrkk563vbehcklffwfzidxlh5dslawjmn6a"

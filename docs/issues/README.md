@@ -143,3 +143,9 @@ milestone 10 and are deliberately not ticketed here.
   published file, the compose overlays and zone files, four story rewrites and
   two new stories for a link with no witness and an endpoint rotation. Depends
   on 039.
+- [041-mabel-id-prefix.md](041-mabel-id-prefix.md): `mabel://` on every shown
+  identity id with bare ids on machine surfaces, id fields that take the
+  prefixed form, the `mabel-endpoints=` line on the handle screen, endpoints as
+  the one noun for advertised machines, a vendored `Tabs` used by the two
+  filtered lists, identity card polish, and a named witness from `dev seed` and
+  the compose entrypoint. Depends on 040.

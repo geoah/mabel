@@ -14,7 +14,15 @@ import {
   WITNESS_URL,
 } from "../lib/docker";
 import { expectExit, expectHeadSeq, startAliceTwo, story002Steps1to8 } from "../lib/stories";
-import { addTrust, identifier, openAction, openIdentity, push, trustCard } from "../lib/ui";
+import {
+  addTrust,
+  identifier,
+  openAction,
+  openIdentity,
+  push,
+  shown,
+  trustCard,
+} from "../lib/ui";
 
 /** docs/stories/006-stale-append.md */
 test.describe.configure({ mode: "serial" });
@@ -119,6 +127,8 @@ test("step 6: the losing append is refused with exit code 50", async () => {
   await expect(alicePage.getByTestId("error-code-meaning")).toHaveText(
     "Something changed this record first. Reload the page and try again.",
   );
+  // The message is prose and the details beside it are id-valued fields, so
+  // the ledger id under `error-detail-ledger_id` is bare (decision 019).
   await expect(alicePage.getByTestId("error-detail-ledger_id")).toHaveText(orgId);
   await expect(alicePage.getByTestId("error-detail-local_head_seq")).toHaveText("4");
   await expect(alicePage.getByTestId("error-detail-observed_head_seq")).toHaveText("4");
@@ -161,7 +171,12 @@ test("step 7: alice's home holds the second machine's event at seq 4", async () 
   }
   await expect(reader.getByTestId("event-detail-4")).toBeVisible();
   expect(await identifier(reader, "event-id-4")).toBe(secondMachineEvent);
-  await expect(reader.getByTestId("event-payload-4")).toHaveText(`{"subject":"${aliceId}"}`);
+  // The contents a reader opens name identities the way the rest of the screen
+  // does: `subject` is an identity under `trust_attestation`, so it is shown
+  // prefixed while the document the node sent carries the bare id.
+  await expect(reader.getByTestId("event-payload-4")).toHaveText(
+    `{"subject":"${shown(aliceId)}"}`,
+  );
   // The whole record is held and it is one page of eight, so the panel counts
   // the entries and draws no pagination at all: a bar with one page on it is
   // not a choice (round 5).
@@ -227,10 +242,10 @@ test("step 10: the second machine reads the settled chain back", async () => {
   expect(lines[0]).toBe("trusted: true");
   expect(lines[1]).toMatch(
     new RegExp(
-      `^valid as of seq 5 of ${orgId}, fetched from ${witnessId} at ${RFC3339_UTC}; no revocation up to seq 5$`,
+      `^valid as of seq 5 of ${shown(orgId)}, fetched from ${witnessId} at ${RFC3339_UTC}; no revocation up to seq 5$`,
     ),
   );
-  expect(lines[2]).toBe(`signed by principal ${aliceId} (${aliceKey})`);
+  expect(lines[2]).toBe(`signed by principal ${shown(aliceId)} (${aliceKey})`);
 
   const ledger = await apiGet(WITNESS_URL, `/api/identities/${orgId}`);
   expect(ledger.body.identity.head_seq).toBe(5);

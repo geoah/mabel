@@ -169,7 +169,7 @@ pub enum IdentityCommand {
         /// The identity, by alias or id.
         identity: String,
     },
-    /// Publish the machines that answer for an identity.
+    /// Publish the endpoints that answer for an identity.
     Endpoints {
         #[command(subcommand)]
         command: EndpointsCommand,
@@ -179,7 +179,7 @@ pub enum IdentityCommand {
     Share {
         /// The identity, by alias, id or link.
         identity: String,
-        /// `auto` for the machines the identity advertises, `none` for a link
+        /// `auto` for the endpoints the identity advertises, `none` for a link
         /// with no hint, or a comma-separated list of up to four endpoint ids.
         #[arg(long, value_name = "AUTO_OR_ENDPOINTS", default_value = "auto")]
         endpoints: String,
@@ -209,9 +209,9 @@ pub enum IdentityCommand {
 /// `mabel identity endpoints ...`.
 #[derive(Debug, Subcommand)]
 pub enum EndpointsCommand {
-    /// Replace the whole list of machines that answer for an identity.
+    /// Replace the whole list of endpoints that answer for an identity.
     ///
-    /// One event says "these and only these", so a rotation names the machine
+    /// One event says "these and only these", so a rotation names the endpoint
     /// it keeps as well as the new one.
     Replace {
         /// The identity, by alias or id.
@@ -437,7 +437,7 @@ pub enum WitnessCommand {
     /// Add a witness identity to an identity's witness set.
     ///
     /// A witness is named by its Mabel id, not by the endpoint it answers at,
-    /// so replacing the machine behind a witness leaves this event standing
+    /// so replacing the endpoint behind a witness leaves this event standing
     /// (proposal 006 section 1).
     Add {
         /// The identity whose witness set is replaced, by alias or id.
@@ -507,7 +507,7 @@ pub enum SyncCommand {
         #[arg(long, value_name = "MABEL_ID")]
         from_witness: Option<String>,
         /// A hostname to fetch from, whose `mabel-endpoints=` records name the
-        /// machines to dial. Not with --from or --from-witness.
+        /// endpoints to dial. Not with --from or --from-witness.
         #[arg(long, value_name = "HOSTNAME")]
         from_host: Option<String>,
         /// Endpoint ticket to seed into address lookup. Repeatable.
@@ -621,8 +621,7 @@ pub enum DevCommand {
     /// Refuses a home that already holds an identity: this writes real signed
     /// ledgers, and there is no way to take an event back.
     Seed {
-        /// Endpoint ticket of a machine to push every seeded ledger to.
-        /// Repeatable.
+        /// Ticket of an endpoint to push every seeded ledger to. Repeatable.
         ///
         /// Given none, the seed stays local: the ledgers name no witness,
         /// nothing is pushed and no crawl runs.
@@ -631,8 +630,8 @@ pub enum DevCommand {
         /// A witness identity to name in every seeded witness set, beside the
         /// one the seed creates. Repeatable.
         ///
-        /// A ticket names a machine, and a machine only takes a push for a
-        /// ledger whose witness set names an identity it witnesses for, so a
+        /// A ticket names an endpoint, and an endpoint only takes a push for
+        /// a ledger whose witness set names an identity it witnesses for, so a
         /// push to somebody else's witness needs that witness's Mabel id.
         #[arg(long, value_name = "ALIAS_OR_ID")]
         witness: Vec<String>,

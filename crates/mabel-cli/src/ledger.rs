@@ -59,7 +59,7 @@ impl Loaded {
         if stored.is_empty() {
             return Err(CliError::usage(
                 "unknown_ledger",
-                format!("this home holds no ledger {ledger}"),
+                format!("this home holds no ledger {}", crate::ids::shown(ledger)),
             )
             .with_detail("ledger_id", ledger.to_string()));
         }
@@ -160,7 +160,10 @@ impl Loaded {
             let at = self.seq_of.get(attestation).copied().unwrap_or_default();
             return CliError::policy(
                 "duplicate_unrevoked_attestation",
-                format!("an unrevoked attestation for {subject} already exists at seq {at}"),
+                format!(
+                    "an unrevoked attestation for {} already exists at seq {at}",
+                    crate::ids::shown(subject)
+                ),
             )
             .with_detail("ledger_id", self.ledger.to_string())
             .with_detail("subject", subject.to_string())

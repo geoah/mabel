@@ -122,7 +122,9 @@ fn announce(served: &ServedNode, node: &NodeRuntime) {
         served.identity_count, served.ledger_count, served.fork_count
     );
     for witness in &served.witness_for {
-        eprintln!("witnessing for {witness}");
+        // A witness is an identity; the `node` line above is this machine's
+        // endpoint id and stays bare.
+        eprintln!("witnessing for {}", ids::shown(witness));
     }
     for host in node.allowed_hosts() {
         eprintln!("host   {host} is accepted beyond loopback");

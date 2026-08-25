@@ -36,8 +36,8 @@ pub fn push(
     tickets: &[String],
 ) -> Result<Outcome> {
     // A push signs, so the subject is local and a link's hints have nothing to
-    // reach: they are dropped with a warning naming the flag (proposal 006
-    // section 7).
+    // reach: a link that names them is refused, naming the flag (proposal 006
+    // section 7). Where to push is `--to`, not the subject.
     let identity = ctx.resolve_local_hinted(identity, "--identity")?;
     // Which witnesses to push to is decided before an endpoint is bound: a
     // ledger that names none has nothing to dial.
@@ -53,7 +53,10 @@ pub fn push(
     if witnesses.is_empty() {
         return Err(CliError::usage(
             "no_witness_configured",
-            format!("no endpoint is configured to push {identity} to"),
+            format!(
+                "no endpoint is configured to push {} to",
+                ids::shown(identity)
+            ),
         )
         .with_detail("ledger_id", identity.to_string()));
     }
@@ -72,7 +75,7 @@ pub fn push(
         .count();
     let text = std::iter::once(format!(
         "{} at seq {}, {accepted} of {} witnesses accepted",
-        pushed.ledger_id,
+        ids::shown(&pushed.ledger_id),
         pushed.head_seq,
         pushed.results.len()
     ))
@@ -101,8 +104,9 @@ pub fn push(
     for result in &pushed.results {
         if result.status == PushStatus::Accepted && result.binding == Binding::Hinted {
             eprintln!(
-                "warning: nobody's ledger confirms that {} answers for a witness of {identity}",
-                result.endpoint
+                "warning: nobody's ledger confirms that {} answers for a witness of {}",
+                result.endpoint,
+                ids::shown(identity)
             );
         }
     }
@@ -110,7 +114,10 @@ pub fn push(
     if accepted == 0 {
         return Err(CliError::network(
             "all_witnesses_failed",
-            format!("no configured witness accepted the push for {identity}"),
+            format!(
+                "no configured witness accepted the push for {}",
+                ids::shown(identity)
+            ),
         )
         .with_detail("ledger_id", identity.to_string())
         .with_detail("results", &pushed.results));
@@ -201,7 +208,10 @@ pub fn fetch(
             if endpoints.is_empty() {
                 return Err(CliError::usage(
                     "unresolvable_witness",
-                    format!("no endpoint is known for the witness {witness}"),
+                    format!(
+                        "no endpoint is known for the witness {}",
+                        ids::shown(witness)
+                    ),
                 )
                 .with_detail("witness", witness.to_string())
                 .with_detail("endpoints_tried", Vec::<String>::new()));
@@ -275,7 +285,7 @@ pub fn fetch(
     let mut text = format!(
         "fetched {} events of {} from {}, stored {}\nhead seq {}, verified from nothing",
         document.event_count,
-        document.ledger_id,
+        ids::shown(&document.ledger_id),
         document.source,
         document.stored,
         document.head_seq
@@ -284,7 +294,8 @@ pub fn fetch(
     // fetch decides beyond the bytes (ticket 031).
     match &document.controlled_by {
         Some(controller) => text.push_str(&format!(
-            "\nthis home may append to it, signing as {controller}"
+            "\nthis home may append to it, signing as {}",
+            ids::shown(controller)
         )),
         None => text.push_str("\nstored read-only: no identity here controls it"),
     }
@@ -350,7 +361,7 @@ async fn host_sources(
     if sources.is_empty() {
         return Err(CliError::usage(
             "unresolvable_hostname",
-            format!("{name} names no machine for a mabel identity"),
+            format!("{name} names no endpoint for a mabel identity"),
         )
         .with_detail("hostname", hostname)
         .with_detail("endpoints_tried", Vec::<String>::new()));
@@ -372,7 +383,7 @@ fn system_resolver() -> Result<Arc<dyn Resolver>> {
         Ok(resolver) => Ok(Arc::new(resolver)),
         Err(error) => Err(CliError::network(
             "resolver_unavailable",
-            format!("this machine has no DNS resolver: {error}"),
+            format!("this node has no DNS resolver: {error}"),
         )
         .with_detail("error", error.to_string())),
     }
@@ -407,7 +418,7 @@ mod tests {
 
         let sources = host_sources(&resolver, "mabel.example")
             .await
-            .expect("the zone names two machines");
+            .expect("the zone names two endpoints");
         let rendered: Vec<String> = sources
             .iter()
             .map(|endpoint| crate::ids::key(endpoint).as_str().to_owned())

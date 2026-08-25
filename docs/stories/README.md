@@ -7,12 +7,17 @@ are implemented; each story names its spec, and a "Deviations" section lists
 where that spec departs from the story text. Template:
 [../templates/story.md](../templates/story.md).
 
-A witness is an identity, not a machine (proposal 006 section 1, decision 019).
+A witness is an identity, not an endpoint (proposal 006 section 1).
 Every story reads two ids where it used to read one: `witness_identity`, the
 Mabel id a `WitnessSet` records and `witness add --witness` takes, and
 `witness_id`, the Iroh endpoint id of the container answering for it, which is
 what a push dials and what `--from` pins. The compose entrypoint publishes both
-beside the ticket, as `/shared/witness.identity` and `/shared/witness.id`.
+beside the ticket, as `/shared/witness.identity` and `/shared/witness.id`. It
+also publishes a display name on the witness identity's own record before the
+advertisement, `Witness one` for the `witness` container and `Witness two` for
+`witness-two`, so a witness reads as somebody rather than as an id. That record
+is therefore inception, then the name, then the endpoints, and its head sits at
+seq 2 on a container that has just started.
 
 The UI is three primitives and nothing else (proposal 004): the identity card
 list, the witness card list, and one identity page at `/identities/<id>` for
@@ -50,10 +55,11 @@ Mabel ID, a handle or a `mabel://` link, and the browser parses none of them:
 the box hands the string to the node, which owns the grammar), "Your
 identities" (`identity-list`, holding `identity-cards` and the folded
 `identity-create`), and "Known identities" (`known-identities`, holding
-`known-identity-cards` from `GET /api/identities/known` and the
-`known-trusted-only` switch, which narrows the list to direct trust and crawl
-distances). A known row is an identity this home has a record of and does not
-control, so `known-identities-empty` reads `Your wallet knows of no other
+`known-identity-cards` from `GET /api/identities/known` under the tab row
+`known-identities-filter`, whose two tabs are `known-identities-all` and
+`known-identities-trusted`; the second narrows the list to direct trust and
+crawl distances). A known row is an identity this home has a record of and
+does not control, so `known-identities-empty` reads `Your wallet knows of no other
 identity yet.` on a wallet that has fetched, crawled and noted nobody, and
 `known-identities-note` reads `This is what this home holds. A record missing
 here may still be on another witness.`, the sentence that came off the witness
@@ -106,13 +112,31 @@ origin, and the host port equals the container port because the API refuses any
 strings come from [../../contracts/](../../contracts/README.md) and the
 `data-testid` values from the components in `ui/src/`.
 
+Where a list is narrowed by choosing between two or three of its own shapes, the
+control is a row of tabs and not a row of toggles: the row is a `tablist` with a
+testid of its own, each tab is a `role="tab"` carrying `aria-selected` `true` or
+`false`, and the panel that is not selected is not in the DOM at all, so only
+the chosen list can be read. There are two such rows, `known-identities-filter`
+on the wallet home and `witness-holdings-filter` on a witness's page.
+
+A Mabel identity id put in front of a person reads `mabel://<id>` (decision
+019): the identity page heading, every card, every inline identity, the entry
+contents a reader opens, and every CLI line outside `--json`. An endpoint id
+names a machine rather than an identity and stays bare under its own label, and
+so do public keys and entry ids. The prefix is display only, so `data-value`,
+`--json` documents, HTTP bodies, `node.json` and the ids inside a DNS record
+value all carry the bare 52 characters, and a spec reading an id through
+`[data-value]` reads it exactly as it did before.
+
 Reading an identifier in a spec: the `data-value` attribute holding the whole
 52-character value sits on the `Identifier` span *inside* the element carrying
 the testid, so a spec reads
 `page.getByTestId('identity-detail-resolved').locator('[data-value]')` and
 its `data-value` attribute. `textContent` on the testid element is also the
 whole value, because the hidden middle characters stay in the DOM in an
-`sr-only` span; what a reader sees truncated is drawn by CSS.
+`sr-only` span; what a reader sees truncated is drawn by CSS. The visible text
+of a Mabel ID carries the prefix and the `data-value` does not, so a spec that
+compares `textContent` to an id compares it to `mabel://<id>`.
 
 Every identity on every screen is drawn by one of two components (proposal
 005), which is what makes the testids above predictable. The inline identity is
@@ -121,7 +145,13 @@ one line, `<testid>` with `<testid>-name`, `<testid>-nickname`,
 `identity-detail-resolved`, and a card in a list is `identity-card-name-<id>`.
 A name reads `Alice Ashworth (alice)`: the name the identity publishes in
 `<testid>-name`, then the nickname only this device keeps in `<testid>-nickname`,
-in parentheses, and no element at all when there is no second name to draw. A
+in parentheses, and no element at all when there is no second name to draw.
+`<testid>-name` is always drawn: an identity that publishes no name and that
+this device has never named is titled with the first eight characters of its id
+and an ellipsis, and that element carries `data-placeholder-name="true"` where
+a real name carries `data-placeholder-name="false"`. The stand-in title is not
+an id being shown, so it takes no `mabel://` prefix; the whole prefixed id is
+under it as on every other card. A
 card has the width for a whole Mabel ID and a Mabel ID is the only thing that
 tells two identities apart, so no card truncates one: the `Identifier` span
 inside a card reads `data-truncated="false"`.
@@ -132,9 +162,11 @@ say draws no pill. The pill keeps its testid, `<testid>-pill`, and sits in the
 card's top right corner rather than inside the name, so a story reads it by its
 own testid and never as text inside `identity-detail-resolved`. Beside it, a
 card whose record this home does not store carries `<card>-unheld` reading `not
-stored here`. The kind an identity declares is a badge beside the name,
+stored here`. The kind an identity declares is a badge that leads that same row,
 `<card>-declared-kind` and `identity-detail-declared-kind`, both with
-`data-declared-kind`. Under the name line, `<card>-kind-line` holds whatever the
+`data-declared-kind`: what an identity says it is sorts one card from another,
+so it comes before the pills about trust rather than beside the name. Under the
+name line, `<card>-kind-line` holds whatever the
 listing that drew the card carries, which is how many entries a witness holds of
 a record and how many conflicts it recorded: a plain wallet card passes no such
 markers and draws no `identity-card-kind-line-<id>` at all, and no identity page
@@ -145,8 +177,9 @@ sentence and the name-provenance row. Every witness screen went with them: there
 is no witness detail page and no back link anywhere.
 
 A card that routes somewhere is one stretched anchor: `<testid>-link` and
-`identity-card-link-<id>` sit on the name, with the href they had before, and on
-the id only when the identity publishes no name and has nothing else to click.
+`identity-card-link-<id>` sit on the card's title, with the href they had
+before. That is the published name, the stand-in title when there is none, and
+never the id.
 Clicking anywhere on the card navigates, and the keyboard reaches the same page,
 so no story needs a forced click or a click on a `div`. Every control on a card
 sits above that anchor and keeps its own click, including the button beside an
@@ -210,26 +243,29 @@ rather than the middle of the row, which can land on the icon.
 `witness-cards`, each drawn by the same identity card every other screen draws.
 A witness this node uses by default carries
 `witness-default-<identity id>` reading `this node uses it by default`. The
-machines that answer for one are rows of its record, so a list card shows them
-once it is opened: `identity-card-machine-<machine>-<identity id>` holds the
-machine's Iroh ID and
-`identity-card-machine-<machine>-note-<identity id>` holds one of two
-sentences, `This machine is listed on this identity's own record.` or `No record
-we have confirms that this machine answers for it.` The identity page draws the
-same rows as `identity-detail-machine-<machine>` and
-`identity-detail-machine-<machine>-note`. `binding`, `verified` and `hinted` are
-API words and stop at the API.
+endpoints that answer for one are rows of its record, labelled `endpoint`, so a
+list card shows them once it is opened:
+`identity-card-machine-<endpoint>-<identity id>` holds the endpoint's Iroh ID
+and `identity-card-machine-<endpoint>-note-<identity id>` holds one of two
+sentences, `This endpoint is listed on this identity's own record.` or `No
+record we have confirms that this endpoint answers for it.` The identity page
+draws the same rows as `identity-detail-machine-<endpoint>` and
+`identity-detail-machine-<endpoint>-note`. The `machine` inside those testids is
+the older spelling of the same row and did not change with the label.
+`binding`, `verified` and `hinted` are API words and stop at the API.
 
 A witness's page is its identity page, and what it keeps for other people is a
 section of it, `witness-holdings`, asked live over the sync protocol when the
 page loads. Above the list, `witness-chosen-by` reads `N of your identities` and
 `witness-node-default` reads `yes, for the identities that chose no witness of
-their own` or `no`. The list has three filters over it, `witness-holdings-all`,
-`witness-holdings-ours` and `witness-holdings-trusted`, `All` chosen when the
-page opens; the chosen filter's own sentence is the section's description, and
+their own` or `no`. The list sits under the tab row `witness-holdings-filter`,
+whose three tabs are `witness-holdings-all`, `witness-holdings-trusted` and
+`witness-holdings-ours` in that order, labelled `All`, `Trusted` and `Yours`,
+with `All` chosen when the page opens; the chosen tab's own sentence is the
+section's description, and
 `witness-holdings-empty` reads `This witness holds no record.` under `All` and
 `No record it holds matches this.` under the other two. `witness-holdings-error`
-and `witness-unreachable` are what it says instead when the machines answering
+and `witness-unreachable` are what it says instead when the endpoints answering
 for that witness cannot be reached.
 
 A conflict is a fact about a stored record, and `GET /api/forks` is the one
@@ -240,8 +276,11 @@ list still says is `identity-card-fork-count-<id>` on a witness's holdings.
 The website is a handle everywhere a reader sees it. The identity page's row is
 labelled `handle`, `action-handle` is where one is set (`handle-current`,
 `handle-input`, `handle-submit`, the `handle-consent` panel whose confirm reads
-`Publish the handle`, `handle-result`, and the TXT line to publish), and the
-check lives in the same action as `verification-panel` with
+`Publish the handle`, `handle-result`, and the TXT lines to publish:
+`handle-txt-record` always, and `handle-txt-endpoints-record` beside it only
+when the identity advertises an endpoint. The ids inside a record value stay
+bare, because `mabel=` and `mabel-endpoints=` are defined over bare ids), and
+the check lives in the same action as `verification-panel` with
 `verification-status`, `verification-mark`, `verification-check`,
 `verification-checked-at-ms` and `verification-detail`. `action-profile` changes
 the public name and email only. The `hostname` in a testid is deliberate: the
@@ -274,11 +313,11 @@ document field is still `hostname`, so `identity-detail-hostname` and
   story that also needs
   [../../docker/compose.dns.yaml](../../docker/compose.dns.yaml), the test
   resolver overlay; its spec brings the topology up with that overlay itself.
-- [008-link-with-no-witness.md](008-link-with-no-witness.md): a machine
+- [008-link-with-no-witness.md](008-link-with-no-witness.md): an endpoint
   published on an identity's own record, a `mabel://` link handed over with a
   ticket beside it, and a home that knows nobody reading that record with every
   witness container stopped.
 - [009-endpoint-rotation.md](009-endpoint-rotation.md): a witness identity
-  moved to a second machine through proposal 006 section 5.5, the client that
+  moved to a second endpoint through proposal 006 section 5.5, the client that
   was never handed the out-of-band update reaching nothing, and the fresh record
   that recovers it.

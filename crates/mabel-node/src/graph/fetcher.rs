@@ -604,7 +604,10 @@ impl NetLedgerFetcher {
                 return Ok(None);
             }
             if loaded.violation.is_some() || loaded.state.ledger() != Some(ledger) {
-                return Err(format!("the local copy of {ledger} does not verify"));
+                return Err(format!(
+                    "the local copy of {}{ledger} does not verify",
+                    mabel_core::LINK_PREFIX
+                ));
             }
             return Ok(Some(loaded));
         };

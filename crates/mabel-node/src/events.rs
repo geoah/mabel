@@ -52,7 +52,8 @@ fn base32(bytes: &[u8]) -> String {
 #[must_use]
 pub fn fork_statement(ledger: &Id, seq: u64) -> String {
     format!(
-        "two distinct validly signed events exist at seq {seq} of {ledger}, produced by whoever held signing authority there; this is evidence of equivocation or of a lost race between honest controllers"
+        "two distinct validly signed events exist at seq {seq} of {}{ledger}, produced by whoever held signing authority there; this is evidence of equivocation or of a lost race between honest controllers",
+        mabel_core::LINK_PREFIX
     )
 }
 

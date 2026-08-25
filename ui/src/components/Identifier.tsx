@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
 
-import { ICON_BUTTON } from "@/components/ui/icon-button";
+import { COPY_BUTTON } from "@/components/ui/icon-button";
 import { COPY_FAILED, copyText } from "@/lib/clipboard";
+import { MABEL_PREFIX } from "@/lib/link";
 import { cn } from "@/lib/utils";
 
 /** Characters kept visible at each end of a truncated identifier. */
@@ -50,7 +51,7 @@ export function middleTruncate(value: string, head = HEAD_CHARS, tail = TAIL_CHA
 
 function ClipboardIcon() {
   return (
-    <svg viewBox="0 0 16 16" aria-hidden="true" className="size-3.5" fill="currentColor">
+    <svg viewBox="0 0 16 16" aria-hidden="true" className="size-3" fill="currentColor">
       <path d="M6 1.5A1.5 1.5 0 0 0 4.5 3H4a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2h-.5A1.5 1.5 0 0 0 10 1.5H6Zm0 1h4a.5.5 0 0 1 .5.5v.5h-5V3a.5.5 0 0 1 .5-.5ZM4 4h.5A1.5 1.5 0 0 0 6 5.5h4A1.5 1.5 0 0 0 11.5 4H12a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Z" />
     </svg>
   );
@@ -58,7 +59,7 @@ function ClipboardIcon() {
 
 function CheckIcon() {
   return (
-    <svg viewBox="0 0 16 16" aria-hidden="true" className="size-3.5" fill="currentColor">
+    <svg viewBox="0 0 16 16" aria-hidden="true" className="size-3" fill="currentColor">
       <path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-6.5 6.5a.75.75 0 0 1-1.06 0l-3.5-3.5a.75.75 0 1 1 1.06-1.06l2.97 2.97 5.97-5.97a.75.75 0 0 1 1.06 0Z" />
     </svg>
   );
@@ -98,10 +99,7 @@ function CopyButton({ value, label }: { value: string; label: string }) {
           event.stopPropagation();
           void copyText(value).then((ok) => setState(ok ? "copied" : "failed"));
         }}
-        // The negative margin keeps a 32px button from making the row it sits in
-        // taller than its neighbours: one id in a table of short rows used to
-        // stretch its own row by eight pixels.
-        className={cn(ICON_BUTTON, "relative z-10 -my-1", copied && "text-foreground")}
+        className={cn(COPY_BUTTON, "relative z-10", copied && "text-foreground")}
       >
         {copied ? <CheckIcon /> : <ClipboardIcon />}
       </button>
@@ -133,6 +131,14 @@ interface IdentifierProps {
   stretch?: boolean;
   /** What the copy button says it copies: "Copy Mabel ID", "Copy Iroh ID". */
   copyLabel?: string;
+  /**
+   * Shows the value as `mabel://<id>`, which is how a Mabel identity id is put
+   * in front of a person (decision 019). The prefix is display only: the copy
+   * button takes the prefixed string, and `data-value` keeps the bare id that
+   * an API path is built from. An Iroh endpoint id names a machine and never
+   * sets this.
+   */
+  mabel?: boolean;
   className?: string;
 }
 
@@ -157,6 +163,7 @@ export function Identifier({
   linkTestId,
   stretch = false,
   copyLabel = COPY_LABEL,
+  mabel = false,
   className,
 }: IdentifierProps) {
   const [expanded, setExpanded] = useState(false);
@@ -165,13 +172,21 @@ export function Identifier({
     return <>null</>;
   }
 
+  // The prefix is not part of the id, so the id alone is split: were the whole
+  // shown string split, the eight characters a reader keeps would be `mabel://`
+  // and none of the id under it.
+  const prefix = mabel ? MABEL_PREFIX : "";
+  const shown = `${prefix}${value}`;
   const parts = splitIdentifier(value);
   const whole = full || (expanded && !plain) || parts.middle === "";
   const body = whole ? (
-    value
+    shown
   ) : (
     <>
-      <span>{parts.head}</span>
+      <span>
+        {prefix}
+        {parts.head}
+      </span>
       <span className="sr-only">{parts.middle}</span>
       <span className="identifier-ellipsis">{parts.tail}</span>
     </>
@@ -193,19 +208,19 @@ export function Identifier({
         <Link
           to={to}
           data-testid={linkTestId}
-          title={value}
+          title={shown}
           className={cn("min-w-0 underline", stretch && "after:absolute after:inset-0")}
         >
           {body}
         </Link>
       ) : full || plain ? (
-        <span className="min-w-0" title={value}>
+        <span className="min-w-0" title={shown}>
           {body}
         </span>
       ) : (
         <button
           type="button"
-          title={value}
+          title={shown}
           aria-expanded={expanded}
           onClick={(event) => {
             event.stopPropagation();
@@ -216,7 +231,7 @@ export function Identifier({
           {body}
         </button>
       )}
-      {!plain && <CopyButton value={value} label={copyLabel} />}
+      {!plain && <CopyButton value={shown} label={copyLabel} />}
     </span>
   );
 }

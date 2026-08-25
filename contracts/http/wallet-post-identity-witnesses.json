@@ -47,7 +47,7 @@
       "body": {
         "ok": false,
         "code": 2,
-        "message": "this home knows no machine that answers for q7hnsnk6ycwjyzwbmqjcaxwlmxvvfjbmwzq4gz4dbtvpojjuh3fq",
+        "message": "this home knows no endpoint that answers for mabel://q7hnsnk6ycwjyzwbmqjcaxwlmxvvfjbmwzq4gz4dbtvpojjuh3fq",
         "details": {
           "reason": "unresolvable_witness",
           "witness": "q7hnsnk6ycwjyzwbmqjcaxwlmxvvfjbmwzq4gz4dbtvpojjuh3fq",
@@ -62,7 +62,7 @@
       "body": {
         "ok": false,
         "code": 2,
-        "message": "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq is a machine this home knows, not a witness identity",
+        "message": "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq is an endpoint this home knows, not a witness identity",
         "details": {
           "reason": "endpoint_not_identity",
           "value": "zbj22dym2k3btlvjftxmj7kwujgwjgovqthhsjl6ixh5qe43mctq"
@@ -74,7 +74,7 @@
       "body": {
         "ok": false,
         "code": 50,
-        "message": "State error: a witness reports head seq 4 for sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq, this node holds seq 3",
+        "message": "State error: a witness reports head seq 4 for mabel://sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq, this node holds seq 3",
         "details": {
           "reason": "stale_head",
           "ledger_id": "sfttwjzd755ejzzantfeyylon5zhr7vjqrjywrulvbos77pcvuyq",

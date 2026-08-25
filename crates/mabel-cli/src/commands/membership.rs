@@ -68,7 +68,7 @@ pub fn invite(
             "invitee_holds_no_key",
             format!(
                 "{} is an identity-rooted ledger and holds no key of its own, so it cannot be invited",
-                descriptor.identity()
+                ids::shown(descriptor.identity())
             ),
         )
         .with_detail("invitee", descriptor.identity().to_string())
@@ -119,9 +119,11 @@ pub fn invite(
         event_count,
     };
     let text = format!(
-        "invited {invited} as {} at seq {} of {ledger}\nwrote {} ({event_count} events, {bytes} bytes)",
+        "invited {} as {} at seq {} of {}\nwrote {} ({event_count} events, {bytes} bytes)",
+        ids::shown(invited),
         role.as_str(),
         appended.seq,
+        ids::shown(ledger),
         out.display()
     );
     Outcome::new(&document, text)
@@ -150,8 +152,9 @@ pub fn accept(
         return Err(CliError::usage(
             "not_the_invitee",
             format!(
-                "this invitation invites {}, not {identity}",
-                summary.invitee
+                "this invitation invites {}, not {}",
+                ids::shown(summary.invitee),
+                ids::shown(identity)
             ),
         )
         .with_detail("ledger_id", summary.ledger.to_string())
@@ -163,8 +166,9 @@ pub fn accept(
         return Err(CliError::policy(
             "acceptance_invitee_key_mismatch",
             format!(
-                "the invitation records key {} for {identity}, and this home signs with {}",
+                "the invitation records key {} for {}, and this home signs with {}",
                 summary.invitee_key,
+                ids::shown(identity),
                 key.public()
             ),
         )
@@ -195,10 +199,11 @@ pub fn accept(
     let bytes = artifacts::write(out, &file.write())?;
 
     let text = format!(
-        "signed acceptance of {} as {identity}\nwrote {} ({bytes} bytes)\nhand it to a controller of {} to run mabel membership admit",
+        "signed acceptance of {} as {}\nwrote {} ({bytes} bytes)\nhand it to a controller of {} to run mabel membership admit",
         summary.invitation_event,
+        ids::shown(identity),
         out.display(),
-        summary.ledger
+        ids::shown(summary.ledger)
     );
     let document = Accepted {
         surface,
@@ -237,8 +242,9 @@ pub fn admit(
         return Err(CliError::internal(
             "invitation_not_folded",
             format!(
-                "invitation {} is not in ledger {ledger}",
-                file.invitation_event()
+                "invitation {} is not in ledger {}",
+                file.invitation_event(),
+                ids::shown(ledger)
             ),
         ));
     };
@@ -259,10 +265,11 @@ pub fn admit(
         path: path.display().to_string(),
     };
     let text = format!(
-        "admitted {} as {} at seq {} of {ledger}",
-        invitation.invitee,
+        "admitted {} as {} at seq {} of {}",
+        ids::shown(invitation.invitee),
         role.as_str(),
-        appended.seq
+        appended.seq,
+        ids::shown(ledger)
     );
     Outcome::new(&document, text)
 }
@@ -303,7 +310,12 @@ pub fn remove(
         head_seq: appended.seq,
         head_event: ids::event(appended.event_id),
     };
-    let mut text = format!("removed {target} at seq {} of {ledger}", appended.seq);
+    let mut text = format!(
+        "removed {} at seq {} of {}",
+        ids::shown(target),
+        appended.seq,
+        ids::shown(ledger)
+    );
     if let Some(cancelled) = cancelled {
         text.push_str(&format!("\ncancelled open invitation {cancelled}"));
     }
@@ -334,7 +346,8 @@ pub fn list(ctx: &Context, ledger: &str) -> Result<Outcome> {
         .filter(|entry| entry.status == StatusName::Open)
         .count();
     let mut text = format!(
-        "{ledger}: {} principals, {open} open invitations up to seq {}",
+        "{}: {} principals, {open} open invitations up to seq {}",
+        ids::shown(ledger),
         principals.len(),
         loaded.head_seq
     );
@@ -342,7 +355,7 @@ pub fn list(ctx: &Context, ledger: &str) -> Result<Outcome> {
         text.push_str(&format!(
             "\n{} {} ({}){}",
             principal.role.as_str(),
-            principal.identity,
+            ids::shown(&principal.identity),
             principal.active_key,
             if principal.is_root { " root" } else { "" }
         ));
@@ -353,7 +366,7 @@ pub fn list(ctx: &Context, ledger: &str) -> Result<Outcome> {
             invitation.invitation_event,
             invitation.invitation_seq,
             invitation.role.as_str(),
-            invitation.invitee,
+            ids::shown(&invitation.invitee),
             invitation.status.as_str()
         ));
     }
@@ -385,7 +398,7 @@ fn surface(summary: &InvitationSummary) -> Result<AcceptSurface> {
         format!(
             "accepting a controller role on a raw-rooted ledger means signing as {}: \
              every event you append to it is that identity's own event",
-            summary.ledger
+            ids::shown(summary.ledger)
         )
     });
     Ok(AcceptSurface {
@@ -406,7 +419,7 @@ fn surface(summary: &InvitationSummary) -> Result<AcceptSurface> {
 fn surface_text(summary: &InvitationSummary, surface: &AcceptSurface) -> String {
     let mut text = format!(
         "invitation to {}\ndeclared kind {}, {} root\nrole offered {}",
-        summary.ledger,
+        ids::shown(summary.ledger),
         surface.declared_kind,
         surface.root.as_str(),
         surface.role.as_str()
@@ -417,7 +430,8 @@ fn surface_text(summary: &InvitationSummary, surface: &AcceptSurface) -> String 
     for controller in &surface.controllers {
         text.push_str(&format!(
             "\ncontroller {} ({})",
-            controller.identity, controller.active_key
+            ids::shown(&controller.identity),
+            controller.active_key
         ));
     }
     if let Some(warning) = &surface.warning {
@@ -433,8 +447,9 @@ fn surface_text(summary: &InvitationSummary, surface: &AcceptSurface) -> String 
 /// Returns code 2 when the answer is not `yes`, having signed nothing.
 fn confirm(ctx: &Context, identity: IdentityId, summary: &InvitationSummary) -> Result<()> {
     print!(
-        "accept as {} ({identity})? type yes to sign: ",
-        ctx.alias(identity)
+        "accept as {} ({})? type yes to sign: ",
+        ctx.alias(identity),
+        ids::shown(identity)
     );
     let _ = std::io::stdout().flush();
     let mut answer = String::new();
@@ -468,7 +483,7 @@ fn refuse_replay(ctx: &Context, loaded: &Loaded, invitation: EventId, path: &Pat
         "acceptance_already_used",
         format!(
             "this acceptance was already admitted at seq {at_seq} of {}",
-            loaded.ledger
+            ids::shown(loaded.ledger)
         ),
     )
     .with_detail("ledger_id", loaded.ledger.to_string())
@@ -554,7 +569,7 @@ fn root_name(loaded: &Loaded) -> Result<RootName> {
     loaded.state.root().map(RootName::of).ok_or_else(|| {
         CliError::internal(
             "no_root",
-            format!("ledger {} holds no inception", loaded.ledger),
+            format!("ledger {} holds no inception", ids::shown(loaded.ledger)),
         )
     })
 }

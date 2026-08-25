@@ -42,7 +42,7 @@
       "body": {
         "ok": false,
         "code": 20,
-        "message": "Policy error: an unrevoked attestation for jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq already exists at seq 2",
+        "message": "Policy error: an unrevoked attestation for mabel://jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq already exists at seq 2",
         "details": {
           "reason": "duplicate_unrevoked_attestation",
           "subject": "jwq7i3ex2my7stypeluecykconcej4ypwqmbisvxnbuhtus7jklq",
@@ -56,7 +56,7 @@
       "body": {
         "ok": false,
         "code": 2,
-        "message": "this home holds no ledger 2okqwhextnpkpmydrgrkk563vbehcklffwfzidxlh5dslawjmn6a",
+        "message": "this home holds no ledger mabel://2okqwhextnpkpmydrgrkk563vbehcklffwfzidxlh5dslawjmn6a",
         "details": {
           "reason": "unknown_ledger",
           "ledger_id": "2okqwhextnpkpmydrgrkk563vbehcklffwfzidxlh5dslawjmn6a"

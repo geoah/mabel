@@ -12,7 +12,7 @@ import {
   verifier,
 } from "../lib/docker";
 import { expectExit, expectHeadSeq, story002Steps1to8 } from "../lib/stories";
-import { addTrust, addWitness, identifier, openIdentity, push, trustCard } from "../lib/ui";
+import { addTrust, addWitness, identifier, openIdentity, push, shown, trustCard } from "../lib/ui";
 
 /** docs/stories/002-shared-ledger.md */
 test.describe.configure({ mode: "serial" });
@@ -65,14 +65,17 @@ test("step 9: the Principals card holds one row per principal", async () => {
 
   // Round 6 of proposal 005 also names both of them in the card's own "who can
   // act for it" row, resolved rather than printed as 52-character ids. Alice's
-  // row carries her nickname; bob is a stranger to this home, so his card falls
-  // back to his id, which is the whole point of the row.
-  await expect(alicePage.getByTestId(`identity-detail-principal-${aliceId}-name`)).toHaveText(
-    "alice",
-  );
+  // row carries her nickname; bob is a stranger to this home, so his row is
+  // titled with the first eight characters of his id and an ellipsis, and the
+  // whole id sits under it, which is the whole point of the row.
+  const aliceName = alicePage.getByTestId(`identity-detail-principal-${aliceId}-name`);
+  await expect(aliceName).toHaveText("alice");
+  await expect(aliceName).toHaveAttribute("data-placeholder-name", "false");
   const bobPrincipal = alicePage.getByTestId(`identity-detail-principal-${bobId}`);
   await expect(bobPrincipal).toBeVisible();
-  await expect(bobPrincipal.getByTestId(`identity-detail-principal-${bobId}-name`)).toHaveCount(0);
+  const bobName = bobPrincipal.getByTestId(`identity-detail-principal-${bobId}-name`);
+  await expect(bobName).toHaveAttribute("data-placeholder-name", "true");
+  await expect(bobName).toHaveText(`${bobId.slice(0, 8)}…`);
   expect(await identifier(alicePage, `identity-detail-principal-${bobId}`)).toBe(bobId);
 });
 
@@ -96,7 +99,10 @@ test("step 10: a controller role on a raw root warns before it signs", async () 
   );
   carry("mabel-alice", "/tmp/raw.bundle", "mabel-bob", "/tmp/raw.bundle");
 
-  const warning = `accepting a controller role on a raw-rooted ledger means signing as ${aliceId}: every event you append to it is that identity's own event`;
+  // The ledger you would be signing as is an identity, so the sentence names it
+  // the way a person reads one, prefix and all, in the text line and in the
+  // `warning` string the `--json` document carries.
+  const warning = `accepting a controller role on a raw-rooted ledger means signing as ${shown(aliceId)}: every event you append to it is that identity's own event`;
 
   // --yes is required with --json: without it nothing is signed.
   const refused = expectExit(
@@ -185,7 +191,7 @@ test("step 10: a controller role on a raw root warns before it signs", async () 
 
 test("replaying step 7 exits 50: the acceptance was already admitted", async () => {
   // Bob controls this ledger too, so the append asks the witness where it ends
-  // before it signs. `node.json` records which machine answers for the witness
+  // before it signs. `node.json` records which endpoint answers for the witness
   // and never how to route to one, so a CLI process needs the ticket
   // (proposal 006 section 5.4).
   const replay = expectExit(
@@ -197,7 +203,7 @@ test("replaying step 7 exits 50: the acceptance was already admitted", async () 
   );
   const document = json(replay);
   expect(document.message).toBe(
-    `Replay error: this acceptance was already admitted at seq 2 of ${orgId}`,
+    `Replay error: this acceptance was already admitted at seq 2 of ${shown(orgId)}`,
   );
   expect(document.details.reason).toBe("acceptance_already_used");
 });
@@ -233,7 +239,7 @@ test("step 12: a witness the chain does not name refuses the push", async () => 
 
 test("step 13: the shared ledger names the witness and is accepted", async () => {
   await openIdentity(alicePage, ALICE_URL, orgId);
-  // The set names the witness identity; the push dials the machine that
+  // The set names the witness identity; the push dials the endpoint that
   // answers for it (proposal 006 sections 1 and 5).
   await addWitness(alicePage, witnessIdentity, 4);
   await push(alicePage, witnessId, { stored: 5 });
@@ -241,7 +247,7 @@ test("step 13: the shared ledger names the witness and is accepted", async () =>
 
 test("step 14: a verifier is told which principal signed", async () => {
   const statement = new RegExp(
-    `^valid as of seq 4 of ${orgId}, fetched from ${witnessId} at ${RFC3339_UTC}; no revocation up to seq 4$`,
+    `^valid as of seq 4 of ${shown(orgId)}, fetched from ${witnessId} at ${RFC3339_UTC}; no revocation up to seq 4$`,
   );
 
   const text = expectExit(
@@ -255,7 +261,7 @@ test("step 14: a verifier is told which principal signed", async () => {
   expect(lines).toHaveLength(5);
   expect(lines[0]).toBe("trusted: true");
   expect(lines[1]).toMatch(statement);
-  expect(lines[2]).toBe(`signed by principal ${aliceId} (${aliceKey})`);
+  expect(lines[2]).toBe(`signed by principal ${shown(aliceId)} (${aliceKey})`);
   expect(lines[3]).toBe(SUBJECT_CONTROL);
   expect(lines[4]).toBe(VERIFIED_MEANS);
 
@@ -285,7 +291,7 @@ test("a fresh home reaches the same answer", async () => {
   );
   const lines = stdoutLines(text);
   expect(lines[0]).toBe("trusted: true");
-  expect(lines[2]).toBe(`signed by principal ${aliceId} (${aliceKey})`);
+  expect(lines[2]).toBe(`signed by principal ${shown(aliceId)} (${aliceKey})`);
 });
 
 test("bob acts from his own home (ticket 031)", async () => {

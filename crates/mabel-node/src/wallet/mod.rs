@@ -37,8 +37,8 @@ pub use core::{
     verification_document,
 };
 pub use error::{
-    artifact_error, build_error, equivocation, fold_error, fold_error_at, no_source_available,
-    peer_message, stale_head, storage_error, unreachable,
+    artifact_error, build_error, equivocation, fold_error, fold_error_at, fold_message,
+    no_source_available, peer_message, stale_head, storage_error, unreachable,
 };
 pub use ledger::LoadedLedger;
 pub use lookup::{KnownPage, Names, default_root, graph_status, known_identities, lookup_document};

@@ -4,13 +4,13 @@
 - Surfaces: wallet UI (bob and a borrowed home), CLI, the node HTTP API
 - Test: `tests/e2e/specs/008-link-with-no-witness.spec.ts`
 
-Bob publishes the machine that answers for him on his own record, hands over a
+Bob publishes the endpoint that answers for him on his own record, hands over a
 `mabel://` link, and somebody who has never heard of him reads that record with
 every witness container stopped. An identity is reachable with no witness in the
 topology at all (proposal 006 section 2).
 
-The link carries who and which machine. It does not carry a route to that
-machine, and never will: an address is not on any ledger. So the ticket travels
+The link carries who and which endpoint. It does not carry a route to that
+endpoint, and never will: an address is not on any ledger. So the ticket travels
 beside it, out of band, the way the first address always does (proposal 006
 section 5.4). Both halves are handed over by the same person in the same
 message; neither is authorization.
@@ -23,7 +23,7 @@ message; neither is authorization.
   again in this story.
 - dana: a borrowed home, container `mabel-dana` on the compose network, API and
   UI on `http://127.0.0.1:9085`. It holds no key, knows nobody, and configures
-  no witness. The one thing it is told is how to route to bob's machine.
+  no witness. The one thing it is told is how to route to bob's endpoint.
 
 `dc` stands for `docker compose -f docker/compose.yaml`, run from the
 repository root.
@@ -34,18 +34,18 @@ repository root.
    `http://127.0.0.1:9082/wallet`, create an identity with alias `bob` and kind
    `person`. He names no witness and pushes nothing: this story is about an
    identity no witness keeps a copy of. `bob_node="$(dc exec -T bob mabel node
-   id)"` is the machine his home runs on.
-2. Publish that machine on bob's own record. Open
+   id)"` is the endpoint his home runs on.
+2. Publish that endpoint on bob's own record. Open
    `identity-card-link-<bob_id>`, then `action-endpoints-summary` under the
    group `action-group-reach`, headed `Reaching this identity`.
-   `endpoints-empty` reads `This identity's record names no machine yet.` Click
+   `endpoints-empty` reads `This identity's record names no endpoint yet.` Click
    `endpoints-use-this-node`, which fills `endpoints-input` with `bob_node`,
-   then `endpoints-submit`. The first machine this home publishes asks for
+   then `endpoints-submit`. The first endpoint this home publishes asks for
    consent first: `endpoints-consent` states the three facts publishing one
-   costs, and its confirm button reads `Publish the machine`. Click it.
+   costs, and its confirm button reads `Publish the endpoint`. Click it.
 3. Make the link. Open `action-share-summary`, beside the endpoints action in
    the same group. `share-panel` holds the link with a copy control,
-   `share-machine-count` saying how many machines it names, `share-qr` holding
+   `share-machine-count` saying how many endpoints it names, `share-qr` holding
    the same string as a square to scan, `share-download` offering it as a file,
    and `share-disclosure` saying what handing it over gives away. The CLI builds
    the same string from the same record, and `mabel node ticket` prints the
@@ -79,10 +79,10 @@ repository root.
 - Step 1: `GET http://127.0.0.1:9082/api/identities/<bob_id>` answers
   `witnesses: []` and `endpoints: []`.
 - Step 2's consent panel carries all three sentences, in this order: `The
-  machine's id stays readable forever by anyone who can name this identity.`,
-  `Anyone who reads it can dial that machine directly, which shows the machine's
-  address to them and to the relay that connects them.`, and `Once this home
-  answers at a published address, anyone who dials it can list the identities it
+  endpoint's id stays readable forever by anyone who can name this identity.`,
+  `Anyone who reads it can dial that endpoint directly, which shows the
+  endpoint's address to them and to the relay that connects them.`, and `Once
+  this home answers at a published address, anyone who dials it can list the identities it
   signs for and, if it keeps records for other people, the records it keeps.`
 - Step 2 appends one entry and nothing else. `endpoints-head-seq` reads `Saved
   at position 1.`, `endpoints-list` holds `bob_node`, `GET
@@ -90,14 +90,14 @@ repository root.
   and `GET /api/identities/<bob_id>/ledger?since=1&limit=1` answers one event
   with `payload_kind: "endpoint_advertisement"` and payload `{"endpoints":
   ["<bob_node>"]}`. On the screen that entry's closed line reads `published the
-  machines that answer for it`.
+  endpoints that answer for it`.
 - Step 3: the link is exactly `mabel://<bob_id>?endpoints=<bob_node>`,
-  `share-machine-count` reads `The link names 1 machine.`, `share-download`
+  `share-machine-count` reads `The link names 1 endpoint.`, `share-download`
   carries `download="<first 8 characters of bob_id>.mabel"`, and
   `share-disclosure` holds the three sentences of proposal 006 section 7. `mabel
   identity share bob --json` answers the same `link`, `endpoints ==
   [bob_node]` and `endpoints_from: "advertised"`, because the record now names
-  a machine and `auto` reads the record first.
+  an endpoint and `auto` reads the record first.
 - Step 4: `mabel-witness` is not running and
   `http://127.0.0.1:9080/api/node` answers nothing. Dana's `GET /api/node`
   answers `identity_count: 0`, `ledger_count: 0`, `witness_for: []` and
@@ -109,10 +109,11 @@ repository root.
   "link"`, `identity_id == bob_id` and `endpoints == [bob_node]`. The box lands
   on `/identities/<bob_id>?machines=<bob_node>`, where `identity-fetch` offers
   the one action and `identity-fetch-link-note` reads `This link names the
-  machines to ask for this record. Asking them tells those machines this home's
+  endpoints to ask for this record. Asking them tells those endpoints this home's
   network address and which identity it is looking for.` The section's own
-  description reads `Asks the machines the link named, in order, and keeps what
-  they send.`
+  description reads `Asks the endpoints the link named, in order, and keeps what
+  they send.` The `machines=` on the query string is the older spelling and did
+  not change with the copy.
 - Step 6 lands with no witness in the topology. The page draws `ledger-panel`,
   `identity-fetch` is gone, `identity-detail-event-count` reads `2`, and `GET
   /api/identities/<bob_id>` on dana answers `head_seq: 1`, `event_count: 2`,
