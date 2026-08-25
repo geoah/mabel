@@ -6,7 +6,7 @@
 [package]
 name = "mabel-app"
 description = "The mabel wallet as a macOS and iOS app, running the wallet node in process"
-version = "0.13.0"
+version = "0.14.0"
 edition = "2024"
 rust-version = "1.91"
 license = "MIT"
